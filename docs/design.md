@@ -189,6 +189,10 @@ The same scene on the native WebGPU backend matches at 0.00 % too, after two bac
   8.9 % of pixels; `initTexture` is harmless; WebGL2 is unaffected). `world.warmup()` therefore skips the
   pre-compilation for such scenes on WebGPU and reports `skipped: 'transmission-on-webgpu'`.
 
+Public asset report: WebGL2 104/104 clean; WebGPU 103/104, the exception being `polyhaven-fir_sapling_medium`
+(1.5 M triangles of alpha-tested foliage) at 0.64 % changed pixels with 0 unattributed draws, which reads as
+leaf-edge coverage differences from the changed draw order rather than missing or moved geometry.
+
 ## WebGPU in the test harness
 
 WebGPU only exists in secure contexts, so adapter checks must run on the served page, not `about:blank`. The
