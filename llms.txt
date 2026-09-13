@@ -6,6 +6,7 @@
 - Commands: analyze <file>, inspect <url>, explain <hint>, schema, mcp — all with --json
 - JSON Schemas: `npx threeforge schema`
 - Hint remedies: `npx threeforge explain --all --json`
+- Complete reference (every module, option, mechanism): docs/threeforge.md
 - Library API: README.md
 - Benchmark suite and baselines: docs/bench.md
 - Design: docs/superpowers/specs/2026-09-13-frame-budget-design.md, docs/superpowers/specs/2026-09-13-agent-cli-design.md

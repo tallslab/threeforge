@@ -3,6 +3,8 @@
 threeforge is a scene compiler + draw-call diagnostics layer for three.js r186 (`three/webgpu`, WebGL2 fallback).
 It is not an engine. Three.js renders; we rewrite naive scenes into batched ones and explain every remaining draw call.
 
+Read `docs/threeforge.md` (the complete reference: every module, option and mechanism) before changing behaviour.
+
 ## Non-negotiable rules
 
 1. One material per surface type. App code never constructs a material outside `MaterialRegistry`; call `registry.register(material)` and use what it returns.

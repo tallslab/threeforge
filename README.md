@@ -18,6 +18,8 @@ by cost, not by genre:
 | Per-frame JS | render ms, frame ms, auto-updated matrices | dirty-flag matrices, render-on-change (next) |
 | Memory & load | texture, geometry and render-target bytes | KTX2/meshopt pipeline, disposal tracking, streaming (next) |
 
+The complete reference, every module and option and how each works: [docs/threeforge.md](docs/threeforge.md).
+
 Budgets come from a device tier (`desktop`, `phone-mid`, `phone-low`, detected at runtime, overridable) and
 every breach shows up as a hint in the overlay and the JSON report.
 

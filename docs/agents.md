@@ -115,6 +115,12 @@ import { analyzeAsset, inspectApp, explain } from 'threeforge/cli';
 const doc = await analyzeAsset({ file: 'scene.glb', backend: 'webgpu', tier: 'auto', budget: null, frames: 30, compile: true, timeout: 60000, headed: false });
 ```
 
+## Where to read more
+
+`docs/threeforge.md` in the repository is the complete reference: every module, every option, and how each
+mechanism works (ledger, registry, classification, compiler, bake, assembler, CLI, benchmark suite, three.js
+findings). `README.md` is the overview; `docs/bench.md` the benchmark baselines.
+
 ## Rules the library expects of a scene
 
 1. One material per surface type, shared (or registered through `MaterialRegistry`).
