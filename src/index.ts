@@ -27,3 +27,4 @@ export type { BatchOptions } from './compiler/batchStatics.js';
 export { generateLods, lodsOf, prepareLods, type LodOptions, type PrepareLodsReport } from './lod/generateLods.js';
 export { assembleCharacter, type AssembledCharacter, type AssembleOptions, type AtlasCell, type CharacterReport } from './character/assembleCharacter.js';
 export { formatCostRows, formatHints, formatOverlay } from './overlay/index.js';
+export { bakeGeometries, type BakeEntry, type BakeOptions, type BakeReport, type BakeResult, type BuriedOptions } from './compiler/bake.js';

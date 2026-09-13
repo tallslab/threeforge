@@ -17,6 +17,9 @@ importers:
       pngjs:
         specifier: ^7.0.0
         version: 7.0.0
+      three-mesh-bvh:
+        specifier: 0.9.15
+        version: 0.9.15(three@0.186.0)
     devDependencies:
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
@@ -719,6 +722,11 @@ packages:
 
   std-env@4.2.0:
     resolution: {integrity: sha512-oCUKSupKTHX53EyjDtuZQ64pjLJ6yYCtpmEw0goYxtjG9KpbRe8KAsl2tBUGU9DyMcJ0RwJ8GqJAFzMXcXW1Rw==}
+
+  three-mesh-bvh@0.9.15:
+    resolution: {integrity: sha512-9xdEDkCzFoT8VPFH9DznwFSdbaIEjMvM106Iqq7TJurrIheUKDcdW4prfJTCxryih4XS/UxWs0H3K4MLMRFyOQ==}
+    peerDependencies:
+      three: '>= 0.159.0'
 
   three@0.186.0:
     resolution: {integrity: sha512-cr/fIM2ddMSVbYVgkfD4jLJv7Fh/8ZTjvo+7gQeSVGUZHxpx9FDwoL5iC7hUz/LiRA8wMbqfnb90xKfm1/HHkQ==}
@@ -1480,6 +1488,10 @@ snapshots:
   statuses@2.0.2: {}
 
   std-env@4.2.0: {}
+
+  three-mesh-bvh@0.9.15(three@0.186.0):
+    dependencies:
+      three: 0.186.0
 
   three@0.186.0: {}
 
