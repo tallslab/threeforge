@@ -4,7 +4,7 @@ Scene compiler + draw-call diagnostics for three.js (r186, `three/webgpu` with i
 Three.js stays the renderer. threeforge takes a naively assembled scene, rewrites it into a batched one
 at load time, and tells you exactly why every remaining draw call exists.
 
-Status: Phase 4. The naive test scene (500 props, 40 material recipes, a new material per prop) goes from
+Status: Phase 5 (dogfooding on public assets). The naive test scene (500 props, 40 material recipes, a new material per prop) goes from
 **503 to 28** scene submissions with pixel-identical output (**18** with `dynamics: 'batch-sync'`), and the
 20k-instance field scene goes from 3892 submissions to **3 instanced draws** with BVH culling, cutting render CPU
 from 43 ms to 7 ms per frame in headless Chromium; LODs cut its rendered triangles from 140k to 51k. Verified on
@@ -71,6 +71,8 @@ Dev overlay: `import { createOverlay } from 'threeforge/overlay'; createOverlay(
 | `pnpm e2e` | Playwright on both backends: `webgl2` (headless shell) and `webgpu` (native adapter on macOS/Windows, SwiftShader on Linux) |
 | `pnpm budget` | the CI gate; `FORGE_BUDGET=25 pnpm budget` to tighten |
 | `pnpm spike` | three's experimental `SceneOptimizer` on the same scene, for comparison |
-| `pnpm dev` | test app: `http://localhost:5179/?scene=naive&compile=1&overlay=1&budget=30&animate=1&dynamics=batch-sync` (also `scene=field&count=20000`) |
+| `pnpm assets` | download ~570 MB of public glTF test content (Khronos, three.js, Kenney, Poly Haven) into `test/assets/files/` |
+| `pnpm assets:report` | compile every downloaded model, check pixel parity, write `docs/assets-report.md` |
+| `pnpm dev` | test app: `http://localhost:5179/?scene=naive&compile=1&overlay=1&budget=30&animate=1&dynamics=batch-sync` (also `scene=field&count=20000`, `scene=gltf&asset=Sponza`, `scene=biome&dynamics=batch-sync`) |
 
 See `docs/design.md` for the architecture and `docs/spike-scene-optimizer.md` for the baseline measurement.

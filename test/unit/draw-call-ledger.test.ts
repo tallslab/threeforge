@@ -196,6 +196,34 @@ describe('DrawCallLedger frames and passes', () => {
     expect(frame.totals.unattributed).toBe(0);
   });
 
+  it('names nested renders of the same scene (reflections, portals) as separate passes', () => {
+    const renderer = new FakeRenderer();
+    const { scene, camera } = sceneWithCamera();
+    scene.add(tag.static(new Mesh(box, new MeshStandardMaterial())));
+    // Like ReflectorNode: a nested render of the same scene into a target, from a virtual camera, during the frame.
+    // The wrapper is installed before the ledger attaches, so the ledger wraps it.
+    const mirror = camera.clone();
+    const original = renderer.render.bind(renderer);
+    let nested = false;
+    (renderer as { render: typeof renderer.render }).render = function (s, c) {
+      if (!nested) {
+        nested = true;
+        renderer.renderTarget = { name: 'reflection' };
+        renderer.render(s, mirror);
+        renderer.renderTarget = null;
+        nested = false;
+      }
+      original(s, c);
+    };
+    const ledger = new DrawCallLedger();
+    ledger.attach(renderer as never);
+    renderer.render(scene, camera);
+    const frame = ledger.frame();
+    expect(frame.passes.map((p) => p.id)).toEqual(['nested:reflection', 'main']);
+    expect(frame.passes.map((p) => p.submissions)).toEqual([2, 2]);
+    expect(frame.totals.sceneSubmissions).toBe(2);
+  });
+
   it('counts program switches over scene submissions in submission order', () => {
     const { renderer, ledger, scene, camera } = attached();
     const a = new MeshStandardMaterial();

@@ -1,4 +1,4 @@
-import type { Material, Mesh, Object3D } from 'three';
+import { PropertyBinding, type AnimationClip, type Material, type Mesh, type Object3D } from 'three';
 import { effectiveTag } from '../ledger/reasons.js';
 
 export type MeshKind = 'static' | 'dynamic' | 'skinned' | 'morph' | 'excluded' | 'untagged' | 'unsupported';
@@ -13,9 +13,11 @@ export interface Classification {
 export interface ClassifyOptions {
   /** `tagged` (default): only `tag.static()` meshes are batched. `auto`: untagged plain meshes are batched too. */
   policy?: 'tagged' | 'auto';
+  /** Clips that will drive this graph; every node they target (and its descendants) is dynamic. */
+  animations?: AnimationClip[];
 }
 
-type MeshLike = Mesh & { isSkinnedMesh?: boolean; morphTargetInfluences?: number[] };
+type MeshLike = Mesh & { isSkinnedMesh?: boolean; isInstancedMesh?: boolean; morphTargetInfluences?: number[] };
 
 const OWN = Object.prototype.hasOwnProperty;
 
@@ -27,6 +29,11 @@ function isShader(material: Material | Material[]): boolean {
 /** Rules that make a mesh unreproducible inside a BatchedMesh, in the order they are checked. */
 export function exclusionRule(mesh: Mesh): string | null {
   if (!mesh.visible) return 'invisible';
+  if ((mesh as MeshLike).isInstancedMesh) return 'already-instanced';
+  // three's transmission code derives volume thickness from the object's model-matrix scale; a batch or an
+  // instanced mesh presents one identity matrix for every instance, so refraction would be wrong.
+  const material = mesh.material as Material & { transmission?: number };
+  if (!Array.isArray(mesh.material) && (material.transmission ?? 0) > 0) return 'transmission';
   if (Array.isArray(mesh.material)) return 'multi-material';
   if (mesh.layers.mask !== 1) return 'layers';
   if (mesh.renderOrder !== 0) return 'render-order';
@@ -45,21 +52,46 @@ export function exclusionRule(mesh: Mesh): string | null {
 export function classify(root: Object3D, options: ClassifyOptions = {}): Classification[] {
   const policy = options.policy ?? 'tagged';
   root.updateMatrixWorld(true);
+  const animated = animatedRoots(root, options.animations ?? []);
   const result: Classification[] = [];
   root.traverse((object) => {
     const mesh = object as MeshLike;
     if (!mesh.isMesh) return;
-    result.push({ object: mesh, ...decide(mesh, policy) });
+    result.push({ object: mesh, ...decide(mesh, policy, animated) });
   });
   return result;
 }
 
-function decide(mesh: MeshLike, policy: 'tagged' | 'auto'): { kind: MeshKind; rule: string } {
+/** Objects targeted by any track of the given clips, resolved the way AnimationMixer does (name, uuid or path). */
+export function animatedRoots(root: Object3D, clips: AnimationClip[]): Set<Object3D> {
+  const roots = new Set<Object3D>();
+  for (const clip of clips) {
+    for (const track of clip.tracks) {
+      const { nodeName } = PropertyBinding.parseTrackName(track.name);
+      const node = nodeName ? PropertyBinding.findNode(root, nodeName) : root;
+      if (node) roots.add(node as Object3D);
+    }
+  }
+  return roots;
+}
+
+function underAnimated(object: Object3D, animated: Set<Object3D>): boolean {
+  if (animated.size === 0) return false;
+  let current: Object3D | null = object;
+  while (current) {
+    if (animated.has(current)) return true;
+    current = current.parent;
+  }
+  return false;
+}
+
+function decide(mesh: MeshLike, policy: 'tagged' | 'auto', animated: Set<Object3D>): { kind: MeshKind; rule: string } {
   if (mesh.isSkinnedMesh) return { kind: 'skinned', rule: 'skinned-mesh' };
   if (mesh.morphTargetInfluences && mesh.morphTargetInfluences.length > 0) return { kind: 'morph', rule: 'morph-targets' };
   if (isShader(mesh.material)) return { kind: 'unsupported', rule: 'shader-material' };
   const tag = effectiveTag(mesh);
   if (tag === 'dynamic') return { kind: 'dynamic', rule: 'tag:dynamic' };
+  if (underAnimated(mesh, animated)) return { kind: 'dynamic', rule: 'animated' };
   const excluded = exclusionRule(mesh);
   if (excluded) return { kind: 'excluded', rule: excluded };
   if (tag === 'static') return { kind: 'static', rule: 'tag:static' };

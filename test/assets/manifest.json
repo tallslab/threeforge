@@ -1,0 +1,783 @@
+{
+  "assets": [
+    {
+      "name": "2CylinderEngine",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/2CylinderEngine/glTF-Binary/2CylinderEngine.glb",
+      "source": "KhronosGroup/glTF-Sample-Models (see the model's README for its licence)",
+      "tags": [
+        "many-meshes",
+        "shared-materials",
+        "cad"
+      ]
+    },
+    {
+      "name": "GearboxAssy",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/GearboxAssy/glTF-Binary/GearboxAssy.glb",
+      "source": "KhronosGroup/glTF-Sample-Models (see the model's README for its licence)",
+      "tags": [
+        "many-meshes",
+        "shared-materials",
+        "cad"
+      ]
+    },
+    {
+      "name": "ReciprocatingSaw",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/ReciprocatingSaw/glTF-Binary/ReciprocatingSaw.glb",
+      "source": "KhronosGroup/glTF-Sample-Models (see the model's README for its licence)",
+      "tags": [
+        "many-meshes",
+        "shared-materials",
+        "cad"
+      ]
+    },
+    {
+      "name": "Buggy",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/Buggy/glTF-Binary/Buggy.glb",
+      "source": "KhronosGroup/glTF-Sample-Models (see the model's README for its licence)",
+      "tags": [
+        "many-meshes",
+        "hierarchy",
+        "cad"
+      ]
+    },
+    {
+      "name": "VirtualCity",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/VirtualCity/glTF-Binary/VirtualCity.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "scene",
+        "many-meshes"
+      ]
+    },
+    {
+      "name": "Sponza",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Sponza/glTF/Sponza.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "scene",
+        "many-materials",
+        "textures"
+      ]
+    },
+    {
+      "name": "ABeautifulGame",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/ABeautifulGame/glTF-Binary/ABeautifulGame.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "scene",
+        "transmission",
+        "many-materials"
+      ]
+    },
+    {
+      "name": "LittlestTokyo",
+      "url": "https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/models/gltf/LittlestTokyo.glb",
+      "source": "mrdoob/three.js examples (see three.js examples for credits)",
+      "tags": [
+        "scene",
+        "draco",
+        "animated",
+        "many-meshes"
+      ]
+    },
+    {
+      "name": "collision-world",
+      "url": "https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/models/gltf/collision-world.glb",
+      "source": "mrdoob/three.js examples (see three.js examples for credits)",
+      "tags": [
+        "scene",
+        "level"
+      ]
+    },
+    {
+      "name": "CommercialRefrigerator",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CommercialRefrigerator/glTF-Binary/CommercialRefrigerator.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "scene",
+        "textures"
+      ]
+    },
+    {
+      "name": "Soldier",
+      "url": "https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/models/gltf/Soldier.glb",
+      "source": "mrdoob/three.js examples (see three.js examples for credits)",
+      "tags": [
+        "skinned",
+        "animated"
+      ]
+    },
+    {
+      "name": "Xbot",
+      "url": "https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/models/gltf/Xbot.glb",
+      "source": "mrdoob/three.js examples (see three.js examples for credits)",
+      "tags": [
+        "skinned",
+        "animated"
+      ]
+    },
+    {
+      "name": "RobotExpressive",
+      "url": "https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/models/gltf/RobotExpressive/RobotExpressive.glb",
+      "source": "mrdoob/three.js examples (see three.js examples for credits)",
+      "tags": [
+        "skinned",
+        "morph",
+        "animated"
+      ]
+    },
+    {
+      "name": "kira",
+      "url": "https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/models/gltf/kira.glb",
+      "source": "mrdoob/three.js examples (see three.js examples for credits)",
+      "tags": [
+        "skinned",
+        "many-materials"
+      ]
+    },
+    {
+      "name": "facecap",
+      "url": "https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/models/gltf/facecap.glb",
+      "source": "mrdoob/three.js examples (see three.js examples for credits)",
+      "tags": [
+        "morph",
+        "animated"
+      ]
+    },
+    {
+      "name": "Flamingo",
+      "url": "https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/models/gltf/Flamingo.glb",
+      "source": "mrdoob/three.js examples (see three.js examples for credits)",
+      "tags": [
+        "morph",
+        "animated"
+      ]
+    },
+    {
+      "name": "Horse",
+      "url": "https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/models/gltf/Horse.glb",
+      "source": "mrdoob/three.js examples (see three.js examples for credits)",
+      "tags": [
+        "morph",
+        "animated"
+      ]
+    },
+    {
+      "name": "Parrot",
+      "url": "https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/models/gltf/Parrot.glb",
+      "source": "mrdoob/three.js examples (see three.js examples for credits)",
+      "tags": [
+        "morph",
+        "animated"
+      ]
+    },
+    {
+      "name": "Stork",
+      "url": "https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/models/gltf/Stork.glb",
+      "source": "mrdoob/three.js examples (see three.js examples for credits)",
+      "tags": [
+        "morph",
+        "animated"
+      ]
+    },
+    {
+      "name": "Fox",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Fox/glTF-Binary/Fox.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "skinned",
+        "animated"
+      ]
+    },
+    {
+      "name": "CesiumMan",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/glTF-Binary/CesiumMan.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "skinned",
+        "animated"
+      ]
+    },
+    {
+      "name": "BrainStem",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/BrainStem/glTF-Binary/BrainStem.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "skinned",
+        "animated",
+        "many-materials"
+      ]
+    },
+    {
+      "name": "BrainStem-Meshopt",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/BrainStem/glTF-Meshopt/BrainStem.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "skinned",
+        "meshopt"
+      ]
+    },
+    {
+      "name": "RiggedFigure",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/RiggedFigure/glTF-Binary/RiggedFigure.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "skinned"
+      ]
+    },
+    {
+      "name": "RecursiveSkeletons",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/RecursiveSkeletons/glTF-Binary/RecursiveSkeletons.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "skinned",
+        "hierarchy"
+      ]
+    },
+    {
+      "name": "SimpleSkin",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/SimpleSkin/glTF/SimpleSkin.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "skinned",
+        "minimal"
+      ]
+    },
+    {
+      "name": "MorphStressTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/MorphStressTest/glTF-Binary/MorphStressTest.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "morph",
+        "animated"
+      ]
+    },
+    {
+      "name": "AnimatedMorphCube",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/AnimatedMorphCube/glTF-Binary/AnimatedMorphCube.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "morph",
+        "animated"
+      ]
+    },
+    {
+      "name": "AnimatedMorphCube-Quantized",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/AnimatedMorphCube/glTF-Quantized/AnimatedMorphCube.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "morph",
+        "quantized"
+      ]
+    },
+    {
+      "name": "MorphPrimitivesTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/MorphPrimitivesTest/glTF-Binary/MorphPrimitivesTest.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "morph",
+        "multi-primitive"
+      ]
+    },
+    {
+      "name": "SimpleMorph",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/SimpleMorph/glTF/SimpleMorph.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "morph",
+        "minimal"
+      ]
+    },
+    {
+      "name": "BoxAnimated",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/BoxAnimated/glTF-Binary/BoxAnimated.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "animated",
+        "node-animation"
+      ]
+    },
+    {
+      "name": "InterpolationTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/InterpolationTest/glTF-Binary/InterpolationTest.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "animated",
+        "node-animation"
+      ]
+    },
+    {
+      "name": "AnimatedTriangle",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/AnimatedTriangle/glTF/AnimatedTriangle.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "animated",
+        "minimal"
+      ]
+    },
+    {
+      "name": "NegativeScaleTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/NegativeScaleTest/glTF-Binary/NegativeScaleTest.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "negative-scale"
+      ]
+    },
+    {
+      "name": "TextureTransformTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/TextureTransformTest/glTF/TextureTransformTest.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "texture-transform"
+      ]
+    },
+    {
+      "name": "TextureTransformMultiTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/TextureTransformMultiTest/glTF-Binary/TextureTransformMultiTest.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "texture-transform"
+      ]
+    },
+    {
+      "name": "VertexColorTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/VertexColorTest/glTF-Binary/VertexColorTest.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "vertex-colors"
+      ]
+    },
+    {
+      "name": "MultiUVTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/MultiUVTest/glTF-Binary/MultiUVTest.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "uv1"
+      ]
+    },
+    {
+      "name": "AlphaBlendModeTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/AlphaBlendModeTest/glTF-Binary/AlphaBlendModeTest.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "transparent",
+        "alpha-mask"
+      ]
+    },
+    {
+      "name": "CompareAlphaCoverage",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CompareAlphaCoverage/glTF-Binary/CompareAlphaCoverage.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "transparent"
+      ]
+    },
+    {
+      "name": "UnlitTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/UnlitTest/glTF-Binary/UnlitTest.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "unlit"
+      ]
+    },
+    {
+      "name": "BoxInterleaved",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/BoxInterleaved/glTF-Binary/BoxInterleaved.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "interleaved"
+      ]
+    },
+    {
+      "name": "BoxTextured",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/BoxTextured/glTF-Binary/BoxTextured.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "textures",
+        "minimal"
+      ]
+    },
+    {
+      "name": "Box",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Box/glTF-Binary/Box.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "minimal"
+      ]
+    },
+    {
+      "name": "Triangle",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Triangle/glTF/Triangle.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "minimal"
+      ]
+    },
+    {
+      "name": "SimpleInstancing",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/SimpleInstancing/glTF-Binary/SimpleInstancing.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "gpu-instancing"
+      ]
+    },
+    {
+      "name": "MeshPrimitiveModes",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/MeshPrimitiveModes/glTF/MeshPrimitiveModes.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "points",
+        "lines"
+      ]
+    },
+    {
+      "name": "PrimitiveModeNormalsTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/PrimitiveModeNormalsTest/glTF/PrimitiveModeNormalsTest.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "points",
+        "lines"
+      ]
+    },
+    {
+      "name": "TwoSidedPlane",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/TwoSidedPlane/glTF/TwoSidedPlane.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "double-sided"
+      ]
+    },
+    {
+      "name": "Cameras",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Cameras/glTF/Cameras.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "cameras"
+      ]
+    },
+    {
+      "name": "LightsPunctualLamp",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/LightsPunctualLamp/glTF-Binary/LightsPunctualLamp.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "lights"
+      ]
+    },
+    {
+      "name": "NormalTangentTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/NormalTangentTest/glTF-Binary/NormalTangentTest.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "normal-map",
+        "tangents"
+      ]
+    },
+    {
+      "name": "TextureSettingsTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/TextureSettingsTest/glTF-Binary/TextureSettingsTest.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "textures",
+        "sampler"
+      ]
+    },
+    {
+      "name": "TextureEncodingTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/TextureEncodingTest/glTF-Binary/TextureEncodingTest.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "textures",
+        "colorspace"
+      ]
+    },
+    {
+      "name": "TextureLinearInterpolationTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/TextureLinearInterpolationTest/glTF-Binary/TextureLinearInterpolationTest.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "textures"
+      ]
+    },
+    {
+      "name": "EmissiveStrengthTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/EmissiveStrengthTest/glTF-Binary/EmissiveStrengthTest.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "emissive"
+      ]
+    },
+    {
+      "name": "MetalRoughSpheres",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/MetalRoughSpheres/glTF-Binary/MetalRoughSpheres.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "pbr",
+        "many-materials"
+      ]
+    },
+    {
+      "name": "SpecGlossVsMetalRough",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/SpecGlossVsMetalRough/glTF-Binary/SpecGlossVsMetalRough.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "pbr"
+      ]
+    },
+    {
+      "name": "XmpMetadataRoundedCube",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/XmpMetadataRoundedCube/glTF-Binary/XmpMetadataRoundedCube.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "metadata"
+      ]
+    },
+    {
+      "name": "ClearCoatTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/ClearCoatTest/glTF-Binary/ClearCoatTest.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "clearcoat"
+      ]
+    },
+    {
+      "name": "TransmissionTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/TransmissionTest/glTF-Binary/TransmissionTest.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "transmission"
+      ]
+    },
+    {
+      "name": "AttenuationTest",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/AttenuationTest/glTF-Binary/AttenuationTest.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "transmission",
+        "attenuation"
+      ]
+    },
+    {
+      "name": "DragonAttenuation",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/DragonAttenuation/glTF-Binary/DragonAttenuation.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "transmission",
+        "attenuation"
+      ]
+    },
+    {
+      "name": "MosquitoInAmber",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/MosquitoInAmber/glTF-Binary/MosquitoInAmber.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "transmission",
+        "textures"
+      ]
+    },
+    {
+      "name": "DiffuseTransmissionPlant",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/DiffuseTransmissionPlant/glTF-Binary/DiffuseTransmissionPlant.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "diffuse-transmission"
+      ]
+    },
+    {
+      "name": "SheenChair",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/SheenChair/glTF-Binary/SheenChair.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "sheen"
+      ]
+    },
+    {
+      "name": "GlamVelvetSofa",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/GlamVelvetSofa/glTF-Binary/GlamVelvetSofa.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "sheen",
+        "textures"
+      ]
+    },
+    {
+      "name": "IridescenceLamp",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/IridescenceLamp/glTF-Binary/IridescenceLamp.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "iridescence"
+      ]
+    },
+    {
+      "name": "CarbonFibre",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CarbonFibre/glTF-Binary/CarbonFibre.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "anisotropy"
+      ]
+    },
+    {
+      "name": "PotOfCoals",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/PotOfCoals/glTF-Binary/PotOfCoals.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "emissive",
+        "textures"
+      ]
+    },
+    {
+      "name": "StainedGlassLamp-JPG-PNG",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/StainedGlassLamp/glTF-JPG-PNG/StainedGlassLamp.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "transmission",
+        "textures"
+      ]
+    },
+    {
+      "name": "MaterialsVariantsShoe",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/MaterialsVariantsShoe/glTF-Binary/MaterialsVariantsShoe.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "material-variants"
+      ]
+    },
+    {
+      "name": "SunglassesKhronos",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/SunglassesKhronos/glTF-Binary/SunglassesKhronos.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "transmission",
+        "textures"
+      ]
+    },
+    {
+      "name": "DamagedHelmet",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/DamagedHelmet/glTF-Binary/DamagedHelmet.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "pbr",
+        "textures"
+      ]
+    },
+    {
+      "name": "FlightHelmet",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/FlightHelmet/glTF/FlightHelmet.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "pbr",
+        "textures",
+        "multi-material"
+      ]
+    },
+    {
+      "name": "SciFiHelmet",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/SciFiHelmet/glTF/SciFiHelmet.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "pbr",
+        "textures"
+      ]
+    },
+    {
+      "name": "Duck",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Duck/glTF-Binary/Duck.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "minimal",
+        "textures"
+      ]
+    },
+    {
+      "name": "Duck-Draco",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Duck/glTF-Draco/Duck.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "draco"
+      ]
+    },
+    {
+      "name": "Duck-Quantized",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Duck/glTF-Quantized/Duck.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "quantized"
+      ]
+    },
+    {
+      "name": "Avocado-Draco",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Avocado/glTF-Draco/Avocado.gltf",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "draco"
+      ]
+    },
+    {
+      "name": "Lantern",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Lantern/glTF-Binary/Lantern.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "pbr",
+        "textures"
+      ]
+    },
+    {
+      "name": "Corset",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Corset/glTF-Binary/Corset.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "pbr"
+      ]
+    },
+    {
+      "name": "BoomBox",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/BoomBox/glTF-Binary/BoomBox.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "pbr"
+      ]
+    },
+    {
+      "name": "WaterBottle",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/WaterBottle/glTF-Binary/WaterBottle.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "pbr"
+      ]
+    },
+    {
+      "name": "ToyCar",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/ToyCar/glTF-Binary/ToyCar.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "pbr",
+        "many-materials",
+        "transmission"
+      ]
+    },
+    {
+      "name": "AntiqueCamera",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/AntiqueCamera/glTF-Binary/AntiqueCamera.glb",
+      "source": "KhronosGroup/glTF-Sample-Assets (see the model's README for its licence)",
+      "tags": [
+        "pbr"
+      ]
+    },
+    {
+      "name": "ShaderBall",
+      "url": "https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/models/gltf/ShaderBall.glb",
+      "source": "mrdoob/three.js examples (see three.js examples for credits)",
+      "tags": [
+        "pbr"
+      ]
+    },
+    {
+      "name": "IridescentDishWithOlives",
+      "url": "https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/models/gltf/IridescentDishWithOlives.glb",
+      "source": "mrdoob/three.js examples (see three.js examples for credits)",
+      "tags": [
+        "iridescence",
+        "transmission"
+      ]
+    }
+  ]
+}

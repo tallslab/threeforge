@@ -11,7 +11,7 @@ export { computeMaterialKeys, hashKey, type MaterialKeys } from './registry/mate
 export { DrawCallLedger, type DrawCallLedgerOptions, type LedgerRenderer } from './ledger/DrawCallLedger.js';
 export type { Flag, Reason, SubmissionKind } from './ledger/reasons.js';
 export type { BudgetOffender, BudgetResult, FrameSnapshot, FrameTotals, PassSnapshot, ProgramSnapshot, ReasonSnapshot, SubmissionRecord } from './ledger/snapshot.js';
-export { classify, exclusionRule, type Classification, type ClassifyOptions, type MeshKind } from './compiler/classify.js';
+export { classify, exclusionRule, animatedRoots, type Classification, type ClassifyOptions, type MeshKind } from './compiler/classify.js';
 export { attributeSignature, ensureIndexed, isBatchCompatible } from './compiler/geometryCompat.js';
 export { World, FORGE_HIDDEN_LAYER, type CompileOptions, type CompileReport, type WarmupRenderer, type WorldOptions } from './compiler/World.js';
 export type { GroupReport, Slot } from './compiler/batchStatics.js';

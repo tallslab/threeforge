@@ -356,3 +356,21 @@ describe('World instancing', () => {
     expect(meshesIn(scene)).toHaveLength(70);
   });
 });
+
+describe('World and the ledger under policy auto', () => {
+  it('annotates lone statics as unique-material so the ledger does not call them untagged', () => {
+    const { scene, camera } = sceneWithCamera();
+    const lonely = new Mesh(box, solid(0xabcdef));
+    lonely.name = 'lonely';
+    const other = new Mesh(box, new MeshStandardMaterial({ map: texture }));
+    other.name = 'other';
+    scene.add(lonely, other);
+    const renderer = new FakeRenderer();
+    const ledger = new DrawCallLedger();
+    ledger.attach(renderer as never);
+    new World(scene, { ledger, policy: 'auto' }).compile();
+    renderer.render(scene, camera);
+    const reasons = Object.fromEntries((ledger.frame({ items: true }).items ?? []).filter((i) => i.reason !== 'renderer-internal').map((i) => [i.name, i.reason]));
+    expect(reasons).toEqual({ lonely: 'unique-material', other: 'unique-material' });
+  });
+});

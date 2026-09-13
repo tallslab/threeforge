@@ -1,4 +1,4 @@
-import { BoxGeometry, Mesh, MeshBasicMaterial, Vector3, WebGLCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Texture } from 'three';
+import { BoxGeometry, Mesh, MeshBasicMaterial, Vector3, WebGLCoordinateSystem, type AnimationClip, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Texture } from 'three';
 import type { DrawCallLedger } from '../ledger/DrawCallLedger.js';
 import { displayName } from '../ledger/reasons.js';
 import { MaterialRegistry, type RegistryStats } from '../registry/MaterialRegistry.js';
@@ -38,6 +38,8 @@ export interface WorldOptions {
    * Costs one cheap submission per target. Needs a renderer with `isOccluded()` (WebGPURenderer, either backend).
    */
   occlusion?: boolean;
+  /** Clips that will drive this scene (e.g. `gltf.animations`); their targets and descendants stay dynamic. */
+  animations?: AnimationClip[];
 }
 
 export interface CompileOptions {
@@ -100,6 +102,7 @@ export class World {
   private readonly chunkSize: number | undefined;
   private readonly lod: { distances: number[] } | null;
   private readonly occlusion: boolean;
+  private readonly animations: AnimationClip[];
   private occluders: OcclusionEntry[] = [];
   private occlusionRestores: (() => void)[] = [];
   private cullingHandles = new Map<BatchedMesh, CullingHandle>();
@@ -125,6 +128,7 @@ export class World {
     this.chunkSize = options.chunkSize;
     this.lod = options.lod ?? null;
     this.occlusion = options.occlusion ?? false;
+    this.animations = options.animations ?? [];
   }
 
   get instancedMeshes(): readonly InstancedMesh[] {
@@ -143,7 +147,7 @@ export class World {
   compile(options: CompileOptions = {}): CompileReport {
     if (this.compiled) throw new Error('World is already compiled; call decompile() first.');
     const coordinateSystem = options.coordinateSystem ?? WebGLCoordinateSystem;
-    const classifications = classify(this.scene, { policy: this.policy });
+    const classifications = classify(this.scene, { policy: this.policy, animations: this.animations });
     const before = {
       meshes: classifications.length,
       materials: new Set(classifications.flatMap((c) => (Array.isArray(c.object.material) ? c.object.material : [c.object.material]))).size,
@@ -192,6 +196,8 @@ export class World {
       if (c.kind === 'dynamic') rule = syncRule.get(c.object) ?? rule;
       skipped.push({ name: displayName(c.object, this.scene), rule });
       if (c.kind === 'excluded') this.ledger?.annotate(c.object, `excluded:${c.rule}`);
+      // A static with nothing to share a draw with: the ledger should say why, even under policy 'auto'.
+      if (c.kind === 'static') this.ledger?.annotate(c.object, 'unique-material');
       this.canonicalise(c.object);
     }
 

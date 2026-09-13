@@ -28,7 +28,9 @@
     "e2e": "playwright test",
     "budget": "playwright test test/e2e/budget.spec.ts --project=webgl2",
     "spike": "playwright test test/e2e/spike-scene-optimizer.spec.ts --project=webgl2",
-    "dev": "vite --config vite.config.ts"
+    "dev": "vite --config vite.config.ts",
+    "assets": "node scripts/fetch-assets.mjs",
+    "assets:report": "playwright test test/e2e/assets.spec.ts --project=webgl2"
   },
   "peerDependencies": {
     "three": ">=0.180.0"
@@ -36,7 +38,9 @@
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "@types/node": "^22.0.0",
+    "@types/pngjs": "^6.0.5",
     "@types/three": "0.186.0",
+    "pngjs": "^7.0.0",
     "three": "0.186.0",
     "typescript": "~5.9.3",
     "vite": "^8.3.0",

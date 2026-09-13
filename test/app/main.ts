@@ -1,10 +1,11 @@
-import { BatchedMesh, BoxGeometry, Color, Frustum, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Vector3 } from 'three';
+import { AmbientLight, AnimationMixer, BatchedMesh, Box3, BoxGeometry, Color, DirectionalLight, Frustum, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Sphere, Vector3, type AnimationClip } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import { DrawCallLedger, MaterialRegistry, World, assembleCharacter, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot } from 'threeforge';
 import { createOverlay } from 'threeforge/overlay';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
 import { buildFieldScene, type FieldScene } from '../scenes/field.js';
 import { buildCharacter, type CharacterParts } from '../scenes/character.js';
+import { buildBiome, type Biome } from './biome.js';
 
 export type BackendName = 'webgl2' | 'webgpu';
 
@@ -32,6 +33,21 @@ export interface SpikeResult {
   indexed: SpikeRun;
 }
 
+export interface GltfInfo {
+  name: string;
+  meshes: number;
+  materials: number;
+  vertices: number;
+  triangles: number;
+  animations: number;
+  skinned: number;
+  morph: number;
+  instanced: number;
+  linesPoints: number;
+  radius: number;
+  loadMs: number;
+}
+
 export interface ForgeHarness {
   ready: boolean;
   error?: string;
@@ -46,6 +62,9 @@ export interface ForgeHarness {
   field?: FieldScene;
   character?: CharacterParts;
   assembled?: AssembledCharacter;
+  /** Loaded glTF asset summary when `scene=gltf&asset=<name>`. */
+  gltf?: GltfInfo;
+  biome?: Biome;
   compile(): CompileReport;
   decompile(): void;
   /** Cast a ray straight down from above (x, z) and resolve the hit through the world. */
@@ -96,7 +115,104 @@ try {
   let field: FieldScene | undefined;
   let character: CharacterParts | undefined;
   let assembled: AssembledCharacter | undefined;
-  if (sceneName === 'character') {
+  let gltfInfo: GltfInfo | undefined;
+  let biome: Biome | undefined;
+  let clips: AnimationClip[] = [];
+  if (params.get('freeze') === '1') {
+    // Freeze the clock so time-driven TSL materials (water) render identically across frames.
+    const frozen = performance.now();
+    performance.now = () => frozen;
+  }
+  const makeLoader = async () => {
+    const [{ GLTFLoader }, { DRACOLoader }, { KTX2Loader }, { MeshoptDecoder }] = await Promise.all([
+      import('three/addons/loaders/GLTFLoader.js'),
+      import('three/addons/loaders/DRACOLoader.js'),
+      import('three/addons/loaders/KTX2Loader.js'),
+      import('meshoptimizer/decoder'),
+    ]);
+    const loader = new GLTFLoader();
+    const draco = new DRACOLoader();
+    draco.setDecoderPath('/_decoders/draco/');
+    loader.setDRACOLoader(draco);
+    const ktx2 = new KTX2Loader();
+    ktx2.setTranscoderPath('/_decoders/basis/');
+    await ktx2.detectSupportAsync(renderer);
+    loader.setKTX2Loader(ktx2);
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    return loader;
+  };
+  if (sceneName === 'biome') {
+    const [{ RoomEnvironment }, { PMREMGenerator }] = await Promise.all([import('three/addons/environments/RoomEnvironment.js'), import('three/webgpu')]);
+    const loader = await makeLoader();
+    biome = await buildBiome({ loader, density: Number(params.get('density') ?? '1'), water: params.get('water') !== '0', hiPoly: params.get('hipoly') !== '0' });
+    scene = biome.scene;
+    const pmrem = new PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    camera.near = 2;
+    camera.far = 2500;
+    camera.position.set(-140, 150, 420);
+    camera.lookAt(60, 10, 0);
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
+  } else if (sceneName === 'gltf') {
+    const assetName = params.get('asset') ?? '';
+    const lists = await Promise.all(
+      ['/index.json', '/kits-index.json'].map((u) => fetch(u).then((r) => (r.ok ? r.json() : [])).catch(() => [])),
+    );
+    const entry = (lists.flat() as Array<{ name: string; entry?: string; error?: string }>).find((a) => a.name === assetName);
+    if (!entry?.entry) throw new Error(`asset "${assetName}" not found in test/assets/files (run pnpm assets)`);
+    const [{ RoomEnvironment }, { PMREMGenerator }] = await Promise.all([import('three/addons/environments/RoomEnvironment.js'), import('three/webgpu')]);
+    const loader = await makeLoader();
+    const t0 = performance.now();
+    const gltf = await loader.loadAsync('/' + entry.entry);
+    const loadMs = performance.now() - t0;
+    scene = new Scene();
+    scene.background = new Color(0x202830);
+    scene.add(gltf.scene);
+    const pmrem = new PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    const key = new DirectionalLight(0xffffff, 1.5);
+    key.position.set(1, 2, 1.5);
+    scene.add(new AmbientLight(0xffffff, 0.2), key);
+    clips = gltf.animations;
+    if (clips.length > 0) {
+      const mixer = new AnimationMixer(gltf.scene);
+      for (const clip of clips) mixer.clipAction(clip).play();
+      mixer.setTime(0.7); // a deterministic mid-animation pose
+    }
+    scene.updateMatrixWorld(true);
+    const box = new Box3().setFromObject(gltf.scene);
+    const sphere = box.getBoundingSphere(new Sphere());
+    const radius = Math.max(sphere.radius, 1e-3);
+    camera.near = radius / 100;
+    camera.far = radius * 50;
+    camera.position.copy(sphere.center).add(new Vector3(0.7, 0.45, 1).normalize().multiplyScalar((radius / Math.sin((camera.fov * Math.PI) / 360)) * 1.05));
+    camera.lookAt(sphere.center);
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
+    let meshes = 0;
+    let vertices = 0;
+    let triangles = 0;
+    let skinned = 0;
+    let morph = 0;
+    let instanced = 0;
+    let linesPoints = 0;
+    const materials = new Set<unknown>();
+    gltf.scene.traverse((o) => {
+      const m = o as Mesh & { isSkinnedMesh?: boolean; isInstancedMesh?: boolean; isLine?: boolean; isPoints?: boolean };
+      if (m.isLine || m.isPoints) linesPoints++;
+      if (!m.isMesh) return;
+      meshes++;
+      if (m.isSkinnedMesh) skinned++;
+      if (m.morphTargetInfluences?.length) morph++;
+      if (m.isInstancedMesh) instanced++;
+      for (const mat of Array.isArray(m.material) ? m.material : [m.material]) materials.add(mat);
+      const g = m.geometry;
+      vertices += g.attributes.position?.count ?? 0;
+      triangles += (g.index ? g.index.count : (g.attributes.position?.count ?? 0)) / 3;
+    });
+    gltfInfo = { name: assetName, meshes, materials: materials.size, vertices, triangles: Math.round(triangles), animations: clips.length, skinned, morph, instanced, linesPoints, radius, loadMs: Math.round(loadMs) };
+  } else if (sceneName === 'character') {
     scene = new Scene();
     scene.background = new Color(0x202830);
     character = buildCharacter();
@@ -227,9 +343,13 @@ try {
   const world = new World(scene, {
     registry,
     ledger,
+    policy: (params.get('policy') ?? (sceneName === 'gltf' ? 'auto' : 'tagged')) as 'auto' | 'tagged',
+    animations: clips,
     dynamics: params.get('dynamics') === 'batch-sync' ? 'batch-sync' : 'separate',
     ...(useLod ? { lod: { distances: [Number(params.get('lod0') ?? '200'), Number(params.get('lod1') ?? '600')] } } : {}),
     ...(params.has('chunk') ? { chunkSize: Number(params.get('chunk')) } : {}),
+    ...(params.get('culling') === 'linear' ? { culling: 'linear' as const } : {}),
+    ...(params.has('threshold') ? { instanceThreshold: Number(params.get('threshold')) } : {}),
     occlusion: params.get('occlusion') === '1',
   });
   const compile = (): CompileReport => world.compile({ coordinateSystem: renderer.coordinateSystem });
@@ -258,11 +378,12 @@ try {
   if (params.get('animate') === '1') {
     renderer.setAnimationLoop(() => {
       if (naive) for (const d of naive.dynamics) d.rotation.y += 0.02;
+      if (biome) for (const car of biome.cars) car.position.x += Math.sin(car.rotation.y) * 0.3;
       renderer.render(scene, camera);
     });
   }
 
-  window.__forge = { ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, compile, decompile, raycastDown, renderOnce, frame, visibleMeshes, spikeSceneOptimizer };
+  window.__forge = { ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, compile, decompile, raycastDown, renderOnce, frame, visibleMeshes, spikeSceneOptimizer };
 } catch (error) {
   window.__forge = { ready: false, error: error instanceof Error ? error.stack ?? error.message : String(error) } as ForgeHarness;
   throw error;

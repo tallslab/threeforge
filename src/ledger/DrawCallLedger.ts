@@ -11,6 +11,7 @@ export interface LedgerRenderer {
   renderObject(...args: unknown[]): unknown;
   info: { render: { drawCalls: number; triangles: number }; memory: { programs: number } };
   backend?: unknown;
+  getRenderTarget?(): { name?: string; texture?: { name?: string } } | null;
 }
 
 interface BackendLike {
@@ -178,9 +179,14 @@ export class DrawCallLedger {
     if (light) pass = `shadow:${light.name || light.type}`;
     else if ((scene as Scene).overrideMaterial) pass = 'override';
     else if (!isScene) pass = 'fullscreen';
-    else if (state.mainScene === null || state.mainScene === scene) {
+    else if (state.mainScene === null) {
       state.mainScene = scene;
       pass = 'main';
+    } else if (state.mainScene === scene) {
+      // A nested render of the main scene: reflections, portals, picking passes. Name it after its target.
+      const target = this.renderer?.getRenderTarget?.();
+      const name = target?.texture?.name || target?.name;
+      pass = `nested:${name || ++state.nestedScenes}`;
     } else pass = `scene:${scene.name || ++state.nestedScenes}`;
     this.contexts.push({ root: scene, pass });
     this.depth++;

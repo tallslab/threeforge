@@ -17,8 +17,9 @@ It is not an engine. Three.js renders; we rewrite naive scenes into batched ones
 - `pnpm e2e` — Playwright on both backends: `webgl2` (headless shell) and `webgpu` (native adapter on macOS/Windows via `FORGE_WEBGPU=native`, SwiftShader on Linux; see docs/design.md for the SwiftShader caveats). Includes the 20k-instance field scene (`test/scenes/field.ts`).
 - `pnpm budget` — fails when the naive scene compiles to more than `FORGE_BUDGET` (default 30) scene submissions.
 - `pnpm spike` — runs three's experimental `SceneOptimizer` on the naive scene for a baseline number.
+- `pnpm assets` then `pnpm assets:report` — downloads public glTF test content (gitignored) and compiles every model with pixel parity; `FORGE_ASSETS=Fox,Duck` limits the run. Read `docs/assets-report.md` before touching batching rules.
 - `pnpm typecheck`, `pnpm build` (tsc only, ESM, declarations).
-- `pnpm dev` — opens the test app. Query params: `scene=naive|field|empty`, `backend=webgl2|webgpu`, `compile=1`, `overlay=1&budget=30`, `animate=1`, `dynamics=batch-sync`, `lod=1`, `chunk=40`, `occlusion=1`, `wall=1`, `shadows=1`, `count=20000`.
+- `pnpm dev` — opens the test app. Query params: `scene=naive|field|character|gltf&asset=<name>|biome|empty`, `backend=webgl2|webgpu`, `compile=1`, `overlay=1&budget=30`, `animate=1`, `dynamics=batch-sync`, `lod=1`, `chunk=40`, `occlusion=1`, `wall=1`, `shadows=1`, `count=20000`.
 
 ## Layout
 

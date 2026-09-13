@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BoxGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, Scene, ShaderMaterial, SkinnedMesh } from 'three';
+import { BoxGeometry, Group, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, MeshStandardMaterial, Scene, ShaderMaterial, SkinnedMesh } from 'three';
 import { classify } from '../../src/compiler/classify.js';
 import { tag } from '../../src/tags.js';
 
@@ -80,6 +80,13 @@ describe('classify', () => {
     const hidden = tag.static(new Mesh(box, mat()));
     hidden.visible = false;
     expect(one(hidden)).toMatchObject({ kind: 'excluded', rule: 'invisible' });
+  });
+
+  it('excludes transmissive materials: three scales volume thickness by the object matrix, which a batch cannot reproduce', () => {
+    const glass = tag.static(new Mesh(box, new MeshPhysicalMaterial({ transmission: 0.8 })));
+    expect(one(glass)).toMatchObject({ kind: 'excluded', rule: 'transmission' });
+    const solidPhysical = tag.static(new Mesh(box, new MeshPhysicalMaterial({ transmission: 0, clearcoat: 1 })));
+    expect(one(solidPhysical)).toMatchObject({ kind: 'static' });
   });
 
   it('excludes mirrored meshes (negative world determinant) without requiring matrices to be updated first', () => {

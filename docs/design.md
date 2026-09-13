@@ -1,4 +1,4 @@
-# threeforge design (Phases 1 to 4)
+# threeforge design (Phases 1 to 5)
 
 ## The problem
 
@@ -144,6 +144,37 @@ shared skeleton; rig roots parented under a part are re-parented under it so the
 never change, so the draw count cannot. Limits: one colour map per part (normal/roughness maps are not
 atlassed), UVs outside [0, 1] are clamped rather than wrapped, and parts must share the body's bind pose.
 Measured: body + 4 gear = 5 skinned submissions become 1 on both backends, pixel parity within 1%.
+
+## Phase 5: public asset dogfooding
+
+`pnpm assets` downloads about 570 MB of CC0/permissively licensed test content into the gitignored
+`test/assets/files/`: 89 Khronos and three.js sample models (CAD assemblies, Sponza, animated Draco scenes, skinned
+and morphing characters, every material-extension test), five Kenney kits (594 low-poly GLBs sharing palette
+textures), fourteen Poly Haven hi-poly props, the three.js Ferrari and water normals. `pnpm assets:report` loads
+every model into the harness (`scene=gltf&asset=<name>`, Draco + meshopt + KTX2 loaders, room environment,
+camera fitted to the bounds, animations posed at 0.7 s), renders it naively, compiles it with `policy: 'auto'`
+and `animations: gltf.animations`, compares the two renders pixel by pixel, decompiles, and writes
+`docs/assets-report.{md,json}`. `scene=biome` assembles a stress scene from the kits: a 65k-vertex vertex-coloured
+heightfield, three's TSL `WaterMesh`, ~8,000 scattered nature props, a suburban block with roads, 41 dynamic cars
+plus the Ferrari, and a few hi-poly rocks and saplings.
+
+What the assets taught the compiler (each became a rule or a fix):
+
+- **Animated nodes** (`animations` option): any node targeted by a clip, with its descendants, is dynamic under
+  `policy: 'auto'`; otherwise LittlestTokyo's trains and cars would have been frozen into batches.
+- **GPU-instancing extension**: meshes that are already `InstancedMesh` are excluded (`already-instanced`).
+- **Transmission**: three derives volume thickness from the object matrix's scale; a batch or an instanced mesh
+  presents one matrix for all instances, so a whole row of AttenuationTest cubes rendered wrong. Materials with
+  `transmission > 0` are excluded (`transmission`).
+- **Reflections and other nested renders**: the ledger names a nested render of the main scene
+  `nested:<target>` instead of folding it into `main`, so water reflection cost is visible (the biome's reflection
+  pass adds ~3,700 submissions to a 17,000-submission frame).
+- **Harness, not library**: three's reflector fills its render target one frame late, so parity captures need a
+  warm-up frame; Playwright restarts its worker after a failing test, so per-asset report rows are merged on disk.
+- Lone meshes under `policy: 'auto'` are annotated `unique-material` rather than `untagged`.
+
+Biome on the WebGL2 backend: 20,943 naive submissions (17,191 main + reflection pass) become 443 with
+`dynamics: 'batch-sync'`, 20.4 M triangles, 30,731 instances of which 20,943 are drawn, 0.00 % pixels changed.
 
 ## WebGPU in the test harness
 
