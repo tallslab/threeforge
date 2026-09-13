@@ -26,7 +26,7 @@ Playwright is only needed for \`analyze\`, \`inspect\` and \`mcp\`; the library 
 
 | command | what it does |
 |---|---|
-| \`npx threeforge analyze <file.glb\\|.gltf> [--backend webgl2\\|webgpu] [--tier auto\\|desktop\\|phone-mid\\|phone-low] [--budget N] [--frames 30] [--no-compile] [--json]\` | Renders the asset headlessly, measures every cost category, compiles (batches) it, measures again, checks pixel parity, returns hints and a verdict. |
+| \`npx threeforge analyze <file.glb\\|.gltf> [--backend webgl2\\|webgpu] [--tier auto\\|desktop\\|phone-mid\\|phone-low] [--budget N] [--frames 30] [--no-compile] [--bake] [--bake-buried] [--views N] [--json]\` | Renders the asset headlessly, measures every cost category, compiles (batches, or bakes with \`--bake\`) it, measures again, checks pixel parity from the default framing plus \`--views\` orbit views, returns hints and a verdict. |
 | \`npx threeforge inspect <url> [--frames 30] [--compile] [--budget N] [--json]\` | Drives your running app (dev server) through \`window.__threeforge\`; same document without asset facts and parity. |
 | \`npx threeforge explain <hint-code> \\| --all [--json]\` | What a hint means, what to change, which API. |
 | \`npx threeforge schema [snapshot\\|analyze\\|inspect\\|all]\` | JSON Schemas (draft 2020-12) of everything the commands print. |
@@ -81,6 +81,16 @@ estimate, and \`hints\`. Read \`after\` when present, otherwise \`before\`.
 | code | category | severity | fix |
 |---|---|---|---|
 ${hintRows}
+
+## Bake (opt in, verify by pixels)
+
+\`--bake\` turns each finished static group into one mesh: seams between touching modules and duplicated faces
+are removed and matching vertices welded. \`--bake-buried\` also removes faces with solid geometry within 0.1
+units in front of them. A wrong deletion is visible and a missed one is invisible, so: run with \`--views 6\`,
+read \`parity.views\` (every view must stay under the threshold) and \`compile.bake\` (seams, duplicates, buried,
+welded counts). If a view changed, retry without \`--bake-buried\`, or exclude modules with
+\`mesh.userData.forgeBake = false\` in the app. In code: \`new World(scene, { bake: true | { removeBuried, tolerance } })\`,
+\`world.bakeDebug()\` returns the removed faces as meshes to render and screenshot.
 
 ## Budgets per device tier
 

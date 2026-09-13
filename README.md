@@ -11,7 +11,7 @@ by cost, not by genre:
 
 | Cost | The ledger measures | threeforge does (**shipped**) |
 |---|---|---|
-| Draw calls | submissions by reason, GPU draws, programs, triangles | **material registry, static batching, auto-instancing, spatial chunks, BVH culling, LOD, occlusion, character assembler** |
+| Draw calls | submissions by reason, GPU draws, programs, triangles | **material registry, static batching, group bake (seams, duplicates, buried faces, welding), auto-instancing, spatial chunks, BVH culling, LOD, occlusion, character assembler** |
 | Overdraw / fill rate | opaque and transparent fragments per pixel (measured, not estimated) | transparency budget, VFX conventions, particle caps, dynamic resolution (next) |
 | Skinning | skinned vertices, bones, skeletons | **gear merged onto one skeleton**; baked animation textures for crowds (next) |
 | Lighting & shadows | lights, shadow lights, casters, shadow texels | one sun + gradient sky day/night, shadow budget per tier (next) |
@@ -82,6 +82,26 @@ onto the shared rig (matched by bone name) into one skinned mesh with one atlas;
 the vertex buffer, never the draw count.
 
 Dev overlay: `import { createOverlay } from 'threeforge/overlay'; createOverlay(ledger, { budget: 30 })`.
+
+## Bake: one mesh per finished group
+
+`new World(scene, { bake: true })` turns each finished static group into one world-space mesh instead of a
+`BatchedMesh`: seams between touching modules (coplanar faces with the same outline and opposite winding) and
+duplicated faces are removed, and vertices are welded only where position, normal, uv and colour agree, so
+shading never changes. Originals stay editable: hiding a module (`world.setVisible`) rebakes its group,
+`resolve()` maps a hit face back to its module, `decompile()` restores everything.
+
+A wrong deletion is visible and a missed one is invisible, so the defaults are conservative and everything is
+inspectable:
+
+- `bake: { removeBuried: true }` (off by default) also drops faces with solid geometry right in front of them:
+  every sampled ray from the face must be blocked within `distance` (default 0.1 units along the normal), so
+  room interiors and open backsides survive; double-sided materials must be blocked on both sides.
+- `mesh.userData.forgeBake = false` passes a module through untouched.
+- The compile report's `bake` block counts seams, duplicates, buried faces and welded vertices per run, and
+  `world.bakeDebug()` returns the removed faces as red meshes you can add to the scene to look at them.
+- `npx threeforge analyze scene.glb --bake --views 6` bakes, then compares screenshots from the default framing
+  plus six orbit views; the verdict fails if any view changed. Agents should run this before trusting a bake.
 
 ## Benchmark suite
 

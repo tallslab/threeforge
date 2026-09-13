@@ -10,7 +10,8 @@ It is not an engine. Three.js renders; we rewrite naive scenes into batched ones
 3. Never overwrite `onBeforeRender` on a `BatchedMesh` or an instanced object. Those hooks do frustum culling and sorting; threeforge's own hooks compose via `prependRenderHook` and are marked with `FORGE_HOOK`.
 4. Run `pnpm budget` after every change that touches rendering and put the resulting `sceneSubmissions` number in the commit message.
 5. Never assert on `renderer.info.render.calls` (cumulative since app start) or raw `drawCalls` (backend dependent: N per BatchedMesh on WebGPU). Assert on `ledger.frame().totals.sceneSubmissions`.
-6. Run `pnpm bench` before merging anything that touches rendering. Baselines (`bench/baselines/*.json`) change only through `pnpm bench:baseline`, and the commit must say why the numbers moved. A measured snapshot must come from `frameAsync()`: shadow maps re-render once per animation-frame tick.
+6. The bake (`src/compiler/bake.ts`) must never change a pixel: a wrong deletion is visible, a missed one is invisible. New removal rules need a parity e2e on both backends (`test/e2e/bake.spec.ts`) and a counted entry in the report.
+7. Run `pnpm bench` before merging anything that touches rendering. Baselines (`bench/baselines/*.json`) change only through `pnpm bench:baseline`, and the commit must say why the numbers moved. A measured snapshot must come from `frameAsync()`: shadow maps re-render once per animation-frame tick.
 
 ## Commands
 
