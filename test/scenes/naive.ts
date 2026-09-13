@@ -269,6 +269,7 @@ export function buildNaiveScene(seed = 1): NaiveScene {
 
   const ambient = new AmbientLight(0xffffff, 0.5);
   const directional = new DirectionalLight(0xffffff, 2);
+  directional.name = 'sun';
   directional.position.set(40, 60, 30);
   directional.target.position.set(0, 0, 0);
   scene.add(ambient, directional, directional.target);

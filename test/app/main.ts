@@ -1,6 +1,7 @@
 import { BatchedMesh, Color, Frustum, Matrix4, Mesh, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Vector3 } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import { DrawCallLedger, MaterialRegistry, World, type CompileReport, type FrameSnapshot } from 'threeforge';
+import { createOverlay } from 'threeforge/overlay';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
 
 export type BackendName = 'webgl2' | 'webgpu';
@@ -168,10 +169,26 @@ try {
     return { drawsBefore, visibleBefore, asIsError, asIs, indexed };
   }
 
+  if (params.get('shadows') === '1' && naive) {
+    renderer.shadowMap.enabled = true;
+    const sun = naive.lights.directional;
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    const shadowCamera = sun.shadow.camera;
+    shadowCamera.left = shadowCamera.bottom = -140;
+    shadowCamera.right = shadowCamera.top = 140;
+    shadowCamera.near = 1;
+    shadowCamera.far = 400;
+    shadowCamera.updateProjectionMatrix();
+  }
+
   const world = new World(scene, { registry, ledger });
   const compile = (): CompileReport => world.compile();
   const decompile = (): void => world.decompile();
   if (params.get('compile') === '1') compile();
+  if (params.get('overlay') === '1') {
+    createOverlay(ledger, { budget: params.has('budget') ? Number(params.get('budget')) : undefined });
+  }
 
   function raycastDown(x: number, z: number): { hitCount: number; hitIsBatch: boolean; resolvedName: string | null } {
     const raycaster = new Raycaster(new Vector3(x, 60, z), new Vector3(0, -1, 0));
