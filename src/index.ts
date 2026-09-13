@@ -13,7 +13,7 @@ export type { Flag, Reason, SubmissionKind } from './ledger/reasons.js';
 export type { BudgetOffender, BudgetResult, FrameSnapshot, FrameTotals, PassSnapshot, ProgramSnapshot, ReasonSnapshot, SubmissionRecord } from './ledger/snapshot.js';
 export { classify, exclusionRule, animatedRoots, type Classification, type ClassifyOptions, type MeshKind } from './compiler/classify.js';
 export { attributeSignature, ensureIndexed, isBatchCompatible } from './compiler/geometryCompat.js';
-export { World, FORGE_HIDDEN_LAYER, type CompileOptions, type CompileReport, type WarmupRenderer, type WarmupResult, type WorldOptions } from './compiler/World.js';
+export { World, FORGE_HIDDEN_LAYER, type CompileOptions, type CompileReport, type WarmupOptions, type WarmupRenderer, type WarmupResult, type WorldOptions } from './compiler/World.js';
 export type { GroupReport, Slot } from './compiler/batchStatics.js';
 export { attachBvhCulling, prependAfterRenderHook, prependRenderHook, levelFor, FORGE_HOOK, type CullingHandle, type CullingLod, type CullingOptions, type NestedPassPolicy } from './compiler/culling.js';
 export { createCulledInstancedMesh, type CulledInstancedMesh, type InstanceCullingHandle, type InstancingOptions } from './compiler/instancing.js';

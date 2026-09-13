@@ -184,15 +184,24 @@ The same scene on the native WebGPU backend matches at 0.00 % too, after two bac
   (the depth material gives them their own bind group). `reuse-main` culls only for the outermost render's
   camera (tracked through scene hooks) and lets nested passes draw that list, one frame old, so the GPU data
   changes once per frame. Reflections may miss objects outside the main frustum; nothing renders corrupt.
-- **`compileAsync` and transmission.** `renderer.compileAsync()` on a scene with transmissive materials leaves
-  them rendering wrong afterwards in three r186 on both backends (CommercialRefrigerator's glass door changes
-  8.9 % of pixels; `initTexture` is harmless). It first looked WebGPU-only because the transmission backdrop
-  pass, like shadow maps, re-renders only once per node frameId, so same-task frames kept the pre-compile
-  backdrop. `world.warmup()` skips the pre-compilation for such scenes and reports `skipped: 'transmission'`.
+- **`compileAsync` mis-compiles two-pass materials.** In three r186 `Renderer.renderObject()` renders a
+  transparent `DoubleSide` material twice, flipping `material.side` to `BackSide` then `FrontSide` around each
+  `_handleObjectFunction` call (`_renderTransparents()` does the same for transmissive `DoubleSide`). During
+  `compileAsync()` that function only queues work items; they are built after `side` is back to `DoubleSide`
+  and after `_currentRenderContext` is null again. So both passes compile as single-pass DoubleSide (normals by
+  `gl_FrontFacing`, no culling: every face blended twice), and transmission's viewport texture node resolves a
+  framebuffer texture that no frame ever writes. The render objects are cached per pass and `material.needsUpdate`
+  does not replace them (same cache key); only `material.dispose()` does. Measured: CommercialRefrigerator's
+  glass 8.9 % of pixels, `polyhaven-fir_sapling_medium`'s 1.5 M-triangle alpha-blended foliage 0.63 %; batching
+  itself was pixel-exact all along (a hand-built `BatchedMesh` of the same leaves matched to 0.00 %).
+  `world.warmup()` therefore renders one real frame under a 1x1 scissor by default (same total cost, exact
+  pipelines), and `mode: 'async'` runs `compileAsync` then disposes and rebuilds the affected materials.
+  The bug hid on WebGL2 at first because shadow maps and the transmission backdrop re-render only once per node
+  frameId, which advances only on animation-frame ticks; frames separated by `frameAsync()` expose it.
+  Upstream repro and suggested fix: `docs/upstream-compileAsync.md`.
 
-Public asset report: WebGL2 104/104 clean; WebGPU 103/104, the exception being `polyhaven-fir_sapling_medium`
-(1.5 M triangles of alpha-tested foliage) at 0.64 % changed pixels with 0 unattributed draws, which reads as
-leaf-edge coverage differences from the changed draw order rather than missing or moved geometry.
+Public asset report: 104/104 clean on both backends (0 unattributed draws, < 0.5 % pixels changed, decompile
+restores the naive count).
 
 ## Phase 6: game content (combat, lighting, VFX, animation)
 

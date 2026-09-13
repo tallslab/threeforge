@@ -1,4 +1,4 @@
-import { BoxGeometry, Mesh, MeshBasicMaterial, Vector3, WebGLCoordinateSystem, WebGPUCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Texture } from 'three';
+import { BoxGeometry, DoubleSide, Mesh, MeshBasicMaterial, Vector3, Vector4, WebGLCoordinateSystem, WebGPUCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Texture } from 'three';
 import type { DrawCallLedger } from '../ledger/DrawCallLedger.js';
 import { displayName } from '../ledger/reasons.js';
 import { MaterialRegistry, type RegistryStats } from '../registry/MaterialRegistry.js';
@@ -69,18 +69,52 @@ export interface CompileReport {
 }
 
 export interface WarmupRenderer {
-  compileAsync(scene: Object3D, camera: Camera): Promise<unknown>;
+  render(scene: Object3D, camera: Camera): unknown;
+  renderAsync?(scene: Object3D, camera: Camera): Promise<unknown>;
+  compileAsync?(scene: Object3D, camera: Camera): Promise<unknown>;
   initTexture?(texture: Texture): void;
+  getScissor(target: Vector4): Vector4;
+  setScissor(x: number, y: number, width: number, height: number): void;
+  getScissorTest(): boolean;
+  setScissorTest(value: boolean): void;
   coordinateSystem?: CoordinateSystem;
 }
 
+export interface WarmupOptions {
+  /**
+   * `frame` (default) renders one real frame inside a 1x1 scissor: every pipeline the first visible frame needs
+   * is built exactly as that frame would build it. `async` pre-compiles with `renderer.compileAsync()` (yields
+   * between objects, so a loading screen keeps animating) and then rebuilds the materials three r186 compiles
+   * wrong that way, see `WarmupResult.repaired`.
+   */
+  mode?: 'frame' | 'async';
+}
+
 export interface WarmupResult {
-  /** Whether `compileAsync` ran. */
-  compiled: boolean;
+  /** Which strategy ran; `async` falls back to `frame` when the renderer has no `compileAsync`. */
+  mode: 'frame' | 'async';
   /** Textures handed to `initTexture`. */
   textures: number;
-  /** Why the warm-up was skipped, if it was. */
-  skipped: 'transmission' | null;
+  /**
+   * Materials whose render objects were discarded after `compileAsync` and rebuilt by the warm-up frame. In
+   * three r186 `compileAsync` queues `renderObject()` work and runs it after the renderer has restored
+   * `material.side`, so transparent double-sided materials and transmissive ones (which render in two passes)
+   * are compiled as single-pass DoubleSide, and transmission samples a viewport texture that is never written;
+   * `material.needsUpdate` cannot fix those cached render objects, only `material.dispose()` can.
+   */
+  repaired: number;
+}
+
+/**
+ * Materials three r186 renders in two passes (`renderObject()` flips `side` for transparent DoubleSide,
+ * `_renderTransparents()` for transmissive DoubleSide) or through a viewport texture (transmission, backdrop):
+ * `compileAsync()` builds their render objects after that state is gone.
+ */
+function compiledWrongByCompileAsync(material: Material): boolean {
+  const m = material as Material & { transmission?: number; transmissionNode?: unknown; backdropNode?: unknown };
+  const transmissive = (m.transmission ?? 0) > 0 || !!m.transmissionNode || !!m.backdropNode;
+  const doublePass = m.transparent && m.side === DoubleSide && m.forceSinglePass === false;
+  return transmissive || doublePass;
 }
 
 interface OriginalState {
@@ -359,28 +393,48 @@ export class World {
   }
 
   /**
-   * Compile shaders and upload textures now instead of on first render. Call after `compile()`.
-   * Skipped entirely when the scene contains transmissive materials: in three r186, `compileAsync` leaves those
-   * materials rendering wrong afterwards on both backends (verified against the Khronos CommercialRefrigerator,
-   * AttenuationTest and TransmissionTest assets once frames were separated by animation-frame ticks).
+   * Build shaders and upload textures now instead of on the first visible frame. Call after `compile()`.
+   * The default renders one real frame under a 1x1 scissor, which is the only way in three r186 to get exactly
+   * the pipelines the first frame will use: `compileAsync()` mis-compiles transparent double-sided and
+   * transmissive materials (see `WarmupResult.repaired`), so `mode: 'async'` runs it and then repairs those.
    */
-  async warmup(renderer: WarmupRenderer, camera: Camera): Promise<WarmupResult> {
+  async warmup(renderer: WarmupRenderer, camera: Camera, options: WarmupOptions = {}): Promise<WarmupResult> {
     const textures = new Set<Texture>();
-    let transmissive = false;
+    const materials = new Set<Material>();
     this.scene.traverse((o) => {
       const mesh = o as Mesh;
       if (!mesh.isMesh) return;
       for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
-        if (((material as Material & { transmission?: number }).transmission ?? 0) > 0) transmissive = true;
+        materials.add(material);
         for (const value of Object.values(material as unknown as Record<string, unknown>)) {
           if ((value as Texture | null)?.isTexture) textures.add(value as Texture);
         }
       }
     });
-    if (transmissive) return { compiled: false, textures: 0, skipped: 'transmission' };
     if (renderer.initTexture) for (const texture of textures) renderer.initTexture(texture);
-    await renderer.compileAsync(this.scene, camera);
-    return { compiled: true, textures: renderer.initTexture ? textures.size : 0, skipped: null };
+    const mode = options.mode === 'async' && renderer.compileAsync ? 'async' : 'frame';
+    let repaired = 0;
+    if (mode === 'async') {
+      await renderer.compileAsync!(this.scene, camera);
+      for (const material of materials) {
+        if (!compiledWrongByCompileAsync(material)) continue;
+        material.dispose(); // drops the renderer's cached render objects; the material stays usable
+        repaired++;
+      }
+    }
+    // One real frame, clipped to a single pixel: builds (or rebuilds) every pipeline the way `render()` does.
+    const scissor = renderer.getScissor(new Vector4());
+    const scissorTest = renderer.getScissorTest();
+    renderer.setScissor(0, 0, 1, 1);
+    renderer.setScissorTest(true);
+    try {
+      if (renderer.renderAsync) await renderer.renderAsync(this.scene, camera);
+      else renderer.render(this.scene, camera);
+    } finally {
+      renderer.setScissorTest(scissorTest);
+      renderer.setScissor(scissor.x, scissor.y, scissor.z, scissor.w);
+    }
+    return { mode, textures: renderer.initTexture ? textures.size : 0, repaired };
   }
 
   decompile(): void {

@@ -35,7 +35,7 @@ const world = new World(scene, {
   occlusion: true,           // optional: occlusion-query proxies per batch / instanced group
 });
 const report = world.compile({ coordinateSystem: renderer.coordinateSystem });
-await world.warmup(renderer, camera);         // optional: compile shaders + upload textures now
+await world.warmup(renderer, camera);         // optional: build shaders + upload textures now (see Warm-up)
 
 renderer.render(scene, camera);
 ledger.frame();                               // JSON snapshot: totals, passes, byReason, programs
@@ -51,6 +51,14 @@ onto the shared rig (matched by bone name) into one skinned mesh with one atlas;
 the vertex buffer, never the draw count.
 
 Dev overlay: `import { createOverlay } from 'threeforge/overlay'; createOverlay(ledger, { budget: 30 })`.
+
+## Warm-up
+
+`world.warmup(renderer, camera)` renders one real frame under a 1x1 scissor, so every pipeline the first visible
+frame needs is built exactly as that frame builds it. Pass `{ mode: 'async' }` to use `renderer.compileAsync()`
+instead (it yields between objects, so a loading screen keeps animating); threeforge then disposes the materials
+three r186 compiles wrong that way (transparent double-sided and transmissive ones, rendered in two passes) and
+rebuilds them in a scissored frame. The result reports `{ mode, textures, repaired }`.
 
 ## What the numbers mean
 

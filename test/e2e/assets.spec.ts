@@ -95,7 +95,7 @@ for (const asset of assets) {
     const compiled = await forge.page.evaluate(async () => {
       const f = window.__forge;
       const report = f.compile();
-      await f.world.warmup(f.renderer, f.camera); // new batch pipelines compile asynchronously on WebGPU
+      await f.world.warmup(f.renderer, f.camera); // build the new batch pipelines before measuring (one scissored frame)
       for (let i = 0; i < 3; i++) await f.frameAsync();
       const frame = f.frame();
       const skipped = new Map<string, number>();

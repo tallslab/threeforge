@@ -43,7 +43,7 @@ test('the biome (terrain, water, thousands of props, cars, hi-poly rocks) compil
     const t0 = performance.now();
     const report = f.compile();
     const compileMs = performance.now() - t0;
-    await f.world.warmup(f.renderer, f.camera); // compile the new batch pipelines before measuring (WebGPU compiles async)
+    await f.world.warmup(f.renderer, f.camera); // build the new batch pipelines before measuring
     for (let i = 0; i < 3; i++) await f.frameAsync();
     const frame = f.frame();
     const skipped = new Map<string, number>();
