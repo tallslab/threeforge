@@ -1,6 +1,6 @@
 import { REVISION, type Camera, type Light, type Material, type Object3D, type Scene } from 'three';
 import { MaterialRegistry } from '../registry/MaterialRegistry.js';
-import { expectedGpuDraws, type BackendInfo } from './expectedDraws.js';
+import { expectedGpuDraws, instanceCounts, type BackendInfo } from './expectedDraws.js';
 import { displayName, flagsOf, kindOf, reasonOf, type Reason } from './reasons.js';
 import { buildFrame, emptyFrame, type BudgetResult, type FrameSnapshot, type SubmissionRecord } from './snapshot.js';
 
@@ -78,6 +78,9 @@ export class DrawCallLedger {
       const record = ledger.begin(object, material, group);
       const result = originals.renderObject.apply(this, args);
       record.expectedGpuDraws = expectedGpuDraws(object, material, scene, ledger.backendInfo);
+      const counts = instanceCounts(object);
+      record.instances = counts.instances;
+      record.instancesDrawn = counts.instancesDrawn;
       ledger.current.items.push(record);
       return result;
     };
@@ -218,6 +221,8 @@ export class DrawCallLedger {
       reason,
       flags: reason === 'renderer-internal' ? [] : flagsOf(object, material),
       expectedGpuDraws: 0,
+      instances: 0,
+      instancesDrawn: 0,
       description: described.description,
     };
   }

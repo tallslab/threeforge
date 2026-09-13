@@ -5,7 +5,7 @@ import type { FrameSnapshot } from '../../src/ledger/snapshot.js';
 const frame: FrameSnapshot = {
   schemaVersion: 1,
   env: { three: '186', backend: 'webgl2', multiDraw: true },
-  totals: { submissions: 29, sceneSubmissions: 28, gpuDraws: 29, reportedDrawCalls: 29, unattributed: 0, programSwitches: 8, programs: 18, triangles: 1234 },
+  totals: { submissions: 29, sceneSubmissions: 28, gpuDraws: 29, reportedDrawCalls: 29, unattributed: 0, programSwitches: 8, programs: 18, triangles: 1234, instances: 512, instancesDrawn: 400, drawCommands: 413 },
   passes: [{ id: 'main', submissions: 29, gpuDraws: 29 }],
   byReason: {
     batched: { submissions: 15, gpuDraws: 15, top: ['forge:batch:aa:0'] },

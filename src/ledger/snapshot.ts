@@ -11,6 +11,10 @@ export interface SubmissionRecord {
   reason: Reason;
   flags: Flag[];
   expectedGpuDraws: number;
+  /** Instances this submission covers (BatchedMesh/InstancedMesh count, else 1). */
+  instances: number;
+  /** Instances that survived per-instance culling and were actually drawn. */
+  instancesDrawn: number;
 }
 
 export interface PassSnapshot {
@@ -47,6 +51,12 @@ export interface FrameTotals {
   /** `renderer.info.memory.programs` at the end of the frame. */
   programs: number;
   triangles: number;
+  /** Scene instances submitted (renderer-internal work excluded). */
+  instances: number;
+  /** Scene instances drawn after per-instance culling. */
+  instancesDrawn: number;
+  /** GPU draw commands regardless of API packaging: a multi-draw of N ranges is N commands, an instanced draw is 1. */
+  drawCommands: number;
 }
 
 export interface FrameSnapshot {
@@ -78,7 +88,7 @@ export function emptyFrame(env: FrameSnapshot['env']): FrameSnapshot {
   return {
     schemaVersion: 1,
     env,
-    totals: { submissions: 0, sceneSubmissions: 0, gpuDraws: 0, reportedDrawCalls: 0, unattributed: 0, programSwitches: 0, programs: 0, triangles: 0 },
+    totals: { submissions: 0, sceneSubmissions: 0, gpuDraws: 0, reportedDrawCalls: 0, unattributed: 0, programSwitches: 0, programs: 0, triangles: 0, instances: 0, instancesDrawn: 0, drawCommands: 0 },
     passes: [],
     byReason: {},
     programs: {},
@@ -100,12 +110,20 @@ export function buildFrame({ env, items, reportedDrawCalls, triangles, programs,
   const programMap = new Map<string, ProgramSnapshot>();
   let gpuDraws = 0;
   let sceneSubmissions = 0;
+  let instances = 0;
+  let instancesDrawn = 0;
+  let drawCommands = 0;
   let programSwitches = 0;
   let lastPass: string | null = null;
   let lastProgram: string | null = null;
 
   for (const item of items) {
     gpuDraws += item.expectedGpuDraws;
+    drawCommands += item.kind === 'batched' ? item.instancesDrawn : item.expectedGpuDraws;
+    if (item.reason !== 'renderer-internal') {
+      instances += item.instances;
+      instancesDrawn += item.instancesDrawn;
+    }
     let pass = passes.get(item.pass);
     if (!pass) passes.set(item.pass, (pass = { id: item.pass, submissions: 0, gpuDraws: 0 }));
     pass.submissions++;
@@ -149,6 +167,9 @@ export function buildFrame({ env, items, reportedDrawCalls, triangles, programs,
       programSwitches,
       programs,
       triangles,
+      instances,
+      instancesDrawn,
+      drawCommands,
     },
     passes: [...passes.values()],
     byReason: sortedKeys(byReason),

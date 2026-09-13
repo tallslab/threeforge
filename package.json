@@ -5,12 +5,20 @@
   "type": "module",
   "license": "MIT",
   "sideEffects": false,
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./overlay": { "types": "./dist/overlay/index.d.ts", "import": "./dist/overlay/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./overlay": {
+      "types": "./dist/overlay/index.d.ts",
+      "import": "./dist/overlay/index.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -22,7 +30,9 @@
     "spike": "playwright test test/e2e/spike-scene-optimizer.spec.ts --project=webgl2",
     "dev": "vite --config vite.config.ts"
   },
-  "peerDependencies": { "three": ">=0.180.0" },
+  "peerDependencies": {
+    "three": ">=0.180.0"
+  },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "@types/node": "^22.0.0",
@@ -32,6 +42,11 @@
     "vite": "^8.3.0",
     "vitest": "^5.0.0"
   },
-  "engines": { "node": ">=20" },
-  "packageManager": "pnpm@10.28.1"
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.28.1",
+  "dependencies": {
+    "bvh.js": "0.0.13"
+  }
 }

@@ -1,9 +1,10 @@
-import type { BatchedMesh, Camera, Intersection, Material, Mesh, Object3D, Scene, Texture } from 'three';
+import { WebGLCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type Intersection, type Material, type Mesh, type Object3D, type Scene, type Texture } from 'three';
 import type { DrawCallLedger } from '../ledger/DrawCallLedger.js';
 import { displayName } from '../ledger/reasons.js';
 import { MaterialRegistry, type RegistryStats } from '../registry/MaterialRegistry.js';
 import { batchStatics, type GroupReport, type Slot } from './batchStatics.js';
 import { classify, type Classification } from './classify.js';
+import { attachBvhCulling, type CullingHandle } from './culling.js';
 
 /** Hidden originals live on this layer: invisible to default cameras and default raycasters, matrices still valid. */
 export const FORGE_HIDDEN_LAYER = 31;
@@ -14,6 +15,13 @@ export interface WorldOptions {
   policy?: 'tagged' | 'auto';
   /** `hide` (default) keeps originals in the graph on the hidden layer; `detach` removes them. Both reversible. */
   originals?: 'hide' | 'detach';
+  /** `bvh` (default) installs O(log n) per-instance frustum culling on every batch; `linear` keeps three's scan. */
+  culling?: 'bvh' | 'linear';
+}
+
+export interface CompileOptions {
+  /** `renderer.coordinateSystem`; needed for BVH frustum planes. Defaults to WebGL. */
+  coordinateSystem?: CoordinateSystem;
 }
 
 export interface CompileReport {
@@ -22,6 +30,7 @@ export interface CompileReport {
   groups: GroupReport[];
   skipped: { name: string; rule: string }[];
   registry: RegistryStats;
+  culling: { mode: 'bvh' | 'linear'; coordinateSystem: CoordinateSystem };
 }
 
 export interface WarmupRenderer {
@@ -47,6 +56,8 @@ export class World {
   readonly ledger: DrawCallLedger | undefined;
   private readonly policy: 'tagged' | 'auto';
   private readonly originalsMode: 'hide' | 'detach';
+  private readonly cullingMode: 'bvh' | 'linear';
+  private cullingHandles = new Map<BatchedMesh, CullingHandle>();
   private batches: BatchedMesh[] = [];
   private slots = new Map<Mesh, Slot>();
   private originalsByBatch = new Map<BatchedMesh, Mesh[]>();
@@ -60,14 +71,21 @@ export class World {
     this.ledger = options.ledger;
     this.policy = options.policy ?? 'tagged';
     this.originalsMode = options.originals ?? 'hide';
+    this.cullingMode = options.culling ?? 'bvh';
+  }
+
+  /** The BVH culling handle for a batch, when `culling: 'bvh'` is active. */
+  cullingOf(batch: BatchedMesh): CullingHandle | undefined {
+    return this.cullingHandles.get(batch);
   }
 
   get batchedMeshes(): readonly BatchedMesh[] {
     return this.batches;
   }
 
-  compile(): CompileReport {
+  compile(options: CompileOptions = {}): CompileReport {
     if (this.compiled) throw new Error('World is already compiled; call decompile() first.');
+    const coordinateSystem = options.coordinateSystem ?? WebGLCoordinateSystem;
     const classifications = classify(this.scene, { policy: this.policy });
     const before = {
       meshes: classifications.length,
@@ -79,6 +97,9 @@ export class World {
     this.batches = result.batches;
     this.slots = result.slots;
     this.originalsByBatch = result.originals;
+    if (this.cullingMode === 'bvh') {
+      for (const batch of this.batches) this.cullingHandles.set(batch, attachBvhCulling(batch, coordinateSystem));
+    }
 
     // Record parent indices before touching the graph so detach/restore round-trips exactly.
     for (const mesh of result.slots.keys()) {
@@ -103,6 +124,7 @@ export class World {
       groups: result.groups,
       skipped,
       registry: this.registry.stats(),
+      culling: { mode: this.cullingMode, coordinateSystem },
     };
   }
 
@@ -127,6 +149,7 @@ export class World {
   decompile(): void {
     if (!this.compiled) return;
     for (const batch of this.batches) {
+      this.cullingHandles.get(batch)?.detach();
       batch.removeFromParent();
       (batch.material as Material).dispose();
       batch.dispose();
@@ -146,6 +169,7 @@ export class World {
     this.batches = [];
     this.slots = new Map();
     this.originalsByBatch = new Map();
+    this.cullingHandles = new Map();
     this.hidden = [];
     this.materialSwaps = [];
     this.compiled = false;

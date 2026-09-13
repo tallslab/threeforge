@@ -71,13 +71,20 @@ export function isDoubleSidedTransparent(material: Material): boolean {
 }
 
 const OWN = Object.prototype.hasOwnProperty;
+const FORGE_HOOK = Symbol.for('threeforge.hook');
+
+function isUserHook(object: Object3D, name: 'onBeforeRender' | 'onAfterRender'): boolean {
+  if (!OWN.call(object, name)) return false;
+  const fn = object[name] as unknown as Record<symbol, unknown>;
+  return fn[FORGE_HOOK] !== true;
+}
 
 export function flagsOf(object: Object3D, material: Material): Flag[] {
   const flags: Flag[] = [];
   if (object.castShadow) flags.push('shadow-caster');
   if (isDoubleSidedTransparent(material)) flags.push('double-sided-transparent');
-  // Own-property hooks are user-installed; BatchedMesh and friends define theirs on the prototype.
-  if (OWN.call(object, 'onBeforeRender') || OWN.call(object, 'onAfterRender')) flags.push('custom-hook');
+  // Own-property hooks are user-installed; BatchedMesh defines its own on the prototype and threeforge marks its hooks.
+  if (isUserHook(object, 'onBeforeRender') || isUserHook(object, 'onAfterRender')) flags.push('custom-hook');
   if (object.renderOrder !== 0) flags.push('render-order');
   if (object.layers.mask !== 1) flags.push('layers');
   if (material.transparent) flags.push('transparent');

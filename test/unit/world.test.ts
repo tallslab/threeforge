@@ -18,6 +18,7 @@ import {
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 import { FORGE_HIDDEN_LAYER, World } from '../../src/compiler/World.js';
+import { FORGE_HOOK } from '../../src/compiler/culling.js';
 import { tag } from '../../src/tags.js';
 import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
 
@@ -258,5 +259,33 @@ describe('World.resolve', () => {
     world.compile();
     const hit = { object: dynamic } as unknown as Parameters<World['resolve']>[0];
     expect(world.resolve(hit)).toBe(dynamic);
+  });
+});
+
+describe('World culling', () => {
+  const hasForgeHook = (b: BatchedMesh) =>
+    Object.prototype.hasOwnProperty.call(b, 'onBeforeRender') && (b.onBeforeRender as unknown as Record<symbol, unknown>)[FORGE_HOOK] === true;
+
+  it('installs BVH culling on every batch by default and removes it on decompile', () => {
+    const { scene } = mixedScene();
+    const world = new World(scene);
+    world.compile();
+    const batches = batchesIn(scene);
+    expect(batches.length).toBe(2);
+    expect(batches.every(hasForgeHook)).toBe(true);
+    world.decompile();
+    expect(batches.every((b) => !Object.prototype.hasOwnProperty.call(b, 'onBeforeRender'))).toBe(true);
+  });
+
+  it('leaves three\'s linear culling in place with culling: "linear"', () => {
+    const { scene } = mixedScene();
+    new World(scene, { culling: 'linear' }).compile();
+    expect(batchesIn(scene).some(hasForgeHook)).toBe(false);
+  });
+
+  it('reports the culling mode and coordinate system in the compile report', () => {
+    const { scene } = mixedScene();
+    const report = new World(scene).compile({ coordinateSystem: 2001 });
+    expect(report.culling).toEqual({ mode: 'bvh', coordinateSystem: 2001 });
   });
 });

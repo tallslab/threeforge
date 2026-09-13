@@ -4,6 +4,7 @@ import {
   DirectionalLight,
   DoubleSide,
   Group,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -156,6 +157,24 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
   });
 });
 
+describe('DrawCallLedger culling stats', () => {
+  it('reports instances submitted versus instances drawn after per-instance culling', () => {
+    const { renderer, ledger, scene, camera } = attached();
+    const batch = batchedOf(5, new MeshStandardMaterial(), box);
+    const far = new Matrix4().makeTranslation(1000, 0, 0);
+    batch.setMatrixAt(3, far);
+    batch.setMatrixAt(4, far);
+    scene.add(batch, tag.static(new Mesh(box, new MeshStandardMaterial())));
+    renderer.render(scene, camera);
+    const frame = ledger.frame({ items: true });
+    expect(frame.totals.instances).toBe(6);
+    expect(frame.totals.instancesDrawn).toBe(4);
+    expect(frame.totals.drawCommands).toBe(5); // 3 ranges of the batch + 1 mesh + 1 output quad
+    const item = frame.items?.find((i) => i.kind === 'batched');
+    expect(item).toMatchObject({ instances: 5, instancesDrawn: 3, expectedGpuDraws: 1 });
+  });
+});
+
 describe('DrawCallLedger frames and passes', () => {
   it('treats nested render() calls as passes of one frame and names shadow passes after their light', () => {
     const light = new DirectionalLight();
@@ -232,7 +251,7 @@ describe('DrawCallLedger snapshot, report and budget', () => {
     expect(json).not.toContain(`"id":${mesh.id}`);
     const frame = ledger.frame();
     expect(frame.schemaVersion).toBe(1);
-    expect(Object.keys(frame.totals).sort()).toEqual(['gpuDraws', 'programSwitches', 'programs', 'reportedDrawCalls', 'sceneSubmissions', 'submissions', 'triangles', 'unattributed']);
+    expect(Object.keys(frame.totals).sort()).toEqual(['drawCommands', 'gpuDraws', 'instances', 'instancesDrawn', 'programSwitches', 'programs', 'reportedDrawCalls', 'sceneSubmissions', 'submissions', 'triangles', 'unattributed']);
   });
 
   it('names unnamed objects by their scene path', () => {

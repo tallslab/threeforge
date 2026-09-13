@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      bvh.js:
+        specifier: 0.0.13
+        version: 0.0.13
     devDependencies:
       '@playwright/test':
         specifier: ^1.63.0
@@ -187,6 +191,9 @@ packages:
   assertion-error@2.0.1:
     resolution: {integrity: sha512-Izi8RQcffqCeNVgFigKli1ssklIbpHnCYc6AknXGYoB6grJqyeby7jv12JUQgmTAnIDnbck1uxksT4dzN3PWBA==}
     engines: {node: '>=12'}
+
+  bvh.js@0.0.13:
+    resolution: {integrity: sha512-7jVxKGyyATOwEoqFvghXoStJXkkmqf7JIXYEG44eMtMXQoeCwZL2n1z5/kZogFKvCaN7XweS2TKnqdyDrd0DJA==}
 
   chai@6.2.2:
     resolution: {integrity: sha512-NUPRluOfOiTKBKvWPtSD4PhFvWCqOi0BGStNWs57X9js7XGTprSmFoz5F0tWhR4WPjNeR9jXqdC7/UpSJTnlRg==}
@@ -565,6 +572,8 @@ snapshots:
   '@vitest/spy@5.0.0': {}
 
   assertion-error@2.0.1: {}
+
+  bvh.js@0.0.13: {}
 
   chai@6.2.2: {}
 

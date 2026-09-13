@@ -3,6 +3,7 @@ import { WebGPURenderer } from 'three/webgpu';
 import { DrawCallLedger, MaterialRegistry, World, type CompileReport, type FrameSnapshot } from 'threeforge';
 import { createOverlay } from 'threeforge/overlay';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
+import { buildFieldScene, type FieldScene } from '../scenes/field.js';
 
 export type BackendName = 'webgl2' | 'webgpu';
 
@@ -41,6 +42,7 @@ export interface ForgeHarness {
   ledger: DrawCallLedger;
   world: World;
   naive?: NaiveScene;
+  field?: FieldScene;
   compile(): CompileReport;
   decompile(): void;
   /** Cast a ray straight down from above (x, z) and resolve the hit through the world. */
@@ -88,7 +90,15 @@ try {
 
   let scene: Scene;
   let naive: NaiveScene | undefined;
-  if (sceneName === 'empty') {
+  let field: FieldScene | undefined;
+  if (sceneName === 'field') {
+    field = buildFieldScene({ count: Number(params.get('count') ?? '20000') });
+    scene = field.scene;
+    scene.background = new Color(0x202830);
+    camera.position.set(0, 2, 0);
+    camera.lookAt(100, 1, 0);
+    camera.updateMatrixWorld();
+  } else if (sceneName === 'empty') {
     scene = new Scene();
     scene.background = new Color(0x202830);
   } else if (sceneName === 'naive') {
@@ -183,7 +193,7 @@ try {
   }
 
   const world = new World(scene, { registry, ledger });
-  const compile = (): CompileReport => world.compile();
+  const compile = (): CompileReport => world.compile({ coordinateSystem: renderer.coordinateSystem });
   const decompile = (): void => world.decompile();
   if (params.get('compile') === '1') compile();
   if (params.get('overlay') === '1') {
@@ -213,7 +223,7 @@ try {
     });
   }
 
-  window.__forge = { ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, compile, decompile, raycastDown, renderOnce, frame, visibleMeshes, spikeSceneOptimizer };
+  window.__forge = { ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, compile, decompile, raycastDown, renderOnce, frame, visibleMeshes, spikeSceneOptimizer };
 } catch (error) {
   window.__forge = { ready: false, error: error instanceof Error ? error.stack ?? error.message : String(error) } as ForgeHarness;
   throw error;
