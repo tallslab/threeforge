@@ -2,6 +2,7 @@ import { REVISION, type Camera, type Light, type Material, type Object3D, type S
 import { MaterialRegistry } from '../registry/MaterialRegistry.js';
 import { expectedGpuDraws, instanceCounts, type BackendInfo } from './expectedDraws.js';
 import { displayName, flagsOf, kindOf, reasonOf, type Reason } from './reasons.js';
+import { scanLights, type LightInfo } from './sections.js';
 import { buildFrame, emptyFrame, type BudgetResult, type FrameEnv, type FrameSnapshot, type SubmissionRecord, type Tier } from './snapshot.js';
 
 /** The slice of three's common Renderer the ledger patches and reads. Structural so tests can fake it. */
@@ -40,6 +41,7 @@ interface FrameState {
   scannedScenes: Set<Object3D>;
   nestedScenes: number;
   skeletons: Map<unknown, number>;
+  lights: LightInfo[];
 }
 
 /**
@@ -172,6 +174,7 @@ export class DrawCallLedger {
         scannedScenes: new Set(),
         nestedScenes: 0,
         skeletons: new Map(),
+        lights: [],
       };
     }
     const state = this.current!;
@@ -182,6 +185,7 @@ export class DrawCallLedger {
         const light = o as Light & { shadow?: { camera?: Camera } };
         if (light.isLight && light.shadow?.camera) state.shadowCameras.set(light.shadow.camera, light);
       });
+      if (state.mainScene === null) state.lights = scanLights(scene);
     }
     let pass: string;
     const light = state.shadowCameras.get(camera);
@@ -217,6 +221,7 @@ export class DrawCallLedger {
       triangles: this.renderer.info.render.triangles - this.current.trianglesStart,
       programs: this.renderer.info.memory.programs,
       descriptions,
+      lights: this.current.lights,
     });
     this.current = null;
   }

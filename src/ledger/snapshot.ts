@@ -1,4 +1,5 @@
 import type { Flag, Reason, SubmissionKind } from './reasons.js';
+import { lightingOf, skinningOf, type LightInfo } from './sections.js';
 
 export interface SubmissionRecord {
   name: string;
@@ -197,9 +198,11 @@ export interface FrameInput {
   triangles: number;
   programs: number;
   descriptions: Map<string, { type: string; description: string }>;
+  /** Visible lights of the main scene (see `scanLights`). */
+  lights?: LightInfo[];
 }
 
-export function buildFrame({ env, items, reportedDrawCalls, triangles, programs, descriptions }: FrameInput): FrameSnapshot {
+export function buildFrame({ env, items, reportedDrawCalls, triangles, programs, descriptions, lights = [] }: FrameInput): FrameSnapshot {
   const passes = new Map<string, PassSnapshot>();
   const byReason = new Map<string, ReasonSnapshot>();
   const programMap = new Map<string, ProgramSnapshot>();
@@ -254,6 +257,8 @@ export function buildFrame({ env, items, reportedDrawCalls, triangles, programs,
     schemaVersion: 2,
     env,
     ...emptySections(),
+    skinning: skinningOf(items),
+    lighting: lightingOf(lights, items),
     totals: {
       submissions: items.length,
       sceneSubmissions,
