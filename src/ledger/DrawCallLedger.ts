@@ -22,7 +22,13 @@ interface BackendLike {
 
 export interface DrawCallLedgerOptions {
   registry?: MaterialRegistry;
+  /** Clock for the js section (defaults to `performance.now`). */
+  now?: () => number;
 }
+
+/** Scene-graph statistics recounted at most every RESCAN_EVERY frames (a full traversal). */
+const RESCAN_EVERY = 60;
+const FRAME_WINDOW = 60;
 
 type InternalRecord = SubmissionRecord & { description: string };
 
@@ -42,6 +48,7 @@ interface FrameState {
   nestedScenes: number;
   skeletons: Map<unknown, number>;
   lights: LightInfo[];
+  startedAt: number;
 }
 
 /**
@@ -62,9 +69,15 @@ export class DrawCallLedger {
   private readonly annotations = new WeakMap<Object3D, Reason>();
   private backendInfo: BackendInfo = { backend: 'unknown', multiDraw: false };
   private environment: { tier: Tier; gpu: string; dpr: number; viewport: [number, number] } = { tier: 'desktop', gpu: 'unknown', dpr: 1, viewport: [0, 0] };
+  private readonly now: () => number;
+  private readonly frameStarts: number[] = [];
+  private framesSeen = 0;
+  private lastScene: Object3D | null = null;
+  private graphStats: { objects: number; autoUpdatedMatrices: number; at: number } = { objects: 0, autoUpdatedMatrices: 0, at: -1 };
 
   constructor(options: DrawCallLedgerOptions = {}) {
     this.registry = options.registry ?? new MaterialRegistry();
+    this.now = options.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
     this.last = emptyFrame(this.env());
   }
 
@@ -127,6 +140,24 @@ export class DrawCallLedger {
     this.last = { ...this.last, env: this.env() };
   }
 
+  /**
+   * Recount the scene-graph statistics of the js section now (objects, matrices three updates every frame).
+   * Runs on its own every 60 frames; call it after large scene changes.
+   */
+  rescan(): void {
+    const scene = this.current?.mainScene ?? this.lastScene;
+    if (!scene) return;
+    let objects = 0;
+    let auto = 0;
+    scene.traverse((o) => {
+      objects++;
+      if (o.matrixAutoUpdate && o.matrixWorldAutoUpdate) auto++;
+    });
+    // The scene object itself is not part of the count.
+    this.graphStats = { objects: objects - 1, autoUpdatedMatrices: auto - 1, at: this.framesSeen };
+    this.last = { ...this.last, js: { ...this.last.js, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices } };
+  }
+
   /** Let the compiler explain why it left a mesh alone; shows up as that submission's reason. */
   annotate(object: Object3D, reason: Reason): void {
     this.annotations.set(object, reason);
@@ -175,7 +206,10 @@ export class DrawCallLedger {
         nestedScenes: 0,
         skeletons: new Map(),
         lights: [],
+        startedAt: this.now(),
       };
+      this.frameStarts.push(this.current.startedAt);
+      if (this.frameStarts.length > FRAME_WINDOW + 1) this.frameStarts.shift();
     }
     const state = this.current!;
     const isScene = (scene as Scene).isScene === true;
@@ -214,6 +248,13 @@ export class DrawCallLedger {
       if (!descriptions.has(item.programHash)) descriptions.set(item.programHash, { type: item.materialType, description: item.description });
     }
     this.lastItems = this.current.items.map(({ description: _d, ...rest }) => rest);
+    this.framesSeen++;
+    this.lastScene = this.current.mainScene;
+    if (this.graphStats.at < 0 || this.framesSeen - this.graphStats.at >= RESCAN_EVERY) this.rescan();
+    const intervals: number[] = [];
+    for (let i = 1; i < this.frameStarts.length; i++) intervals.push(this.frameStarts[i]! - this.frameStarts[i - 1]!);
+    intervals.sort((a, b) => a - b);
+    const frameMs = intervals.length ? intervals[Math.floor(intervals.length / 2)]! : 0;
     this.last = buildFrame({
       env: this.env(),
       items: this.lastItems,
@@ -222,6 +263,7 @@ export class DrawCallLedger {
       programs: this.renderer.info.memory.programs,
       descriptions,
       lights: this.current.lights,
+      js: { renderMs: this.now() - this.current.startedAt, frameMs, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices },
     });
     this.current = null;
   }

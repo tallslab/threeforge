@@ -200,9 +200,10 @@ export interface FrameInput {
   descriptions: Map<string, { type: string; description: string }>;
   /** Visible lights of the main scene (see `scanLights`). */
   lights?: LightInfo[];
+  js?: JsSnapshot;
 }
 
-export function buildFrame({ env, items, reportedDrawCalls, triangles, programs, descriptions, lights = [] }: FrameInput): FrameSnapshot {
+export function buildFrame({ env, items, reportedDrawCalls, triangles, programs, descriptions, lights = [], js }: FrameInput): FrameSnapshot {
   const passes = new Map<string, PassSnapshot>();
   const byReason = new Map<string, ReasonSnapshot>();
   const programMap = new Map<string, ProgramSnapshot>();
@@ -259,6 +260,7 @@ export function buildFrame({ env, items, reportedDrawCalls, triangles, programs,
     ...emptySections(),
     skinning: skinningOf(items),
     lighting: lightingOf(lights, items),
+    ...(js ? { js } : {}),
     totals: {
       submissions: items.length,
       sceneSubmissions,
