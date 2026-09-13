@@ -15,6 +15,13 @@ export interface SubmissionRecord {
   instances: number;
   /** Instances that survived per-instance culling and were actually drawn. */
   instancesDrawn: number;
+  /** Vertices of the submitted geometry (position attribute count). */
+  vertices: number;
+  /** Bones on the skeleton (0 when not skinned). */
+  bones: number;
+  /** Per-frame index of the skeleton for skinned submissions (stable within a snapshot, no uuids), else null. */
+  skeleton: number | null;
+  morphTargets: number;
 }
 
 export interface PassSnapshot {
@@ -59,14 +66,101 @@ export interface FrameTotals {
   drawCommands: number;
 }
 
+export type Tier = 'desktop' | 'phone-mid' | 'phone-low';
+
+export interface OverdrawSnapshot {
+  /** Opaque fragments rasterised per pixel (measured). */
+  opaque: number;
+  /** Transparent fragments rasterised per pixel (measured). */
+  transparent: number;
+  transparentSubmissions: number;
+  /** False until `ledger.measureOverdraw()` has run. */
+  measured: boolean;
+}
+
+export interface SkinningSnapshot {
+  submissions: number;
+  vertices: number;
+  bones: number;
+  skeletons: number;
+  maxBones: number;
+  morphTargets: number;
+}
+
+export interface LightingSnapshot {
+  lights: { directional: number; point: number; spot: number; hemisphere: number; ambient: number; other: number };
+  shadowLights: number;
+  shadowPasses: number;
+  shadowCasters: number;
+  /** Shadow-map texels rendered per frame: Σ mapSize.x · mapSize.y · faces (6 for point lights). */
+  shadowTexels: number;
+  shadowSubmissions: number;
+}
+
+export interface JsSnapshot {
+  /** Milliseconds inside the outermost render() call. */
+  renderMs: number;
+  /** Median interval between the last outermost render() starts. */
+  frameMs: number;
+  objects: number;
+  /** Objects whose world matrix three recomputes every frame. */
+  autoUpdatedMatrices: number;
+}
+
+export interface MemorySnapshot {
+  textures: { count: number; bytes: number };
+  geometries: { count: number; bytes: number };
+  renderTargets: { count: number; bytes: number };
+  estimated: true;
+}
+
+export type HintCategory = 'drawCalls' | 'overdraw' | 'skinning' | 'lighting' | 'js' | 'memory';
+
+export interface Hint {
+  category: HintCategory;
+  severity: 'info' | 'warn' | 'error';
+  code: string;
+  message: string;
+  objects: string[];
+}
+
+export interface FrameEnv {
+  three: string;
+  backend: 'webgl2' | 'webgpu' | 'unknown';
+  multiDraw: boolean;
+  tier: Tier;
+  gpu: string;
+  dpr: number;
+  viewport: [number, number];
+}
+
 export interface FrameSnapshot {
-  schemaVersion: 1;
-  env: { three: string; backend: 'webgl2' | 'webgpu' | 'unknown'; multiDraw: boolean };
+  schemaVersion: 2;
+  env: FrameEnv;
   totals: FrameTotals;
   passes: PassSnapshot[];
   byReason: Record<string, ReasonSnapshot>;
   programs: Record<string, ProgramSnapshot>;
+  overdraw: OverdrawSnapshot;
+  skinning: SkinningSnapshot;
+  lighting: LightingSnapshot;
+  js: JsSnapshot;
+  memory: MemorySnapshot;
+  hints: Hint[];
   items?: SubmissionRecord[];
+}
+
+export type FrameSections = Pick<FrameSnapshot, 'overdraw' | 'skinning' | 'lighting' | 'js' | 'memory' | 'hints'>;
+
+export function emptySections(): FrameSections {
+  return {
+    overdraw: { opaque: 0, transparent: 0, transparentSubmissions: 0, measured: false },
+    skinning: { submissions: 0, vertices: 0, bones: 0, skeletons: 0, maxBones: 0, morphTargets: 0 },
+    lighting: { lights: { directional: 0, point: 0, spot: 0, hemisphere: 0, ambient: 0, other: 0 }, shadowLights: 0, shadowPasses: 0, shadowCasters: 0, shadowTexels: 0, shadowSubmissions: 0 },
+    js: { renderMs: 0, frameMs: 0, objects: 0, autoUpdatedMatrices: 0 },
+    memory: { textures: { count: 0, bytes: 0 }, geometries: { count: 0, bytes: 0 }, renderTargets: { count: 0, bytes: 0 }, estimated: true },
+    hints: [],
+  };
 }
 
 export interface BudgetOffender {
@@ -86,12 +180,13 @@ export const TOP_NAMES = 5;
 
 export function emptyFrame(env: FrameSnapshot['env']): FrameSnapshot {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     env,
     totals: { submissions: 0, sceneSubmissions: 0, gpuDraws: 0, reportedDrawCalls: 0, unattributed: 0, programSwitches: 0, programs: 0, triangles: 0, instances: 0, instancesDrawn: 0, drawCommands: 0 },
     passes: [],
     byReason: {},
     programs: {},
+    ...emptySections(),
   };
 }
 
@@ -156,8 +251,9 @@ export function buildFrame({ env, items, reportedDrawCalls, triangles, programs,
     Object.fromEntries([...map.entries()].sort(([a], [b]) => a.localeCompare(b)));
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     env,
+    ...emptySections(),
     totals: {
       submissions: items.length,
       sceneSubmissions,

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { formatOverlay } from '../../src/overlay/index.js';
-import type { FrameSnapshot } from '../../src/ledger/snapshot.js';
+import { emptySections, type FrameSnapshot } from '../../src/ledger/snapshot.js';
 
 const frame: FrameSnapshot = {
-  schemaVersion: 1,
-  env: { three: '186', backend: 'webgl2', multiDraw: true },
+  schemaVersion: 2,
+  env: { three: '186', backend: 'webgl2', multiDraw: true, tier: 'desktop', gpu: 'test', dpr: 1, viewport: [800, 600] },
+  ...emptySections(),
   totals: { submissions: 29, sceneSubmissions: 28, gpuDraws: 29, reportedDrawCalls: 29, unattributed: 0, programSwitches: 8, programs: 18, triangles: 1234, instances: 512, instancesDrawn: 400, drawCommands: 413 },
   passes: [{ id: 'main', submissions: 29, gpuDraws: 29 }],
   byReason: {

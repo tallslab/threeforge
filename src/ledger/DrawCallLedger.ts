@@ -2,7 +2,7 @@ import { REVISION, type Camera, type Light, type Material, type Object3D, type S
 import { MaterialRegistry } from '../registry/MaterialRegistry.js';
 import { expectedGpuDraws, instanceCounts, type BackendInfo } from './expectedDraws.js';
 import { displayName, flagsOf, kindOf, reasonOf, type Reason } from './reasons.js';
-import { buildFrame, emptyFrame, type BudgetResult, type FrameSnapshot, type SubmissionRecord } from './snapshot.js';
+import { buildFrame, emptyFrame, type BudgetResult, type FrameEnv, type FrameSnapshot, type SubmissionRecord, type Tier } from './snapshot.js';
 
 /** The slice of three's common Renderer the ledger patches and reads. Structural so tests can fake it. */
 export interface LedgerRenderer {
@@ -39,6 +39,7 @@ interface FrameState {
   shadowCameras: Map<Camera, Light>;
   scannedScenes: Set<Object3D>;
   nestedScenes: number;
+  skeletons: Map<unknown, number>;
 }
 
 /**
@@ -58,6 +59,7 @@ export class DrawCallLedger {
   private lastItems: SubmissionRecord[] = [];
   private readonly annotations = new WeakMap<Object3D, Reason>();
   private backendInfo: BackendInfo = { backend: 'unknown', multiDraw: false };
+  private environment: { tier: Tier; gpu: string; dpr: number; viewport: [number, number] } = { tier: 'desktop', gpu: 'unknown', dpr: 1, viewport: [0, 0] };
 
   constructor(options: DrawCallLedgerOptions = {}) {
     this.registry = options.registry ?? new MaterialRegistry();
@@ -117,6 +119,12 @@ export class DrawCallLedger {
     this.contexts.length = 0;
   }
 
+  /** Describe the device and canvas for the snapshot's `env` (the harness and the bench page call this once). */
+  setEnvironment(env: Partial<{ tier: Tier; gpu: string; dpr: number; viewport: [number, number] }>): void {
+    this.environment = { ...this.environment, ...env };
+    this.last = { ...this.last, env: this.env() };
+  }
+
   /** Let the compiler explain why it left a mesh alone; shows up as that submission's reason. */
   annotate(object: Object3D, reason: Reason): void {
     this.annotations.set(object, reason);
@@ -149,8 +157,8 @@ export class DrawCallLedger {
     return lines.join('\n');
   }
 
-  private env(): FrameSnapshot['env'] {
-    return { three: REVISION, backend: this.backendInfo.backend, multiDraw: this.backendInfo.multiDraw };
+  private env(): FrameEnv {
+    return { three: REVISION, backend: this.backendInfo.backend, multiDraw: this.backendInfo.multiDraw, ...this.environment, viewport: [...this.environment.viewport] as [number, number] };
   }
 
   private enter(scene: Object3D, camera: Camera): void {
@@ -163,6 +171,7 @@ export class DrawCallLedger {
         shadowCameras: new Map(),
         scannedScenes: new Set(),
         nestedScenes: 0,
+        skeletons: new Map(),
       };
     }
     const state = this.current!;
@@ -216,6 +225,14 @@ export class DrawCallLedger {
     const context = this.contexts[this.contexts.length - 1]!;
     const described = this.registry.describe(material);
     const reason = reasonOf({ object, material, group, root: context.root, unsupported: described.unsupported, annotation: this.annotations.get(object) });
+    const geometry = (object as { geometry?: { attributes?: { position?: { count: number } }; morphAttributes?: { position?: unknown[] } } }).geometry;
+    const skinned = object as { isSkinnedMesh?: boolean; skeleton?: { bones: unknown[] } };
+    let skeleton: number | null = null;
+    if (skinned.isSkinnedMesh && skinned.skeleton) {
+      const known = this.current!.skeletons;
+      if (!known.has(skinned.skeleton)) known.set(skinned.skeleton, known.size);
+      skeleton = known.get(skinned.skeleton)!;
+    }
     return {
       name: displayName(object, context.root),
       kind: kindOf(object),
@@ -229,6 +246,10 @@ export class DrawCallLedger {
       expectedGpuDraws: 0,
       instances: 0,
       instancesDrawn: 0,
+      vertices: geometry?.attributes?.position?.count ?? 0,
+      bones: skinned.isSkinnedMesh ? (skinned.skeleton?.bones.length ?? 0) : 0,
+      skeleton,
+      morphTargets: geometry?.morphAttributes?.position?.length ?? 0,
       description: described.description,
     };
   }

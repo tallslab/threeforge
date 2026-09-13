@@ -292,7 +292,7 @@ describe('DrawCallLedger snapshot, report and budget', () => {
     expect(json).not.toContain(mesh.material.uuid);
     expect(json).not.toContain(`"id":${mesh.id}`);
     const frame = ledger.frame();
-    expect(frame.schemaVersion).toBe(1);
+    expect(frame.schemaVersion).toBe(2);
     expect(Object.keys(frame.totals).sort()).toEqual(['drawCommands', 'gpuDraws', 'instances', 'instancesDrawn', 'programSwitches', 'programs', 'reportedDrawCalls', 'sceneSubmissions', 'submissions', 'triangles', 'unattributed']);
   });
 
