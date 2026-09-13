@@ -1,4 +1,5 @@
-export const VERSION = '0.1.0';
+export { VERSION } from './version.js';
+export { exposeToAgents, AGENT_HOOK_KEY, type AgentHook, type ExposeOptions } from './agent/expose.js';
 export { tag, FORGE_TAG_KEY, type ForgeTag } from './tags.js';
 export {
   MaterialRegistry,

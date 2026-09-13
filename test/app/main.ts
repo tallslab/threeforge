@@ -1,7 +1,7 @@
 import { AmbientLight, AnimationMixer, BatchedMesh, Box3, BoxGeometry, Color, DirectionalLight, Frustum, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Sphere, Vector3, type AnimationClip, type Object3D, type OrthographicCamera } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import * as THREE from 'three';
-import { DrawCallLedger, MaterialRegistry, World, assembleCharacter, detectTier, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot, type Tier } from 'threeforge';
+import { DrawCallLedger, MaterialRegistry, World, assembleCharacter, detectTier, exposeToAgents, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot, type Tier } from 'threeforge';
 import { createOverlay } from 'threeforge/overlay';
 import { BENCH_SCENES, type BenchScene } from './scenes/index.js';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
@@ -450,6 +450,8 @@ try {
     return report;
   };
   const decompile = (): void => world.decompile();
+  // The standard agent hook (`npx threeforge inspect <url>` drives it); the harness keeps its own __forge too.
+  exposeToAgents({ ledger, world, renderer, scene, camera });
   if (params.get('compile') === '1') compile();
   const variant: 'naive' | 'optimized' = params.get('variant') === 'optimized' ? 'optimized' : 'naive';
   if (bench && variant === 'optimized') {
