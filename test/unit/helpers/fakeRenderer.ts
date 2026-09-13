@@ -54,6 +54,7 @@ export class FakeRenderer {
     scene.traverse((object) => {
       const mesh = object as Mesh;
       if (!mesh.isMesh || !object.visible) return;
+      if (!object.layers.test(camera.layers)) return;
       if (isShadowPass && !object.castShadow) return;
       const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       const groups = mesh.geometry.groups.length > 0 && Array.isArray(mesh.material) ? mesh.geometry.groups : [null];

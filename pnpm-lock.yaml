@@ -11,6 +11,9 @@ importers:
       bvh.js:
         specifier: 0.0.13
         version: 0.0.13
+      meshoptimizer:
+        specifier: 1.2.0
+        version: 1.2.0
     devDependencies:
       '@playwright/test':
         specifier: ^1.63.0
@@ -305,6 +308,9 @@ packages:
 
   meshoptimizer@1.1.1:
     resolution: {integrity: sha512-oRFNWJRDA/WTrVj7NWvqa5HqE1t9MYDj2VaWirQCzCCrAd2GHrqR/sQezCxiWATPNlKTcRaPRHPJwIRoPBAp5g==}
+
+  meshoptimizer@1.2.0:
+    resolution: {integrity: sha512-davRZeIJbxJrE24cwQle7ZDsxjdk/OphNOV83oX+efQinyoHY9Jcyz3MHbaoG0qySZajldGztNZ1RN/T19PZsg==}
 
   nanoid@3.3.19:
     resolution: {integrity: sha512-Y2tUNy4ouw6tq5oDSKeQYGOyhkUBhNOcGV/02KC+6kd9eDGqdZd++mjMiIDilrBYvjEnCYvVtsuHCuP+okSfug==}
@@ -650,6 +656,8 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.6.0
 
   meshoptimizer@1.1.1: {}
+
+  meshoptimizer@1.2.0: {}
 
   nanoid@3.3.19: {}
 

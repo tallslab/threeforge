@@ -4,9 +4,25 @@ import { Box3, Frustum, Matrix4, Sphere, Vector3, WebGLCoordinateSystem, type Ba
 /** Functions threeforge installs as own-property hooks carry this marker so the ledger does not flag them. */
 export const FORGE_HOOK: unique symbol = Symbol.for('threeforge.hook');
 
+export interface CullingLod {
+  /** Distance thresholds; level i is used from distances[i-1] onward. */
+  distances: number[];
+  /** Base geometryId -> geometryIds per level (level 0 = base). Geometries not listed always draw at level 0. */
+  geometryIds: Map<number, number[]>;
+}
+
 export interface CullingOptions {
   /** Box margin for instances that move; 0 (default) is fastest for statics. */
   margin?: number;
+  /** Pick a coarser geometry range for distant instances (batches only). */
+  lod?: CullingLod;
+}
+
+/** Index of the LOD level for a camera distance. */
+export function levelFor(distance: number, distances: number[]): number {
+  let level = 0;
+  while (level < distances.length && distance >= distances[level]!) level++;
+  return level;
 }
 
 export interface CullingHandle {
@@ -64,6 +80,7 @@ function sortTransparent(a: RenderItem, b: RenderItem): number {
 export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: CoordinateSystem, options: CullingOptions = {}): CullingHandle {
   const target = batch as Internals;
   const margin = options.margin ?? 0;
+  const lod = options.lod;
   const bvh = new BVH<object, number>(new HybridBuilder(), coordinateSystem === WebGLCoordinateSystem ? BvhWebGL : BvhWebGPU);
   const nodes = new Map<number, BVHNode<object, number>>();
 
@@ -114,11 +131,21 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
     _matrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).multiply(this.matrixWorld);
     _frustum.setFromProjectionMatrix(_matrix, coordinateSystem);
     let count = 0;
-
-    if (this.sortObjects) {
+    if (lod || this.sortObjects) {
       _instanceMatrix.copy(this.matrixWorld).invert();
       _cameraPos.setFromMatrixPosition(camera.matrixWorld).applyMatrix4(_instanceMatrix);
       _forward.set(0, 0, -1).transformDirection(camera.matrixWorld).transformDirection(_instanceMatrix);
+    }
+    const rangeFor = (geometryIndex: number): { start: number; count: number } => {
+      let gid = geometryIndex;
+      if (lod) {
+        const levels = lod.geometryIds.get(geometryIndex);
+        if (levels) gid = levels[Math.min(levelFor(_sphere.center.distanceTo(_cameraPos), lod.distances), levels.length - 1)]!;
+      }
+      return geometryInfoList[gid]!;
+    };
+
+    if (this.sortObjects) {
       _list.length = 0;
       bvh.frustumCulling(_matrix.elements, (node) => {
         const i = node.object!;
@@ -127,7 +154,7 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
         this.getMatrixAt(i, _instanceMatrix);
         this.getBoundingSphereAt(info.geometryIndex, _sphere)!.applyMatrix4(_instanceMatrix);
         if (!_frustum.intersectsSphere(_sphere)) return;
-        const g = geometryInfoList[info.geometryIndex]!;
+        const g = rangeFor(info.geometryIndex);
         _list.push({ start: g.start, count: g.count, z: _temp.subVectors(_sphere.center, _cameraPos).dot(_forward), index: i });
       });
       const customSort = this.customSort as ((list: RenderItem[], camera: Camera) => void) | null;
@@ -148,7 +175,7 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
         this.getMatrixAt(i, _instanceMatrix);
         this.getBoundingSphereAt(info.geometryIndex, _sphere)!.applyMatrix4(_instanceMatrix);
         if (!_frustum.intersectsSphere(_sphere)) return;
-        const g = geometryInfoList[info.geometryIndex]!;
+        const g = rangeFor(info.geometryIndex);
         multiDrawStarts[count] = g.start * bytesPerElement * multiDrawMultiplier;
         multiDrawCounts[count] = g.count * multiDrawMultiplier;
         indirectArray[count] = i;

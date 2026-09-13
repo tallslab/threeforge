@@ -1,6 +1,6 @@
 import { BatchedMesh, Color, Frustum, Matrix4, Mesh, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Vector3 } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
-import { DrawCallLedger, MaterialRegistry, World, type CompileReport, type FrameSnapshot } from 'threeforge';
+import { DrawCallLedger, MaterialRegistry, World, prepareLods, type CompileReport, type FrameSnapshot } from 'threeforge';
 import { createOverlay } from 'threeforge/overlay';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
 import { buildFieldScene, type FieldScene } from '../scenes/field.js';
@@ -192,7 +192,14 @@ try {
     shadowCamera.updateProjectionMatrix();
   }
 
-  const world = new World(scene, { registry, ledger, dynamics: params.get('dynamics') === 'batch-sync' ? 'batch-sync' : 'separate' });
+  const useLod = params.get('lod') === '1';
+  if (useLod) await prepareLods(scene, { ratios: [0.5, 0.2] });
+  const world = new World(scene, {
+    registry,
+    ledger,
+    dynamics: params.get('dynamics') === 'batch-sync' ? 'batch-sync' : 'separate',
+    ...(useLod ? { lod: { distances: [Number(params.get('lod0') ?? '200'), Number(params.get('lod1') ?? '600')] } } : {}),
+  });
   const compile = (): CompileReport => world.compile({ coordinateSystem: renderer.coordinateSystem });
   const decompile = (): void => world.decompile();
   if (params.get('compile') === '1') compile();

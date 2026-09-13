@@ -30,7 +30,7 @@ describe('createCulledInstancedMesh', () => {
     const f = field(1000);
     expect(f.instanced).toBeInstanceOf(InstancedMesh);
     expect(f.instanced.instanceMatrix.count).toBe(1000);
-    expect(f.instanced.userData.forge).toEqual({ instances: 1000 });
+    expect(f.instanced.userData.forge).toEqual({ instances: 1000, lodLevel: 0 });
     expect(f.instanced.boundingSphere?.radius).toBeGreaterThan(900);
     expect((f.instanced.onBeforeRender as unknown as Record<symbol, unknown>)[FORGE_HOOK]).toBe(true);
   });

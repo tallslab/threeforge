@@ -1,5 +1,6 @@
 import { BatchedMesh, Color, WebGLCoordinateSystem, type BufferGeometry, type CoordinateSystem, type InstancedMesh, type Material, type Mesh, type Scene } from 'three';
 import { createCulledInstancedMesh } from './instancing.js';
+import { lodsOf } from '../lod/generateLods.js';
 import type { MaterialRegistry } from '../registry/MaterialRegistry.js';
 import { attributeSignature, ensureIndexed } from './geometryCompat.js';
 
@@ -15,6 +16,8 @@ export interface BatchOptions {
   coordinateSystem?: CoordinateSystem;
   /** World-space cell size; when set, each material group is split into one batch per cell (tight bounds, streamable). */
   chunkSize?: number;
+  /** Distance thresholds for LOD levels; geometries carry their levels via `prepareLods` / `generateLods`. */
+  lodDistances?: number[];
 }
 
 export interface GroupReport {
@@ -22,6 +25,8 @@ export interface GroupReport {
   kind: 'batched' | 'instanced';
   /** Cell coordinates when `chunkSize` is set, else null. */
   chunk: [number, number, number] | null;
+  /** LOD levels beyond the base geometry that this group can switch to. */
+  lods: number;
   programHash: string;
   variantHash: string;
   instances: number;
@@ -39,6 +44,8 @@ export interface BatchResult {
   originals: Map<BatchedMesh | InstancedMesh, Mesh[]>;
   /** Statics that had nothing to share a batch with. */
   singletons: Mesh[];
+  /** Per batch: base geometryId -> geometryIds per LOD level (present only when lodDistances is set). */
+  lodGeometryIds: Map<BatchedMesh, Map<number, number[]>>;
 }
 
 interface Group {
@@ -59,6 +66,7 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
   const instanceThreshold = options.instanceThreshold ?? 64;
   const coordinateSystem = options.coordinateSystem ?? WebGLCoordinateSystem;
   const chunkSize = options.chunkSize;
+  const lodDistances = options.lodDistances;
   const groups = new Map<string, Group>();
   for (const mesh of statics) {
     if (Array.isArray(mesh.material)) continue;
@@ -75,7 +83,7 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
     group.meshes.push(mesh);
   }
 
-  const result: BatchResult = { batches: [], instanced: [], groups: [], slots: new Map(), originals: new Map(), singletons: [] };
+  const result: BatchResult = { batches: [], instanced: [], groups: [], slots: new Map(), originals: new Map(), singletons: [], lodGeometryIds: new Map() };
   const perProgram = new Map<string, number>();
   const perProgramInstanced = new Map<string, number>();
 
@@ -102,16 +110,19 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
         material.name = `${group.canonical.name || group.canonical.type} (forge instanced)`;
         const matrices = meshes.map((m) => m.matrixWorld);
         const colors = canonicalHasColor ? meshes.map((m) => (m.material as Material & { color: Color }).color) : null;
-        const instanced = createCulledInstancedMesh(geometry, material, matrices, colors, coordinateSystem);
+        const lods = lodDistances ? lodsOf(geometry) : [];
+        const instanced = createCulledInstancedMesh(geometry, material, matrices, colors, coordinateSystem, lodDistances ? { lods, distances: lodDistances } : {});
         const index = perProgramInstanced.get(programHash) ?? 0;
         perProgramInstanced.set(programHash, index + 1);
-        instanced.name = `forge:instanced:${programHash}:${index}`;
-        instanced.castShadow = group.castShadow;
-        instanced.receiveShadow = group.receiveShadow;
-        scene.add(instanced);
+        instanced.levels.forEach((level, L) => {
+          level.name = L === 0 ? `forge:instanced:${programHash}:${index}` : `forge:instanced:${programHash}:${index}:lod${L}`;
+          level.castShadow = group.castShadow;
+          level.receiveShadow = group.receiveShadow;
+          scene.add(level);
+          result.instanced.push(level);
+          result.originals.set(level, meshes.slice());
+        });
         meshes.forEach((mesh, i) => result.slots.set(mesh, { batch: instanced, instanceId: i }));
-        result.instanced.push(instanced);
-        result.originals.set(instanced, meshes.slice());
         result.groups.push({
           name: instanced.name,
           kind: 'instanced',
@@ -120,6 +131,7 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
           variantHash,
           instances: meshes.length,
           geometries: 1,
+          lods: instanced.levels.length - 1,
           transparent: false,
           castShadow: group.castShadow,
           receiveShadow: group.receiveShadow,
@@ -133,12 +145,20 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
       continue;
     }
     const unique = new Map<BufferGeometry, BufferGeometry>();
+    const lodGeometries = new Map<BufferGeometry, BufferGeometry[]>();
+    let lodLevels = 0;
     for (const mesh of group.meshes) {
-      if (!unique.has(mesh.geometry)) unique.set(mesh.geometry, ensureIndexed(mesh.geometry));
+      if (unique.has(mesh.geometry)) continue;
+      unique.set(mesh.geometry, ensureIndexed(mesh.geometry));
+      if (lodDistances) {
+        const lods = lodsOf(mesh.geometry).slice(0, lodDistances.length).map(ensureIndexed);
+        lodGeometries.set(mesh.geometry, lods);
+        lodLevels = Math.max(lodLevels, lods.length);
+      }
     }
     let maxVertexCount = 0;
     let maxIndexCount = 0;
-    for (const geometry of unique.values()) {
+    for (const geometry of [...unique.values(), ...[...lodGeometries.values()].flat()]) {
       maxVertexCount += geometry.attributes.position?.count ?? 0;
       maxIndexCount += geometry.index?.count ?? 0;
     }
@@ -159,12 +179,15 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
     batch.receiveShadow = group.receiveShadow;
 
     const geometryIds = new Map<BufferGeometry, number>();
+    const levelIds = new Map<number, number[]>();
     const originals: Mesh[] = [];
     for (const mesh of group.meshes) {
       let geometryId = geometryIds.get(mesh.geometry);
       if (geometryId === undefined) {
         geometryId = batch.addGeometry(unique.get(mesh.geometry)!);
         geometryIds.set(mesh.geometry, geometryId);
+        const lods = lodGeometries.get(mesh.geometry);
+        if (lods && lods.length > 0) levelIds.set(geometryId, [geometryId, ...lods.map((g) => batch.addGeometry(g))]);
       }
       const instanceId = batch.addInstance(geometryId);
       batch.setMatrixAt(instanceId, mesh.matrixWorld);
@@ -178,10 +201,12 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
 
     result.batches.push(batch);
     result.originals.set(batch, originals);
+    if (levelIds.size > 0) result.lodGeometryIds.set(batch, levelIds);
     result.groups.push({
       name: batch.name,
       kind: 'batched',
       chunk: group.chunk,
+      lods: lodLevels,
       programHash,
       variantHash,
       instances: group.meshes.length,

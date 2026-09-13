@@ -1,6 +1,8 @@
 import { defineConfig } from '@playwright/test';
 import type { ForgeOptions } from './test/e2e/fixtures.js';
 
+const webgpuAdapter = process.env.FORGE_WEBGPU ?? (process.platform === 'linux' ? 'swiftshader' : 'native');
+
 export default defineConfig<ForgeOptions>({
   testDir: 'test/e2e',
   // Baselines are committed once, without platform suffixes; tolerances absorb SwiftShader differences.
@@ -30,14 +32,21 @@ export default defineConfig<ForgeOptions>({
       },
     },
     {
-      // Best effort: skipped by the fixture when no WebGPU adapter is available.
+      // WebGPU needs a secure context (localhost qualifies). Adapter choice, via FORGE_WEBGPU:
+      //   native (default on macOS/Windows): the machine's GPU through the full Chromium build.
+      //   swiftshader (default on Linux): Dawn's software adapter in the headless shell. It works for single-shot
+      //   tests, but drops the WebGPU instance when a page idles between test steps ("Device Lost"), so multi-step
+      //   specs can fail there. The fixture skips the project when no adapter appears.
       name: 'webgpu',
       use: {
         browserName: 'chromium',
-        channel: 'chromium',
         backend: 'webgpu',
+        ...(webgpuAdapter === 'native' ? { channel: 'chromium' } : {}),
         launchOptions: {
-          args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--ignore-gpu-blocklist'],
+          args:
+            webgpuAdapter === 'native'
+              ? ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist']
+              : ['--enable-features=WebGPU', '--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
         },
       },
     },

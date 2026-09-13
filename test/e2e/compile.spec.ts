@@ -5,7 +5,7 @@ test('world.compile() takes the naive scene from 503 to 28 submissions with iden
   const before = await forge.page.evaluate(() => window.__forge.frame());
   expect(before.totals.sceneSubmissions).toBe(503);
   // Baseline image of the naive render; the compiled render must match it.
-  await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
+  if (forge.pixelChecks) await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
 
   const { report, after, text } = await forge.page.evaluate(() => {
     const f = window.__forge;
@@ -27,7 +27,7 @@ test('world.compile() takes the naive scene from 503 to 28 submissions with iden
     'renderer-internal': { submissions: 1 },
   });
   expect(after.totals.programSwitches).toBeLessThan(before.totals.programSwitches);
-  await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
+  if (forge.pixelChecks) await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
 
   const restored = await forge.page.evaluate(() => {
     window.__forge.decompile();
@@ -69,5 +69,5 @@ test("dynamics: 'batch-sync' folds the 10 movers into their batches: 28 -> 18 su
   expect(result.totals.unattributed).toBe(0);
   expect(result.byReason.dynamic).toBeUndefined();
   expect(result.same).toBe(true);
-  await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
+  if (forge.pixelChecks) await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
 });

@@ -30,3 +30,22 @@ test('20k-instance field: three instanced meshes, culling draws only what the ca
   expect(result.after.instancesDrawn).toBeLessThan(20_000 * 0.25);
   expect(result.after.unattributed).toBe(0);
 });
+
+test('LODs on the field cut rendered triangles by more than half while drawing the same instances', async ({ forge }) => {
+  await forge.open('field', { count: '20000', compile: '1' });
+  const plain = await forge.page.evaluate(() => window.__forge.frame().totals);
+  await forge.open('field', { count: '20000', compile: '1', lod: '1' });
+  const lod = await forge.page.evaluate(() => {
+    const f = window.__forge;
+    const totals = f.frame().totals;
+    const levels = f.world.instancedMeshes.map((m) => ({ name: m.name, count: m.count, level: (m.userData.forge as { lodLevel: number }).lodLevel }));
+    return { totals, levels };
+  });
+  console.log(JSON.stringify({ plainTriangles: plain.triangles, lodTriangles: lod.totals.triangles, levels: lod.levels }));
+  expect(lod.levels.filter((l) => l.level > 0).length).toBe(6); // 3 geometries x 2 extra levels
+  expect(lod.totals.triangles).toBeLessThan(plain.triangles * 0.5);
+  expect(lod.totals.instancesDrawn).toBeGreaterThanOrEqual(plain.instancesDrawn * 0.97);
+  expect(lod.totals.instancesDrawn).toBeLessThanOrEqual(plain.instancesDrawn * 1.03);
+  expect(lod.totals.unattributed).toBe(0);
+  expect(lod.totals.sceneSubmissions).toBeLessThanOrEqual(9);
+});

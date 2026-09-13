@@ -8,7 +8,9 @@ test('baseline: SceneOptimizer.toBatchedMesh() on the naive scene', async ({ for
   await forge.open('naive');
   const result = await forge.page.evaluate(() => window.__forge.spikeSceneOptimizer());
   console.log('SPIKE ' + JSON.stringify(result));
-  await forge.page.screenshot({ path: `test-results/spike-scene-optimizer-${forge.backend}.png` });
+  if (forge.pixelChecks) await forge.page.screenshot({ path: `test-results/spike-scene-optimizer-${forge.backend}.png` });
   expect(result.drawsBefore).toBe(504);
-  expect(result.indexed.drawsAfter).toBeLessThan(result.drawsBefore);
+  expect(result.indexed.batchedMeshes).toBe(16);
+  // Raw drawCalls only shrink on WebGL with multi-draw; WebGPU issues one draw per batched instance.
+  if (forge.backend === 'webgl2') expect(result.indexed.drawsAfter).toBeLessThan(result.drawsBefore);
 });

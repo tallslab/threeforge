@@ -316,7 +316,7 @@ describe('World instancing', () => {
     const report = world.compile();
     const instanced = meshesIn(scene).filter((m): m is InstancedMesh => (m as InstancedMesh).isInstancedMesh);
     expect(instanced).toHaveLength(1);
-    expect(instanced[0]!.userData.forge).toEqual({ instances: 70 });
+    expect(instanced[0]!.userData.forge).toEqual({ instances: 70, lodLevel: 0 });
     expect(instanced[0]!.name).toMatch(/^forge:instanced:[0-9a-f]{8}:\d+$/);
     expect(batchesIn(scene)).toHaveLength(1);
     expect(batchesIn(scene)[0]!.instanceCount).toBe(5);

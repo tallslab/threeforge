@@ -107,6 +107,7 @@ describe('DrawCallLedger attribution', () => {
     mesh.layers.set(3);
     mesh.onBeforeRender = () => {};
     scene.add(mesh);
+    camera.layers.enable(3); // the renderer skips objects the camera cannot see
     renderer.render(scene, camera);
     const item = ledger.frame({ items: true }).items?.[0];
     expect(item?.flags).toEqual(expect.arrayContaining(['shadow-caster', 'double-sided-transparent', 'custom-hook', 'render-order', 'layers']));

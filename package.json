@@ -47,6 +47,7 @@
   },
   "packageManager": "pnpm@10.28.1",
   "dependencies": {
-    "bvh.js": "0.0.13"
+    "bvh.js": "0.0.13",
+    "meshoptimizer": "1.2.0"
   }
 }

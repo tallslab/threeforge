@@ -6,6 +6,7 @@ import {
   InstancedMesh,
   Matrix4,
   Sphere,
+  Vector3,
   WebGLCoordinateSystem,
   type BufferGeometry,
   type Camera,
@@ -14,7 +15,7 @@ import {
   type Material,
   type Scene,
 } from 'three';
-import { FORGE_HOOK } from './culling.js';
+import { FORGE_HOOK, levelFor } from './culling.js';
 
 export { FORGE_HOOK };
 
@@ -32,11 +33,28 @@ export interface CulledInstancedMesh extends InstancedMesh {
   /** Compacted index -> master index, valid after the last cull. */
   visibleIds: number[];
   forgeCulling: InstanceCullingHandle;
+  /** All level meshes of this group, level 0 first; the same array on every level. */
+  levels: CulledInstancedMesh[];
+  lodLevel: number;
+}
+
+export interface InstancingOptions {
+  /** Coarser geometries for distant instances, coarsest last. Ignored without `distances`. */
+  lods?: BufferGeometry[];
+  distances?: number[];
 }
 
 const _box = new Box3();
 const _matrix = new Matrix4();
+const _inverse = new Matrix4();
 const _frustum = new Frustum();
+const _cameraPos = new Vector3();
+const _position = new Vector3();
+
+function same16(a: Float64Array, b: number[]): boolean {
+  for (let i = 0; i < 16; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
 
 /**
  * Hardware instancing for geometry repeated many times, with per-instance frustum culling that
@@ -49,23 +67,19 @@ export function createCulledInstancedMesh(
   matrices: Matrix4[],
   colors: Color[] | null,
   coordinateSystem: CoordinateSystem,
+  options: InstancingOptions = {},
 ): CulledInstancedMesh {
   const n = matrices.length;
-  const mesh = new InstancedMesh(geometry, material, n) as CulledInstancedMesh;
+  const distances = options.distances ?? [];
+  const geometries = [geometry, ...(options.lods ?? [])].slice(0, distances.length > 0 ? distances.length + 1 : 1);
+  const levelCount = geometries.length;
+
   const masterMatrices = new Float32Array(n * 16);
   const masterColors = colors ? new Float32Array(n * 3) : null;
   for (let i = 0; i < n; i++) {
     matrices[i]!.toArray(masterMatrices, i * 16);
     if (masterColors && colors) colors[i]!.toArray(masterColors, i * 3);
   }
-  mesh.instanceMatrix.array.set(masterMatrices);
-  mesh.instanceMatrix.needsUpdate = true;
-  if (masterColors) {
-    mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(n * 3), 3);
-    mesh.instanceColor.array.set(masterColors);
-    mesh.instanceColor.needsUpdate = true;
-  }
-  mesh.userData.forge = { instances: n };
 
   if (geometry.boundingBox === null) geometry.computeBoundingBox();
   const geometryBox = geometry.boundingBox!;
@@ -91,55 +105,84 @@ export function createCulledInstancedMesh(
     bounds.union(_box);
   }
   bvh.createFromArray(ids, boxes, (node) => nodes.set(node.object!, node), 0);
-  mesh.boundingBox = bounds.clone();
-  mesh.boundingSphere = bounds.getBoundingSphere(new Sphere());
+  const sphere = bounds.getBoundingSphere(new Sphere());
 
-  let visibleIds: number[] = ids.slice();
-  let dirty = false;
+  const levels: CulledInstancedMesh[] = geometries.map((g, L) => {
+    const mesh = new InstancedMesh(g, material, n) as CulledInstancedMesh;
+    if (masterColors) mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(n * 3), 3);
+    if (L === 0) {
+      mesh.instanceMatrix.array.set(masterMatrices);
+      if (mesh.instanceColor && masterColors) mesh.instanceColor.array.set(masterColors);
+      mesh.count = n;
+      mesh.visibleIds = ids.slice();
+    } else {
+      mesh.count = 0;
+      mesh.visibleIds = [];
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.userData.forge = { instances: L === 0 ? n : 0, lodLevel: L };
+    mesh.boundingBox = bounds.clone();
+    mesh.boundingSphere = sphere.clone();
+    mesh.lodLevel = L;
+    return mesh;
+  });
+  for (const mesh of levels) mesh.levels = levels;
+
   const visibleMask = new Uint8Array(n).fill(1);
-  mesh.visibleIds = visibleIds;
-  const candidates: number[] = [];
+  const lastKey = new Float64Array(16);
+  let hasKey = false;
+  let dirty = false;
+  const perLevel: number[][] = levels.map(() => []);
 
   const hook = function (this: CulledInstancedMesh, _renderer: unknown, _scene: Scene, camera: Camera): void {
     _matrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).multiply(this.matrixWorld);
-    candidates.length = 0;
+    if (!dirty && hasKey && same16(lastKey, _matrix.elements)) return;
+    lastKey.set(_matrix.elements);
+    hasKey = true;
+    dirty = false;
+    for (const list of perLevel) list.length = 0;
+    const useLod = levelCount > 1;
+    if (useLod) {
+      _inverse.copy(this.matrixWorld).invert();
+      _cameraPos.setFromMatrixPosition(camera.matrixWorld).applyMatrix4(_inverse);
+    }
+    const place = (id: number): void => {
+      if (!visibleMask[id]) return;
+      let level = 0;
+      if (useLod) {
+        _position.set(masterMatrices[id * 16 + 12]!, masterMatrices[id * 16 + 13]!, masterMatrices[id * 16 + 14]!);
+        level = Math.min(levelFor(_position.distanceTo(_cameraPos), distances), levelCount - 1);
+      }
+      perLevel[level]!.push(id);
+    };
     if ((camera as Camera & { isArrayCamera?: boolean }).isArrayCamera) {
-      for (let i = 0; i < n; i++) if (visibleMask[i]) candidates.push(i);
+      for (let i = 0; i < n; i++) place(i);
     } else {
       _frustum.setFromProjectionMatrix(_matrix, coordinateSystem);
-      bvh.frustumCulling(_matrix.elements, (node) => {
-        const id = node.object!;
-        if (visibleMask[id]) candidates.push(id);
-      });
+      bvh.frustumCulling(_matrix.elements, (node) => place(node.object!));
     }
-    let same = !dirty && candidates.length === visibleIds.length;
-    if (same) {
-      for (let k = 0; k < candidates.length; k++) {
-        if (candidates[k] !== visibleIds[k]) {
-          same = false;
-          break;
-        }
+    for (let L = 0; L < levelCount; L++) {
+      const mesh = levels[L]!;
+      const list = perLevel[L]!;
+      const matrixArray = mesh.instanceMatrix.array;
+      const colorArray = mesh.instanceColor?.array;
+      for (let k = 0; k < list.length; k++) {
+        const id = list[k]!;
+        matrixArray.set(masterMatrices.subarray(id * 16, id * 16 + 16), k * 16);
+        if (colorArray && masterColors) colorArray.set(masterColors.subarray(id * 3, id * 3 + 3), k * 3);
       }
+      mesh.visibleIds = list.slice();
+      mesh.count = list.length;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
-    if (same) return;
-    visibleIds = candidates.slice();
-    this.visibleIds = visibleIds;
-    dirty = false;
-    const matrixArray = this.instanceMatrix.array;
-    const colorArray = this.instanceColor?.array;
-    for (let k = 0; k < visibleIds.length; k++) {
-      const id = visibleIds[k]!;
-      matrixArray.set(masterMatrices.subarray(id * 16, id * 16 + 16), k * 16);
-      if (colorArray && masterColors) colorArray.set(masterColors.subarray(id * 3, id * 3 + 3), k * 3);
-    }
-    this.count = visibleIds.length;
-    this.instanceMatrix.needsUpdate = true;
-    if (this.instanceColor) this.instanceColor.needsUpdate = true;
   };
   (hook as unknown as Record<symbol, boolean>)[FORGE_HOOK] = true;
-  mesh.onBeforeRender = hook as unknown as InstancedMesh['onBeforeRender'];
+  for (const mesh of levels) mesh.onBeforeRender = hook as unknown as InstancedMesh['onBeforeRender'];
 
-  mesh.forgeCulling = {
+  let detached = false;
+  const handle: InstanceCullingHandle = {
     setMatrixAt(id, matrix) {
       matrix.toArray(masterMatrices, id * 16);
       const node = nodes.get(id);
@@ -159,18 +202,28 @@ export function createCulledInstancedMesh(
       return visibleMask[id] === 1;
     },
     detach() {
-      if (Object.prototype.hasOwnProperty.call(mesh, 'onBeforeRender')) delete (mesh as { onBeforeRender?: unknown }).onBeforeRender;
-      mesh.instanceMatrix.array.set(masterMatrices);
-      mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor && masterColors) {
-        mesh.instanceColor.array.set(masterColors);
-        mesh.instanceColor.needsUpdate = true;
+      if (detached) return;
+      detached = true;
+      for (const mesh of levels) {
+        if (Object.prototype.hasOwnProperty.call(mesh, 'onBeforeRender')) delete (mesh as { onBeforeRender?: unknown }).onBeforeRender;
       }
-      mesh.count = n;
-      mesh.visibleIds = ids.slice();
+      const base = levels[0]!;
+      base.instanceMatrix.array.set(masterMatrices);
+      base.instanceMatrix.needsUpdate = true;
+      if (base.instanceColor && masterColors) {
+        base.instanceColor.array.set(masterColors);
+        base.instanceColor.needsUpdate = true;
+      }
+      base.count = n;
+      base.visibleIds = ids.slice();
+      for (const mesh of levels.slice(1)) {
+        mesh.count = 0;
+        mesh.visibleIds = [];
+      }
       bvh.clear();
       nodes.clear();
     },
   };
-  return mesh;
+  for (const mesh of levels) mesh.forgeCulling = handle;
+  return levels[0]!;
 }

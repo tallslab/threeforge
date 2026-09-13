@@ -10,20 +10,16 @@ export interface ForgePage {
   page: Page;
   backend: BackendName;
   open(scene: string, query?: Record<string, string>): Promise<void>;
+  /**
+   * Whether screenshot assertions are safe here. Capturing the SwiftShader WebGPU canvas in headless Chromium
+   * drops the WebGPU instance ("Device Lost"), after which the renderer draws nothing; the native adapter is fine.
+   */
+  pixelChecks: boolean;
 }
 
 export const test = base.extend<ForgeOptions & { forge: ForgePage }>({
   backend: ['webgl2', { option: true }],
   forge: async ({ page, backend }, use) => {
-    if (backend === 'webgpu') {
-      await page.goto('about:blank');
-      const hasAdapter = await page.evaluate(async () => {
-        const gpu = (navigator as unknown as { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
-        if (!gpu) return false;
-        return (await gpu.requestAdapter()) !== null;
-      });
-      test.skip(!hasAdapter, 'no WebGPU adapter in this browser');
-    }
     const open = async (scene: string, query: Record<string, string> = {}) => {
       const q = new URLSearchParams({ scene, backend, ...query });
       await page.goto(`/?${q.toString()}`);
@@ -31,9 +27,12 @@ export const test = base.extend<ForgeOptions & { forge: ForgePage }>({
       const error = await page.evaluate(() => window.__forge.error);
       if (error) throw new Error(`harness failed to start: ${error}`);
       const actual = await page.evaluate(() => window.__forge.backend);
+      // WebGPU only exists in secure contexts, so the adapter check has to happen on the served page itself.
+      if (backend === 'webgpu' && actual !== 'webgpu') test.skip(true, 'no WebGPU adapter in this browser');
       expect(actual, 'page fell back to a different backend').toBe(backend);
     };
-    await use({ page, backend, open });
+    const webgpuAdapter = process.env.FORGE_WEBGPU ?? (process.platform === 'linux' ? 'swiftshader' : 'native');
+    await use({ page, backend, open, pixelChecks: backend !== 'webgpu' || webgpuAdapter === 'native' });
   },
 });
 

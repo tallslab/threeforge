@@ -27,6 +27,11 @@ export interface WorldOptions {
   dynamics?: 'separate' | 'batch-sync';
   /** World-space cell size. Splits each material group into one batch per cell: tight bounds for whole-chunk culling and a unit for streaming. */
   chunkSize?: number;
+  /**
+   * Level-of-detail by camera distance. Geometries need levels attached first (`await prepareLods(scene)`).
+   * Level i is used from `distances[i-1]` onward; batches need `culling: 'bvh'` (the default) for this.
+   */
+  lod?: { distances: number[] };
 }
 
 export interface CompileOptions {
@@ -43,6 +48,7 @@ export interface CompileReport {
   culling: { mode: 'bvh' | 'linear'; coordinateSystem: CoordinateSystem };
   /** Dynamics folded into batches with matrix sync (0 unless `dynamics: 'batch-sync'`). */
   synced: number;
+  lod: { distances: number[] } | null;
 }
 
 export interface WarmupRenderer {
@@ -80,6 +86,7 @@ export class World {
   private readonly instanceThreshold: number;
   private readonly dynamicsMode: 'separate' | 'batch-sync';
   private readonly chunkSize: number | undefined;
+  private readonly lod: { distances: number[] } | null;
   private cullingHandles = new Map<BatchedMesh, CullingHandle>();
   private syncRestores: (() => void)[] = [];
   private syncedSet = new Set<Mesh>();
@@ -101,6 +108,7 @@ export class World {
     this.instanceThreshold = options.instanceThreshold ?? 64;
     this.dynamicsMode = options.dynamics ?? 'separate';
     this.chunkSize = options.chunkSize;
+    this.lod = options.lod ?? null;
   }
 
   get instancedMeshes(): readonly InstancedMesh[] {
@@ -136,13 +144,17 @@ export class World {
         if (rule === null) statics.push(c.object);
       }
     }
-    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem, chunkSize: this.chunkSize });
+    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem, chunkSize: this.chunkSize, ...(this.lod ? { lodDistances: this.lod.distances } : {}) });
     this.batches = result.batches;
     this.instanced = result.instanced;
     this.slots = result.slots;
     this.originalsByBatch = result.originals;
     if (this.cullingMode === 'bvh') {
-      for (const batch of this.batches) this.cullingHandles.set(batch, attachBvhCulling(batch, coordinateSystem));
+      for (const batch of this.batches) {
+        const geometryIds = result.lodGeometryIds.get(batch);
+        const lod = this.lod && geometryIds ? { distances: this.lod.distances, geometryIds } : undefined;
+        this.cullingHandles.set(batch, attachBvhCulling(batch, coordinateSystem, lod ? { lod } : {}));
+      }
     }
     for (const [mesh, rule] of syncRule) if (rule === null && result.slots.has(mesh)) this.syncedSet.add(mesh);
     this.installSync(result.slots);
@@ -175,6 +187,7 @@ export class World {
       registry: this.registry.stats(),
       culling: { mode: this.cullingMode, coordinateSystem },
       synced: this.syncedSet.size,
+      lod: this.lod,
     };
   }
 
