@@ -1,5 +1,6 @@
-import { BatchedMesh, Color, Frustum, Matrix4, Mesh, PerspectiveCamera, Scene, SkinnedMesh } from 'three';
+import { BatchedMesh, Color, Frustum, Matrix4, Mesh, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Vector3 } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
+import { DrawCallLedger, MaterialRegistry, World, type CompileReport, type FrameSnapshot } from 'threeforge';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
 
 export type BackendName = 'webgl2' | 'webgpu';
@@ -35,8 +36,17 @@ export interface ForgeHarness {
   scene: Scene;
   camera: PerspectiveCamera;
   renderer: WebGPURenderer;
+  registry: MaterialRegistry;
+  ledger: DrawCallLedger;
+  world: World;
   naive?: NaiveScene;
+  compile(): CompileReport;
+  decompile(): void;
+  /** Cast a ray straight down from above (x, z) and resolve the hit through the world. */
+  raycastDown(x: number, z: number): { hitCount: number; hitIsBatch: boolean; resolvedName: string | null };
   renderOnce(): RenderOnceResult;
+  /** Render once and return the ledger's frame snapshot (with items when asked). */
+  frame(options?: { items?: boolean }): FrameSnapshot;
   /** Meshes whose bounding sphere intersects the camera frustum (the same test the renderer applies). */
   visibleMeshes(): number;
   /** Task 2 spike: run three's experimental SceneOptimizer on a fresh naive scene and measure it. */
@@ -60,6 +70,10 @@ try {
   await renderer.init();
   renderer.setPixelRatio(1);
   renderer.setSize(800, 600, false);
+
+  const registry = new MaterialRegistry();
+  const ledger = new DrawCallLedger({ registry });
+  ledger.attach(renderer);
 
   const backend: BackendName = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'webgpu' : 'webgl2';
   const hasFeature = (renderer.backend as { hasFeature?: (name: string) => boolean }).hasFeature;
@@ -154,6 +168,27 @@ try {
     return { drawsBefore, visibleBefore, asIsError, asIs, indexed };
   }
 
+  const world = new World(scene, { registry, ledger });
+  const compile = (): CompileReport => world.compile();
+  const decompile = (): void => world.decompile();
+  if (params.get('compile') === '1') compile();
+
+  function raycastDown(x: number, z: number): { hitCount: number; hitIsBatch: boolean; resolvedName: string | null } {
+    const raycaster = new Raycaster(new Vector3(x, 60, z), new Vector3(0, -1, 0));
+    const hits = raycaster.intersectObjects(scene.children, true);
+    const hit = hits[0];
+    return {
+      hitCount: hits.length,
+      hitIsBatch: Boolean(hit && (hit.object as BatchedMesh).isBatchedMesh),
+      resolvedName: hit ? world.resolve(hit).name : null,
+    };
+  }
+
+  function frame(options?: { items?: boolean }): FrameSnapshot {
+    renderer.render(scene, camera);
+    return ledger.frame(options);
+  }
+
   if (params.get('animate') === '1') {
     renderer.setAnimationLoop(() => {
       if (naive) for (const d of naive.dynamics) d.rotation.y += 0.02;
@@ -161,7 +196,7 @@ try {
     });
   }
 
-  window.__forge = { ready: true, backend, scene, camera, renderer, naive, renderOnce, visibleMeshes, spikeSceneOptimizer };
+  window.__forge = { ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, compile, decompile, raycastDown, renderOnce, frame, visibleMeshes, spikeSceneOptimizer };
 } catch (error) {
   window.__forge = { ready: false, error: error instanceof Error ? error.stack ?? error.message : String(error) } as ForgeHarness;
   throw error;

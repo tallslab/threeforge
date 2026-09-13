@@ -56,7 +56,7 @@ interface ProgramEntry {
  * Keys are computed at registration time; a material mutated afterwards is not re-keyed.
  */
 export class MaterialRegistry {
-  private readonly keys = new WeakMap<Material, MaterialKeys>();
+  private readonly keyCache = new WeakMap<Material, MaterialKeys>();
   private readonly records = new Map<Material, { outcome: RegisterOutcome; canonical: Material | null }>();
   private readonly canonicalByFullKey = new Map<string, Material>();
   private readonly variantsByKey = new Map<string, string>();
@@ -70,7 +70,7 @@ export class MaterialRegistry {
     const existing = this.records.get(material);
     if (existing) return existing.canonical ?? material;
 
-    const keys = this.keysOf(material);
+    const keys = this.keys(material);
     if (keys.unsupported) {
       this.unsupported++;
       this.records.set(material, { outcome: 'unsupported', canonical: null });
@@ -106,7 +106,7 @@ export class MaterialRegistry {
   }
 
   describe(material: Material): MaterialDescription {
-    const keys = this.keysOf(material);
+    const keys = this.keys(material);
     const record = this.records.get(material);
     return {
       programHash: hashKey(keys.programKey),
@@ -145,11 +145,12 @@ export class MaterialRegistry {
     };
   }
 
-  private keysOf(material: Material): MaterialKeys {
-    let keys = this.keys.get(material);
+  /** The raw keys for a material (computed once and cached). */
+  keys(material: Material): MaterialKeys {
+    let keys = this.keyCache.get(material);
     if (!keys) {
       keys = computeMaterialKeys(material);
-      this.keys.set(material, keys);
+      this.keyCache.set(material, keys);
     }
     return keys;
   }

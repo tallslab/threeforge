@@ -11,6 +11,10 @@
     "isolatedModules": true,
     "skipLibCheck": true,
     "types": ["node"],
+    "paths": {
+      "threeforge": ["./src/index.ts"],
+      "threeforge/overlay": ["./src/overlay/index.ts"]
+    },
     "noEmit": true
   },
   "include": ["src", "test", "*.ts"]

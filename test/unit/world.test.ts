@@ -1,0 +1,262 @@
+import { describe, expect, it } from 'vitest';
+import {
+  BatchedMesh,
+  BoxGeometry,
+  Color,
+  DataTexture,
+  DodecahedronGeometry,
+  Group,
+  Matrix4,
+  Mesh,
+  MeshStandardMaterial,
+  Raycaster,
+  RGBAFormat,
+  Scene,
+  SkinnedMesh,
+  Vector3,
+} from 'three';
+import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
+import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
+import { FORGE_HIDDEN_LAYER, World } from '../../src/compiler/World.js';
+import { tag } from '../../src/tags.js';
+import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
+
+const box = new BoxGeometry(1, 1, 1);
+const dodeca = new DodecahedronGeometry(0.5); // non-indexed
+const texture = new DataTexture(new Uint8Array(16), 2, 2, RGBAFormat);
+
+function solid(color: number, extra: ConstructorParameters<typeof MeshStandardMaterial>[0] = {}) {
+  return new MeshStandardMaterial({ color, roughness: 0.7, metalness: 0, ...extra });
+}
+
+/** 4 colour-variant statics (2 geometries), 2 textured statics, 1 dynamic, 1 skinned, 1 untagged: 9 meshes. */
+function mixedScene() {
+  const scene = new Scene();
+  const statics = [
+    tag.static(new Mesh(box, solid(0xff0000))),
+    tag.static(new Mesh(dodeca, solid(0x00ff00))),
+    tag.static(new Mesh(box, solid(0x0000ff))),
+    tag.static(new Mesh(dodeca, solid(0xffff00))),
+  ];
+  statics.forEach((m, i) => {
+    m.name = `static-${i}`;
+    m.position.set(i * 3, 0, 0);
+    m.rotation.y = i;
+  });
+  const textured = [tag.static(new Mesh(box, new MeshStandardMaterial({ map: texture }))), tag.static(new Mesh(box, new MeshStandardMaterial({ map: texture })))];
+  textured.forEach((m, i) => {
+    m.name = `textured-${i}`;
+    m.position.set(0, 0, 5 + i * 3);
+  });
+  const dynamic = tag.dynamic(new Mesh(box, solid(0xff0000)));
+  dynamic.name = 'dynamic';
+  const skinned = new SkinnedMesh(box, solid(0x123456));
+  skinned.name = 'skinned';
+  const untagged = new Mesh(box, solid(0x654321));
+  untagged.name = 'untagged';
+  scene.add(...statics, ...textured, dynamic, skinned, untagged);
+  return { scene, statics, textured, dynamic, skinned, untagged };
+}
+
+function meshesIn(scene: Scene): Mesh[] {
+  const out: Mesh[] = [];
+  scene.traverse((o) => {
+    if ((o as Mesh).isMesh) out.push(o as Mesh);
+  });
+  return out;
+}
+
+function batchesIn(scene: Scene): BatchedMesh[] {
+  return meshesIn(scene).filter((m): m is BatchedMesh => (m as BatchedMesh).isBatchedMesh);
+}
+
+describe('World.compile', () => {
+  it('batches statics per material variant, leaves dynamic, skinned and untagged meshes alone, and reports it', () => {
+    const { scene } = mixedScene();
+    const world = new World(scene);
+    const report = world.compile();
+
+    const batches = batchesIn(scene);
+    expect(batches).toHaveLength(2);
+    expect(batches.map((b) => b.instanceCount).sort()).toEqual([2, 4]);
+    expect(batches.every((b) => b.parent === scene)).toBe(true);
+    expect(batches.every((b) => /^forge:batch:[0-9a-f]{8}:\d+$/.test(b.name))).toBe(true);
+
+    expect(report.before).toEqual({ meshes: 9, materials: 9 });
+    expect(report.after).toEqual({ batches: 2, meshes: 3 });
+    expect(report.groups).toHaveLength(2);
+    expect(report.groups.map((g) => g.instances).sort()).toEqual([2, 4]);
+    expect(report.groups.find((g) => g.instances === 4)?.geometries).toBe(2);
+    expect(report.skipped).toEqual(
+      expect.arrayContaining([
+        { name: 'dynamic', rule: 'tag:dynamic' },
+        { name: 'skinned', rule: 'skinned-mesh' },
+        { name: 'untagged', rule: 'untagged' },
+      ]),
+    );
+    expect(report.registry.programs).toBeGreaterThan(0);
+  });
+
+  it('hides originals on the reserved layer with matrix updates off, keeping their parent links', () => {
+    const { scene, statics, dynamic } = mixedScene();
+    new World(scene).compile();
+    for (const m of statics) {
+      expect(m.parent).toBe(scene);
+      expect(m.layers.mask).toBe((1 << FORGE_HIDDEN_LAYER) >>> 0);
+      expect(m.matrixAutoUpdate).toBe(false);
+      expect(m.visible).toBe(true);
+    }
+    expect(dynamic.layers.mask).toBe(1);
+    expect(dynamic.matrixAutoUpdate).toBe(true);
+  });
+
+  it('copies world transforms and colours per instance and gives the batch a white clone of the canonical material', () => {
+    const { scene, statics } = mixedScene();
+    const world = new World(scene);
+    world.compile();
+    const batch = batchesIn(scene).find((b) => b.instanceCount === 4)!;
+    const matrix = new Matrix4();
+    const color = new Color();
+    for (const m of statics) {
+      const slot = world.slotOf(m)!;
+      expect(slot.batch).toBe(batch);
+      batch.getMatrixAt(slot.instanceId, matrix);
+      // Instance matrices live in a Float32 data texture, so compare with float tolerance.
+      matrix.elements.forEach((e, i) => expect(e).toBeCloseTo(m.matrixWorld.elements[i]!, 5));
+      batch.getColorAt(slot.instanceId, color);
+      expect(color.getHex()).toBe((m.material as MeshStandardMaterial).color.getHex());
+    }
+    const material = batch.material as MeshStandardMaterial;
+    expect(material.color.getHex()).toBe(0xffffff);
+    expect(statics.map((m) => m.material)).not.toContain(material);
+    expect(material.roughness).toBe(0.7);
+  });
+
+  it('sizes the batch buffers from the unique geometries and precomputes bounds', () => {
+    const { scene } = mixedScene();
+    new World(scene).compile();
+    const batch = batchesIn(scene).find((b) => b.instanceCount === 4)!;
+    expect(batch.maxInstanceCount).toBe(4);
+    expect(batch.unusedVertexCount).toBe(0);
+    expect(batch.unusedIndexCount).toBe(0);
+    expect(batch.boundingSphere).not.toBeNull();
+    expect(batch.boundingBox).not.toBeNull();
+  });
+
+  it('never batches a singleton (nothing to share a draw with) but still canonicalises its material', () => {
+    const scene = new Scene();
+    const a = tag.static(new Mesh(box, solid(0xabcdef)));
+    const b = tag.dynamic(new Mesh(box, solid(0xabcdef)));
+    scene.add(a, b);
+    const report = new World(scene).compile();
+    expect(batchesIn(scene)).toHaveLength(0);
+    expect(report.after).toEqual({ batches: 0, meshes: 2 });
+    expect(a.material).toBe(b.material);
+  });
+
+  it('splits groups on castShadow/receiveShadow and copies the flags onto the batch', () => {
+    const scene = new Scene();
+    const meshes = [0, 1, 2, 3].map((i) => tag.static(new Mesh(box, solid(0xffffff))));
+    meshes[0]!.castShadow = meshes[1]!.castShadow = true;
+    scene.add(...meshes);
+    new World(scene).compile();
+    const batches = batchesIn(scene);
+    expect(batches).toHaveLength(2);
+    expect(batches.map((b) => b.castShadow).sort()).toEqual([false, true]);
+  });
+
+  it('splits groups on geometry attribute signature and sorts only transparent batches', () => {
+    const scene = new Scene();
+    const noUv = box.clone();
+    noUv.deleteAttribute('uv');
+    scene.add(
+      tag.static(new Mesh(box, solid(1))),
+      tag.static(new Mesh(box, solid(2))),
+      tag.static(new Mesh(noUv, solid(3))),
+      tag.static(new Mesh(noUv, solid(4))),
+      tag.static(new Mesh(box, solid(5, { transparent: true, opacity: 0.5 }))),
+      tag.static(new Mesh(box, solid(6, { transparent: true, opacity: 0.5 }))),
+    );
+    new World(scene).compile();
+    const batches = batchesIn(scene);
+    expect(batches).toHaveLength(3);
+    const transparent = batches.filter((b) => (b.material as MeshStandardMaterial).transparent);
+    expect(transparent).toHaveLength(1);
+    expect(transparent[0]!.sortObjects).toBe(true);
+    expect(batches.filter((b) => !(b.material as MeshStandardMaterial).transparent).every((b) => b.sortObjects === false)).toBe(true);
+  });
+
+  it('annotates excluded statics in the ledger so their submissions carry the rule', () => {
+    const { scene, camera } = sceneWithCamera();
+    const mirrored = tag.static(new Mesh(box, solid(1)));
+    mirrored.name = 'mirrored';
+    mirrored.scale.x = -1;
+    scene.add(mirrored, tag.static(new Mesh(box, solid(1))));
+    const renderer = new FakeRenderer();
+    const ledger = new DrawCallLedger();
+    ledger.attach(renderer as never);
+    new World(scene, { ledger }).compile();
+    renderer.render(scene, camera);
+    const item = ledger.frame({ items: true }).items?.find((i) => i.name === 'mirrored');
+    expect(item?.reason).toBe('excluded:mirrored');
+  });
+});
+
+describe('World.decompile', () => {
+  it('restores the original graph, materials, layers and matrix flags, and can compile again', () => {
+    const { scene, statics, dynamic } = mixedScene();
+    const originalMaterials = meshesIn(scene).map((m) => m.material);
+    const world = new World(scene);
+    world.compile();
+    world.decompile();
+    expect(batchesIn(scene)).toHaveLength(0);
+    expect(meshesIn(scene)).toHaveLength(9);
+    expect(meshesIn(scene).map((m) => m.material)).toEqual(originalMaterials);
+    for (const m of [...statics, dynamic]) {
+      expect(m.layers.mask).toBe(1);
+      expect(m.matrixAutoUpdate).toBe(true);
+    }
+    const report = world.compile();
+    expect(report.after.batches).toBe(2);
+  });
+
+  it('with originals: "detach", removes originals from the graph and reattaches them at their old index', () => {
+    const { scene, statics } = mixedScene();
+    const group = new Group();
+    group.name = 'props';
+    scene.add(group);
+    group.add(statics[0]!);
+    const childrenBefore = [...scene.children];
+    const world = new World(scene, { originals: 'detach' });
+    world.compile();
+    expect(statics[0]!.parent).toBeNull();
+    expect(statics[1]!.parent).toBeNull();
+    world.decompile();
+    expect(statics[0]!.parent).toBe(group);
+    expect(scene.children).toEqual(childrenBefore);
+  });
+});
+
+describe('World.resolve', () => {
+  it('maps a raycast hit on a batch back to the original mesh', () => {
+    const { scene, statics } = mixedScene();
+    const world = new World(scene);
+    world.compile();
+    const target = statics[2]!; // box at x = 6
+    const raycaster = new Raycaster(new Vector3(6, 10, 0), new Vector3(0, -1, 0));
+    raycaster.layers.set(0);
+    const hits = raycaster.intersectObjects([...world.batchedMeshes], false);
+    expect(hits.length).toBeGreaterThan(0);
+    const hit = hits[0]!;
+    expect((hit.object as BatchedMesh).isBatchedMesh).toBe(true);
+    expect(world.resolve(hit)).toBe(target);
+  });
+
+  it('returns the hit object itself for non-batched hits', () => {
+    const { scene, dynamic } = mixedScene();
+    const world = new World(scene);
+    world.compile();
+    const hit = { object: dynamic } as unknown as Parameters<World['resolve']>[0];
+    expect(world.resolve(hit)).toBe(dynamic);
+  });
+});

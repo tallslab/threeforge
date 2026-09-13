@@ -3,6 +3,8 @@ import type { ForgeOptions } from './test/e2e/fixtures.js';
 
 export default defineConfig<ForgeOptions>({
   testDir: 'test/e2e',
+  // Baselines are committed once, without platform suffixes; tolerances absorb SwiftShader differences.
+  snapshotPathTemplate: '{testDir}/__screenshots__/{arg}{ext}',
   timeout: 90_000,
   fullyParallel: false,
   workers: 1,
