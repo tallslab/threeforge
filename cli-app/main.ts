@@ -16,6 +16,8 @@ interface CliFacts {
   ready: boolean;
   error?: string;
   asset?: { meshes: number; materials: number; vertices: number; triangles: number; animations: number; skinned: number; morph: number; loadMs: number };
+  /** Move the camera to orbit view `i` of `n` around the asset (30° elevation); `i = -1` restores the default framing. */
+  setView?(i: number, n: number): void;
 }
 declare global {
   interface Window {
@@ -112,9 +114,21 @@ try {
     triangles += (m.geometry.index ? m.geometry.index.count : (m.geometry.attributes.position?.count ?? 0)) / 3;
   });
 
-  const world = new World(scene, { registry, ledger, policy: (params.get('policy') as 'auto' | 'tagged' | null) ?? 'auto', animations: clips });
+  const bake = params.get('bake');
+  const world = new World(scene, { registry, ledger, policy: (params.get('policy') as 'auto' | 'tagged' | null) ?? 'auto', animations: clips, ...(bake ? { bake: bake === 'buried' ? { removeBuried: true } : true } : {}) });
   exposeToAgents({ ledger, world, renderer, scene, camera });
-  window.__threeforgeCli = { ready: true, asset: { meshes, materials: materials.size, vertices, triangles: Math.round(triangles), animations: clips.length, skinned, morph, loadMs } };
+  const home = camera.position.clone();
+  const setView = (i: number, n: number): void => {
+    if (i < 0) camera.position.copy(home);
+    else {
+      const a = (i / Math.max(1, n)) * Math.PI * 2;
+      const distance = home.distanceTo(sphere.center);
+      camera.position.set(sphere.center.x + Math.cos(a) * distance * Math.cos(Math.PI / 6), sphere.center.y + distance * Math.sin(Math.PI / 6), sphere.center.z + Math.sin(a) * distance * Math.cos(Math.PI / 6));
+    }
+    camera.lookAt(sphere.center);
+    camera.updateMatrixWorld();
+  };
+  window.__threeforgeCli = { ready: true, asset: { meshes, materials: materials.size, vertices, triangles: Math.round(triangles), animations: clips.length, skinned, morph, loadMs }, setView };
 } catch (error) {
   window.__threeforgeCli = { ready: false, error: error instanceof Error ? (error.stack ?? error.message) : String(error) };
   throw error;

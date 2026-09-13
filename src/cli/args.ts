@@ -1,4 +1,4 @@
-import type { AnalyzeInput, Backend, InspectInput, TierChoice } from './types.js';
+import type { AnalyzeInput, Backend, BakeChoice, InspectInput, TierChoice } from './types.js';
 
 export class UsageError extends Error {}
 
@@ -62,7 +62,7 @@ function choice<T extends string>(values: Flags['values'], key: string, allowed:
   return raw as T;
 }
 
-function runInput(values: Flags['values']): Omit<AnalyzeInput, 'file'> {
+function runInput(values: Flags['values']): Omit<InspectInput, 'url'> {
   return {
     backend: choice(values, 'backend', BACKENDS, 'webgl2'),
     tier: choice(values, 'tier', TIERS, 'auto'),
@@ -84,7 +84,9 @@ export function parseArgs(argv: string[]): Command {
     case 'analyze': {
       const file = rest[0];
       if (!file) throw new UsageError('analyze needs a file: threeforge analyze scene.glb');
-      return { name: 'analyze', json, input: { file, ...runInput(values) } };
+      const bake: BakeChoice = values.has('bake-buried') ? 'buried' : values.has('bake') ? 'on' : 'off';
+      const views = Math.max(0, Math.round(number(values, 'views', 0)));
+      return { name: 'analyze', json, input: { file, ...runInput(values), bake, views } };
     }
     case 'inspect': {
       const url = rest[0];

@@ -12,7 +12,8 @@ export function summarize(doc: AgentDocument): string {
   if (doc.asset) lines.push(`asset: ${doc.asset.meshes} meshes · ${doc.asset.materials} materials · ${doc.asset.triangles} tris · ${doc.asset.skinned} skinned · ${doc.asset.animations} clips · loaded in ${doc.asset.loadMs.toFixed(0)} ms`);
   if (doc.after) lines.push(`${doc.before.totals.sceneSubmissions} → ${doc.after.totals.sceneSubmissions} submissions after compile${doc.compile ? ` (${doc.compile.after.batches} batches, ${doc.compile.after.instanced} instanced, ${doc.compile.skipped.length} skipped)` : ''}`);
   else lines.push(`${doc.before.totals.sceneSubmissions} submissions`);
-  if (doc.parity) lines.push(`parity ${doc.parity.diffPct.toFixed(2)}% pixels changed (threshold ${doc.parity.threshold}%)`);
+  if (doc.parity) lines.push(`parity ${doc.parity.diffPct.toFixed(2)}% pixels changed over ${doc.parity.views.length} view${doc.parity.views.length === 1 ? '' : 's'} (threshold ${doc.parity.threshold}%)`);
+  if (doc.compile?.bake) lines.push(`bake: ${doc.compile.bake.groups} groups · ${doc.compile.bake.inputTriangles} → ${doc.compile.bake.triangles} tris · seams ${doc.compile.bake.contactFaces} · duplicates ${doc.compile.bake.duplicateFaces} · buried ${doc.compile.bake.buriedFaces} · welded ${doc.compile.bake.weldedVertices}`);
   lines.push(...formatCostRows(frame));
   lines.push(...formatHints(frame));
   lines.push(`${doc.timings.totalMs} ms total`);

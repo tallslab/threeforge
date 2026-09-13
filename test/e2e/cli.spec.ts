@@ -80,3 +80,20 @@ test('explain, schema and help are pure and fast', () => {
   expect(help.stdout).toContain('threeforge');
   expect(help.stdout).toContain('analyze');
 });
+
+test('analyze --bake --views keeps parity on a multi-part static asset and reports what the bake removed', async ({ forge }) => {
+  test.setTimeout(600_000);
+  const index = JSON.parse(readFileSync('test/assets/files/index.json', 'utf8')) as Array<{ name: string; entry: string }>;
+  const engine = index.find((a) => a.name === '2CylinderEngine')!;
+  const r = run(['analyze', `test/assets/files/${engine.entry}`, '--backend', forge.backend, '--frames', '3', '--bake', '--views', '3', '--json']);
+  expect(r.status, r.stderr).toBe(0);
+  const doc = JSON.parse(r.stdout);
+  expect(doc.input.bake).toBe('on');
+  expect(doc.compile.after.baked).toBeGreaterThan(0);
+  expect(doc.compile.bake.groups).toBe(doc.compile.after.baked);
+  expect(doc.compile.bake.triangles).toBeLessThanOrEqual(doc.compile.bake.inputTriangles);
+  expect(doc.parity.views.map((v: { view: string }) => v.view)).toEqual(['default', 'orbit-0', 'orbit-1', 'orbit-2']);
+  expect(doc.parity.pass, JSON.stringify(doc.parity)).toBe(true);
+  expect(doc.after.totals.unattributed).toBe(0);
+  expect(r.stderr).toContain('bake:');
+});

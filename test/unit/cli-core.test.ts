@@ -13,7 +13,9 @@ const env = { three: '186', backend: 'webgl2' as const, multiDraw: true, tier: '
 
 describe('parseArgs', () => {
   it('parses analyze with defaults and flags', () => {
-    expect(parseArgs(['analyze', 'a.glb'])).toEqual({ name: 'analyze', json: false, input: { file: 'a.glb', backend: 'webgl2', tier: 'auto', budget: null, frames: 30, compile: true, timeout: 60000, headed: false } });
+    expect(parseArgs(['analyze', 'a.glb'])).toEqual({ name: 'analyze', json: false, input: { file: 'a.glb', backend: 'webgl2', tier: 'auto', budget: null, frames: 30, compile: true, bake: 'off', views: 0, timeout: 60000, headed: false } });
+    expect(parseArgs(['analyze', 'a.glb', '--bake', '--views', '4'])).toMatchObject({ input: { bake: 'on', views: 4 } });
+    expect(parseArgs(['analyze', 'a.glb', '--bake-buried'])).toMatchObject({ input: { bake: 'buried' } });
     expect(parseArgs(['analyze', 'a.glb', '--backend', 'webgpu', '--tier', 'phone-mid', '--budget', '150', '--frames', '10', '--no-compile', '--json', '--timeout', '5000', '--headed'])).toMatchObject({
       json: true,
       input: { backend: 'webgpu', tier: 'phone-mid', budget: 150, frames: 10, compile: false, timeout: 5000, headed: true },
@@ -46,14 +48,14 @@ describe('verdict', () => {
     expect(verdictOf(clean, clean, null, null)).toEqual({ pass: true, budget: null, errors: [], reasons: [] });
     const over = emptyFrame(env);
     over.totals.sceneSubmissions = 200;
-    const v = verdictOf(over, over, 100, { diffPct: 0.1, threshold: 0.5, pass: true });
+    const v = verdictOf(over, over, 100, { diffPct: 0.1, threshold: 0.5, pass: true, views: [] });
     expect(v.pass).toBe(false);
     expect(v.budget).toEqual({ maxSubmissions: 100, actual: 200, pass: false });
     expect(exitCodeOf(v)).toBe(1);
     const bad = emptyFrame(env);
     bad.hints = [{ category: 'drawCalls', severity: 'error', code: 'unsupported-material', message: 'x', objects: [] }];
     expect(verdictOf(bad, bad, null, null).errors).toEqual(['unsupported-material']);
-    expect(verdictOf(clean, clean, null, { diffPct: 2, threshold: 0.5, pass: false }).reasons).toContain('pixel parity 2.00% > 0.5%');
+    expect(verdictOf(clean, clean, null, { diffPct: 2, threshold: 0.5, pass: false, views: [] }).reasons).toContain('pixel parity 2.00% > 0.5%');
     expect(exitCodeOf(verdictOf(clean, clean, null, null))).toBe(0);
   });
 });
@@ -95,8 +97,8 @@ describe('summarize', () => {
     const after = emptyFrame(env);
     after.totals.sceneSubmissions = 30;
     after.hints = [{ category: 'lighting', severity: 'warn', code: 'shadow-texels', message: 'too many', objects: [] }];
-    const input: AnalyzeInput = { file: 'a.glb', backend: 'webgl2', tier: 'auto', budget: 100, frames: 30, compile: true, timeout: 60000, headed: false };
-    const doc: AgentDocument = { schemaVersion: 1, tool: 'threeforge', version: '0.2.0', command: 'analyze', input, env, asset: null, before, after, compile: null, parity: { diffPct: 0.01, threshold: 0.5, pass: true }, hints: after.hints, verdict: verdictOf(after, before, 100, null), timings: { totalMs: 10 } };
+    const input: AnalyzeInput = { file: 'a.glb', backend: 'webgl2', tier: 'auto', budget: 100, frames: 30, compile: true, bake: 'off', views: 0, timeout: 60000, headed: false };
+    const doc: AgentDocument = { schemaVersion: 1, tool: 'threeforge', version: '0.2.0', command: 'analyze', input, env, asset: null, before, after, compile: null, parity: { diffPct: 0.01, threshold: 0.5, pass: true, views: [{ view: 'default', diffPct: 0.01 }] }, hints: after.hints, verdict: verdictOf(after, before, 100, null), timings: { totalMs: 10 } };
     const text = summarize(doc);
     expect(text).toContain('PASS');
     expect(text).toContain('500 → 30 submissions');

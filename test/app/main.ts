@@ -436,6 +436,7 @@ try {
     occlusion: params.get('occlusion') === '1',
     ...(params.get('materials') === 'keep' ? { materials: 'keep' as const } : {}),
     ...(params.get('nested') === 'per-pass' ? { nestedPasses: 'per-pass' as const } : {}),
+    ...(params.has('bake') ? { bake: params.get('bake') === 'buried' ? { removeBuried: true } : true } : {}),
     ...(bench?.worldOptions ?? {}),
   });
   const compile = (): CompileReport => {

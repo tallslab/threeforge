@@ -4,6 +4,8 @@ import type { FrameEnv, FrameSnapshot, Hint, Tier } from '../ledger/snapshot.js'
 export type Backend = 'webgl2' | 'webgpu';
 export type TierChoice = Tier | 'auto';
 
+export type BakeChoice = 'off' | 'on' | 'buried';
+
 export interface AnalyzeInput {
   file: string;
   backend: Backend;
@@ -11,6 +13,10 @@ export interface AnalyzeInput {
   budget: number | null;
   frames: number;
   compile: boolean;
+  /** Bake finished groups (`on`), also removing buried faces (`buried`), or batch only (`off`). */
+  bake: BakeChoice;
+  /** Extra orbit views for pixel parity on top of the default framing (0 = default framing only). */
+  views: number;
   timeout: number;
   headed: boolean;
 }
@@ -38,9 +44,12 @@ export interface AssetFacts {
 }
 
 export interface Parity {
+  /** Worst view. */
   diffPct: number;
   threshold: number;
   pass: boolean;
+  /** Per view: `default` plus `orbit-<i>` for each extra view. */
+  views: Array<{ view: string; diffPct: number }>;
 }
 
 export interface Verdict {

@@ -33,6 +33,17 @@ export function pixelDiffPct(a: Buffer, b: Buffer): number {
   return (100 * differing) / Math.max(1, n);
 }
 
+/** Screenshots of the default framing plus `views` orbit views (the page's `setView`), then back to the default. */
+async function captureViews(page: PlaywrightPage, views: number): Promise<Array<{ view: string; png: Buffer }>> {
+  const shots: Array<{ view: string; png: Buffer }> = [];
+  for (let i = -1; i < views; i++) {
+    await page.evaluate(`(async () => { window.__threeforgeCli.setView(${i}, ${views}); for (let k = 0; k < 2; k++) await window.__threeforge.frameAsync(); })()`);
+    shots.push({ view: i < 0 ? 'default' : `orbit-${i}`, png: await page.screenshot({ type: 'png' }) });
+  }
+  if (views > 0) await page.evaluate(`(async () => { window.__threeforgeCli.setView(-1, ${views}); await window.__threeforge.frameAsync(); })()`);
+  return shots;
+}
+
 async function waitReady(page: PlaywrightPage, timeout: number): Promise<AssetFacts> {
   await waitFor(page, `!!(window.__threeforgeCli && (window.__threeforgeCli.ready === true || typeof window.__threeforgeCli.error === 'string'))`, timeout, 'the harness page did not become ready');
   const facts = await page.evaluate<{ ready: boolean; error?: string; asset?: AssetFacts }>(`window.__threeforgeCli`);
@@ -54,7 +65,7 @@ export async function analyzeAsset(input: AnalyzeInput, log: (line: string) => v
     const page = await browser.newPage();
     const pageErrors: string[] = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
-    const q = new URLSearchParams({ file: `/asset/${basename(file)}`, backend: input.backend, tier: input.tier });
+    const q = new URLSearchParams({ file: `/asset/${basename(file)}`, backend: input.backend, tier: input.tier, ...(input.bake === 'off' ? {} : { bake: input.bake === 'buried' ? 'buried' : '1' }) });
     log(`opening ${basename(file)} on ${input.backend}`);
     await page.goto(`${server.url}/?${q.toString()}`, { timeout: input.timeout, waitUntil: 'domcontentloaded' });
     const asset = await waitReady(page, input.timeout);
@@ -64,14 +75,17 @@ export async function analyzeAsset(input: AnalyzeInput, log: (line: string) => v
     let compile: CompileReport | null = null;
     let parity: Parity | null = null;
     if (input.compile) {
-      const shotBefore = await page.screenshot({ type: 'png' });
+      const shotsBefore = await captureViews(page, input.views);
       compile = await page.evaluate<CompileReport>(`window.__threeforge.compile()`);
-      log(`compiled: ${compile.after.batches} batches, ${compile.after.instanced} instanced, ${compile.skipped.length} skipped; measuring again`);
+      log(`compiled: ${compile.after.batches} batches, ${compile.after.instanced} instanced, ${compile.after.baked} baked, ${compile.skipped.length} skipped; measuring again`);
+      if (compile.bake) log(`bake: ${compile.bake.inputTriangles} -> ${compile.bake.triangles} triangles (${compile.bake.contactFaces} seam, ${compile.bake.duplicateFaces} duplicate, ${compile.bake.buriedFaces} buried faces removed, ${compile.bake.weldedVertices} vertices welded)`);
       await page.evaluate(`(async () => { for (let i = 0; i < 3; i++) await window.__threeforge.frameAsync(); })()`);
       after = (await measureViaHook(page, input.frames)).snapshot;
-      const shotAfter = await page.screenshot({ type: 'png' });
-      const diffPct = pixelDiffPct(shotBefore, shotAfter);
-      parity = { diffPct: Number(diffPct.toFixed(3)), threshold: PARITY_THRESHOLD, pass: diffPct <= PARITY_THRESHOLD };
+      const shotsAfter = await captureViews(page, input.views);
+      const views = shotsBefore.map((shot, i) => ({ view: shot.view, diffPct: Number(pixelDiffPct(shot.png, shotsAfter[i]!.png).toFixed(3)) }));
+      const worst = Math.max(...views.map((v) => v.diffPct));
+      parity = { diffPct: worst, threshold: PARITY_THRESHOLD, pass: worst <= PARITY_THRESHOLD, views };
+      if (!parity.pass) log(`pixel parity lost: ${views.filter((v) => v.diffPct > PARITY_THRESHOLD).map((v) => `${v.view} ${v.diffPct}%`).join(', ')}`);
     }
     if (pageErrors.length) log(`page errors: ${pageErrors.join(' | ')}`);
     const hints = (after ?? before.snapshot).hints;

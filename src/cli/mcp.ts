@@ -48,11 +48,11 @@ export async function serveMcp(): Promise<void> {
     {
       title: 'Analyze a glTF asset',
       description: 'Render a .glb/.gltf headlessly, measure every frame cost (draw calls, overdraw, skinning, lighting, js, memory), compile it with threeforge, measure again, compare pixels and return hints with a verdict.',
-      inputSchema: { file: z.string().describe('Path to a .glb or .gltf file'), ...runShape },
+      inputSchema: { file: z.string().describe('Path to a .glb or .gltf file'), ...runShape, bake: z.enum(['off', 'on', 'buried']).default('off').describe('Bake finished groups into one mesh each (seams and duplicates removed); buried also removes faces solid geometry sits right in front of'), views: z.number().int().nonnegative().default(0).describe('Extra orbit views for pixel parity') },
     },
     async (args: Record<string, unknown>) => {
       try {
-        const input: AnalyzeInput = { file: String(args.file), backend: args.backend as AnalyzeInput['backend'], tier: args.tier as AnalyzeInput['tier'], budget: typeof args.budget === 'number' ? args.budget : null, frames: Number(args.frames ?? 30), compile: args.compile !== false, timeout: Number(args.timeout ?? 60000), headed: false };
+        const input: AnalyzeInput = { file: String(args.file), backend: args.backend as AnalyzeInput['backend'], tier: args.tier as AnalyzeInput['tier'], budget: typeof args.budget === 'number' ? args.budget : null, frames: Number(args.frames ?? 30), compile: args.compile !== false, bake: (args.bake as AnalyzeInput['bake']) ?? 'off', views: Number(args.views ?? 0), timeout: Number(args.timeout ?? 60000), headed: false };
         return ok(await analyzeAsset(input));
       } catch (error) {
         return fail(error);
@@ -98,7 +98,7 @@ interface McpServerLike {
 }
 interface ZodLike {
   enum(values: [string, ...string[]]): { default(v: string): { describe(d: string): unknown } };
-  number(): { int(): { nonnegative(): { optional(): { describe(d: string): unknown } }; positive(): { default(v: number): { describe(d: string): unknown } } } };
+  number(): { int(): { nonnegative(): { optional(): { describe(d: string): unknown }; default(v: number): { describe(d: string): unknown } }; positive(): { default(v: number): { describe(d: string): unknown } } } };
   boolean(): { default(v: boolean): { describe(d: string): unknown } };
   string(): { describe(d: string): unknown; optional(): { describe(d: string): unknown } };
 }

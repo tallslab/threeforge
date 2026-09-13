@@ -38,7 +38,7 @@ export const SNAPSHOT_SCHEMA = {
 const runInput = (first: Record<string, Schema>): Schema => obj({ ...first, backend: { enum: ['webgl2', 'webgpu'] }, tier: { enum: ['auto', 'desktop', 'phone-mid', 'phone-low'] }, budget: nullable(number), frames: integer, compile: boolean, timeout: number, headed: boolean });
 const verdict = obj({ pass: boolean, budget: nullable(obj({ maxSubmissions: number, actual: integer, pass: boolean })), errors: arr(string), reasons: arr(string) });
 const asset = obj({ meshes: integer, materials: integer, vertices: integer, triangles: integer, animations: integer, skinned: integer, morph: integer, loadMs: number });
-const parity = obj({ diffPct: number, threshold: number, pass: boolean });
+const parity = obj({ diffPct: number, threshold: number, pass: boolean, views: arr(obj({ view: string, diffPct: number })) });
 const compileReport: Schema = { type: 'object', description: 'threeforge CompileReport: before/after counts, groups, skipped meshes with their rule', additionalProperties: true };
 
 function document(command: 'analyze' | 'inspect', input: Schema, assetSchema: Schema, paritySchema: Schema) {
@@ -68,5 +68,5 @@ function document(command: 'analyze' | 'inspect', input: Schema, assetSchema: Sc
   };
 }
 
-export const ANALYZE_SCHEMA = document('analyze', runInput({ file: string }), asset, nullable(parity));
+export const ANALYZE_SCHEMA = document('analyze', obj({ file: string, backend: { enum: ['webgl2', 'webgpu'] }, tier: { enum: ['auto', 'desktop', 'phone-mid', 'phone-low'] }, budget: nullable(number), frames: integer, compile: boolean, bake: { enum: ['off', 'on', 'buried'] }, views: integer, timeout: number, headed: boolean }), asset, nullable(parity));
 export const INSPECT_SCHEMA = document('inspect', runInput({ url: string }), { type: 'null' }, { type: 'null' });

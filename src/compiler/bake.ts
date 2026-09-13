@@ -22,7 +22,7 @@ export interface BakeEntry {
 export interface BuriedOptions {
   /** Rays per face over the front hemisphere (default 24). */
   samples?: number;
-  /** A face is buried only when every ray is blocked within this many world units (default 0.1). */
+  /** A face is buried only when every ray is blocked within this depth along the face normal, in world units (default 0.1): solid right in front of it, unlike a room interior. */
   distance?: number;
 }
 
@@ -387,7 +387,8 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
         ray.origin.copy(origin);
         ray.direction.set(0, 0, 0).addScaledVector(t1, r * Math.cos(phi)).addScaledVector(t2, r * Math.sin(phi)).addScaledVector(normal, z).normalize();
         const hit = bvh.raycastFirst(ray, DoubleSide);
-        if (!hit || hit.distance > buried.distance) return false;
+        // Depth along the face normal, so a wall parallel to the face at gap g blocks at g from every angle.
+        if (!hit || hit.distance * z > buried.distance) return false;
       }
       return true;
     };
