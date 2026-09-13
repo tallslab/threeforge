@@ -13,6 +13,9 @@ const scenes: Array<{ id: string; naiveMin: number; optimizedMax: number; counts
   // Sprites are not batched until SP3 and the water reflection renders them twice: the lake's optimized bound is loose on purpose.
   { id: 'lake', naiveMin: 1900, optimizedMax: 4200, counts: { rain: 2000 } },
   { id: 'daynight', naiveMin: 300, optimizedMax: 70, counts: { props: 300, shadowMap: 2048 } },
+  { id: 'zen', naiveMin: 5000, optimizedMax: 420, counts: { objects: 50000, chunks: 64 }, timeout: 600_000 },
+  // One of four gear pieces is always taken off: body + 3 gear naive, one merged skinned mesh optimized.
+  { id: 'rpg', naiveMin: 4, optimizedMax: 1, counts: { gear: 4 } },
 ];
 
 for (const s of scenes) {
@@ -26,6 +29,7 @@ for (const s of scenes) {
       return { totals: f.totals, env: f.env, counts: window.__forge.bench!.counts };
     });
     expect(naive.counts).toMatchObject(s.counts);
+    if (s.id === 'rpg') expect(naive.env.viewport).toEqual([450, 800]);
     expect(naive.totals.unattributed).toBe(0);
     expect(naive.totals.sceneSubmissions).toBeGreaterThanOrEqual(s.naiveMin);
     await forge.open(s.id, { variant: 'optimized' });
