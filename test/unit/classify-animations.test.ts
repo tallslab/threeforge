@@ -46,7 +46,7 @@ describe('classify with animation clips', () => {
     scene.add(a, b, c);
     const clip = new AnimationClip('x', 1, [new VectorKeyframeTrack('c.position', [0, 1], [0, 0, 0, 1, 1, 1])]);
     const report = new World(scene, { animations: [clip] }).compile();
-    expect(report.after).toEqual({ batches: 1, instanced: 0, meshes: 1 });
+    expect(report.after).toEqual({ batches: 1, instanced: 0, baked: 0, meshes: 1 });
     expect(report.skipped).toContainEqual({ name: 'c', rule: 'animated' });
   });
 });

@@ -4,6 +4,7 @@ import { tag, type ForgeTag } from '../tags.js';
 /** Why a submission exists. One primary reason per submission; `excluded:<rule>` comes from the compiler. */
 export type Reason =
   | 'batched'
+  | 'baked'
   | 'instanced'
   | 'unique-material'
   | 'dynamic'
@@ -108,7 +109,9 @@ export function reasonOf({ object, material, group, root, unsupported, annotatio
   const o = object as Flags;
   if (!isDescendantOf(object, root)) return 'renderer-internal';
   if ((root as { isScene?: boolean }).isScene !== true) return 'fullscreen-pass';
-  if ((object.userData.forge as { kind?: string } | undefined)?.kind === 'occlusion-proxy') return 'occlusion-proxy';
+  const forgeKind = (object.userData.forge as { kind?: string } | undefined)?.kind;
+  if (forgeKind === 'occlusion-proxy') return 'occlusion-proxy';
+  if (forgeKind === 'bake') return 'baked';
   if (o.isPoints) return 'points';
   if (o.isSprite) return 'sprite';
   if (o.isLine) return 'line';

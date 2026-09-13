@@ -55,7 +55,7 @@ describe("World with dynamics: 'batch-sync'", () => {
     expect(mover.layers.mask).toBe((1 << FORGE_HIDDEN_LAYER) >>> 0);
     expect(mover.matrixAutoUpdate).toBe(true);
     expect(batch.frustumCulled).toBe(false);
-    expect(report.after).toEqual({ batches: 1, instanced: 0, meshes: 1 });
+    expect(report.after).toEqual({ batches: 1, instanced: 0, baked: 0, meshes: 1 });
     expect(report.skipped.map((s) => s.name)).toEqual(['lonely']);
     expect(report.synced).toBe(1);
     expect(lonely.layers.mask).toBe(1);

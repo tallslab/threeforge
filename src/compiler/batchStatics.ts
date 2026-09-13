@@ -1,14 +1,30 @@
-import { BatchedMesh, Color, WebGLCoordinateSystem, type BufferGeometry, type CoordinateSystem, type InstancedMesh, type Material, type Mesh, type Scene } from 'three';
+import { BatchedMesh, Color, DoubleSide, Mesh, WebGLCoordinateSystem, type BufferGeometry, type CoordinateSystem, type InstancedMesh, type Material, type Scene } from 'three';
+import { bakeGeometries, type BakeEntry, type BakeOptions, type BakeReport } from './bake.js';
 import { createCulledInstancedMesh } from './instancing.js';
 import type { NestedPassPolicy } from './culling.js';
 import { lodsOf } from '../lod/generateLods.js';
 import type { MaterialRegistry } from '../registry/MaterialRegistry.js';
 import { attributeSignature, ensureIndexed } from './geometryCompat.js';
 
-/** Where an original mesh went: a BatchedMesh instance id, or an InstancedMesh master index. */
+/** Where an original mesh went: a BatchedMesh instance id, an InstancedMesh master index, or a baked mesh's entry index. */
 export interface Slot {
-  batch: BatchedMesh | InstancedMesh;
+  batch: BatchedMesh | InstancedMesh | Mesh;
   instanceId: number;
+}
+
+/** A finished group baked into one world-space mesh; rebaked when a module is hidden or shown. */
+export interface BakedGroup {
+  mesh: Mesh;
+  /** The modules, in entry order (`triangleOrigins` indexes this). */
+  entries: Mesh[];
+  hidden: Set<Mesh>;
+  options: BakeOptions;
+  /** True when the material is a clone made for vertex colours (disposed on decompile). */
+  ownsMaterial: boolean;
+  report: BakeReport;
+  triangleOrigins: Uint32Array;
+  /** The removed triangles, for inspection. */
+  removed: BufferGeometry;
 }
 
 export interface BatchOptions {
@@ -21,11 +37,17 @@ export interface BatchOptions {
   lodDistances?: number[];
   nestedPasses?: NestedPassPolicy;
   mainCamera?: () => import('three').Camera | null;
+  /** Bake finished groups into one mesh each (seams and duplicates removed, vertices welded) instead of batching them. */
+  bake?: BakeOptions;
+  /** Meshes that must stay in a BatchedMesh (matrix-synced dynamics): a group containing one is batched, not baked. */
+  noBake?: Set<Mesh>;
 }
 
 export interface GroupReport {
   name: string;
-  kind: 'batched' | 'instanced';
+  kind: 'batched' | 'instanced' | 'baked';
+  /** Present for baked groups. */
+  bake?: BakeReport;
   /** Cell coordinates when `chunkSize` is set, else null. */
   chunk: [number, number, number] | null;
   /** LOD levels beyond the base geometry that this group can switch to. */
@@ -42,6 +64,7 @@ export interface GroupReport {
 export interface BatchResult {
   batches: BatchedMesh[];
   instanced: InstancedMesh[];
+  baked: BakedGroup[];
   groups: GroupReport[];
   slots: Map<Mesh, Slot>;
   originals: Map<BatchedMesh | InstancedMesh, Mesh[]>;
@@ -86,7 +109,8 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
     group.meshes.push(mesh);
   }
 
-  const result: BatchResult = { batches: [], instanced: [], groups: [], slots: new Map(), originals: new Map(), singletons: [], lodGeometryIds: new Map() };
+  const result: BatchResult = { batches: [], instanced: [], baked: [], groups: [], slots: new Map(), originals: new Map(), singletons: [], lodGeometryIds: new Map() };
+  const perProgramBaked = new Map<string, number>();
   const perProgram = new Map<string, number>();
   const perProgramInstanced = new Map<string, number>();
   const isWhite = (m: Material) => {
@@ -164,6 +188,30 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
       result.singletons.push(...group.meshes);
       continue;
     }
+    if (options.bake && !group.meshes.some((m) => options.noBake?.has(m))) {
+      const index = perProgramBaked.get(programHash) ?? 0;
+      perProgramBaked.set(programHash, index + 1);
+      const baked = bakeGroup(group, options.bake, shareCanonical, `forge:bake:${programHash}:${index}`);
+      scene.add(baked.mesh);
+      result.baked.push(baked);
+      group.meshes.forEach((mesh, i) => result.slots.set(mesh, { batch: baked.mesh, instanceId: i }));
+      result.originals.set(baked.mesh as never, group.meshes);
+      result.groups.push({
+        name: baked.mesh.name,
+        kind: 'baked',
+        bake: baked.report,
+        chunk: group.chunk,
+        lods: 0,
+        programHash,
+        variantHash,
+        instances: group.meshes.length,
+        geometries: new Set(group.meshes.map((m) => m.geometry)).size,
+        transparent: (baked.mesh.material as Material).transparent,
+        castShadow: group.castShadow,
+        receiveShadow: group.receiveShadow,
+      });
+      continue;
+    }
     const unique = new Map<BufferGeometry, BufferGeometry>();
     const lodGeometries = new Map<BufferGeometry, BufferGeometry[]>();
     let lodLevels = 0;
@@ -235,4 +283,59 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
     });
   }
   return result;
+}
+
+/** Bake entries for a group's modules: world matrices, instance tints, per-module opt-out, material sidedness. */
+export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Material): BakeEntry[] {
+  return meshes
+    .filter((m) => !hidden.has(m))
+    .map((m) => ({
+      geometry: m.geometry,
+      matrix: m.matrixWorld,
+      color: (m.material as Material & { color?: Color }).color ?? null,
+      bake: m.userData.forgeBake !== false,
+      doubleSided: material.side === DoubleSide,
+    }));
+}
+
+function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, name: string): BakedGroup {
+  const canonical = group.canonical;
+  const entries = bakeEntriesOf(group.meshes, new Set(), canonical);
+  const result = bakeGeometries(entries, options);
+  // Instance tints become vertex colours: the material then needs vertexColors and a white base colour.
+  let material: Material = canonical;
+  let ownsMaterial = false;
+  if (result.hasColor && !shareCanonical) {
+    material = canonical.clone();
+    (material as Material & { vertexColors: boolean }).vertexColors = true;
+    const color = (material as Material & { color?: Color }).color;
+    if (color) color.copy(_white);
+    material.name = `${canonical.name || canonical.type} (forge bake)`;
+    ownsMaterial = true;
+  }
+  const mesh = new Mesh(result.geometry, material);
+  mesh.name = name;
+  mesh.castShadow = group.castShadow;
+  mesh.receiveShadow = group.receiveShadow;
+  mesh.matrixAutoUpdate = false;
+  const baked: BakedGroup = { mesh, entries: group.meshes, hidden: new Set(), options, ownsMaterial, report: result.report, triangleOrigins: result.triangleOrigins, removed: result.removed };
+  mesh.userData.forge = { kind: 'bake', report: result.report, triangleOrigins: result.triangleOrigins };
+  return baked;
+}
+
+/** Rebuild a baked group's geometry after modules were hidden or shown. */
+export function rebake(group: BakedGroup): void {
+  const material = group.mesh.material as Material;
+  const entriesVisible = group.entries.filter((m) => !group.hidden.has(m));
+  const entries = bakeEntriesOf(entriesVisible, new Set(), material);
+  const result = bakeGeometries(entries, group.options);
+  group.mesh.geometry.dispose();
+  group.removed.dispose();
+  group.mesh.geometry = result.geometry;
+  group.removed = result.removed;
+  group.report = result.report;
+  // triangleOrigins index the visible subset; map back to entry positions in the full list.
+  const map = entriesVisible.map((m) => group.entries.indexOf(m));
+  group.triangleOrigins = Uint32Array.from(result.triangleOrigins, (i) => map[i]!);
+  group.mesh.userData.forge = { kind: 'bake', report: result.report, triangleOrigins: group.triangleOrigins };
 }

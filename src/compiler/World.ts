@@ -1,8 +1,9 @@
-import { BoxGeometry, DoubleSide, Mesh, MeshBasicMaterial, Vector3, Vector4, WebGLCoordinateSystem, WebGPUCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Texture } from 'three';
+import { BoxGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, Vector3, Vector4, WebGLCoordinateSystem, WebGPUCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Texture } from 'three';
 import type { DrawCallLedger } from '../ledger/DrawCallLedger.js';
 import { displayName } from '../ledger/reasons.js';
 import { MaterialRegistry, type RegistryStats } from '../registry/MaterialRegistry.js';
-import { batchStatics, type GroupReport, type Slot } from './batchStatics.js';
+import { batchStatics, type GroupReport, type Slot, rebake, type BakedGroup } from './batchStatics.js';
+import type { BakeOptions } from './bake.js';
 import type { CulledInstancedMesh } from './instancing.js';
 import { classify, exclusionRule, type AnimationSource, type Classification } from './classify.js';
 import { attachBvhCulling, prependAfterRenderHook, prependRenderHook, type CullingHandle, type NestedPassPolicy } from './culling.js';
@@ -47,6 +48,13 @@ export interface WorldOptions {
   nestedPasses?: NestedPassPolicy | 'auto';
   /** `canonical` (default): meshes left unbatched get the registry's canonical material; `keep`: materials are left alone. */
   materials?: 'canonical' | 'keep';
+  /**
+   * Bake finished static groups into one world-space mesh each instead of a BatchedMesh: contact seams between
+   * touching modules and duplicated faces are removed, vertices welded where position, normal, uv and colour
+   * agree; `removeBuried` is opt-in. Every removal is counted in the report and returned by `bakeDebug()`.
+   * Modules with `userData.forgeBake = false` pass through untouched. Hiding a baked module rebakes its group.
+   */
+  bake?: boolean | BakeOptions;
 }
 
 export interface CompileOptions {
@@ -54,9 +62,22 @@ export interface CompileOptions {
   coordinateSystem?: CoordinateSystem;
 }
 
+export interface BakeSummary {
+  groups: number;
+  inputTriangles: number;
+  triangles: number;
+  contactFaces: number;
+  duplicateFaces: number;
+  buriedFaces: number;
+  weldedVertices: number;
+  excludedEntries: number;
+}
+
 export interface CompileReport {
   before: { meshes: number; materials: number };
-  after: { batches: number; instanced: number; meshes: number };
+  after: { batches: number; instanced: number; baked: number; meshes: number };
+  /** Totals over the baked groups, null when `bake` is off. */
+  bake: BakeSummary | null;
   groups: GroupReport[];
   skipped: { name: string; rule: string }[];
   registry: RegistryStats;
@@ -167,6 +188,8 @@ export class World {
   private syncedSet = new Set<Mesh>();
   private batches: BatchedMesh[] = [];
   private instanced: InstancedMesh[] = [];
+  private baked: BakedGroup[] = [];
+  private readonly bakeOptions: BakeOptions | null;
   private slots = new Map<Mesh, Slot>();
   private originalsByBatch = new Map<BatchedMesh | InstancedMesh, Mesh[]>();
   private hidden: OriginalState[] = [];
@@ -188,6 +211,7 @@ export class World {
     this.animations = options.animations ?? [];
     this.nestedPassesOption = options.nestedPasses ?? 'auto';
     this.materialsMode = options.materials ?? 'canonical';
+    this.bakeOptions = options.bake === true ? {} : options.bake ? options.bake : null;
   }
 
   /** The camera of the outermost render in the current or last frame (tracked once compiled with `reuse-main`). */
@@ -206,6 +230,24 @@ export class World {
 
   get batchedMeshes(): readonly BatchedMesh[] {
     return this.batches;
+  }
+
+  /** One mesh per baked group (empty unless `bake` is on). */
+  get bakedMeshes(): readonly Mesh[] {
+    return this.baked.map((b) => b.mesh);
+  }
+
+  /** The faces every bake removed, one unlit red double-sided mesh per group, for inspection. Not added to the scene. */
+  bakeDebug(): Group {
+    const group = new Group();
+    group.name = 'forge:bake-debug';
+    this.baked.forEach((b, i) => {
+      const mesh = new Mesh(b.removed, new MeshBasicMaterial({ color: 0xff2040, side: DoubleSide, depthTest: false, transparent: true, opacity: 0.85 }));
+      mesh.name = `forge:bake-removed:${i}`;
+      mesh.renderOrder = 1000;
+      group.add(mesh);
+    });
+    return group;
   }
 
   compile(options: CompileOptions = {}): CompileReport {
@@ -243,9 +285,11 @@ export class World {
         if (rule === null) statics.push(c.object);
       }
     }
-    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem, chunkSize: this.chunkSize, nestedPasses, mainCamera, ...(this.lod ? { lodDistances: this.lod.distances } : {}) });
+    const noBake = new Set<Mesh>([...syncRule.entries()].filter(([, rule]) => rule === null).map(([mesh]) => mesh));
+    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem, chunkSize: this.chunkSize, nestedPasses, mainCamera, ...(this.lod ? { lodDistances: this.lod.distances } : {}), ...(this.bakeOptions ? { bake: this.bakeOptions, noBake } : {}) });
     this.batches = result.batches;
     this.instanced = result.instanced;
+    this.baked = result.baked;
     this.slots = result.slots;
     this.originalsByBatch = result.originals;
     if (this.cullingMode === 'bvh') {
@@ -285,7 +329,8 @@ export class World {
     this.compiled = true;
     return {
       before,
-      after: { batches: this.batches.length, instanced: this.instanced.length, meshes: classifications.length - result.slots.size },
+      after: { batches: this.batches.length, instanced: this.instanced.length, baked: this.baked.length, meshes: classifications.length - result.slots.size },
+      bake: this.bakeOptions ? this.bakeSummary() : null,
       groups: result.groups,
       skipped,
       registry: this.registry.stats(),
@@ -340,11 +385,19 @@ export class World {
     }
   }
 
-  /** Show or hide an original mesh, wherever it ended up. */
+  /** Show or hide an original mesh, wherever it ended up. A baked module rebakes its group. */
   setVisible(original: Mesh, visible: boolean): void {
     const slot = this.slots.get(original);
     if (!slot) {
       original.visible = visible;
+      return;
+    }
+    const bakedGroup = this.baked.find((b) => b.mesh === slot.batch);
+    if (bakedGroup) {
+      if (visible === !bakedGroup.hidden.has(original)) return;
+      if (visible) bakedGroup.hidden.delete(original);
+      else bakedGroup.hidden.add(original);
+      rebake(bakedGroup);
       return;
     }
     const target = slot.batch as BatchedMesh | CulledInstancedMesh;
@@ -357,8 +410,10 @@ export class World {
     const perTarget = new Map<BatchedMesh | InstancedMesh, SyncEntry[]>();
     for (const mesh of this.syncedSet) {
       const slot = slots.get(mesh)!;
-      let list = perTarget.get(slot.batch);
-      if (!list) perTarget.set(slot.batch, (list = []));
+      // Synced dynamics never land in a baked group (batchStatics keeps their groups as BatchedMesh).
+      const target = slot.batch as BatchedMesh | InstancedMesh;
+      let list = perTarget.get(target);
+      if (!list) perTarget.set(target, (list = []));
       list.push({ mesh, instanceId: slot.instanceId, last: Float32Array.from(mesh.matrixWorld.elements) });
     }
     for (const [target, entries] of perTarget) {
@@ -467,6 +522,13 @@ export class World {
       (mesh.material as Material).dispose();
       mesh.dispose();
     }
+    for (const b of this.baked) {
+      b.mesh.removeFromParent();
+      b.mesh.geometry.dispose();
+      b.removed.dispose();
+      if (b.ownsMaterial) (b.mesh.material as Material).dispose();
+    }
+    this.baked = [];
     for (const swap of this.materialSwaps) swap.mesh.material = swap.material;
     const restore = [...this.hidden].sort((a, b) => a.index - b.index);
     for (const state of restore) {
@@ -493,8 +555,13 @@ export class World {
     return this.slots.get(mesh);
   }
 
-  /** The original mesh behind a raycast hit on a batch; the hit object itself otherwise. */
+  /** The original mesh behind a raycast hit on a batch, an instanced mesh or a baked mesh; the hit object itself otherwise. */
   resolve(intersection: Intersection): Object3D {
+    const bakedGroup = this.baked.find((b) => b.mesh === intersection.object);
+    if (bakedGroup && intersection.faceIndex !== undefined && intersection.faceIndex !== null) {
+      const original = bakedGroup.entries[bakedGroup.triangleOrigins[intersection.faceIndex]!];
+      if (original) return original;
+    }
     const object = intersection.object as BatchedMesh | CulledInstancedMesh;
     if ((object as BatchedMesh).isBatchedMesh && intersection.batchId !== undefined) {
       const original = this.originalsByBatch.get(object)?.[intersection.batchId];
@@ -507,6 +574,20 @@ export class World {
       if (original) return original;
     }
     return intersection.object;
+  }
+
+  private bakeSummary(): BakeSummary {
+    const sum: BakeSummary = { groups: this.baked.length, inputTriangles: 0, triangles: 0, contactFaces: 0, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 0, excludedEntries: 0 };
+    for (const { report } of this.baked) {
+      sum.inputTriangles += report.inputTriangles;
+      sum.triangles += report.triangles;
+      sum.contactFaces += report.contactFaces;
+      sum.duplicateFaces += report.duplicateFaces;
+      sum.buriedFaces += report.buriedFaces;
+      sum.weldedVertices += report.weldedVertices;
+      sum.excludedEntries += report.excludedEntries;
+    }
+    return sum;
   }
 
   private hideOriginal(state: OriginalState): void {
