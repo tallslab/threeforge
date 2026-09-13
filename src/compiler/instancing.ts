@@ -15,7 +15,7 @@ import {
   type Material,
   type Scene,
 } from 'three';
-import { FORGE_HOOK, levelFor } from './culling.js';
+import { FORGE_HOOK, levelFor, type NestedPassPolicy } from './culling.js';
 
 export { FORGE_HOOK };
 
@@ -42,6 +42,8 @@ export interface InstancingOptions {
   /** Coarser geometries for distant instances, coarsest last. Ignored without `distances`. */
   lods?: BufferGeometry[];
   distances?: number[];
+  nestedPasses?: NestedPassPolicy;
+  mainCamera?: () => Camera | null;
 }
 
 const _box = new Box3();
@@ -134,8 +136,23 @@ export function createCulledInstancedMesh(
   let hasKey = false;
   let dirty = false;
   const perLevel: number[][] = levels.map(() => []);
+  const reuseMain = options.nestedPasses === 'reuse-main';
+  let hasMainCull = false;
 
   const hook = function (this: CulledInstancedMesh, _renderer: unknown, _scene: Scene, camera: Camera): void {
+    if (reuseMain) {
+      const main = options.mainCamera?.() ?? null;
+      if (main && camera !== main) {
+        if (!hasMainCull) {
+          for (const mesh of levels) {
+            mesh.count = 0;
+            mesh.visibleIds = [];
+          }
+        }
+        return; // nested pass: draw the main camera's compaction, no upload
+      }
+      hasMainCull = true;
+    }
     _matrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).multiply(this.matrixWorld);
     if (!dirty && hasKey && same16(lastKey, _matrix.elements)) return;
     lastKey.set(_matrix.elements);

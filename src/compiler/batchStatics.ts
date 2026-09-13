@@ -1,5 +1,6 @@
 import { BatchedMesh, Color, WebGLCoordinateSystem, type BufferGeometry, type CoordinateSystem, type InstancedMesh, type Material, type Mesh, type Scene } from 'three';
 import { createCulledInstancedMesh } from './instancing.js';
+import type { NestedPassPolicy } from './culling.js';
 import { lodsOf } from '../lod/generateLods.js';
 import type { MaterialRegistry } from '../registry/MaterialRegistry.js';
 import { attributeSignature, ensureIndexed } from './geometryCompat.js';
@@ -18,6 +19,8 @@ export interface BatchOptions {
   chunkSize?: number;
   /** Distance thresholds for LOD levels; geometries carry their levels via `prepareLods` / `generateLods`. */
   lodDistances?: number[];
+  nestedPasses?: NestedPassPolicy;
+  mainCamera?: () => import('three').Camera | null;
 }
 
 export interface GroupReport {
@@ -111,7 +114,11 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
         const matrices = meshes.map((m) => m.matrixWorld);
         const colors = canonicalHasColor ? meshes.map((m) => (m.material as Material & { color: Color }).color) : null;
         const lods = lodDistances ? lodsOf(geometry) : [];
-        const instanced = createCulledInstancedMesh(geometry, material, matrices, colors, coordinateSystem, lodDistances ? { lods, distances: lodDistances } : {});
+        const instanced = createCulledInstancedMesh(geometry, material, matrices, colors, coordinateSystem, {
+          ...(lodDistances ? { lods, distances: lodDistances } : {}),
+          ...(options.nestedPasses ? { nestedPasses: options.nestedPasses } : {}),
+          ...(options.mainCamera ? { mainCamera: options.mainCamera } : {}),
+        });
         const index = perProgramInstanced.get(programHash) ?? 0;
         perProgramInstanced.set(programHash, index + 1);
         instanced.levels.forEach((level, L) => {

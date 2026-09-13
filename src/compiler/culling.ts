@@ -11,11 +11,22 @@ export interface CullingLod {
   geometryIds: Map<number, number[]>;
 }
 
+/**
+ * How nested render passes (reflections, portals, picking) are culled. `per-pass` culls for every camera.
+ * `reuse-main` culls only for the main camera and lets nested passes draw that list (one frame old): on the
+ * WebGPU backend a second change of the instance list within one frame is not picked up by the main pass when
+ * the nested pass reuses the same material, so this keeps the GPU data changing once per frame.
+ */
+export type NestedPassPolicy = 'per-pass' | 'reuse-main';
+
 export interface CullingOptions {
   /** Box margin for instances that move; 0 (default) is fastest for statics. */
   margin?: number;
   /** Pick a coarser geometry range for distant instances (batches only). */
   lod?: CullingLod;
+  nestedPasses?: NestedPassPolicy;
+  /** The camera of the outermost render this frame; required for `reuse-main`. */
+  mainCamera?: () => Camera | null;
 }
 
 /** Index of the LOD level for a camera distance. */
@@ -81,6 +92,9 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
   const target = batch as Internals;
   const margin = options.margin ?? 0;
   const lod = options.lod;
+  const reuseMain = options.nestedPasses === 'reuse-main';
+  const mainCamera = options.mainCamera;
+  let hasMainCull = false;
   const bvh = new BVH<object, number>(new HybridBuilder(), coordinateSystem === WebGLCoordinateSystem ? BvhWebGL : BvhWebGPU);
   const nodes = new Map<number, BVHNode<object, number>>();
 
@@ -110,6 +124,15 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
   const prototypeHook = Object.getPrototypeOf(batch).onBeforeRender as BatchedMesh['onBeforeRender'];
 
   const hook = function (this: Internals, renderer: unknown, scene: Scene, camera: Camera, geometry: BufferGeometry, material: Material, group: unknown): void {
+    if (reuseMain) {
+      const main = mainCamera?.() ?? null;
+      if (main && camera !== main) {
+        // Nested pass: keep the main camera's list (arrays and indirect texture untouched); nothing before the first main cull.
+        if (!hasMainCull) this._multiDrawCount = 0;
+        return;
+      }
+      hasMainCull = true;
+    }
     const cam = camera as Camera & { isArrayCamera?: boolean; reversedDepth?: boolean };
     if (!this.perObjectFrustumCulled || cam.isArrayCamera || cam.reversedDepth) {
       prototypeHook.call(this, renderer as never, scene, camera, geometry, material, group as never);
@@ -222,7 +245,7 @@ const OWN = Object.prototype.hasOwnProperty;
  * Runs `fn` before whatever `onBeforeRender` the object currently has (three's prototype method or a
  * threeforge hook), as a marked own-property hook. Returns a function that restores the previous state.
  */
-export function prependRenderHook(object: Object3D, fn: () => void): () => void {
+export function prependRenderHook(object: Object3D, fn: (...args: Parameters<Object3D['onBeforeRender']>) => void): () => void {
   return prependHook(object, 'onBeforeRender', fn);
 }
 

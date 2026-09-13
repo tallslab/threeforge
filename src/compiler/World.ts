@@ -1,11 +1,11 @@
-import { BoxGeometry, Mesh, MeshBasicMaterial, Vector3, WebGLCoordinateSystem, type AnimationClip, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Texture } from 'three';
+import { BoxGeometry, Mesh, MeshBasicMaterial, Vector3, WebGLCoordinateSystem, WebGPUCoordinateSystem, type AnimationClip, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Texture } from 'three';
 import type { DrawCallLedger } from '../ledger/DrawCallLedger.js';
 import { displayName } from '../ledger/reasons.js';
 import { MaterialRegistry, type RegistryStats } from '../registry/MaterialRegistry.js';
 import { batchStatics, type GroupReport, type Slot } from './batchStatics.js';
 import type { CulledInstancedMesh } from './instancing.js';
 import { classify, exclusionRule, type Classification } from './classify.js';
-import { attachBvhCulling, prependAfterRenderHook, prependRenderHook, type CullingHandle } from './culling.js';
+import { attachBvhCulling, prependAfterRenderHook, prependRenderHook, type CullingHandle, type NestedPassPolicy } from './culling.js';
 
 /** Hidden originals live on this layer: invisible to default cameras and default raycasters, matrices still valid. */
 export const FORGE_HIDDEN_LAYER = 31;
@@ -40,6 +40,11 @@ export interface WorldOptions {
   occlusion?: boolean;
   /** Clips that will drive this scene (e.g. `gltf.animations`); their targets and descendants stay dynamic. */
   animations?: AnimationClip[];
+  /**
+   * Culling for nested render passes (reflections, portals). `auto` (default) is `reuse-main` on the WebGPU
+   * backend, where a second instance-list change per frame is not picked up by the main pass, and `per-pass` on WebGL.
+   */
+  nestedPasses?: NestedPassPolicy | 'auto';
 }
 
 export interface CompileOptions {
@@ -58,6 +63,7 @@ export interface CompileReport {
   synced: number;
   lod: { distances: number[] } | null;
   occlusion: { proxies: number } | null;
+  nestedPasses: NestedPassPolicy;
 }
 
 export interface WarmupRenderer {
@@ -103,6 +109,10 @@ export class World {
   private readonly lod: { distances: number[] } | null;
   private readonly occlusion: boolean;
   private readonly animations: AnimationClip[];
+  private readonly nestedPassesOption: NestedPassPolicy | 'auto';
+  private _mainCamera: Camera | null = null;
+  private renderDepth = 0;
+  private sceneHookRestores: (() => void)[] = [];
   private occluders: OcclusionEntry[] = [];
   private occlusionRestores: (() => void)[] = [];
   private cullingHandles = new Map<BatchedMesh, CullingHandle>();
@@ -129,6 +139,12 @@ export class World {
     this.lod = options.lod ?? null;
     this.occlusion = options.occlusion ?? false;
     this.animations = options.animations ?? [];
+    this.nestedPassesOption = options.nestedPasses ?? 'auto';
+  }
+
+  /** The camera of the outermost render in the current or last frame (tracked once compiled with `reuse-main`). */
+  get mainCamera(): Camera | null {
+    return this._mainCamera;
   }
 
   get instancedMeshes(): readonly InstancedMesh[] {
@@ -147,6 +163,21 @@ export class World {
   compile(options: CompileOptions = {}): CompileReport {
     if (this.compiled) throw new Error('World is already compiled; call decompile() first.');
     const coordinateSystem = options.coordinateSystem ?? WebGLCoordinateSystem;
+    const nestedPasses: NestedPassPolicy =
+      this.nestedPassesOption === 'auto' ? (coordinateSystem === WebGPUCoordinateSystem ? 'reuse-main' : 'per-pass') : this.nestedPassesOption;
+    const mainCamera = (): Camera | null => this._mainCamera;
+    if (nestedPasses === 'reuse-main') {
+      // Scene hooks bracket every render() call; depth 0 is the outermost render and its camera is the main camera.
+      this.sceneHookRestores.push(
+        prependRenderHook(this.scene, (_renderer, _scene, camera) => {
+          if (this.renderDepth === 0) this._mainCamera = camera;
+          this.renderDepth++;
+        }),
+        prependAfterRenderHook(this.scene, () => {
+          this.renderDepth = Math.max(0, this.renderDepth - 1);
+        }),
+      );
+    }
     const classifications = classify(this.scene, { policy: this.policy, animations: this.animations });
     const before = {
       meshes: classifications.length,
@@ -164,7 +195,7 @@ export class World {
         if (rule === null) statics.push(c.object);
       }
     }
-    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem, chunkSize: this.chunkSize, ...(this.lod ? { lodDistances: this.lod.distances } : {}) });
+    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem, chunkSize: this.chunkSize, nestedPasses, mainCamera, ...(this.lod ? { lodDistances: this.lod.distances } : {}) });
     this.batches = result.batches;
     this.instanced = result.instanced;
     this.slots = result.slots;
@@ -173,7 +204,7 @@ export class World {
       for (const batch of this.batches) {
         const geometryIds = result.lodGeometryIds.get(batch);
         const lod = this.lod && geometryIds ? { distances: this.lod.distances, geometryIds } : undefined;
-        this.cullingHandles.set(batch, attachBvhCulling(batch, coordinateSystem, lod ? { lod } : {}));
+        this.cullingHandles.set(batch, attachBvhCulling(batch, coordinateSystem, { nestedPasses, mainCamera, ...(lod ? { lod } : {}) }));
       }
     }
     for (const [mesh, rule] of syncRule) if (rule === null && result.slots.has(mesh)) this.syncedSet.add(mesh);
@@ -212,6 +243,7 @@ export class World {
       synced: this.syncedSet.size,
       lod: this.lod,
       occlusion: this.occlusion ? { proxies: this.occluders.length } : null,
+      nestedPasses,
     };
   }
 
@@ -330,6 +362,10 @@ export class World {
 
   decompile(): void {
     if (!this.compiled) return;
+    for (const restore of this.sceneHookRestores.reverse()) restore();
+    this.sceneHookRestores = [];
+    this._mainCamera = null;
+    this.renderDepth = 0;
     for (const restore of this.occlusionRestores) restore();
     this.occlusionRestores = [];
     for (const { proxy, targets } of this.occluders) {

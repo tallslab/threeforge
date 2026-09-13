@@ -27,20 +27,24 @@ test('the biome (terrain, water, thousands of props, cars, hi-poly rocks) compil
   test.setTimeout(600_000);
   const extra: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (k.startsWith('FORGE_BIOME_Q_') && v) extra[k.slice('FORGE_BIOME_Q_'.length).toLowerCase()] = v;
-  await forge.open('biome', { freeze: '1', density: process.env.FORGE_BIOME_DENSITY ?? '1', dynamics: 'batch-sync', ...extra });
+  await forge.open('biome', { freeze: '1', density: process.env.FORGE_BIOME_DENSITY ?? '1', dynamics: process.env.FORGE_BIOME_DYNAMICS ?? 'batch-sync', ...extra });
   const naive = await forge.page.evaluate(() => {
     const f = window.__forge;
-    f.frame(); // warm-up: three's reflector fills its render target one frame late
+    // Warm-up: three's reflector fills its render target one frame late, and WebGPU compiles the reflection
+    // pass's pipelines asynchronously, so let a few frames settle before measuring.
+    for (let i = 0; i < 3; i++) f.frame();
     const t0 = performance.now();
     const frame = f.frame();
     return { totals: frame.totals, byReason: frame.byReason, counts: f.biome!.counts, programs: f.registry.stats().programs, ms: performance.now() - t0 };
   });
   const before = await forge.page.screenshot({ type: 'png' });
-  const compiled = await forge.page.evaluate(() => {
+  const compiled = await forge.page.evaluate(async () => {
     const f = window.__forge;
     const t0 = performance.now();
     const report = f.compile();
     const compileMs = performance.now() - t0;
+    await f.world.warmup(f.renderer, f.camera); // compile the new batch pipelines before measuring (WebGPU compiles async)
+    for (let i = 0; i < 3; i++) f.frame();
     const frame = f.frame();
     const skipped = new Map<string, number>();
     for (const s of report.skipped) skipped.set(s.rule, (skipped.get(s.rule) ?? 0) + 1);

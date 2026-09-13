@@ -352,7 +352,17 @@ try {
     ...(params.has('threshold') ? { instanceThreshold: Number(params.get('threshold')) } : {}),
     occlusion: params.get('occlusion') === '1',
   });
-  const compile = (): CompileReport => world.compile({ coordinateSystem: renderer.coordinateSystem });
+  const compile = (): CompileReport => {
+    const report = world.compile({ coordinateSystem: renderer.coordinateSystem });
+    if (params.get('nocull') === '1') {
+      // Diagnostic: identical instance lists in every pass (no per-instance culling or sorting).
+      for (const b of world.batchedMeshes) {
+        b.perObjectFrustumCulled = false;
+        b.sortObjects = false;
+      }
+    }
+    return report;
+  };
   const decompile = (): void => world.decompile();
   if (params.get('compile') === '1') compile();
   if (params.get('overlay') === '1') {
