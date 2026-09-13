@@ -15,6 +15,7 @@ export type Reason =
   | 'unsupported-material'
   | 'renderer-internal'
   | 'fullscreen-pass'
+  | 'occlusion-proxy'
   | 'unclassified'
   | `excluded:${string}`;
 
@@ -104,6 +105,7 @@ export function reasonOf({ object, material, group, root, unsupported, annotatio
   const o = object as Flags;
   if (!isDescendantOf(object, root)) return 'renderer-internal';
   if ((root as { isScene?: boolean }).isScene !== true) return 'fullscreen-pass';
+  if ((object.userData.forge as { kind?: string } | undefined)?.kind === 'occlusion-proxy') return 'occlusion-proxy';
   if (o.isBatchedMesh) return 'batched';
   if (o.isInstancedMesh) return 'instanced';
   if (o.isSkinnedMesh) return 'skinned';

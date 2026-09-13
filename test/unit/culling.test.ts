@@ -92,16 +92,21 @@ describe('attachBvhCulling', () => {
 
   it('is at least twice as fast as the linear scan at 20k instances when few are visible', () => {
     const f = field(20_000);
-    const time = (runs: number) => {
-      const start = performance.now();
-      for (let i = 0; i < runs; i++) f.cull();
-      return (performance.now() - start) / runs;
+    // Best of several trials: other vitest workers share the CPU, so single averages are noisy.
+    const best = () => {
+      let min = Infinity;
+      for (let trial = 0; trial < 7; trial++) {
+        const start = performance.now();
+        for (let i = 0; i < 5; i++) f.cull();
+        min = Math.min(min, (performance.now() - start) / 5);
+      }
+      return min;
     };
     f.cull();
-    const linear = time(20);
+    const linear = best();
     attachBvhCulling(f.batch, WebGLCoordinateSystem);
     f.cull();
-    const bvh = time(20);
+    const bvh = best();
     console.log(`culling 20k instances: linear ${linear.toFixed(3)} ms, bvh ${bvh.toFixed(3)} ms`);
     expect(bvh).toBeLessThan(linear / 2);
   });

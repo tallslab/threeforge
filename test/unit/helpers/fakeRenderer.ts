@@ -67,6 +67,7 @@ export class FakeRenderer {
     if (!isShadowPass) {
       this.renderObject(this.outputQuad, scene, camera, this.outputQuad.geometry, this.outputQuad.material as Material, null, null, null, null);
     }
+    (scene.onAfterRender as (...args: unknown[]) => void)(this, scene, camera);
   }
 
   renderObject(
@@ -91,6 +92,7 @@ export class FakeRenderer {
     }
     if (effective.transparent && effective.side === DoubleSide && !effective.forceSinglePass) draws *= 2;
     this.info.render.drawCalls += draws;
+    object.onAfterRender(this as unknown as never, scene, camera, geometry, material, group as never);
   }
 }
 

@@ -1,11 +1,11 @@
-import { WebGLCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Mesh, type Object3D, type Scene, type Texture } from 'three';
+import { BoxGeometry, Mesh, MeshBasicMaterial, Vector3, WebGLCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Texture } from 'three';
 import type { DrawCallLedger } from '../ledger/DrawCallLedger.js';
 import { displayName } from '../ledger/reasons.js';
 import { MaterialRegistry, type RegistryStats } from '../registry/MaterialRegistry.js';
 import { batchStatics, type GroupReport, type Slot } from './batchStatics.js';
 import type { CulledInstancedMesh } from './instancing.js';
 import { classify, exclusionRule, type Classification } from './classify.js';
-import { attachBvhCulling, prependRenderHook, type CullingHandle } from './culling.js';
+import { attachBvhCulling, prependAfterRenderHook, prependRenderHook, type CullingHandle } from './culling.js';
 
 /** Hidden originals live on this layer: invisible to default cameras and default raycasters, matrices still valid. */
 export const FORGE_HIDDEN_LAYER = 31;
@@ -32,6 +32,12 @@ export interface WorldOptions {
    * Level i is used from `distances[i-1]` onward; batches need `culling: 'bvh'` (the default) for this.
    */
   lod?: { distances: number[] };
+  /**
+   * Occlusion culling per batch / instanced group through three's occlusion queries: an invisible proxy box per
+   * target carries `occlusionTest`; a target whose proxy was fully occluded last frame is skipped this frame.
+   * Costs one cheap submission per target. Needs a renderer with `isOccluded()` (WebGPURenderer, either backend).
+   */
+  occlusion?: boolean;
 }
 
 export interface CompileOptions {
@@ -49,6 +55,7 @@ export interface CompileReport {
   /** Dynamics folded into batches with matrix sync (0 unless `dynamics: 'batch-sync'`). */
   synced: number;
   lod: { distances: number[] } | null;
+  occlusion: { proxies: number } | null;
 }
 
 export interface WarmupRenderer {
@@ -72,6 +79,11 @@ interface SyncEntry {
   last: Float32Array;
 }
 
+interface OcclusionEntry {
+  proxy: Mesh;
+  targets: Object3D[];
+}
+
 /**
  * Rewrites a scene in place: statics become BatchedMesh instances, every remaining material is canonicalised,
  * and everything is reversible with `decompile()`. Three.js keeps rendering the same `scene` object.
@@ -87,6 +99,9 @@ export class World {
   private readonly dynamicsMode: 'separate' | 'batch-sync';
   private readonly chunkSize: number | undefined;
   private readonly lod: { distances: number[] } | null;
+  private readonly occlusion: boolean;
+  private occluders: OcclusionEntry[] = [];
+  private occlusionRestores: (() => void)[] = [];
   private cullingHandles = new Map<BatchedMesh, CullingHandle>();
   private syncRestores: (() => void)[] = [];
   private syncedSet = new Set<Mesh>();
@@ -109,6 +124,7 @@ export class World {
     this.dynamicsMode = options.dynamics ?? 'separate';
     this.chunkSize = options.chunkSize;
     this.lod = options.lod ?? null;
+    this.occlusion = options.occlusion ?? false;
   }
 
   get instancedMeshes(): readonly InstancedMesh[] {
@@ -158,6 +174,7 @@ export class World {
     }
     for (const [mesh, rule] of syncRule) if (rule === null && result.slots.has(mesh)) this.syncedSet.add(mesh);
     this.installSync(result.slots);
+    if (this.occlusion) this.installOcclusion();
 
     // Record parent indices before touching the graph so detach/restore round-trips exactly.
     for (const mesh of result.slots.keys()) {
@@ -188,7 +205,51 @@ export class World {
       culling: { mode: this.cullingMode, coordinateSystem },
       synced: this.syncedSet.size,
       lod: this.lod,
+      occlusion: this.occlusion ? { proxies: this.occluders.length } : null,
     };
+  }
+
+  private installOcclusion(): void {
+    const groups: Object3D[][] = [...this.batches.map((b) => [b])];
+    for (const mesh of this.instanced) {
+      const levels = (mesh as CulledInstancedMesh).levels ?? [mesh];
+      if (levels[0] === mesh) groups.push(levels);
+    }
+    const size = new Vector3();
+    const center = new Vector3();
+    for (const targets of groups) {
+      const target = targets[0] as Object3D & { boundingBox?: { getSize(v: Vector3): Vector3; getCenter(v: Vector3): Vector3 } | null };
+      const box = target.boundingBox;
+      if (!box) continue;
+      box.getSize(size);
+      box.getCenter(center);
+      const geometry = new BoxGeometry(Math.max(size.x, 1e-3), Math.max(size.y, 1e-3), Math.max(size.z, 1e-3));
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+      const material = new MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+      const proxy = new Mesh(geometry, material);
+      proxy.name = `forge:occluder:${target.name}`;
+      proxy.position.copy(center);
+      proxy.occlusionTest = true;
+      proxy.renderOrder = 1; // after the opaque occluders it is tested against
+      proxy.castShadow = false;
+      proxy.receiveShadow = false;
+      proxy.raycast = () => {};
+      proxy.userData.forge = { kind: 'occlusion-proxy' };
+      this.scene.add(proxy);
+      this.occluders.push({ proxy, targets });
+      // Ask inside the proxy's own after-render hook: that runs within renderObject(), while the main pass's
+      // render context is current, and returns the previously resolved query result (one frame of latency).
+      // The scene-level hook runs after three has already restored the outer context and would see nothing.
+      this.occlusionRestores.push(
+        prependAfterRenderHook(proxy, (renderer) => {
+          const query = (renderer as { isOccluded?: (object: Object3D) => boolean }).isOccluded;
+          if (typeof query !== 'function') return;
+          const occluded = query.call(renderer, proxy) === true;
+          for (const t of targets) t.visible = !occluded;
+        }),
+      );
+    }
   }
 
   /** Show or hide an original mesh, wherever it ended up. */
@@ -263,6 +324,15 @@ export class World {
 
   decompile(): void {
     if (!this.compiled) return;
+    for (const restore of this.occlusionRestores) restore();
+    this.occlusionRestores = [];
+    for (const { proxy, targets } of this.occluders) {
+      proxy.removeFromParent();
+      proxy.geometry.dispose();
+      (proxy.material as Material).dispose();
+      for (const t of targets) t.visible = true;
+    }
+    this.occluders = [];
     for (const restore of this.syncRestores.reverse()) restore();
     this.syncRestores = [];
     this.syncedSet = new Set();

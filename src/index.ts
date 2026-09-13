@@ -15,7 +15,7 @@ export { classify, exclusionRule, type Classification, type ClassifyOptions, typ
 export { attributeSignature, ensureIndexed, isBatchCompatible } from './compiler/geometryCompat.js';
 export { World, FORGE_HIDDEN_LAYER, type CompileOptions, type CompileReport, type WarmupRenderer, type WorldOptions } from './compiler/World.js';
 export type { GroupReport, Slot } from './compiler/batchStatics.js';
-export { attachBvhCulling, prependRenderHook, levelFor, FORGE_HOOK, type CullingHandle, type CullingLod, type CullingOptions } from './compiler/culling.js';
+export { attachBvhCulling, prependAfterRenderHook, prependRenderHook, levelFor, FORGE_HOOK, type CullingHandle, type CullingLod, type CullingOptions } from './compiler/culling.js';
 export { createCulledInstancedMesh, type CulledInstancedMesh, type InstanceCullingHandle, type InstancingOptions } from './compiler/instancing.js';
 export type { BatchOptions } from './compiler/batchStatics.js';
 export { generateLods, lodsOf, prepareLods, type LodOptions, type PrepareLodsReport } from './lod/generateLods.js';

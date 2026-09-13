@@ -223,17 +223,26 @@ const OWN = Object.prototype.hasOwnProperty;
  * threeforge hook), as a marked own-property hook. Returns a function that restores the previous state.
  */
 export function prependRenderHook(object: Object3D, fn: () => void): () => void {
-  const hadOwn = OWN.call(object, 'onBeforeRender');
-  const previous = object.onBeforeRender;
-  const hook = function (this: Object3D, ...args: Parameters<Object3D['onBeforeRender']>): void {
-    fn();
+  return prependHook(object, 'onBeforeRender', fn);
+}
+
+/** Same as `prependRenderHook` for `onAfterRender`; `fn` receives the renderer, scene and camera. */
+export function prependAfterRenderHook(object: Object3D, fn: (...args: Parameters<Object3D['onAfterRender']>) => void): () => void {
+  return prependHook(object, 'onAfterRender', fn);
+}
+
+function prependHook<K extends 'onBeforeRender' | 'onAfterRender'>(object: Object3D, name: K, fn: (...args: Parameters<Object3D[K]>) => void): () => void {
+  const hadOwn = OWN.call(object, name);
+  const previous = object[name] as (...args: Parameters<Object3D[K]>) => void;
+  const hook = function (this: Object3D, ...args: Parameters<Object3D[K]>): void {
+    fn(...args);
     previous.apply(this, args);
   };
   (hook as unknown as Record<symbol, boolean>)[FORGE_HOOK] = true;
-  object.onBeforeRender = hook;
+  (object as unknown as Record<K, unknown>)[name] = hook;
   return () => {
-    if (object.onBeforeRender !== hook) return;
-    if (hadOwn) object.onBeforeRender = previous;
-    else delete (object as { onBeforeRender?: unknown }).onBeforeRender;
+    if ((object as unknown as Record<K, unknown>)[name] !== hook) return;
+    if (hadOwn) (object as unknown as Record<K, unknown>)[name] = previous;
+    else delete (object as unknown as Record<K, unknown>)[name];
   };
 }

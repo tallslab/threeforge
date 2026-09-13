@@ -1,6 +1,6 @@
-import { BatchedMesh, Color, Frustum, Matrix4, Mesh, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Vector3 } from 'three';
+import { BatchedMesh, BoxGeometry, Color, Frustum, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Vector3 } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
-import { DrawCallLedger, MaterialRegistry, World, prepareLods, type CompileReport, type FrameSnapshot } from 'threeforge';
+import { DrawCallLedger, MaterialRegistry, World, prepareLods, tag, type CompileReport, type FrameSnapshot } from 'threeforge';
 import { createOverlay } from 'threeforge/overlay';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
 import { buildFieldScene, type FieldScene } from '../scenes/field.js';
@@ -194,11 +194,21 @@ try {
 
   const useLod = params.get('lod') === '1';
   if (useLod) await prepareLods(scene, { ratios: [0.5, 0.2] });
+  if (params.get('wall') === '1') {
+    // A tall opaque wall between the camera and the left half of the naive field: an occluder for chunk proxies.
+    const wall = new Mesh(new BoxGeometry(220, 220, 2), new MeshStandardMaterial({ color: 0x555a60, roughness: 1, metalness: 0 }));
+    wall.name = 'wall';
+    wall.position.set(-110, 110, 80);
+    tag.static(wall);
+    scene.add(wall);
+  }
   const world = new World(scene, {
     registry,
     ledger,
     dynamics: params.get('dynamics') === 'batch-sync' ? 'batch-sync' : 'separate',
     ...(useLod ? { lod: { distances: [Number(params.get('lod0') ?? '200'), Number(params.get('lod1') ?? '600')] } } : {}),
+    ...(params.has('chunk') ? { chunkSize: Number(params.get('chunk')) } : {}),
+    occlusion: params.get('occlusion') === '1',
   });
   const compile = (): CompileReport => world.compile({ coordinateSystem: renderer.coordinateSystem });
   const decompile = (): void => world.decompile();

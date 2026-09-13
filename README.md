@@ -4,13 +4,14 @@ Scene compiler + draw-call diagnostics for three.js (r186, `three/webgpu` with i
 Three.js stays the renderer. threeforge takes a naively assembled scene, rewrites it into a batched one
 at load time, and tells you exactly why every remaining draw call exists.
 
-Status: Phase 2. The naive test scene (500 props, 40 material recipes, a new material per prop) goes from
+Status: Phase 3. The naive test scene (500 props, 40 material recipes, a new material per prop) goes from
 **503 to 28** scene submissions with pixel-identical output (**18** with `dynamics: 'batch-sync'`), and the
 20k-instance field scene goes from 3892 submissions to **3 instanced draws** with BVH culling, cutting render CPU
-from 43 ms to 7 ms per frame in headless Chromium. `pnpm budget` fails CI above 30.
+from 43 ms to 7 ms per frame in headless Chromium; LODs cut its rendered triangles from 140k to 51k. Verified on
+both the WebGL2 and the WebGPU backend. `pnpm budget` fails CI above 30.
 
 ```ts
-import { DrawCallLedger, MaterialRegistry, World, tag } from 'threeforge';
+import { DrawCallLedger, MaterialRegistry, World, prepareLods, tag } from 'threeforge';
 
 const registry = new MaterialRegistry();
 const ledger = new DrawCallLedger({ registry });
@@ -19,12 +20,17 @@ ledger.attach(renderer);                      // patches renderObject/render on 
 tag.static(crate);                            // batched by compile()
 tag.dynamic(player);                          // left alone, counted
 
+await prepareLods(scene, { ratios: [0.5, 0.2] });   // optional: meshoptimizer LODs per geometry
+
 const world = new World(scene, {
   registry, ledger,
   policy: 'tagged',          // or 'auto' to batch untagged meshes too
   culling: 'bvh',            // per-instance frustum culling on every batch (bvh.js)
   instanceThreshold: 64,     // geometry repeated this often becomes a culled InstancedMesh
   dynamics: 'batch-sync',    // tagged dynamics ride in batches; their matrices sync each frame
+  lod: { distances: [200, 600] },
+  chunkSize: 250,            // optional: one batch per world-space cell (streaming, tight bounds)
+  occlusion: true,           // optional: occlusion-query proxies per batch / instanced group
 });
 const report = world.compile({ coordinateSystem: renderer.coordinateSystem });
 await world.warmup(renderer, camera);         // optional: compile shaders + upload textures now
@@ -58,7 +64,7 @@ Dev overlay: `import { createOverlay } from 'threeforge/overlay'; createOverlay(
 | command | what |
 |---|---|
 | `pnpm test` | Vitest units (node, no GPU) |
-| `pnpm e2e` | Playwright on the WebGL2 backend in headless Chromium; a best-effort `webgpu` project self-skips without an adapter |
+| `pnpm e2e` | Playwright on both backends: `webgl2` (headless shell) and `webgpu` (native adapter on macOS/Windows, SwiftShader on Linux) |
 | `pnpm budget` | the CI gate; `FORGE_BUDGET=25 pnpm budget` to tighten |
 | `pnpm spike` | three's experimental `SceneOptimizer` on the same scene, for comparison |
 | `pnpm dev` | test app: `http://localhost:5179/?scene=naive&compile=1&overlay=1&budget=30&animate=1&dynamics=batch-sync` (also `scene=field&count=20000`) |

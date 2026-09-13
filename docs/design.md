@@ -1,4 +1,4 @@
-# threeforge design (Phases 1 and 2)
+# threeforge design (Phases 1 to 3)
 
 ## The problem
 
@@ -16,7 +16,8 @@ nothing classifies a scene, applies batching with safe defaults, keeps it revers
 | batchStatics | `src/compiler/batchStatics.ts`, `geometryCompat.ts` | one `BatchedMesh` per material variant / attribute signature / shadow flags; large single-geometry groups become `InstancedMesh` |
 | culling | `src/compiler/culling.ts` | BVH per-instance frustum culling hook for `BatchedMesh` (bvh.js); `prependRenderHook` |
 | instancing | `src/compiler/instancing.ts` | `InstancedMesh` with BVH-driven compaction of visible instances |
-| World | `src/compiler/World.ts` | `compile()`, `decompile()`, `resolve()`, `setVisible()`, `warmup()`, dynamic batch-sync |
+| World | `src/compiler/World.ts` | `compile()`, `decompile()`, `resolve()`, `setVisible()`, `warmup()`, dynamic batch-sync, occlusion proxies |
+| lod | `src/lod/generateLods.ts` | `generateLods` / `prepareLods` / `lodsOf` on meshoptimizer (node and browser) |
 | overlay | `src/overlay/index.ts` | dev panel driven by `ledger.frame()` |
 
 ## Material keys
@@ -85,6 +86,24 @@ Keys are computed at registration; a material mutated later is not re-keyed.
   changes are not synced. Naive scene: 28 becomes 18 submissions with the same pixels.
 - **`setVisible(original, bool)`** routes to `setVisibleAt` on batches, the visibility mask on instanced meshes,
   or `visible` on plain meshes.
+- **LOD** (`lod: { distances }` after `await prepareLods(scene, { ratios })`). Levels are generated with
+  meshoptimizer: vertices are welded by position first (so seams and non-indexed triangle soups get topology),
+  `simplify` runs against an error budget, and low-poly meshes that stall fall back to `simplifySloppy`; unused
+  vertices are compacted away. Levels never grow. At compile time a batch adds every level as extra geometry
+  ranges and the BVH culling hook picks the range by camera distance per instance (`levelFor`), so no per-instance
+  state changes and raycasting keeps the full-detail geometry. An instanced group becomes one `InstancedMesh` per
+  level; the shared cull partitions visible instances by distance into the level buffers, recomputed only when
+  the camera state or the master data changed. Field scene: 140,589 rendered triangles become 51,517 with the
+  same instances drawn. Batches need `culling: 'bvh'`; shadow cameras pick levels by their own distance.
+- **Occlusion** (`occlusion: true`). One proxy box per batch or instanced group, drawn after the opaque pass
+  (`renderOrder 1`) with colour and depth writes off and `occlusionTest` on. The proxy's own `onAfterRender`
+  hook asks `renderer.isOccluded(proxy)`, which must run inside `renderObject()` while the main render context is
+  current (the scene-level hook fires after three restores the outer context and sees nothing), and toggles the
+  targets' `visible` for the next frame. Query results resolve asynchronously, so there is at least one frame of
+  latency and a reveal can pop. Works on both backends (WebGL `ANY_SAMPLES_PASSED`, WebGPU query sets). Cost: one
+  cheap submission per target, reported as `occlusion-proxy`; it pays when targets are heavy, so pair it with a
+  `chunkSize` that keeps chunks large. Measured: naive scene chunked at 40 units with a wall over half the field,
+  60 batch submissions become 28. Per-instance occlusion is not possible; level meshes share one proxy.
 - **Spatial chunks** (`chunkSize`). Each material group is split by world-space cell (floor of the instance
   position over the cell size on all three axes). Every chunk batch gets tight bounds, so three's whole-object
   frustum test rejects entire cells before per-instance culling runs, and a cell is a natural unit to add or
@@ -108,6 +127,18 @@ per-instance colour), 4 roughness/metalness pairs, 6 textured, 2 map + normalMap
 
 Pixel parity is asserted against `test/e2e/__screenshots__/naive-webgl2.png` before and after compile.
 
+## WebGPU in the test harness
+
+WebGPU only exists in secure contexts, so adapter checks must run on the served page, not `about:blank`. The
+`webgpu` Playwright project uses the native adapter through the full Chromium build by default on macOS/Windows
+(`--enable-unsafe-webgpu`), where the entire suite passes including pixel parity against
+`naive-webgpu.png`. On Linux it falls back to Dawn's SwiftShader adapter in the headless shell
+(`--use-webgpu-adapter=swiftshader --enable-unsafe-swiftshader`); that adapter renders correctly but drops the
+WebGPU instance when a page idles between test steps ("Device Lost", after which `render()` draws nothing) and
+during screenshots, so multi-step specs and pixel checks are skipped there. Measured on the real WebGPU backend:
+the naive scene compiles to 28 submissions with 504 GPU draws (one per batched instance) and 0 unattributed,
+confirming the backend cost model the ledger uses.
+
 ## Known limits (Phase 1)
 
 - The ledger reports the last completed frame; two top-level `render()` calls per frame produce two frames.
@@ -116,4 +147,4 @@ Pixel parity is asserted against `test/e2e/__screenshots__/naive-webgl2.png` bef
 - Untagged meshes are never batched under the default policy; `policy: 'auto'` batches them.
 - Instanced meshes are re-compacted for every camera that renders them (a shadow pass costs a second upload).
 - `culling: 'linear'` only affects batches; instanced meshes always use BVH compaction (it is their only culling).
-- Phase 3 adds LODs (meshoptimizer at build time) and WebGPU occlusion queries.
+- Phase 4 is the character assembler (gear merged onto a shared skeleton); Phase 5 puts Wanderer on it.
