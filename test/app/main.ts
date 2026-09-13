@@ -351,6 +351,8 @@ try {
     ...(params.get('culling') === 'linear' ? { culling: 'linear' as const } : {}),
     ...(params.has('threshold') ? { instanceThreshold: Number(params.get('threshold')) } : {}),
     occlusion: params.get('occlusion') === '1',
+    ...(params.get('materials') === 'keep' ? { materials: 'keep' as const } : {}),
+    ...(params.get('nested') === 'per-pass' ? { nestedPasses: 'per-pass' as const } : {}),
   });
   const compile = (): CompileReport => {
     const report = world.compile({ coordinateSystem: renderer.coordinateSystem });

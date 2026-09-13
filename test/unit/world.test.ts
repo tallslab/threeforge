@@ -374,3 +374,16 @@ describe('World and the ledger under policy auto', () => {
     expect(reasons).toEqual({ lonely: 'unique-material', other: 'unique-material' });
   });
 });
+
+describe('World materials option', () => {
+  it("keeps every mesh's own material instance with materials: 'keep'", () => {
+    const scene = new Scene();
+    const a = tag.dynamic(new Mesh(box, solid(0xabcdef)));
+    const b = tag.dynamic(new Mesh(box, solid(0xabcdef)));
+    scene.add(a, b);
+    const materialB = b.material;
+    new World(scene, { materials: 'keep' }).compile();
+    expect(b.material).toBe(materialB);
+    expect(a.material).not.toBe(b.material);
+  });
+});

@@ -77,7 +77,7 @@ for (const asset of assets) {
     test.setTimeout(180_000);
     const row: Row = { name: asset.name, tags: (asset.tags ?? []).join(' ') };
     try {
-      await forge.open('gltf', { asset: asset.name });
+      await forge.open('gltf', { asset: asset.name, ...(process.env.FORGE_ASSETS_MATERIALS ? { materials: process.env.FORGE_ASSETS_MATERIALS } : {}) });
     } catch (error) {
       row.error = String(error instanceof Error ? error.message : error).split('\n')[0]!.slice(0, 200);
       saveRow(row, forge.backend);

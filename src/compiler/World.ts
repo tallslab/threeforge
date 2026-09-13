@@ -45,6 +45,8 @@ export interface WorldOptions {
    * backend, where a second instance-list change per frame is not picked up by the main pass, and `per-pass` on WebGL.
    */
   nestedPasses?: NestedPassPolicy | 'auto';
+  /** `canonical` (default): meshes left unbatched get the registry's canonical material; `keep`: materials are left alone. */
+  materials?: 'canonical' | 'keep';
 }
 
 export interface CompileOptions {
@@ -69,6 +71,16 @@ export interface CompileReport {
 export interface WarmupRenderer {
   compileAsync(scene: Object3D, camera: Camera): Promise<unknown>;
   initTexture?(texture: Texture): void;
+  coordinateSystem?: CoordinateSystem;
+}
+
+export interface WarmupResult {
+  /** Whether `compileAsync` ran. */
+  compiled: boolean;
+  /** Textures handed to `initTexture`. */
+  textures: number;
+  /** Why the warm-up was skipped, if it was. */
+  skipped: 'transmission-on-webgpu' | null;
 }
 
 interface OriginalState {
@@ -110,6 +122,7 @@ export class World {
   private readonly occlusion: boolean;
   private readonly animations: AnimationClip[];
   private readonly nestedPassesOption: NestedPassPolicy | 'auto';
+  private readonly materialsMode: 'canonical' | 'keep';
   private _mainCamera: Camera | null = null;
   private renderDepth = 0;
   private sceneHookRestores: (() => void)[] = [];
@@ -140,6 +153,7 @@ export class World {
     this.occlusion = options.occlusion ?? false;
     this.animations = options.animations ?? [];
     this.nestedPassesOption = options.nestedPasses ?? 'auto';
+    this.materialsMode = options.materials ?? 'canonical';
   }
 
   /** The camera of the outermost render in the current or last frame (tracked once compiled with `reuse-main`). */
@@ -342,22 +356,29 @@ export class World {
     }
   }
 
-  /** Compile shaders and upload textures now instead of on first render. Call after `compile()`. */
-  async warmup(renderer: WarmupRenderer, camera: Camera): Promise<void> {
-    if (renderer.initTexture) {
-      const textures = new Set<Texture>();
-      this.scene.traverse((o) => {
-        const mesh = o as Mesh;
-        if (!mesh.isMesh) return;
-        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
-          for (const value of Object.values(material as unknown as Record<string, unknown>)) {
-            if ((value as Texture | null)?.isTexture) textures.add(value as Texture);
-          }
+  /**
+   * Compile shaders and upload textures now instead of on first render. Call after `compile()`.
+   * Skipped entirely on the WebGPU backend when the scene contains transmissive materials: in three r186,
+   * `compileAsync` leaves those materials rendering wrong afterwards (verified against the Khronos
+   * CommercialRefrigerator, AttenuationTest and TransmissionTest assets; WebGL2 is unaffected).
+   */
+  async warmup(renderer: WarmupRenderer, camera: Camera): Promise<WarmupResult> {
+    const textures = new Set<Texture>();
+    let transmissive = false;
+    this.scene.traverse((o) => {
+      const mesh = o as Mesh;
+      if (!mesh.isMesh) return;
+      for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        if (((material as Material & { transmission?: number }).transmission ?? 0) > 0) transmissive = true;
+        for (const value of Object.values(material as unknown as Record<string, unknown>)) {
+          if ((value as Texture | null)?.isTexture) textures.add(value as Texture);
         }
-      });
-      for (const texture of textures) renderer.initTexture(texture);
-    }
+      }
+    });
+    if (transmissive && renderer.coordinateSystem === WebGPUCoordinateSystem) return { compiled: false, textures: 0, skipped: 'transmission-on-webgpu' };
+    if (renderer.initTexture) for (const texture of textures) renderer.initTexture(texture);
     await renderer.compileAsync(this.scene, camera);
+    return { compiled: true, textures: renderer.initTexture ? textures.size : 0, skipped: null };
   }
 
   decompile(): void {
@@ -445,6 +466,7 @@ export class World {
   private canonicalise(mesh: Mesh): void {
     if (Array.isArray(mesh.material)) return;
     const canonical = this.registry.register(mesh.material);
+    if (this.materialsMode === 'keep') return;
     if (canonical !== mesh.material) {
       this.materialSwaps.push({ mesh, material: mesh.material });
       mesh.material = canonical;

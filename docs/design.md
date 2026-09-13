@@ -175,6 +175,19 @@ What the assets taught the compiler (each became a rule or a fix):
 
 Biome on the WebGL2 backend: 20,943 naive submissions (17,191 main + reflection pass) become 443 with
 `dynamics: 'batch-sync'`, 20.4 M triangles, 30,731 instances of which 20,943 are drawn, 0.00 % pixels changed.
+The same scene on the native WebGPU backend matches at 0.00 % too, after two backend-specific findings:
+
+- **Nested passes on WebGPU** (`nestedPasses`, default `auto`). When a `BatchedMesh` or a compacted
+  `InstancedMesh` changes its visible set twice in one frame (the water's reflection pass, then the main pass) and
+  the nested pass reuses the same material, the main pass on the WebGPU backend draws with the nested pass's
+  instance list: every prop scatters. Pure three `BatchedMesh` with its own culling shows the same, shadows do not
+  (the depth material gives them their own bind group). `reuse-main` culls only for the outermost render's
+  camera (tracked through scene hooks) and lets nested passes draw that list, one frame old, so the GPU data
+  changes once per frame. Reflections may miss objects outside the main frustum; nothing renders corrupt.
+- **`compileAsync` and transmission on WebGPU.** `renderer.compileAsync()` on a scene with transmissive
+  materials leaves them rendering wrong afterwards in three r186 (CommercialRefrigerator's glass door changes
+  8.9 % of pixels; `initTexture` is harmless; WebGL2 is unaffected). `world.warmup()` therefore skips the
+  pre-compilation for such scenes on WebGPU and reports `skipped: 'transmission-on-webgpu'`.
 
 ## WebGPU in the test harness
 
