@@ -10,5 +10,5 @@ test('baseline: SceneOptimizer.toBatchedMesh() on the naive scene', async ({ for
   console.log('SPIKE ' + JSON.stringify(result));
   await forge.page.screenshot({ path: `test-results/spike-scene-optimizer-${forge.backend}.png` });
   expect(result.drawsBefore).toBe(504);
-  expect(result.drawsAfter).toBeLessThan(result.drawsBefore);
+  expect(result.indexed.drawsAfter).toBeLessThan(result.drawsBefore);
 });

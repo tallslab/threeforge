@@ -10,14 +10,22 @@ export interface RenderOnceResult {
   drawCalls: number;
 }
 
-export interface SpikeResult {
-  drawsBefore: number;
+export interface SpikeRun {
   drawsAfter: number;
   batchedMeshes: number;
   plainMeshes: number;
   skinnedSurvived: number;
-  visibleBefore: number;
   visibleAfter: number;
+}
+
+export interface SpikeResult {
+  drawsBefore: number;
+  visibleBefore: number;
+  /** Error thrown by SceneOptimizer on the scene as authored, or null if it ran. */
+  asIsError: string | null;
+  asIs: SpikeRun | null;
+  /** Same run after giving the non-indexed polyhedra a trivial index (the pre-pass SceneOptimizer lacks). */
+  indexed: SpikeRun;
 }
 
 export interface ForgeHarness {
@@ -102,29 +110,48 @@ try {
 
   async function spikeSceneOptimizer(): Promise<SpikeResult> {
     const { SceneOptimizer } = await import('three/addons/utils/SceneOptimizer.js');
-    const fresh = buildNaiveScene(seed);
-    fresh.scene.background = new Color(0x202830);
-    const visibleBefore = countVisible(fresh.scene, camera);
-    let before = renderer.info.render.drawCalls;
-    renderer.render(fresh.scene, camera);
-    const drawsBefore = renderer.info.render.drawCalls - before;
 
-    new SceneOptimizer(fresh.scene, { debug: true }).toBatchedMesh();
+    const measure = (target: Scene): number => {
+      const before = renderer.info.render.drawCalls;
+      renderer.render(target, camera);
+      return renderer.info.render.drawCalls - before;
+    };
+    const summarise = (target: Scene): SpikeRun => {
+      let batchedMeshes = 0;
+      let plainMeshes = 0;
+      let skinnedSurvived = 0;
+      target.traverse((o) => {
+        if ((o as BatchedMesh).isBatchedMesh) batchedMeshes++;
+        else if ((o as SkinnedMesh).isSkinnedMesh) skinnedSurvived++;
+        else if ((o as Mesh).isMesh) plainMeshes++;
+      });
+      return { drawsAfter: measure(target), batchedMeshes, plainMeshes, skinnedSurvived, visibleAfter: countVisible(target, camera) };
+    };
 
-    const visibleAfter = countVisible(fresh.scene, camera);
-    before = renderer.info.render.drawCalls;
-    renderer.render(fresh.scene, camera);
-    const drawsAfter = renderer.info.render.drawCalls - before;
+    const asIsScene = buildNaiveScene(seed);
+    asIsScene.scene.background = new Color(0x202830);
+    const visibleBefore = countVisible(asIsScene.scene, camera);
+    const drawsBefore = measure(asIsScene.scene);
+    let asIsError: string | null = null;
+    let asIs: SpikeRun | null = null;
+    try {
+      new SceneOptimizer(asIsScene.scene, { debug: true }).toBatchedMesh();
+      asIs = summarise(asIsScene.scene);
+    } catch (error) {
+      asIsError = error instanceof Error ? error.message : String(error);
+    }
 
-    let batchedMeshes = 0;
-    let plainMeshes = 0;
-    let skinnedSurvived = 0;
-    fresh.scene.traverse((o) => {
-      if ((o as BatchedMesh).isBatchedMesh) batchedMeshes++;
-      else if ((o as SkinnedMesh).isSkinnedMesh) skinnedSurvived++;
-      else if ((o as Mesh).isMesh) plainMeshes++;
-    });
-    return { drawsBefore, drawsAfter, batchedMeshes, plainMeshes, skinnedSurvived, visibleBefore, visibleAfter };
+    const indexedScene = buildNaiveScene(seed);
+    indexedScene.scene.background = new Color(0x202830);
+    for (const geometry of indexedScene.geometries) {
+      if (geometry.index === null) geometry.setIndex([...Array(geometry.attributes.position!.count).keys()]);
+    }
+    new SceneOptimizer(indexedScene.scene, { debug: true }).toBatchedMesh();
+    const indexed = summarise(indexedScene.scene);
+
+    // Leave the harness scene on screen for the screenshot.
+    renderer.render(indexedScene.scene, camera);
+    return { drawsBefore, visibleBefore, asIsError, asIs, indexed };
   }
 
   if (params.get('animate') === '1') {
