@@ -1,7 +1,7 @@
 import { AmbientLight, AnimationMixer, BatchedMesh, Box3, BoxGeometry, Color, DirectionalLight, Frustum, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Sphere, Vector3, type AnimationClip, type Object3D, type OrthographicCamera } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import * as THREE from 'three';
-import { DrawCallLedger, MaterialRegistry, World, assembleCharacter, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot } from 'threeforge';
+import { DrawCallLedger, MaterialRegistry, World, assembleCharacter, detectTier, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot, type Tier } from 'threeforge';
 import { createOverlay } from 'threeforge/overlay';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
 import { buildFieldScene, type FieldScene } from '../scenes/field.js';
@@ -118,6 +118,20 @@ try {
   ledger.attach(renderer);
 
   const backend: BackendName = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'webgpu' : 'webgl2';
+  // Describe the device for the snapshot's env: adapter info on WebGPU, the unmasked renderer string on WebGL.
+  const gpuName = (): string => {
+    const b = renderer.backend as { isWebGPUBackend?: boolean; adapter?: { info?: { description?: string; device?: string; vendor?: string; architecture?: string } }; gl?: WebGL2RenderingContext };
+    if (b.isWebGPUBackend) {
+      const info = b.adapter?.info;
+      return info?.description || info?.device || [info?.vendor, info?.architecture].filter(Boolean).join(' ') || 'webgpu';
+    }
+    const gl = b.gl;
+    const ext = gl?.getExtension('WEBGL_debug_renderer_info');
+    return ext && gl ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : 'webgl2';
+  };
+  const gpu = gpuName();
+  const tier = (params.get('tier') as Tier | null) ?? detectTier({ gpu, touch: navigator.maxTouchPoints > 0, deviceMemory: (navigator as { deviceMemory?: number }).deviceMemory, cores: navigator.hardwareConcurrency, dpr: devicePixelRatio });
+  ledger.setEnvironment({ tier, gpu, dpr: renderer.getPixelRatio(), viewport: [800, 600] });
   const hasFeature = (renderer.backend as { hasFeature?: (name: string) => boolean }).hasFeature;
   const multiDraw = backend === 'webgl2' && typeof hasFeature === 'function' ? hasFeature.call(renderer.backend, 'WEBGL_multi_draw') : false;
 

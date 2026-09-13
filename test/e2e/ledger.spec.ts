@@ -42,3 +42,15 @@ test('renders the same number of programs as distinct registry programs (shader 
   expect(programs).toBe(registryPrograms);
   expect(memoryPrograms).toBeGreaterThanOrEqual(programs);
 });
+
+test('the snapshot carries schema v2 environment and sections', async ({ forge }) => {
+  await forge.open('naive');
+  const f = await forge.page.evaluate(() => window.__forge.frame());
+  expect(f.schemaVersion).toBe(2);
+  expect(f.env.tier).toBe('desktop');
+  expect(f.env.viewport).toEqual([800, 600]);
+  expect(f.env.gpu.length).toBeGreaterThan(0);
+  expect(f.lighting.lights.directional).toBe(1);
+  expect(f.js.objects).toBeGreaterThan(500);
+  expect(f.memory.geometries.bytes).toBeGreaterThan(0);
+});
