@@ -3,6 +3,7 @@ import { WebGPURenderer } from 'three/webgpu';
 import * as THREE from 'three';
 import { DrawCallLedger, MaterialRegistry, World, assembleCharacter, detectTier, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot, type Tier } from 'threeforge';
 import { createOverlay } from 'threeforge/overlay';
+import { BENCH_SCENES, type BenchScene } from './scenes/index.js';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
 import { buildFieldScene, type FieldScene } from '../scenes/field.js';
 import { buildCharacter, type CharacterParts } from '../scenes/character.js';
@@ -70,6 +71,8 @@ export interface ForgeHarness {
   assembled?: AssembledCharacter;
   /** Loaded glTF asset summary when `scene=gltf&asset=<name>`. */
   gltf?: GltfInfo;
+  /** Benchmark scene facts and deterministic time when `scene=<bench id>`. */
+  bench?: { counts: Record<string, number>; variant: 'naive' | 'optimized'; setTime?(t: number): void };
   biome?: Biome;
   arena?: Arena;
   /** Pose animations and effects at time t (arena). */
@@ -149,6 +152,8 @@ try {
   let gltfInfo: GltfInfo | undefined;
   let biome: Biome | undefined;
   let arena: Arena | undefined;
+  let bench: BenchScene | undefined;
+  const benchBuilder = BENCH_SCENES[sceneName];
   let clips: AnimationClip[] = [];
   let animationSources: Array<AnimationClip | { root: Object3D; clips: AnimationClip[] }> = [];
   if (params.get('freeze') === '1') {
@@ -174,7 +179,17 @@ try {
     loader.setMeshoptDecoder(MeshoptDecoder);
     return loader;
   };
-  if (sceneName === 'arena') {
+  if (benchBuilder) {
+    bench = await benchBuilder({ renderer, camera, params, loader: makeLoader });
+    scene = bench.scene;
+    animationSources = bench.animations ?? [];
+    if (bench.portrait) {
+      renderer.setSize(450, 800, false);
+      camera.aspect = 450 / 800;
+      camera.updateProjectionMatrix();
+      ledger.setEnvironment({ viewport: [450, 800] });
+    }
+  } else if (sceneName === 'arena') {
     const [{ RoomEnvironment }, { PMREMGenerator }] = await Promise.all([import('three/addons/environments/RoomEnvironment.js'), import('three/webgpu')]);
     const loader = await makeLoader();
     if (params.get('shadows') !== '0') renderer.shadowMap.enabled = true;
@@ -419,6 +434,7 @@ try {
     occlusion: params.get('occlusion') === '1',
     ...(params.get('materials') === 'keep' ? { materials: 'keep' as const } : {}),
     ...(params.get('nested') === 'per-pass' ? { nestedPasses: 'per-pass' as const } : {}),
+    ...(bench?.worldOptions ?? {}),
   });
   const compile = (): CompileReport => {
     const report = world.compile({ coordinateSystem: renderer.coordinateSystem });
@@ -433,6 +449,13 @@ try {
   };
   const decompile = (): void => world.decompile();
   if (params.get('compile') === '1') compile();
+  const variant: 'naive' | 'optimized' = params.get('variant') === 'optimized' ? 'optimized' : 'naive';
+  if (bench && variant === 'optimized') {
+    await bench.prepare?.(scene);
+    compile();
+    await bench.after?.(world);
+    await world.warmup(renderer, camera);
+  }
   if (params.get('overlay') === '1') {
     createOverlay(ledger, { budget: params.has('budget') ? Number(params.get('budget')) : undefined });
   }
@@ -452,6 +475,7 @@ try {
 
   function setTime(t: number): void {
     arena?.setTime(t);
+    bench?.setTime?.(t);
     // Torch billboards face the camera.
     scene.traverse((o) => {
       if (o.name.startsWith('torch-')) o.lookAt(camera.position);
@@ -486,7 +510,7 @@ try {
     });
   }
 
-  window.__forge = { three: THREE, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
+  window.__forge = { three: THREE, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
 } catch (error) {
   window.__forge = { ready: false, error: error instanceof Error ? error.stack ?? error.message : String(error) } as ForgeHarness;
   throw error;

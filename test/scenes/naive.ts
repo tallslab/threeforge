@@ -52,8 +52,16 @@ export interface MaterialRecipe {
   params: MeshStandardMaterialParameters;
 }
 
+export interface NaiveOptions {
+  /** Props to scatter (default 500). */
+  count?: number;
+  /** Distinct geometries: the 12 primitives, then parameter variants of them (default 12). */
+  shapes?: number;
+}
+
 export interface NaiveScene {
   scene: Scene;
+  counts: { props: number; materials: number; shapes: number };
   props: Mesh[];
   dynamics: Mesh[];
   skinned: SkinnedMesh[];
@@ -76,22 +84,27 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
-function makeGeometries(): BufferGeometry[] {
-  return [
-    new BoxGeometry(2, 2, 2),
-    new SphereGeometry(1.2, 12, 8),
-    new CylinderGeometry(0.8, 1, 2.5, 12),
-    new ConeGeometry(1, 2.5, 10),
-    new TorusGeometry(1, 0.35, 8, 16),
-    new TorusKnotGeometry(0.8, 0.25, 48, 8),
-    new CapsuleGeometry(0.6, 1.2, 4, 8),
-    // Polyhedra are non-indexed in three.js: they exercise index normalisation in the batcher.
-    new DodecahedronGeometry(1.2),
-    new IcosahedronGeometry(1.2),
-    new OctahedronGeometry(1.3),
-    new TetrahedronGeometry(1.4),
-    new RingGeometry(0.5, 1.3, 16),
-  ];
+const SHAPE_FACTORIES: Array<(f: number) => BufferGeometry> = [
+  (f) => new BoxGeometry(2 * f, 2 / f, 2),
+  (f) => new SphereGeometry(1.2 * f, 12, 8),
+  (f) => new CylinderGeometry(0.8 * f, 1, 2.5 / f, 12),
+  (f) => new ConeGeometry(1 * f, 2.5, 10),
+  (f) => new TorusGeometry(1 * f, 0.35, 8, 16),
+  (f) => new TorusKnotGeometry(0.8 * f, 0.25, 48, 8),
+  (f) => new CapsuleGeometry(0.6 * f, 1.2, 4, 8),
+  // Polyhedra are non-indexed in three.js: they exercise index normalisation in the batcher.
+  (f) => new DodecahedronGeometry(1.2 * f),
+  (f) => new IcosahedronGeometry(1.2 * f),
+  (f) => new OctahedronGeometry(1.3 * f),
+  (f) => new TetrahedronGeometry(1.4 * f),
+  (f) => new RingGeometry(0.5 * f, 1.3 * f, 16),
+];
+
+/** The 12 primitives, then parameter variants of them (each further dozen is a different proportion). */
+function makeGeometries(shapes: number = NAIVE_SCENE.geometryCount): BufferGeometry[] {
+  const out: BufferGeometry[] = [];
+  for (let k = 0; k < shapes; k++) out.push(SHAPE_FACTORIES[k % SHAPE_FACTORIES.length]!(1 + 0.15 * Math.floor(k / SHAPE_FACTORIES.length)));
+  return out;
 }
 
 function makeTexture(rng: () => number, pattern: 'checker' | 'stripes' | 'noise', colorSpace: boolean): DataTexture {
@@ -218,24 +231,24 @@ function makeSkinnedDummy(name: string, x: number, z: number): SkinnedMesh {
   return mesh;
 }
 
-export function buildNaiveScene(seed = 1): NaiveScene {
+export function buildNaiveScene(seed = 1, { count = NAIVE_SCENE.propCount, shapes = NAIVE_SCENE.geometryCount }: NaiveOptions = {}): NaiveScene {
   const rng = mulberry32(seed);
   const scene = new Scene();
   scene.name = 'naive';
 
   const textures: Texture[] = [];
-  const geometries = makeGeometries();
+  const geometries = makeGeometries(shapes);
   const recipes = makeRecipes(rng, textures);
 
   const dynamicIndices = new Set<number>();
-  while (dynamicIndices.size < NAIVE_SCENE.dynamicCount) {
-    dynamicIndices.add(Math.floor(rng() * NAIVE_SCENE.propCount));
+  while (dynamicIndices.size < Math.min(NAIVE_SCENE.dynamicCount, count)) {
+    dynamicIndices.add(Math.floor(rng() * count));
   }
 
   const props: Mesh[] = [];
   const dynamics: Mesh[] = [];
   const half = NAIVE_SCENE.area / 2;
-  for (let i = 0; i < NAIVE_SCENE.propCount; i++) {
+  for (let i = 0; i < count; i++) {
     const geometry = geometries[i % geometries.length]!;
     const recipe = recipes[Math.floor(rng() * recipes.length)]!;
     // The naive part: a brand-new material per prop, never shared.
@@ -274,5 +287,5 @@ export function buildNaiveScene(seed = 1): NaiveScene {
   directional.target.position.set(0, 0, 0);
   scene.add(ambient, directional, directional.target);
 
-  return { scene, props, dynamics, skinned, ground, geometries, recipes, textures, lights: { ambient, directional } };
+  return { scene, counts: { props: count, materials: recipes.length, shapes }, props, dynamics, skinned, ground, geometries, recipes, textures, lights: { ambient, directional } };
 }
