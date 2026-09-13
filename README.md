@@ -21,6 +21,21 @@ by cost, not by genre:
 Budgets come from a device tier (`desktop`, `phone-mid`, `phone-low`, detected at runtime, overridable) and
 every breach shows up as a hint in the overlay and the JSON report.
 
+## For AI agents (and anyone with a terminal)
+
+```bash
+npm i -D threeforge playwright && npx playwright install chromium
+npx threeforge analyze scene.glb --backend webgpu --tier phone-mid --json   # measure, compile, verdict, hints
+npx threeforge inspect http://localhost:5173 --compile --json              # your running app, via exposeToAgents()
+npx threeforge explain point-light-shadow --json                            # what a hint means and how to fix it
+npx threeforge schema                                                       # JSON Schemas of everything above
+npx threeforge mcp                                                          # the same operations as MCP tools
+```
+
+`npx threeforge` with no arguments prints [AGENTS.md](AGENTS.md): commands, the JSON document, exit codes, the
+hint table and the one-line app integration. Every command prints JSON with `--json` and uses exit codes an agent
+can branch on.
+
 Draw-call numbers so far: the naive test scene (500 props, 40 material recipes, a new material per prop) goes from
 **503 to 28** scene submissions with pixel-identical output (**18** with `dynamics: 'batch-sync'`); the 20k-instance
 field scene goes from 3892 submissions to **3 instanced draws** with BVH culling; 104 public glTF assets

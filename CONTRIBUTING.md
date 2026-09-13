@@ -20,12 +20,13 @@ It is not an engine. Three.js renders; we rewrite naive scenes into batched ones
 - `pnpm spike` — runs three's experimental `SceneOptimizer` on the naive scene for a baseline number.
 - `pnpm assets` then `pnpm assets:report` — downloads public glTF test content (gitignored) and compiles every model with pixel parity; `FORGE_ASSETS=Fox,Duck` limits the run. Read `docs/assets-report.md` before touching batching rules. The biome and arena specs are the integration stress tests; use `frameAsync()` in the harness when a measurement must include shadow passes.
 - `pnpm bench [webgl2|webgpu]` — the benchmark suite (eight scenes in `test/app/scenes`, naive and optimized variants): writes `bench/results/local.<backend>.json` and fails when any deterministic cost metric regresses by 10 % against `bench/baselines`. `pnpm bench:baseline` promotes results; `pnpm bench:table` rewrites `docs/bench.md` and the README table.
-- `pnpm typecheck`, `pnpm build` (tsc only, ESM, declarations).
+- `pnpm build` — library (tsc) plus the shipped harness page (`dist/cli-app`); `node dist/cli/index.js …` is the agent CLI (`npx threeforge` after install): `analyze <file>`, `inspect <url>`, `explain <code>`, `schema`, `mcp`. Regenerate `AGENTS.md` with `node scripts/agents-md.mjs` after touching the hint table; a unit test checks it.
+- `pnpm typecheck`.
 - `pnpm dev` — opens the test app. Query params: `scene=naive|field|character|gltf&asset=<name>|biome|arena|empty` or a bench scene `scene=village|forest|crowd|bossfight|lake|daynight|zen|rpg&variant=naive|optimized`, `backend=webgl2|webgpu`, `compile=1`, `overlay=1&budget=30`, `animate=1`, `dynamics=batch-sync`, `lod=1`, `chunk=40`, `occlusion=1`, `wall=1`, `shadows=1`, `count=20000`.
 
 ## Layout
 
-- `src/registry` material dedup and keys · `src/ledger` the six-section frame ledger (draw calls, measured overdraw, skinning, lighting, js, memory, hints) · `src/compiler` classify + batch + culling + instancing + World · `src/lod` meshoptimizer LOD generation · `src/overlay` optional DOM panel.
+- `src/cli` the agent CLI and MCP server (node only; Playwright and the MCP SDK are optional peers imported lazily) · `src/agent` the `exposeToAgents` hook · `cli-app` the harness page shipped with the CLI · `src/registry` material dedup and keys · `src/ledger` the six-section frame ledger (draw calls, measured overdraw, skinning, lighting, js, memory, hints) · `src/compiler` classify + batch + culling + instancing + World · `src/lod` meshoptimizer LOD generation · `src/overlay` optional DOM panel.
 - `test/unit` Vitest · `test/scenes` deterministic scenes · `test/app` Vite harness exposing `window.__forge` · `test/e2e` Playwright specs.
 - Relative imports use `.js` extensions (NodeNext resolution). No default exports.
 

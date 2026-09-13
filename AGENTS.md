@@ -1,0 +1,111 @@
+# threeforge for AI agents
+
+threeforge 0.2.0 is a frame-budget compiler and diagnostics layer for three.js games (r186, WebGPU with a
+WebGL2 fallback). This file is what `npx threeforge` prints. Everything below is scriptable from a terminal and
+prints JSON with `--json`.
+
+## Install
+
+```bash
+npm i -D threeforge playwright && npx playwright install chromium
+```
+
+Playwright is only needed for `analyze`, `inspect` and `mcp`; the library itself has no such dependency.
+
+## Commands
+
+| command | what it does |
+|---|---|
+| `npx threeforge analyze <file.glb\|.gltf> [--backend webgl2\|webgpu] [--tier auto\|desktop\|phone-mid\|phone-low] [--budget N] [--frames 30] [--no-compile] [--json]` | Renders the asset headlessly, measures every cost category, compiles (batches) it, measures again, checks pixel parity, returns hints and a verdict. |
+| `npx threeforge inspect <url> [--frames 30] [--compile] [--budget N] [--json]` | Drives your running app (dev server) through `window.__threeforge`; same document without asset facts and parity. |
+| `npx threeforge explain <hint-code> \| --all [--json]` | What a hint means, what to change, which API. |
+| `npx threeforge schema [snapshot\|analyze\|inspect\|all]` | JSON Schemas (draft 2020-12) of everything the commands print. |
+| `npx threeforge mcp` | Stdio MCP server with tools `analyze_asset`, `inspect_app`, `explain_hint` (needs `npm i -D @modelcontextprotocol/sdk zod`). |
+
+Exit codes: `0` pass · `1` verdict failed (over budget, an error-severity hint, or pixel parity lost) · `2` usage or
+input error · `3` environment (Playwright or Chromium missing; the message has the install command) · `4` the page
+threw or timed out. In `--json` mode stdout is only the JSON document; the human summary goes to stderr.
+
+## Make your app inspectable (one line)
+
+```ts
+import { DrawCallLedger, MaterialRegistry, World, exposeToAgents, tag } from 'threeforge';
+
+const registry = new MaterialRegistry();
+const ledger = new DrawCallLedger({ registry });
+ledger.attach(renderer);
+const world = new World(scene, { registry, ledger, policy: 'auto' });
+exposeToAgents({ ledger, world, renderer, scene, camera }); // publishes window.__threeforge
+```
+
+Then `npx threeforge inspect http://localhost:5173 --compile --json`. The hook offers `frame()`, `frameAsync()`,
+`compile()`, `decompile()`, `measureOverdraw()`, `measureMemory()`, `hints()`, `report()`; an agent driving its own
+browser can call them directly.
+
+## The document you get back
+
+```json
+{
+  "schemaVersion": 1, "tool": "threeforge", "version": "0.2.0", "command": "analyze",
+  "input": { "file": "scene.glb", "backend": "webgpu", "tier": "phone-mid", "budget": null, "frames": 30, "compile": true },
+  "env": { "three": "186", "backend": "webgpu", "gpu": "apple metal-3", "tier": "phone-mid" },
+  "asset": { "meshes": 12, "materials": 5, "vertices": 40210, "triangles": 38000, "animations": 1, "skinned": 1, "morph": 0, "loadMs": 120 },
+  "before": { "totals": { "sceneSubmissions": 503 }, "overdraw": {}, "skinning": {}, "lighting": {}, "js": {}, "memory": {}, "hints": [] },
+  "after":  { "totals": { "sceneSubmissions": 28 } },
+  "compile": { "after": { "batches": 15, "instanced": 0, "meshes": 13 }, "skipped": [{ "path": "player", "rule": "skinned-mesh" }] },
+  "parity": { "diffPct": 0.01, "threshold": 0.5, "pass": true },
+  "hints": [{ "category": "lighting", "severity": "warn", "code": "point-light-shadow", "message": "...", "objects": ["lamp"] }],
+  "verdict": { "pass": true, "budget": null, "errors": [], "reasons": [] },
+  "timings": { "totalMs": 4200 }
+}
+```
+
+`before` and `after` are full snapshots (`npx threeforge schema snapshot`): draw calls by reason, measured
+overdraw (fragments per pixel, opaque and transparent), skinning, lighting and shadow texels, JS timings, memory
+estimate, and `hints`. Read `after` when present, otherwise `before`.
+
+## Hints and what to do about them
+
+`npx threeforge explain <code> --json` returns `{ code, category, severity, meaning, fix, api, docs }`.
+
+| code | category | severity | fix |
+|---|---|---|---|
+| `over-budget-submissions` | drawCalls | error | Tag static meshes with tag.static() and run world.compile() so they batch; lower instanceThreshold so repeated geometry instances; use fewer shadow-casting lights (each is one more pass over the casters). |
+| `over-budget-triangles` | drawCalls | warn | Generate LODs with prepareLods() and pass lod distances to World so distant batches draw simplified geometry; simplify heavy assets at build time; make sure per-instance culling is on (culling: "bvh"). |
+| `untagged` | drawCalls | warn | Call tag.static(mesh) on everything that never moves and tag.dynamic(mesh) on the rest, or construct World with policy: "auto" to batch untagged plain meshes. |
+| `unique-materials` | drawCalls | info | Create one material per surface type and share it, or pass every material through registry.register() and use the canonical it returns; identical materials then merge. |
+| `unsupported-material` | drawCalls | error | Rewrite the effect with three shading language (TSL) on a NodeMaterial, or use a built-in material with node overrides. |
+| `programs` | drawCalls | warn | Reduce material variants: same map slots, same flags (side, transparent, alphaTest, vertexColors) across materials of a kind; colour differences are free, flag differences are not. |
+| `transparent-overdraw` | overdraw | warn | Use alphaTest cutouts instead of blending for foliage and fences, cap live particles per effect, shrink billboard sizes, and scale the render resolution down on low tiers. |
+| `skinned-vertices` | skinning | warn | Merge gear onto one skeleton with assembleCharacter(), use lower-poly rigs for background characters, keep fewer skinned meshes on screen; crowds will instance through baked animation textures. |
+| `point-light-shadow` | lighting | warn | Replace it with a spot light (one face), or freeze its shadow map with light.shadow.autoUpdate = false and set needsUpdate = true only when casters move. |
+| `shadow-texels` | lighting | warn | Lower light.shadow.mapSize, cast shadows from fewer lights, freeze static shadow maps, and turn shadows off on the low tier. |
+| `transmission` | overdraw | info | Keep transmission for a few hero objects, set forceSinglePass when the object is not double sided, and fake distant glass with opacity. |
+| `texture-bytes` | memory | warn | Compress textures to KTX2 (toktx or gltf-transform), cap sizes per tier, share atlases, and drop mipmaps only for UI textures. |
+| `static-auto-update` | js | info | After placing a static object set matrixAutoUpdate = false (and matrixWorldAutoUpdate = false on whole static subtrees); update matrices manually when something does move. |
+
+## Budgets per device tier
+
+Tiers are detected from the GPU and device (override with `--tier`). Defaults: scene submissions 400 / 150 / 80,
+triangles 5 M / 1.5 M / 500 k, transparent overdraw 3 / 2 / 1.5 fragments per pixel, skinned vertices 400 k /
+150 k / 60 k, shadow texels 4 M / 1 M / 262 k, textures 512 / 192 / 96 MB, frame 16.6 / 16.6 / 33 ms for
+desktop / phone-mid / phone-low. In code: `budgetsFor(tier, overrides)`.
+
+## MCP registration
+
+Claude Code: `claude mcp add threeforge -- npx threeforge mcp`. Cursor / other clients: add a stdio server with
+command `npx` and args `["threeforge", "mcp"]`.
+
+## Programmatic use
+
+```ts
+import { analyzeAsset, inspectApp, explain } from 'threeforge/cli';
+const doc = await analyzeAsset({ file: 'scene.glb', backend: 'webgpu', tier: 'auto', budget: null, frames: 30, compile: true, timeout: 60000, headed: false });
+```
+
+## Rules the library expects of a scene
+
+1. One material per surface type, shared (or registered through `MaterialRegistry`).
+2. Tag meshes: `tag.static(obj)` for things that never move, `tag.dynamic(obj)` for the rest; or `policy: 'auto'`.
+3. Never overwrite `onBeforeRender` on a `BatchedMesh` or an instanced object.
+4. Judge by `totals.sceneSubmissions` and the six cost sections, never by `renderer.info.render.calls`.
