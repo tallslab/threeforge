@@ -10,6 +10,9 @@ const scenes: Array<{ id: string; naiveMin: number; optimizedMax: number; counts
   // Skinned meshes are not batched until SP4 (VAT): the optimized crowd only bounds the count.
   { id: 'crowd', naiveMin: 200, optimizedMax: 420, counts: { characters: 200 } },
   { id: 'bossfight', naiveMin: 2000, optimizedMax: 480, counts: { effects: 30, fighters: 12 }, timeout: 240_000 },
+  // Sprites are not batched until SP3 and the water reflection renders them twice: the lake's optimized bound is loose on purpose.
+  { id: 'lake', naiveMin: 1900, optimizedMax: 4200, counts: { rain: 2000 } },
+  { id: 'daynight', naiveMin: 300, optimizedMax: 70, counts: { props: 300, shadowMap: 2048 } },
 ];
 
 for (const s of scenes) {

@@ -9,7 +9,9 @@ import type { WebGPURenderer } from 'three/webgpu';
 import type { World, WorldOptions } from 'threeforge';
 import { bossfight } from './bossfight.js';
 import { crowd } from './crowd.js';
+import { daynight } from './daynight.js';
 import { forest } from './forest.js';
+import { lake } from './lake.js';
 import { village } from './village.js';
 
 export interface BenchContext {
@@ -38,4 +40,4 @@ export interface BenchScene {
 
 export type BenchBuilder = (ctx: BenchContext) => Promise<BenchScene>;
 
-export const BENCH_SCENES: Record<string, BenchBuilder> = { village, forest, crowd, bossfight };
+export const BENCH_SCENES: Record<string, BenchBuilder> = { village, forest, crowd, bossfight, lake, daynight };
