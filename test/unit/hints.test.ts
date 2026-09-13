@@ -1,0 +1,50 @@
+import { describe, expect, it } from 'vitest';
+import { BUDGETS, budgetsFor, detectTier } from '../../src/ledger/budgets.js';
+import { hintsFor } from '../../src/ledger/hints.js';
+import { emptyFrame } from '../../src/ledger/snapshot.js';
+
+const env = { three: '0.186.0', backend: 'webgl2' as const, multiDraw: true, tier: 'phone-low' as const, gpu: 'Adreno 610', dpr: 2, viewport: [390, 844] as [number, number] };
+
+describe('tiers', () => {
+  it('detects phone tiers from GPU strings and device hints', () => {
+    expect(detectTier({ gpu: 'Apple M2' })).toBe('desktop');
+    expect(detectTier({ gpu: 'Apple GPU', touch: true, deviceMemory: 4 })).toBe('phone-mid');
+    expect(detectTier({ gpu: 'Adreno (TM) 610', touch: true })).toBe('phone-low');
+    expect(detectTier({ gpu: 'Mali-G52', touch: true })).toBe('phone-low');
+    expect(detectTier({ gpu: 'Adreno (TM) 740', touch: true, deviceMemory: 8 })).toBe('phone-mid');
+    expect(detectTier({ touch: true, deviceMemory: 2 })).toBe('phone-low');
+  });
+
+  it('budgets have the spec values and accept overrides', () => {
+    expect(BUDGETS['phone-low'].sceneSubmissions).toBe(80);
+    expect(budgetsFor('desktop', { sceneSubmissions: 1000 }).sceneSubmissions).toBe(1000);
+    expect(budgetsFor('desktop').triangles).toBe(5_000_000);
+  });
+});
+
+describe('hintsFor', () => {
+  it('reports every SP1 rule that trips on a phone-low frame', () => {
+    const f = emptyFrame(env);
+    f.totals.sceneSubmissions = 300;
+    f.totals.programs = 41;
+    f.totals.triangles = 600_000;
+    f.byReason = {
+      untagged: { submissions: 7, gpuDraws: 7, top: ['crate', 'barrel'] },
+      'unique-material': { submissions: 25, gpuDraws: 25, top: ['a'] },
+      'unsupported-material': { submissions: 1, gpuDraws: 1, top: ['shader'] },
+    };
+    f.overdraw = { opaque: 1.2, transparent: 2.5, transparentSubmissions: 30, measured: true };
+    f.skinning = { submissions: 200, vertices: 100_000, bones: 8000, skeletons: 200, maxBones: 60, morphTargets: 0 };
+    f.lighting = { lights: { directional: 1, point: 1, spot: 0, hemisphere: 0, ambient: 0, other: 0 }, shadowLights: 2, shadowPasses: 7, shadowCasters: 10, shadowTexels: 6 * 1024 * 1024, shadowSubmissions: 70 };
+    f.memory = { textures: { count: 10, bytes: 200 * 1024 * 1024 }, geometries: { count: 1, bytes: 0 }, renderTargets: { count: 0, bytes: 0 }, estimated: true };
+    const hints = hintsFor(f, budgetsFor('phone-low'), { staticAutoUpdated: ['tree-1'], pointShadowLights: ['lamp'], transmissive: ['glass'] });
+    expect(hints.map((h) => h.code).sort()).toEqual(
+      ['over-budget-submissions', 'over-budget-triangles', 'point-light-shadow', 'programs', 'shadow-texels', 'skinned-vertices', 'static-auto-update', 'texture-bytes', 'transmission', 'transparent-overdraw', 'unique-materials', 'unsupported-material', 'untagged'].sort(),
+    );
+    expect(hints.find((h) => h.code === 'untagged')).toEqual({ category: 'drawCalls', severity: 'warn', code: 'untagged', message: '7 untagged meshes: tag.static() or tag.dynamic() them', objects: ['crate', 'barrel'] });
+  });
+
+  it('is empty for a frame inside every budget', () => {
+    expect(hintsFor(emptyFrame(env), budgetsFor('desktop'))).toEqual([]);
+  });
+});

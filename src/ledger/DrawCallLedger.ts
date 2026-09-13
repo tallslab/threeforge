@@ -2,7 +2,10 @@ import { REVISION, type Camera, type Light, type Material, type Object3D, type S
 import { MaterialRegistry } from '../registry/MaterialRegistry.js';
 import { expectedGpuDraws, instanceCounts, type BackendInfo } from './expectedDraws.js';
 import { displayName, flagsOf, kindOf, reasonOf, type Reason } from './reasons.js';
+import { budgetsFor, type Budgets } from './budgets.js';
+import { hintsFor, type HintContext } from './hints.js';
 import { estimateMemory } from './memory.js';
+import { FORGE_TAG_KEY } from '../tags.js';
 import { scanLights, type LightInfo } from './sections.js';
 import { buildFrame, emptyFrame, emptySections, type BudgetResult, type FrameEnv, type FrameSnapshot, type MemorySnapshot, type SubmissionRecord, type Tier } from './snapshot.js';
 
@@ -25,6 +28,8 @@ export interface DrawCallLedgerOptions {
   registry?: MaterialRegistry;
   /** Clock for the js section (defaults to `performance.now`). */
   now?: () => number;
+  /** Per-tier budget overrides for the hints. */
+  budgets?: Partial<Budgets>;
 }
 
 /** Scene-graph statistics recounted at most every RESCAN_EVERY frames (a full traversal). */
@@ -76,10 +81,13 @@ export class DrawCallLedger {
   private lastScene: Object3D | null = null;
   private graphStats: { objects: number; autoUpdatedMatrices: number; at: number } = { objects: 0, autoUpdatedMatrices: 0, at: -1 };
   private memoryStats: MemorySnapshot = emptySections().memory;
+  private hintContext: HintContext = {};
+  private readonly budgetOverrides: Partial<Budgets>;
 
   constructor(options: DrawCallLedgerOptions = {}) {
     this.registry = options.registry ?? new MaterialRegistry();
     this.now = options.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
+    this.budgetOverrides = options.budgets ?? {};
     this.last = emptyFrame(this.env());
   }
 
@@ -151,15 +159,35 @@ export class DrawCallLedger {
     if (!scene) return;
     let objects = 0;
     let auto = 0;
+    const ctx: Required<HintContext> = { staticAutoUpdated: [], pointShadowLights: [], transmissive: [] };
     scene.traverse((o) => {
       objects++;
-      if (o.matrixAutoUpdate && o.matrixWorldAutoUpdate) auto++;
+      if (o.matrixAutoUpdate && o.matrixWorldAutoUpdate) {
+        auto++;
+        if ((o.userData as Record<string, unknown>)[FORGE_TAG_KEY] === 'static' && (o as { isMesh?: boolean }).isMesh) ctx.staticAutoUpdated.push(displayName(o, scene));
+      }
+      const light = o as Light & { isPointLight?: boolean };
+      if (light.isLight && light.isPointLight && light.castShadow && light.visible) ctx.pointShadowLights.push(displayName(o, scene));
+      const material = (o as { material?: Material | Material[] }).material;
+      for (const m of Array.isArray(material) ? material : material ? [material] : []) {
+        if (((m as Material & { transmission?: number }).transmission ?? 0) > 0) {
+          ctx.transmissive.push(displayName(o, scene));
+          break;
+        }
+      }
     });
+    this.hintContext = ctx;
     // The scene object itself is not part of the count.
     this.graphStats = { objects: objects - 1, autoUpdatedMatrices: auto - 1, at: this.framesSeen };
     const memory = this.renderer?.info.memory;
     this.memoryStats = estimateMemory(scene, { textures: memory?.textures ?? 0, geometries: memory?.geometries ?? 0 }, this.environment.viewport);
     this.last = { ...this.last, js: { ...this.last.js, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices }, memory: this.memoryStats };
+    this.last = { ...this.last, hints: hintsFor(this.last, this.budgets(), this.hintContext) };
+  }
+
+  /** The budgets hints are judged against: the environment's tier plus constructor overrides. */
+  budgets(): Budgets {
+    return budgetsFor(this.environment.tier, this.budgetOverrides);
   }
 
   /** Recount and return the memory estimate now. */
@@ -276,6 +304,7 @@ export class DrawCallLedger {
       js: { renderMs: this.now() - this.current.startedAt, frameMs, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices },
       memory: this.memoryStats,
     });
+    this.last.hints = hintsFor(this.last, this.budgets(), this.hintContext);
     this.current = null;
   }
 

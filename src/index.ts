@@ -10,7 +10,11 @@ export {
 export { computeMaterialKeys, hashKey, type MaterialKeys } from './registry/materialKey.js';
 export { DrawCallLedger, type DrawCallLedgerOptions, type LedgerRenderer } from './ledger/DrawCallLedger.js';
 export type { Flag, Reason, SubmissionKind } from './ledger/reasons.js';
-export type { BudgetOffender, BudgetResult, FrameSnapshot, FrameTotals, PassSnapshot, ProgramSnapshot, ReasonSnapshot, SubmissionRecord } from './ledger/snapshot.js';
+export type { BudgetOffender, BudgetResult, FrameEnv, FrameSnapshot, FrameTotals, Hint, HintCategory, JsSnapshot, LightingSnapshot, MemorySnapshot, OverdrawSnapshot, PassSnapshot, ProgramSnapshot, ReasonSnapshot, SkinningSnapshot, SubmissionRecord, Tier } from './ledger/snapshot.js';
+export { BUDGETS, budgetsFor, detectTier, type Budgets, type TierInput } from './ledger/budgets.js';
+export { hintsFor, type HintContext } from './ledger/hints.js';
+export { estimateMemory, geometryBytes, textureBytes } from './ledger/memory.js';
+export { lightingOf, scanLights, skinningOf, type LightInfo } from './ledger/sections.js';
 export { classify, exclusionRule, animatedRoots, type Classification, type ClassifyOptions, type MeshKind } from './compiler/classify.js';
 export { attributeSignature, ensureIndexed, isBatchCompatible } from './compiler/geometryCompat.js';
 export { World, FORGE_HIDDEN_LAYER, type CompileOptions, type CompileReport, type WarmupOptions, type WarmupRenderer, type WarmupResult, type WorldOptions } from './compiler/World.js';
