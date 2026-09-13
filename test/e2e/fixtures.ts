@@ -27,7 +27,9 @@ export const test = base.extend<ForgeOptions & { forge: ForgePage }>({
     const open = async (scene: string, query: Record<string, string> = {}) => {
       const q = new URLSearchParams({ scene, backend, ...query });
       await page.goto(`/?${q.toString()}`);
-      await page.waitForFunction(() => window.__forge?.ready === true, undefined, { timeout: 60_000 });
+      await page.waitForFunction(() => window.__forge?.ready === true || typeof window.__forge?.error === 'string', undefined, { timeout: 60_000 });
+      const error = await page.evaluate(() => window.__forge.error);
+      if (error) throw new Error(`harness failed to start: ${error}`);
       const actual = await page.evaluate(() => window.__forge.backend);
       expect(actual, 'page fell back to a different backend').toBe(backend);
     };
