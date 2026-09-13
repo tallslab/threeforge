@@ -7,6 +7,8 @@ import type { AnimationClip, Object3D, PerspectiveCamera, Scene } from 'three';
 import type { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { WebGPURenderer } from 'three/webgpu';
 import type { World, WorldOptions } from 'threeforge';
+import { bossfight } from './bossfight.js';
+import { crowd } from './crowd.js';
 import { forest } from './forest.js';
 import { village } from './village.js';
 
@@ -36,4 +38,4 @@ export interface BenchScene {
 
 export type BenchBuilder = (ctx: BenchContext) => Promise<BenchScene>;
 
-export const BENCH_SCENES: Record<string, BenchBuilder> = { village, forest };
+export const BENCH_SCENES: Record<string, BenchBuilder> = { village, forest, crowd, bossfight };

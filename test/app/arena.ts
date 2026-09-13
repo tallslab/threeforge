@@ -46,6 +46,8 @@ export interface ArenaOptions {
   blocky?: number;
   seed?: number;
   vfx?: boolean;
+  /** Particle systems to build (the first six are the arena's own: four smoke columns, sparks, magic). */
+  effects?: number;
   shadows?: boolean;
   /** Merge each fighter's skinned parts (body + head) into one skinned mesh with one atlas. */
   assemble?: boolean;
@@ -70,7 +72,7 @@ interface KitIndex {
   error?: string;
 }
 
-export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21, vfx = true, shadows = true, assemble = false }: ArenaOptions): Promise<Arena> {
+export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21, vfx = true, effects = 6, shadows = true, assemble = false }: ArenaOptions): Promise<Arena> {
   const rng = mulberry32(seed);
   const scene = new Scene();
   scene.name = 'arena';
@@ -328,7 +330,19 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
     }
     makeParticles('sparks', 1500, sparkTex, 0xffcc66, 1.2, new Vector3(0, 1, 0), 40, 6, 6);
     makeParticles('magic', 800, magicTex, 0x66aaff, 2, new Vector3(0, 0.5, 0), 16, 8, 2);
-    counts.particles = 2700 + 1600;
+    let particles = 2700 + 1600;
+    // Extra simultaneous effects (the boss-fight benchmark asks for 30): bursts scattered around the arena.
+    const extraTextures = [sparkTex, magicTex, smokeTex];
+    const extraColors = [0xff8844, 0x88ddff, 0xaaaaaa];
+    for (let i = 6; i < effects; i++) {
+      const k = i % 3;
+      const a = (i / Math.max(1, effects - 6)) * Math.PI * 2;
+      const r = 6 + (i % 5) * 4;
+      makeParticles(`effect-${i}`, 150, extraTextures[k]!, extraColors[k]!, 1.5 + k * 0.6, new Vector3(Math.cos(a) * r, 0.5, Math.sin(a) * r), 4, 5, 2 + k);
+      particles += 150;
+    }
+    counts.particles = particles;
+    counts.effects = Math.max(6, effects);
 
     // Sprites: health bars and damage numbers above fighters.
     const barTex = await loadTexture(tex('kenney-particle-pack', 'trace_01'));
