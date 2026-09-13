@@ -31,17 +31,16 @@ describe('World.warmup', () => {
     expect(result).toEqual({ compiled: true, textures: 1, skipped: null });
   });
 
-  it('skips compileAsync on the WebGPU backend when the scene has transmissive materials (three r186 renders them wrong afterwards)', async () => {
+  it('skips compileAsync on every backend when the scene has transmissive materials (three r186 renders them wrong afterwards)', async () => {
     const scene = new Scene();
     scene.add(new Mesh(box, new MeshPhysicalMaterial({ transmission: 0.9 })), tag.static(new Mesh(box, new MeshStandardMaterial())));
     const world = new World(scene);
     world.compile();
-    const renderer = fakeRenderer(WebGPUCoordinateSystem);
-    const result = await world.warmup(renderer as never, new PerspectiveCamera());
-    expect(renderer.calls).toEqual([]);
-    expect(result).toEqual({ compiled: false, textures: 0, skipped: 'transmission-on-webgpu' });
-    // Same scene on WebGL is fine.
-    const gl = fakeRenderer(WebGLCoordinateSystem);
-    expect((await world.warmup(gl as never, new PerspectiveCamera())).compiled).toBe(true);
+    for (const cs of [WebGPUCoordinateSystem, WebGLCoordinateSystem]) {
+      const renderer = fakeRenderer(cs);
+      const result = await world.warmup(renderer as never, new PerspectiveCamera());
+      expect(renderer.calls).toEqual([]);
+      expect(result).toEqual({ compiled: false, textures: 0, skipped: 'transmission' });
+    }
   });
 });

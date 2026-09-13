@@ -184,10 +184,11 @@ The same scene on the native WebGPU backend matches at 0.00 % too, after two bac
   (the depth material gives them their own bind group). `reuse-main` culls only for the outermost render's
   camera (tracked through scene hooks) and lets nested passes draw that list, one frame old, so the GPU data
   changes once per frame. Reflections may miss objects outside the main frustum; nothing renders corrupt.
-- **`compileAsync` and transmission on WebGPU.** `renderer.compileAsync()` on a scene with transmissive
-  materials leaves them rendering wrong afterwards in three r186 (CommercialRefrigerator's glass door changes
-  8.9 % of pixels; `initTexture` is harmless; WebGL2 is unaffected). `world.warmup()` therefore skips the
-  pre-compilation for such scenes on WebGPU and reports `skipped: 'transmission-on-webgpu'`.
+- **`compileAsync` and transmission.** `renderer.compileAsync()` on a scene with transmissive materials leaves
+  them rendering wrong afterwards in three r186 on both backends (CommercialRefrigerator's glass door changes
+  8.9 % of pixels; `initTexture` is harmless). It first looked WebGPU-only because the transmission backdrop
+  pass, like shadow maps, re-renders only once per node frameId, so same-task frames kept the pre-compile
+  backdrop. `world.warmup()` skips the pre-compilation for such scenes and reports `skipped: 'transmission'`.
 
 Public asset report: WebGL2 104/104 clean; WebGPU 103/104, the exception being `polyhaven-fir_sapling_medium`
 (1.5 M triangles of alpha-tested foliage) at 0.64 % changed pixels with 0 unattributed draws, which reads as

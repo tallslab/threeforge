@@ -80,7 +80,7 @@ export interface WarmupResult {
   /** Textures handed to `initTexture`. */
   textures: number;
   /** Why the warm-up was skipped, if it was. */
-  skipped: 'transmission-on-webgpu' | null;
+  skipped: 'transmission' | null;
 }
 
 interface OriginalState {
@@ -360,9 +360,9 @@ export class World {
 
   /**
    * Compile shaders and upload textures now instead of on first render. Call after `compile()`.
-   * Skipped entirely on the WebGPU backend when the scene contains transmissive materials: in three r186,
-   * `compileAsync` leaves those materials rendering wrong afterwards (verified against the Khronos
-   * CommercialRefrigerator, AttenuationTest and TransmissionTest assets; WebGL2 is unaffected).
+   * Skipped entirely when the scene contains transmissive materials: in three r186, `compileAsync` leaves those
+   * materials rendering wrong afterwards on both backends (verified against the Khronos CommercialRefrigerator,
+   * AttenuationTest and TransmissionTest assets once frames were separated by animation-frame ticks).
    */
   async warmup(renderer: WarmupRenderer, camera: Camera): Promise<WarmupResult> {
     const textures = new Set<Texture>();
@@ -377,7 +377,7 @@ export class World {
         }
       }
     });
-    if (transmissive && renderer.coordinateSystem === WebGPUCoordinateSystem) return { compiled: false, textures: 0, skipped: 'transmission-on-webgpu' };
+    if (transmissive) return { compiled: false, textures: 0, skipped: 'transmission' };
     if (renderer.initTexture) for (const texture of textures) renderer.initTexture(texture);
     await renderer.compileAsync(this.scene, camera);
     return { compiled: true, textures: renderer.initTexture ? textures.size : 0, skipped: null };
