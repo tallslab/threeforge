@@ -1,12 +1,16 @@
 {
   "name": "threeforge",
-  "version": "0.1.0",
-  "description": "Scene compiler + draw-call diagnostics for three.js. Batches naive scenes at load time and explains every remaining draw call.",
+  "version": "0.2.0",
+  "description": "Frame-budget compiler and diagnostics for three.js games: batches naive scenes, measures every frame cost, explains what to fix. CLI and MCP for AI agents.",
   "type": "module",
   "license": "MIT",
   "sideEffects": false,
   "files": [
-    "dist"
+    "dist",
+    "AGENTS.md",
+    "llms.txt",
+    "README.md",
+    "LICENSE"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,10 +22,14 @@
     "./overlay": {
       "types": "./dist/overlay/index.d.ts",
       "import": "./dist/overlay/index.js"
+    },
+    "./cli": {
+      "types": "./dist/cli/api.d.ts",
+      "import": "./dist/cli/api.js"
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "pnpm build:lib && pnpm build:cli-app",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -34,10 +42,15 @@
     "bench": "node scripts/bench-run.mjs",
     "bench:baseline": "node scripts/bench-baseline.mjs",
     "bench:table": "node scripts/bench-table.mjs",
-    "assets:kits": "node scripts/fetch-kits.mjs"
+    "assets:kits": "node scripts/fetch-kits.mjs",
+    "build:lib": "tsc -p tsconfig.build.json",
+    "build:cli-app": "node scripts/copy-decoders.mjs && vite build --config vite.cli.config.ts"
   },
   "peerDependencies": {
-    "three": ">=0.180.0"
+    "three": ">=0.180.0",
+    "playwright": ">=1.50.0",
+    "@modelcontextprotocol/sdk": ">=1.20.0",
+    "zod": ">=3.23.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
@@ -48,7 +61,10 @@
     "three": "0.186.0",
     "typescript": "~5.9.3",
     "vite": "^8.3.0",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.0",
+    "playwright": "1.63.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.23.0"
   },
   "engines": {
     "node": ">=20"
@@ -56,6 +72,35 @@
   "packageManager": "pnpm@10.28.1",
   "dependencies": {
     "bvh.js": "0.0.13",
-    "meshoptimizer": "1.2.0"
-  }
+    "meshoptimizer": "1.2.0",
+    "pngjs": "^7.0.0"
+  },
+  "bin": {
+    "threeforge": "dist/cli/index.js"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    },
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "three",
+    "threejs",
+    "webgpu",
+    "webgl",
+    "batching",
+    "instancing",
+    "draw-calls",
+    "performance",
+    "game",
+    "mobile",
+    "ai-agents",
+    "mcp"
+  ]
 }

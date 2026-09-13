@@ -1,0 +1,121 @@
+/**
+ * The harness page `threeforge analyze` ships and drives: load a glTF from `?file=`, attach the ledger, build a
+ * World with policy `auto`, and publish `window.__threeforge` (the agent hook) plus `window.__threeforgeCli`
+ * (asset facts, readiness). No animation loop: the CLI renders frames through the hook.
+ */
+import { AmbientLight, AnimationMixer, Box3, Color, DirectionalLight, PerspectiveCamera, Scene, Sphere, Vector3, type AnimationClip, type Mesh } from 'three';
+import { WebGPURenderer, PMREMGenerator } from 'three/webgpu';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+import { MeshoptDecoder } from 'meshoptimizer/decoder';
+import { DrawCallLedger, MaterialRegistry, World, detectTier, exposeToAgents, type Tier } from 'threeforge';
+
+interface CliFacts {
+  ready: boolean;
+  error?: string;
+  asset?: { meshes: number; materials: number; vertices: number; triangles: number; animations: number; skinned: number; morph: number; loadMs: number };
+}
+declare global {
+  interface Window {
+    __threeforgeCli: CliFacts;
+  }
+}
+
+const params = new URLSearchParams(location.search);
+try {
+  const file = params.get('file');
+  if (!file) throw new Error('missing ?file=');
+  const backend = params.get('backend') === 'webgpu' ? 'webgpu' : 'webgl2';
+  const canvas = document.getElementById('c') as HTMLCanvasElement;
+  const renderer = new WebGPURenderer({ canvas, antialias: false, forceWebGL: backend === 'webgl2' });
+  await renderer.init();
+  renderer.setPixelRatio(1);
+  renderer.setSize(800, 600, false);
+  const actual = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'webgpu' : 'webgl2';
+  if (actual !== backend) throw new Error(`requested ${backend} but the browser gave ${actual}`);
+
+  const registry = new MaterialRegistry();
+  const ledger = new DrawCallLedger({ registry });
+  ledger.attach(renderer);
+
+  const gpuName = (): string => {
+    type AdapterInfo = { description?: string; device?: string; vendor?: string; architecture?: string };
+    const b = renderer.backend as { isWebGPUBackend?: boolean; device?: { adapterInfo?: AdapterInfo }; gl?: WebGL2RenderingContext };
+    if (b.isWebGPUBackend) {
+      const info = b.device?.adapterInfo;
+      return info?.description || info?.device || [info?.vendor, info?.architecture].filter(Boolean).join(' ') || 'webgpu';
+    }
+    const ext = b.gl?.getExtension('WEBGL_debug_renderer_info');
+    return ext && b.gl ? String(b.gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : 'webgl2';
+  };
+  const gpu = gpuName();
+  const requested = params.get('tier');
+  const tier: Tier = requested && requested !== 'auto' ? (requested as Tier) : detectTier({ gpu, touch: navigator.maxTouchPoints > 0, deviceMemory: (navigator as { deviceMemory?: number }).deviceMemory, cores: navigator.hardwareConcurrency, dpr: devicePixelRatio });
+  ledger.setEnvironment({ tier, gpu, dpr: 1, viewport: [800, 600] });
+
+  const loader = new GLTFLoader();
+  const draco = new DRACOLoader();
+  draco.setDecoderPath('./_decoders/draco/');
+  loader.setDRACOLoader(draco);
+  const ktx2 = new KTX2Loader();
+  ktx2.setTranscoderPath('./_decoders/basis/');
+  await ktx2.detectSupportAsync(renderer);
+  loader.setKTX2Loader(ktx2);
+  loader.setMeshoptDecoder(MeshoptDecoder);
+
+  const t0 = performance.now();
+  const gltf = await loader.loadAsync(file);
+  const loadMs = performance.now() - t0;
+
+  const scene = new Scene();
+  scene.background = new Color(0x202830);
+  scene.add(gltf.scene);
+  const pmrem = new PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  const key = new DirectionalLight(0xffffff, 1.5);
+  key.position.set(1, 2, 1.5);
+  scene.add(new AmbientLight(0xffffff, 0.2), key);
+  const clips: AnimationClip[] = gltf.animations;
+  if (clips.length > 0) {
+    const mixer = new AnimationMixer(gltf.scene);
+    for (const clip of clips) mixer.clipAction(clip).play();
+    mixer.setTime(0.7);
+  }
+  scene.updateMatrixWorld(true);
+
+  const camera = new PerspectiveCamera(60, 800 / 600, 0.1, 1000);
+  const sphere = new Box3().setFromObject(gltf.scene).getBoundingSphere(new Sphere());
+  const radius = Math.max(sphere.radius, 1e-3);
+  camera.near = radius / 100;
+  camera.far = radius * 50;
+  camera.position.copy(sphere.center).add(new Vector3(0.7, 0.45, 1).normalize().multiplyScalar((radius / Math.sin((camera.fov * Math.PI) / 360)) * 1.05));
+  camera.lookAt(sphere.center);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+
+  let meshes = 0;
+  let vertices = 0;
+  let triangles = 0;
+  let skinned = 0;
+  let morph = 0;
+  const materials = new Set<unknown>();
+  gltf.scene.traverse((o) => {
+    const m = o as Mesh & { isSkinnedMesh?: boolean };
+    if (!m.isMesh) return;
+    meshes++;
+    if (m.isSkinnedMesh) skinned++;
+    if (m.morphTargetInfluences?.length) morph++;
+    for (const mat of Array.isArray(m.material) ? m.material : [m.material]) materials.add(mat);
+    vertices += m.geometry.attributes.position?.count ?? 0;
+    triangles += (m.geometry.index ? m.geometry.index.count : (m.geometry.attributes.position?.count ?? 0)) / 3;
+  });
+
+  const world = new World(scene, { registry, ledger, policy: (params.get('policy') as 'auto' | 'tagged' | null) ?? 'auto', animations: clips });
+  exposeToAgents({ ledger, world, renderer, scene, camera });
+  window.__threeforgeCli = { ready: true, asset: { meshes, materials: materials.size, vertices, triangles: Math.round(triangles), animations: clips.length, skinned, morph, loadMs } };
+} catch (error) {
+  window.__threeforgeCli = { ready: false, error: error instanceof Error ? (error.stack ?? error.message) : String(error) };
+  throw error;
+}

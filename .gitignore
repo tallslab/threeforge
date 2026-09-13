@@ -6,3 +6,4 @@ playwright-report
 *.log
 test/assets/files
 bench/results/
+cli-app/public/
