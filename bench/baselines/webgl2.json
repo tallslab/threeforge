@@ -6,11 +6,7 @@
     "multiDraw": true,
     "tier": "desktop",
     "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
-    "dpr": 1,
-    "viewport": [
-      800,
-      600
-    ]
+    "dpr": 1
   },
   "scenes": {
     "village": {
@@ -27,8 +23,8 @@
         "textureBytes": 10240,
         "geometryBytes": 159292,
         "renderTargetBytes": 3840000,
-        "renderMs": 2.5,
-        "frameMs": 18.5,
+        "renderMs": 2.5999999940395355,
+        "frameMs": 19.5,
         "unattributed": 0
       },
       "optimized": {
@@ -44,8 +40,8 @@
         "textureBytes": 10240,
         "geometryBytes": 757220,
         "renderTargetBytes": 3840000,
-        "renderMs": 1,
-        "frameMs": 17.5,
+        "renderMs": 0.9000000059604645,
+        "frameMs": 16.80000001192093,
         "unattributed": 0
       }
     },
@@ -63,8 +59,8 @@
         "textureBytes": 0,
         "geometryBytes": 426872,
         "renderTargetBytes": 3840000,
-        "renderMs": 33.599999994039536,
-        "frameMs": 141,
+        "renderMs": 32.599999994039536,
+        "frameMs": 138.89999997615814,
         "unattributed": 0
       },
       "optimized": {
@@ -80,8 +76,8 @@
         "textureBytes": 0,
         "geometryBytes": 432194,
         "renderTargetBytes": 3840000,
-        "renderMs": 2.199999988079071,
-        "frameMs": 86.7999999821186,
+        "renderMs": 2.0999999940395355,
+        "frameMs": 80.90000000596046,
         "unattributed": 0
       }
     },
@@ -99,8 +95,8 @@
         "textureBytes": 11184808,
         "geometryBytes": 903724,
         "renderTargetBytes": 3840000,
-        "renderMs": 4.600000023841858,
-        "frameMs": 39.30000001192093,
+        "renderMs": 4.300000011920929,
+        "frameMs": 35.30000001192093,
         "unattributed": 0
       },
       "optimized": {
@@ -117,7 +113,7 @@
         "geometryBytes": 903724,
         "renderTargetBytes": 3840000,
         "renderMs": 4.5999999940395355,
-        "frameMs": 37.20000001788139,
+        "frameMs": 37.19999998807907,
         "unattributed": 0
       }
     },
@@ -135,8 +131,8 @@
         "textureBytes": 91575625,
         "geometryBytes": 1539748,
         "renderTargetBytes": 18520064,
-        "renderMs": 23.5,
-        "frameMs": 127.30000001192093,
+        "renderMs": 23,
+        "frameMs": 128.90000000596046,
         "unattributed": 0
       },
       "optimized": {
@@ -152,8 +148,8 @@
         "textureBytes": 91575625,
         "geometryBytes": 2042346,
         "renderTargetBytes": 18520064,
-        "renderMs": 9.699999988079071,
-        "frameMs": 110.39999997615814,
+        "renderMs": 9.5,
+        "frameMs": 111.5,
         "unattributed": 0
       }
     },
@@ -171,8 +167,8 @@
         "textureBytes": 1024,
         "geometryBytes": 3908,
         "renderTargetBytes": 3840000,
-        "renderMs": 25.299999982118607,
-        "frameMs": 97.5,
+        "renderMs": 23.899999976158142,
+        "frameMs": 100.7000000178814,
         "unattributed": 0
       },
       "optimized": {
@@ -188,8 +184,8 @@
         "textureBytes": 1024,
         "geometryBytes": 7580,
         "renderTargetBytes": 3840000,
-        "renderMs": 26,
-        "frameMs": 98.19999998807907,
+        "renderMs": 25.099999994039536,
+        "frameMs": 102.09999999403954,
         "unattributed": 0
       }
     },
@@ -207,8 +203,8 @@
         "textureBytes": 10240,
         "geometryBytes": 159292,
         "renderTargetBytes": 20617216,
-        "renderMs": 4.5999999940395355,
-        "frameMs": 33,
+        "renderMs": 4.5,
+        "frameMs": 34.400000005960464,
         "unattributed": 0
       },
       "optimized": {
@@ -224,8 +220,8 @@
         "textureBytes": 10240,
         "geometryBytes": 757220,
         "renderTargetBytes": 20617216,
-        "renderMs": 1.5,
-        "frameMs": 28.900000005960464,
+        "renderMs": 1.5999999940395355,
+        "frameMs": 30.19999998807907,
         "unattributed": 0
       }
     },
@@ -243,8 +239,8 @@
         "textureBytes": 0,
         "geometryBytes": 6272,
         "renderTargetBytes": 3840000,
-        "renderMs": 77.90000000596046,
-        "frameMs": 274.59999999403954,
+        "renderMs": 75.60000002384186,
+        "frameMs": 272.59999999403954,
         "unattributed": 0
       },
       "optimized": {
@@ -260,8 +256,8 @@
         "textureBytes": 0,
         "geometryBytes": 6272,
         "renderTargetBytes": 3840000,
-        "renderMs": 17.5,
-        "frameMs": 199.10000002384186,
+        "renderMs": 17.099999994039536,
+        "frameMs": 201.80000001192093,
         "unattributed": 0
       }
     },
@@ -279,8 +275,8 @@
         "textureBytes": 320,
         "geometryBytes": 25000,
         "renderTargetBytes": 2880000,
-        "renderMs": 0.4000000059604645,
-        "frameMs": 16.69999998807907,
+        "renderMs": 0.3999999761581421,
+        "frameMs": 16.700000017881393,
         "unattributed": 0
       },
       "optimized": {
