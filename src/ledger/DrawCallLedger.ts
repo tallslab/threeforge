@@ -2,15 +2,16 @@ import { REVISION, type Camera, type Light, type Material, type Object3D, type S
 import { MaterialRegistry } from '../registry/MaterialRegistry.js';
 import { expectedGpuDraws, instanceCounts, type BackendInfo } from './expectedDraws.js';
 import { displayName, flagsOf, kindOf, reasonOf, type Reason } from './reasons.js';
+import { estimateMemory } from './memory.js';
 import { scanLights, type LightInfo } from './sections.js';
-import { buildFrame, emptyFrame, type BudgetResult, type FrameEnv, type FrameSnapshot, type SubmissionRecord, type Tier } from './snapshot.js';
+import { buildFrame, emptyFrame, emptySections, type BudgetResult, type FrameEnv, type FrameSnapshot, type MemorySnapshot, type SubmissionRecord, type Tier } from './snapshot.js';
 
 /** The slice of three's common Renderer the ledger patches and reads. Structural so tests can fake it. */
 export interface LedgerRenderer {
   render(scene: Scene, camera: Camera): unknown;
   renderAsync?(scene: Scene, camera: Camera): Promise<unknown>;
   renderObject(...args: unknown[]): unknown;
-  info: { render: { drawCalls: number; triangles: number }; memory: { programs: number } };
+  info: { render: { drawCalls: number; triangles: number }; memory: { programs: number; textures?: number; geometries?: number } };
   backend?: unknown;
   getRenderTarget?(): { name?: string; texture?: { name?: string } } | null;
 }
@@ -74,6 +75,7 @@ export class DrawCallLedger {
   private framesSeen = 0;
   private lastScene: Object3D | null = null;
   private graphStats: { objects: number; autoUpdatedMatrices: number; at: number } = { objects: 0, autoUpdatedMatrices: 0, at: -1 };
+  private memoryStats: MemorySnapshot = emptySections().memory;
 
   constructor(options: DrawCallLedgerOptions = {}) {
     this.registry = options.registry ?? new MaterialRegistry();
@@ -155,7 +157,15 @@ export class DrawCallLedger {
     });
     // The scene object itself is not part of the count.
     this.graphStats = { objects: objects - 1, autoUpdatedMatrices: auto - 1, at: this.framesSeen };
-    this.last = { ...this.last, js: { ...this.last.js, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices } };
+    const memory = this.renderer?.info.memory;
+    this.memoryStats = estimateMemory(scene, { textures: memory?.textures ?? 0, geometries: memory?.geometries ?? 0 }, this.environment.viewport);
+    this.last = { ...this.last, js: { ...this.last.js, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices }, memory: this.memoryStats };
+  }
+
+  /** Recount and return the memory estimate now. */
+  measureMemory(): MemorySnapshot {
+    this.rescan();
+    return this.last.memory;
   }
 
   /** Let the compiler explain why it left a mesh alone; shows up as that submission's reason. */
@@ -264,6 +274,7 @@ export class DrawCallLedger {
       descriptions,
       lights: this.current.lights,
       js: { renderMs: this.now() - this.current.startedAt, frameMs, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices },
+      memory: this.memoryStats,
     });
     this.current = null;
   }
