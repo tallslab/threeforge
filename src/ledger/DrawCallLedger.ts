@@ -6,6 +6,7 @@ import { budgetsFor, type Budgets } from './budgets.js';
 import { hintsFor, type HintContext } from './hints.js';
 import { estimateMemory } from './memory.js';
 import { measureOverdraw, type OverdrawRenderer, type OverdrawResult } from './overdraw.js';
+import { formatCostRows, formatHints } from '../overlay/index.js';
 import { FORGE_TAG_KEY } from '../tags.js';
 import { scanLights, type LightInfo } from './sections.js';
 import { buildFrame, emptyFrame, emptySections, type BudgetResult, type FrameEnv, type FrameSnapshot, type MemorySnapshot, type SubmissionRecord, type Tier } from './snapshot.js';
@@ -239,11 +240,13 @@ export class DrawCallLedger {
     const lines = [
       `threeforge ledger [${f.env.backend}${f.env.multiDraw ? ', multi-draw' : ''}]: ${t.sceneSubmissions} scene submissions (${t.submissions} total), ${t.gpuDraws} gpu draws, ${t.unattributed} unattributed, ${t.programSwitches} program switches, ${t.programs} programs`,
     ];
+    for (const row of formatCostRows(f)) lines.push(`  ${row}`);
     const reasons = Object.entries(f.byReason).sort(([, a], [, b]) => b.submissions - a.submissions);
     for (const [reason, r] of reasons) {
       lines.push(`  ${reason.padEnd(24)} ${String(r.submissions).padStart(5)}   ${r.top.join(', ')}${r.submissions > r.top.length ? ', …' : ''}`);
     }
     if (f.passes.length > 1) lines.push(`  passes: ${f.passes.map((p) => `${p.id}=${p.submissions}`).join(', ')}`);
+    for (const hint of formatHints(f)) lines.push(`  ${hint}`);
     return lines.join('\n');
   }
 

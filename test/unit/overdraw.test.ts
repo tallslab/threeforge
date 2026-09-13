@@ -26,7 +26,7 @@ function protocolRenderer(sums: number[]) {
       v.y = 600;
       return v;
     },
-    async readRenderTargetPixelsAsync(t: { width: number; height: number }) {
+    async readRenderTargetPixelsAsync(t: { width: number; height: number }): Promise<ArrayLike<number>> {
       const n = t.width * t.height;
       const px = new Float32Array(n * 4);
       for (let k = 0; k < n; k++) px[k * 4] = sums[reads] ?? 0;
