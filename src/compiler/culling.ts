@@ -1,5 +1,5 @@
 import { BVH, HybridBuilder, WebGLCoordinateSystem as BvhWebGL, WebGPUCoordinateSystem as BvhWebGPU, type BVHNode } from 'bvh.js';
-import { Box3, Frustum, Matrix4, Sphere, Vector3, WebGLCoordinateSystem, type BatchedMesh, type BufferGeometry, type Camera, type CoordinateSystem, type Material, type Scene } from 'three';
+import { Box3, Frustum, Matrix4, Sphere, Vector3, WebGLCoordinateSystem, type BatchedMesh, type BufferGeometry, type Camera, type CoordinateSystem, type Material, type Object3D, type Scene } from 'three';
 
 /** Functions threeforge installs as own-property hooks carry this marker so the ledger does not flag them. */
 export const FORGE_HOOK: unique symbol = Symbol.for('threeforge.hook');
@@ -186,5 +186,27 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
       bvh.clear();
       nodes.clear();
     },
+  };
+}
+
+const OWN = Object.prototype.hasOwnProperty;
+
+/**
+ * Runs `fn` before whatever `onBeforeRender` the object currently has (three's prototype method or a
+ * threeforge hook), as a marked own-property hook. Returns a function that restores the previous state.
+ */
+export function prependRenderHook(object: Object3D, fn: () => void): () => void {
+  const hadOwn = OWN.call(object, 'onBeforeRender');
+  const previous = object.onBeforeRender;
+  const hook = function (this: Object3D, ...args: Parameters<Object3D['onBeforeRender']>): void {
+    fn();
+    previous.apply(this, args);
+  };
+  (hook as unknown as Record<symbol, boolean>)[FORGE_HOOK] = true;
+  object.onBeforeRender = hook;
+  return () => {
+    if (object.onBeforeRender !== hook) return;
+    if (hadOwn) object.onBeforeRender = previous;
+    else delete (object as { onBeforeRender?: unknown }).onBeforeRender;
   };
 }

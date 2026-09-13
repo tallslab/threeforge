@@ -21,6 +21,8 @@ export { FORGE_HOOK };
 export interface InstanceCullingHandle {
   /** Update one instance's master matrix and its BVH leaf; the next cull re-uploads. */
   setMatrixAt(id: number, matrix: Matrix4): void;
+  setVisibleAt(id: number, visible: boolean): void;
+  getVisibleAt(id: number): boolean;
   /** Restore an uncompacted mesh drawing every instance. */
   detach(): void;
 }
@@ -94,6 +96,7 @@ export function createCulledInstancedMesh(
 
   let visibleIds: number[] = ids.slice();
   let dirty = false;
+  const visibleMask = new Uint8Array(n).fill(1);
   mesh.visibleIds = visibleIds;
   const candidates: number[] = [];
 
@@ -101,11 +104,12 @@ export function createCulledInstancedMesh(
     _matrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).multiply(this.matrixWorld);
     candidates.length = 0;
     if ((camera as Camera & { isArrayCamera?: boolean }).isArrayCamera) {
-      for (let i = 0; i < n; i++) candidates.push(i);
+      for (let i = 0; i < n; i++) if (visibleMask[i]) candidates.push(i);
     } else {
       _frustum.setFromProjectionMatrix(_matrix, coordinateSystem);
       bvh.frustumCulling(_matrix.elements, (node) => {
-        candidates.push(node.object!);
+        const id = node.object!;
+        if (visibleMask[id]) candidates.push(id);
       });
     }
     let same = !dirty && candidates.length === visibleIds.length;
@@ -144,6 +148,15 @@ export function createCulledInstancedMesh(
         bvh.move(node, 0);
       }
       dirty = true;
+    },
+    setVisibleAt(id, visible) {
+      const value = visible ? 1 : 0;
+      if (visibleMask[id] === value) return;
+      visibleMask[id] = value;
+      dirty = true;
+    },
+    getVisibleAt(id) {
+      return visibleMask[id] === 1;
     },
     detach() {
       if (Object.prototype.hasOwnProperty.call(mesh, 'onBeforeRender')) delete (mesh as { onBeforeRender?: unknown }).onBeforeRender;

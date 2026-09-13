@@ -192,7 +192,7 @@ try {
     shadowCamera.updateProjectionMatrix();
   }
 
-  const world = new World(scene, { registry, ledger });
+  const world = new World(scene, { registry, ledger, dynamics: params.get('dynamics') === 'batch-sync' ? 'batch-sync' : 'separate' });
   const compile = (): CompileReport => world.compile({ coordinateSystem: renderer.coordinateSystem });
   const decompile = (): void => world.decompile();
   if (params.get('compile') === '1') compile();

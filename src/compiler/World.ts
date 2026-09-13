@@ -4,8 +4,8 @@ import { displayName } from '../ledger/reasons.js';
 import { MaterialRegistry, type RegistryStats } from '../registry/MaterialRegistry.js';
 import { batchStatics, type GroupReport, type Slot } from './batchStatics.js';
 import type { CulledInstancedMesh } from './instancing.js';
-import { classify, type Classification } from './classify.js';
-import { attachBvhCulling, type CullingHandle } from './culling.js';
+import { classify, exclusionRule, type Classification } from './classify.js';
+import { attachBvhCulling, prependRenderHook, type CullingHandle } from './culling.js';
 
 /** Hidden originals live on this layer: invisible to default cameras and default raycasters, matrices still valid. */
 export const FORGE_HIDDEN_LAYER = 31;
@@ -20,6 +20,11 @@ export interface WorldOptions {
   culling?: 'bvh' | 'linear';
   /** Opaque geometry repeated at least this many times in one material group becomes an InstancedMesh (default 64). */
   instanceThreshold?: number;
+  /**
+   * `separate` (default): tagged dynamics stay their own draws. `batch-sync`: batchable dynamics join batches and
+   * their world matrices are copied in whenever they change, before each cull. Colour changes are not synced.
+   */
+  dynamics?: 'separate' | 'batch-sync';
 }
 
 export interface CompileOptions {
@@ -34,6 +39,8 @@ export interface CompileReport {
   skipped: { name: string; rule: string }[];
   registry: RegistryStats;
   culling: { mode: 'bvh' | 'linear'; coordinateSystem: CoordinateSystem };
+  /** Dynamics folded into batches with matrix sync (0 unless `dynamics: 'batch-sync'`). */
+  synced: number;
 }
 
 export interface WarmupRenderer {
@@ -47,6 +54,14 @@ interface OriginalState {
   index: number;
   layersMask: number;
   matrixAutoUpdate: boolean;
+  /** Synced dynamics stay in the graph with auto-updating matrices even in detach mode. */
+  synced: boolean;
+}
+
+interface SyncEntry {
+  mesh: Mesh;
+  instanceId: number;
+  last: Float32Array;
 }
 
 /**
@@ -61,7 +76,10 @@ export class World {
   private readonly originalsMode: 'hide' | 'detach';
   private readonly cullingMode: 'bvh' | 'linear';
   private readonly instanceThreshold: number;
+  private readonly dynamicsMode: 'separate' | 'batch-sync';
   private cullingHandles = new Map<BatchedMesh, CullingHandle>();
+  private syncRestores: (() => void)[] = [];
+  private syncedSet = new Set<Mesh>();
   private batches: BatchedMesh[] = [];
   private instanced: InstancedMesh[] = [];
   private slots = new Map<Mesh, Slot>();
@@ -78,6 +96,7 @@ export class World {
     this.originalsMode = options.originals ?? 'hide';
     this.cullingMode = options.culling ?? 'bvh';
     this.instanceThreshold = options.instanceThreshold ?? 64;
+    this.dynamicsMode = options.dynamics ?? 'separate';
   }
 
   get instancedMeshes(): readonly InstancedMesh[] {
@@ -103,6 +122,16 @@ export class World {
     };
 
     const statics = classifications.filter((c) => c.kind === 'static').map((c) => c.object);
+    // Dynamics that obey every batch rule can ride along and have their matrices synced each frame.
+    const syncRule = new Map<Mesh, string | null>();
+    if (this.dynamicsMode === 'batch-sync') {
+      for (const c of classifications) {
+        if (c.kind !== 'dynamic') continue;
+        const rule = Array.isArray(c.object.material) ? 'multi-material' : exclusionRule(c.object);
+        syncRule.set(c.object, rule);
+        if (rule === null) statics.push(c.object);
+      }
+    }
     const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem });
     this.batches = result.batches;
     this.instanced = result.instanced;
@@ -111,18 +140,23 @@ export class World {
     if (this.cullingMode === 'bvh') {
       for (const batch of this.batches) this.cullingHandles.set(batch, attachBvhCulling(batch, coordinateSystem));
     }
+    for (const [mesh, rule] of syncRule) if (rule === null && result.slots.has(mesh)) this.syncedSet.add(mesh);
+    this.installSync(result.slots);
 
     // Record parent indices before touching the graph so detach/restore round-trips exactly.
     for (const mesh of result.slots.keys()) {
       const parent = mesh.parent;
-      if (parent) this.hidden.push({ mesh, parent, index: parent.children.indexOf(mesh), layersMask: mesh.layers.mask, matrixAutoUpdate: mesh.matrixAutoUpdate });
+      if (parent) {
+        this.hidden.push({ mesh, parent, index: parent.children.indexOf(mesh), layersMask: mesh.layers.mask, matrixAutoUpdate: mesh.matrixAutoUpdate, synced: this.syncedSet.has(mesh) });
+      }
     }
-    for (const state of this.hidden) this.hideOriginal(state.mesh);
+    for (const state of this.hidden) this.hideOriginal(state);
 
     const skipped: CompileReport['skipped'] = [];
     for (const c of classifications) {
-      if (c.kind === 'static' && result.slots.has(c.object)) continue;
-      const rule = c.kind === 'static' ? 'singleton' : c.rule;
+      if (result.slots.has(c.object)) continue;
+      let rule = c.kind === 'static' ? 'singleton' : c.rule;
+      if (c.kind === 'dynamic') rule = syncRule.get(c.object) ?? rule;
       skipped.push({ name: displayName(c.object, this.scene), rule });
       if (c.kind === 'excluded') this.ledger?.annotate(c.object, `excluded:${c.rule}`);
       this.canonicalise(c.object);
@@ -136,7 +170,60 @@ export class World {
       skipped,
       registry: this.registry.stats(),
       culling: { mode: this.cullingMode, coordinateSystem },
+      synced: this.syncedSet.size,
     };
+  }
+
+  /** Show or hide an original mesh, wherever it ended up. */
+  setVisible(original: Mesh, visible: boolean): void {
+    const slot = this.slots.get(original);
+    if (!slot) {
+      original.visible = visible;
+      return;
+    }
+    const target = slot.batch as BatchedMesh | CulledInstancedMesh;
+    if ((target as BatchedMesh).isBatchedMesh) (target as BatchedMesh).setVisibleAt(slot.instanceId, visible);
+    else (target as CulledInstancedMesh).forgeCulling.setVisibleAt(slot.instanceId, visible);
+  }
+
+  private installSync(slots: Map<Mesh, Slot>): void {
+    if (this.syncedSet.size === 0) return;
+    const perTarget = new Map<BatchedMesh | InstancedMesh, SyncEntry[]>();
+    for (const mesh of this.syncedSet) {
+      const slot = slots.get(mesh)!;
+      let list = perTarget.get(slot.batch);
+      if (!list) perTarget.set(slot.batch, (list = []));
+      list.push({ mesh, instanceId: slot.instanceId, last: Float32Array.from(mesh.matrixWorld.elements) });
+    }
+    for (const [target, entries] of perTarget) {
+      // A synced instance can leave the precomputed bounds; per-instance culling still applies.
+      target.frustumCulled = false;
+      const batched = (target as BatchedMesh).isBatchedMesh ? (target as BatchedMesh) : null;
+      const handle = batched ? this.cullingHandles.get(batched) : undefined;
+      const instanced = batched ? null : (target as CulledInstancedMesh);
+      const sync = (): void => {
+        for (const entry of entries) {
+          const e = entry.mesh.matrixWorld.elements;
+          const last = entry.last;
+          let changed = false;
+          for (let i = 0; i < 16; i++) {
+            if (e[i] !== last[i]) {
+              changed = true;
+              break;
+            }
+          }
+          if (!changed) continue;
+          last.set(e);
+          if (batched) {
+            batched.setMatrixAt(entry.instanceId, entry.mesh.matrixWorld);
+            handle?.move(entry.instanceId);
+          } else if (instanced) {
+            instanced.forgeCulling.setMatrixAt(entry.instanceId, entry.mesh.matrixWorld);
+          }
+        }
+      };
+      this.syncRestores.push(prependRenderHook(target, sync));
+    }
   }
 
   /** Compile shaders and upload textures now instead of on first render. Call after `compile()`. */
@@ -159,6 +246,9 @@ export class World {
 
   decompile(): void {
     if (!this.compiled) return;
+    for (const restore of this.syncRestores.reverse()) restore();
+    this.syncRestores = [];
+    this.syncedSet = new Set();
     for (const batch of this.batches) {
       this.cullingHandles.get(batch)?.detach();
       batch.removeFromParent();
@@ -176,7 +266,7 @@ export class World {
     for (const state of restore) {
       state.mesh.layers.mask = state.layersMask;
       state.mesh.matrixAutoUpdate = state.matrixAutoUpdate;
-      if (this.originalsMode === 'detach') {
+      if (this.originalsMode === 'detach' && !state.synced) {
         state.parent.add(state.mesh);
         const children = state.parent.children;
         children.splice(children.indexOf(state.mesh), 1);
@@ -213,12 +303,13 @@ export class World {
     return intersection.object;
   }
 
-  private hideOriginal(mesh: Mesh): void {
-    if (this.originalsMode === 'detach') {
+  private hideOriginal(state: OriginalState): void {
+    const { mesh, synced } = state;
+    if (this.originalsMode === 'detach' && !synced) {
       mesh.removeFromParent();
     } else {
       mesh.layers.set(FORGE_HIDDEN_LAYER);
-      mesh.matrixAutoUpdate = false;
+      if (!synced) mesh.matrixAutoUpdate = false;
     }
   }
 

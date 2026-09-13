@@ -48,3 +48,26 @@ test('resolve() maps a raycast against the compiled scene back to the original p
   expect(result.hitIsBatch).toBe(true);
   expect(result.resolvedName).toBe(result.targetName);
 });
+
+test("dynamics: 'batch-sync' folds the 10 movers into their batches: 28 -> 18 submissions, same pixels, and they still move", async ({ forge }) => {
+  await forge.open('naive', { dynamics: 'batch-sync', compile: '1' });
+  const result = await forge.page.evaluate(() => {
+    const f = window.__forge;
+    const frame = f.frame();
+    const mover = f.naive!.dynamics[0]!;
+    const slot = f.world.slotOf(mover)!;
+    mover.rotation.y += 1;
+    f.frame();
+    const M = mover.matrixWorld.clone();
+    (slot.batch as { getMatrixAt(i: number, m: unknown): void }).getMatrixAt(slot.instanceId, M);
+    const same = M.elements.every((e, i) => Math.abs(e - mover.matrixWorld.elements[i]!) < 1e-4);
+    mover.rotation.y -= 1;
+    f.frame();
+    return { totals: frame.totals, byReason: frame.byReason, same };
+  });
+  expect(result.totals.sceneSubmissions).toBe(18);
+  expect(result.totals.unattributed).toBe(0);
+  expect(result.byReason.dynamic).toBeUndefined();
+  expect(result.same).toBe(true);
+  await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
+});

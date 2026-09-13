@@ -25,7 +25,7 @@ function isShader(material: Material | Material[]): boolean {
 }
 
 /** Rules that make a mesh unreproducible inside a BatchedMesh, in the order they are checked. */
-function exclusionRule(mesh: Mesh): string | null {
+export function exclusionRule(mesh: Mesh): string | null {
   if (!mesh.visible) return 'invisible';
   if (Array.isArray(mesh.material)) return 'multi-material';
   if (mesh.layers.mask !== 1) return 'layers';
