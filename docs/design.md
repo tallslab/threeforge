@@ -1,5 +1,7 @@
 # threeforge design (Phases 1 to 6)
 
+> v2 (frame-budget compiler and benchmark suite) is specified in `docs/superpowers/specs/2026-09-13-frame-budget-design.md`; this document records phases 1–6 (the draw-call category).
+
 ## The problem
 
 A three.js scene assembled the obvious way costs one draw call per mesh, and loaders hand you a fresh material per

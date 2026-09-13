@@ -30,7 +30,11 @@
     "spike": "playwright test test/e2e/spike-scene-optimizer.spec.ts --project=webgl2",
     "dev": "vite --config vite.config.ts",
     "assets": "node scripts/fetch-assets.mjs",
-    "assets:report": "playwright test test/e2e/assets.spec.ts --project=webgl2"
+    "assets:report": "playwright test test/e2e/assets.spec.ts --project=webgl2",
+    "bench": "node scripts/bench-run.mjs",
+    "bench:baseline": "node scripts/bench-baseline.mjs",
+    "bench:table": "node scripts/bench-table.mjs",
+    "assets:kits": "node scripts/fetch-kits.mjs"
   },
   "peerDependencies": {
     "three": ">=0.180.0"

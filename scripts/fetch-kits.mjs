@@ -79,30 +79,34 @@ for (const kit of kits) {
   }
 }
 
-// Poly Haven: explicit picks plus a few from the trees and vehicles categories.
-let ids = [...polyhavenExplicit];
-try {
-  const all = await (await fetch('https://api.polyhaven.com/assets?t=models')).json();
-  const pick = (cat, n) => Object.entries(all).filter(([, v]) => (v.categories ?? []).includes(cat)).map(([k]) => k).slice(0, n);
-  ids = [...new Set([...ids, ...pick('trees', 4), ...pick('vehicles', 4)])];
-} catch (e) {
-  console.log(`polyhaven list FAILED ${e.message}`);
-}
-for (const id of ids) {
+// Poly Haven models are the hi-poly corpus for the asset report; the benchmark scenes only need the kits and
+// singles, so CI sets FORGE_KITS_ONLY=1 to skip this section.
+if (!process.env.FORGE_KITS_ONLY) {
+  // Poly Haven: explicit picks plus a few from the trees and vehicles categories.
+  let ids = [...polyhavenExplicit];
   try {
-    const files = await (await fetch(`https://api.polyhaven.com/files/${id}`)).json();
-    const res = files.gltf?.['1k'] ?? files.gltf?.[Object.keys(files.gltf ?? {})[0]];
-    if (!res?.gltf?.url) throw new Error('no gltf variant');
-    const dir = join(root, `polyhaven-${id}`);
-    const entryUrl = res.gltf.url;
-    const entryName = decodeURIComponent(entryUrl.split('/').pop());
-    let bytes = await download(entryUrl, join(dir, entryName));
-    for (const [rel, info] of Object.entries(res.gltf.include ?? {})) bytes += await download(info.url, join(dir, rel));
-    index.push({ name: `polyhaven-${id}`, entry: `polyhaven-${id}/${entryName}`, source: 'polyhaven.com (CC0)', bytes, tags: ['polyhaven', 'pbr', 'hi-poly'] });
-    console.log(`${('polyhaven-' + id).padEnd(30)} ${(bytes / 1e6).toFixed(1).padStart(6)} MB`);
+    const all = await (await fetch('https://api.polyhaven.com/assets?t=models')).json();
+    const pick = (cat, n) => Object.entries(all).filter(([, v]) => (v.categories ?? []).includes(cat)).map(([k]) => k).slice(0, n);
+    ids = [...new Set([...ids, ...pick('trees', 4), ...pick('vehicles', 4)])];
   } catch (e) {
-    console.log(`${('polyhaven-' + id).padEnd(30)} FAILED ${e.message}`);
-    index.push({ name: `polyhaven-${id}`, error: e.message });
+    console.log(`polyhaven list FAILED ${e.message}`);
+  }
+  for (const id of ids) {
+    try {
+      const files = await (await fetch(`https://api.polyhaven.com/files/${id}`)).json();
+      const res = files.gltf?.['1k'] ?? files.gltf?.[Object.keys(files.gltf ?? {})[0]];
+      if (!res?.gltf?.url) throw new Error('no gltf variant');
+      const dir = join(root, `polyhaven-${id}`);
+      const entryUrl = res.gltf.url;
+      const entryName = decodeURIComponent(entryUrl.split('/').pop());
+      let bytes = await download(entryUrl, join(dir, entryName));
+      for (const [rel, info] of Object.entries(res.gltf.include ?? {})) bytes += await download(info.url, join(dir, rel));
+      index.push({ name: `polyhaven-${id}`, entry: `polyhaven-${id}/${entryName}`, source: 'polyhaven.com (CC0)', bytes, tags: ['polyhaven', 'pbr', 'hi-poly'] });
+      console.log(`${('polyhaven-' + id).padEnd(30)} ${(bytes / 1e6).toFixed(1).padStart(6)} MB`);
+    } catch (e) {
+      console.log(`${('polyhaven-' + id).padEnd(30)} FAILED ${e.message}`);
+      index.push({ name: `polyhaven-${id}`, error: e.message });
+    }
   }
 }
 

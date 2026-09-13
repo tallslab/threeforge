@@ -1,0 +1,48 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+  bench:
+    # Both backends must pass. Ubuntu runners render through SwiftShader (WebGL2 via ANGLE, WebGPU via Dawn's
+    # software adapter): deterministic cost metrics are gated, timing is recorded only.
+    runs-on: ubuntu-latest
+    needs: unit
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [webgl2, webgpu]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium chromium-headless-shell
+      - uses: actions/cache@v4
+        with:
+          path: test/assets/files
+          key: assets-${{ hashFiles('scripts/fetch-kits.mjs', 'scripts/fetch-assets.mjs', 'test/assets/manifest.json') }}
+      - run: FORGE_KITS_ONLY=1 pnpm assets:kits
+      - run: pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "assets|bench "
+      - run: node scripts/bench-run.mjs ${{ matrix.backend }}

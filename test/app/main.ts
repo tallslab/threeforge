@@ -123,9 +123,11 @@ try {
   const backend: BackendName = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'webgpu' : 'webgl2';
   // Describe the device for the snapshot's env: adapter info on WebGPU, the unmasked renderer string on WebGL.
   const gpuName = (): string => {
-    const b = renderer.backend as { isWebGPUBackend?: boolean; adapter?: { info?: { description?: string; device?: string; vendor?: string; architecture?: string } }; gl?: WebGL2RenderingContext };
+    type AdapterInfo = { description?: string; device?: string; vendor?: string; architecture?: string };
+    const b = renderer.backend as { isWebGPUBackend?: boolean; device?: { adapterInfo?: AdapterInfo }; gl?: WebGL2RenderingContext };
     if (b.isWebGPUBackend) {
-      const info = b.adapter?.info;
+      // three keeps only the device; Chrome exposes the adapter's info on it.
+      const info = b.device?.adapterInfo;
       return info?.description || info?.device || [info?.vendor, info?.architecture].filter(Boolean).join(' ') || 'webgpu';
     }
     const gl = b.gl;
