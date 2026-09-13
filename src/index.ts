@@ -16,3 +16,5 @@ export { attributeSignature, ensureIndexed, isBatchCompatible } from './compiler
 export { World, FORGE_HIDDEN_LAYER, type CompileOptions, type CompileReport, type WarmupRenderer, type WorldOptions } from './compiler/World.js';
 export type { GroupReport, Slot } from './compiler/batchStatics.js';
 export { attachBvhCulling, FORGE_HOOK, type CullingHandle, type CullingOptions } from './compiler/culling.js';
+export { createCulledInstancedMesh, type CulledInstancedMesh, type InstanceCullingHandle } from './compiler/instancing.js';
+export type { BatchOptions } from './compiler/batchStatics.js';

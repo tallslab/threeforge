@@ -6,8 +6,10 @@ import {
   DataTexture,
   DodecahedronGeometry,
   Group,
+  InstancedMesh,
   Matrix4,
   Mesh,
+  PerspectiveCamera,
   MeshStandardMaterial,
   Raycaster,
   RGBAFormat,
@@ -84,7 +86,7 @@ describe('World.compile', () => {
     expect(batches.every((b) => /^forge:batch:[0-9a-f]{8}:\d+$/.test(b.name))).toBe(true);
 
     expect(report.before).toEqual({ meshes: 9, materials: 9 });
-    expect(report.after).toEqual({ batches: 2, meshes: 3 });
+    expect(report.after).toEqual({ batches: 2, instanced: 0, meshes: 3 });
     expect(report.groups).toHaveLength(2);
     expect(report.groups.map((g) => g.instances).sort()).toEqual([2, 4]);
     expect(report.groups.find((g) => g.instances === 4)?.geometries).toBe(2);
@@ -151,7 +153,7 @@ describe('World.compile', () => {
     scene.add(a, b);
     const report = new World(scene).compile();
     expect(batchesIn(scene)).toHaveLength(0);
-    expect(report.after).toEqual({ batches: 0, meshes: 2 });
+    expect(report.after).toEqual({ batches: 0, instanced: 0, meshes: 2 });
     expect(a.material).toBe(b.material);
   });
 
@@ -287,5 +289,70 @@ describe('World culling', () => {
     const { scene } = mixedScene();
     const report = new World(scene).compile({ coordinateSystem: 2001 });
     expect(report.culling).toEqual({ mode: 'bvh', coordinateSystem: 2001 });
+  });
+});
+
+describe('World instancing', () => {
+  function repeatedScene(boxes: number, spheres: number) {
+    const scene = new Scene();
+    for (let i = 0; i < boxes; i++) {
+      const m = tag.static(new Mesh(box, solid(0x2244ff)));
+      m.name = `box-${i}`;
+      m.position.set(i * 2, 0, 0);
+      scene.add(m);
+    }
+    for (let i = 0; i < spheres; i++) {
+      const m = tag.static(new Mesh(dodeca, solid(0xff2244)));
+      m.name = `sphere-${i}`;
+      m.position.set(i * 2, 5, 0);
+      scene.add(m);
+    }
+    return scene;
+  }
+
+  it('turns a geometry repeated at least instanceThreshold times into one culled InstancedMesh, batching the rest', () => {
+    const scene = repeatedScene(70, 5);
+    const world = new World(scene);
+    const report = world.compile();
+    const instanced = meshesIn(scene).filter((m): m is InstancedMesh => (m as InstancedMesh).isInstancedMesh);
+    expect(instanced).toHaveLength(1);
+    expect(instanced[0]!.userData.forge).toEqual({ instances: 70 });
+    expect(instanced[0]!.name).toMatch(/^forge:instanced:[0-9a-f]{8}:\d+$/);
+    expect(batchesIn(scene)).toHaveLength(1);
+    expect(batchesIn(scene)[0]!.instanceCount).toBe(5);
+    expect(report.after).toEqual({ batches: 1, instanced: 1, meshes: 0 });
+  });
+
+  it('respects instanceThreshold and never instances transparent groups', () => {
+    const scene = repeatedScene(70, 0);
+    new World(scene, { instanceThreshold: 100 }).compile();
+    expect(meshesIn(scene).some((m) => (m as InstancedMesh).isInstancedMesh)).toBe(false);
+    expect(batchesIn(scene)).toHaveLength(1);
+
+    const transparent = new Scene();
+    for (let i = 0; i < 70; i++) transparent.add(tag.static(new Mesh(box, solid(1, { transparent: true, opacity: 0.5 }))));
+    new World(transparent).compile();
+    expect(meshesIn(transparent).some((m) => (m as InstancedMesh).isInstancedMesh)).toBe(false);
+    expect(batchesIn(transparent)).toHaveLength(1);
+  });
+
+  it('resolves raycast hits on an instanced mesh back to the original and decompiles cleanly', () => {
+    const scene = repeatedScene(70, 0);
+    const world = new World(scene);
+    world.compile();
+    const instanced = meshesIn(scene).find((m): m is InstancedMesh => (m as InstancedMesh).isInstancedMesh)!;
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    camera.position.set(60, 20, 40);
+    camera.lookAt(60, 0, 0);
+    camera.updateMatrixWorld();
+    instanced.onBeforeRender({ coordinateSystem: 2000 } as never, scene, camera, instanced.geometry, instanced.material as never, null as never);
+    // box-30 sits at x = 60, straight below the camera's look-at point, so it survives the cull above.
+    const raycaster = new Raycaster(new Vector3(60, 10, 0), new Vector3(0, -1, 0));
+    const hits = raycaster.intersectObject(instanced, false);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(world.resolve(hits[0]!).name).toBe('box-30');
+    world.decompile();
+    expect(meshesIn(scene).some((m) => (m as InstancedMesh).isInstancedMesh)).toBe(false);
+    expect(meshesIn(scene)).toHaveLength(70);
   });
 });

@@ -1,14 +1,23 @@
-import { BatchedMesh, Color, type BufferGeometry, type Material, type Mesh, type Scene } from 'three';
+import { BatchedMesh, Color, WebGLCoordinateSystem, type BufferGeometry, type CoordinateSystem, type InstancedMesh, type Material, type Mesh, type Scene } from 'three';
+import { createCulledInstancedMesh } from './instancing.js';
 import type { MaterialRegistry } from '../registry/MaterialRegistry.js';
 import { attributeSignature, ensureIndexed } from './geometryCompat.js';
 
+/** Where an original mesh went: a BatchedMesh instance id, or an InstancedMesh master index. */
 export interface Slot {
-  batch: BatchedMesh;
+  batch: BatchedMesh | InstancedMesh;
   instanceId: number;
+}
+
+export interface BatchOptions {
+  /** A geometry repeated at least this many times inside one opaque group becomes an InstancedMesh. */
+  instanceThreshold?: number;
+  coordinateSystem?: CoordinateSystem;
 }
 
 export interface GroupReport {
   name: string;
+  kind: 'batched' | 'instanced';
   programHash: string;
   variantHash: string;
   instances: number;
@@ -20,9 +29,10 @@ export interface GroupReport {
 
 export interface BatchResult {
   batches: BatchedMesh[];
+  instanced: InstancedMesh[];
   groups: GroupReport[];
   slots: Map<Mesh, Slot>;
-  originals: Map<BatchedMesh, Mesh[]>;
+  originals: Map<BatchedMesh | InstancedMesh, Mesh[]>;
   /** Statics that had nothing to share a batch with. */
   singletons: Mesh[];
 }
@@ -40,7 +50,9 @@ const _white = new Color(0xffffff);
  * One BatchedMesh per (material variant, geometry attribute signature, shadow flags). Colour is per instance,
  * so materials that differ only by `color` share a batch. Originals are not modified here.
  */
-export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene: Scene): BatchResult {
+export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene: Scene, options: BatchOptions = {}): BatchResult {
+  const instanceThreshold = options.instanceThreshold ?? 64;
+  const coordinateSystem = options.coordinateSystem ?? WebGLCoordinateSystem;
   const groups = new Map<string, Group>();
   for (const mesh of statics) {
     if (Array.isArray(mesh.material)) continue;
@@ -52,10 +64,58 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
     group.meshes.push(mesh);
   }
 
-  const result: BatchResult = { batches: [], groups: [], slots: new Map(), originals: new Map(), singletons: [] };
+  const result: BatchResult = { batches: [], instanced: [], groups: [], slots: new Map(), originals: new Map(), singletons: [] };
   const perProgram = new Map<string, number>();
+  const perProgramInstanced = new Map<string, number>();
 
   for (const group of groups.values()) {
+    const { programHash, variantHash } = registry.describe(group.canonical);
+    const canonicalHasColor = (group.canonical as Material & { color?: Color }).color !== undefined;
+
+    // Opaque geometry repeated many times gets hardware instancing; whatever is left is batched.
+    if (!group.canonical.transparent && group.meshes.length >= instanceThreshold) {
+      const byGeometry = new Map<BufferGeometry, Mesh[]>();
+      for (const mesh of group.meshes) {
+        let list = byGeometry.get(mesh.geometry);
+        if (!list) byGeometry.set(mesh.geometry, (list = []));
+        list.push(mesh);
+      }
+      const remaining: Mesh[] = [];
+      for (const [geometry, meshes] of byGeometry) {
+        if (meshes.length < instanceThreshold) {
+          remaining.push(...meshes);
+          continue;
+        }
+        const material = group.canonical.clone();
+        if (canonicalHasColor) (material as Material & { color: Color }).color.copy(_white);
+        material.name = `${group.canonical.name || group.canonical.type} (forge instanced)`;
+        const matrices = meshes.map((m) => m.matrixWorld);
+        const colors = canonicalHasColor ? meshes.map((m) => (m.material as Material & { color: Color }).color) : null;
+        const instanced = createCulledInstancedMesh(geometry, material, matrices, colors, coordinateSystem);
+        const index = perProgramInstanced.get(programHash) ?? 0;
+        perProgramInstanced.set(programHash, index + 1);
+        instanced.name = `forge:instanced:${programHash}:${index}`;
+        instanced.castShadow = group.castShadow;
+        instanced.receiveShadow = group.receiveShadow;
+        scene.add(instanced);
+        meshes.forEach((mesh, i) => result.slots.set(mesh, { batch: instanced, instanceId: i }));
+        result.instanced.push(instanced);
+        result.originals.set(instanced, meshes.slice());
+        result.groups.push({
+          name: instanced.name,
+          kind: 'instanced',
+          programHash,
+          variantHash,
+          instances: meshes.length,
+          geometries: 1,
+          transparent: false,
+          castShadow: group.castShadow,
+          receiveShadow: group.receiveShadow,
+        });
+      }
+      group.meshes = remaining;
+    }
+
     if (group.meshes.length < 2) {
       result.singletons.push(...group.meshes);
       continue;
@@ -72,11 +132,10 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
     }
 
     const material = group.canonical.clone();
-    const hasColor = (material as Material & { color?: Color }).color !== undefined;
+    const hasColor = canonicalHasColor;
     if (hasColor) (material as Material & { color: Color }).color.copy(_white);
     material.name = `${group.canonical.name || group.canonical.type} (forge batch)`;
 
-    const { programHash, variantHash } = registry.describe(group.canonical);
     const index = perProgram.get(programHash) ?? 0;
     perProgram.set(programHash, index + 1);
 
@@ -109,6 +168,7 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
     result.originals.set(batch, originals);
     result.groups.push({
       name: batch.name,
+      kind: 'batched',
       programHash,
       variantHash,
       instances: group.meshes.length,

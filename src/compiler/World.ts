@@ -1,8 +1,9 @@
-import { WebGLCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type Intersection, type Material, type Mesh, type Object3D, type Scene, type Texture } from 'three';
+import { WebGLCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Mesh, type Object3D, type Scene, type Texture } from 'three';
 import type { DrawCallLedger } from '../ledger/DrawCallLedger.js';
 import { displayName } from '../ledger/reasons.js';
 import { MaterialRegistry, type RegistryStats } from '../registry/MaterialRegistry.js';
 import { batchStatics, type GroupReport, type Slot } from './batchStatics.js';
+import type { CulledInstancedMesh } from './instancing.js';
 import { classify, type Classification } from './classify.js';
 import { attachBvhCulling, type CullingHandle } from './culling.js';
 
@@ -17,6 +18,8 @@ export interface WorldOptions {
   originals?: 'hide' | 'detach';
   /** `bvh` (default) installs O(log n) per-instance frustum culling on every batch; `linear` keeps three's scan. */
   culling?: 'bvh' | 'linear';
+  /** Opaque geometry repeated at least this many times in one material group becomes an InstancedMesh (default 64). */
+  instanceThreshold?: number;
 }
 
 export interface CompileOptions {
@@ -26,7 +29,7 @@ export interface CompileOptions {
 
 export interface CompileReport {
   before: { meshes: number; materials: number };
-  after: { batches: number; meshes: number };
+  after: { batches: number; instanced: number; meshes: number };
   groups: GroupReport[];
   skipped: { name: string; rule: string }[];
   registry: RegistryStats;
@@ -57,10 +60,12 @@ export class World {
   private readonly policy: 'tagged' | 'auto';
   private readonly originalsMode: 'hide' | 'detach';
   private readonly cullingMode: 'bvh' | 'linear';
+  private readonly instanceThreshold: number;
   private cullingHandles = new Map<BatchedMesh, CullingHandle>();
   private batches: BatchedMesh[] = [];
+  private instanced: InstancedMesh[] = [];
   private slots = new Map<Mesh, Slot>();
-  private originalsByBatch = new Map<BatchedMesh, Mesh[]>();
+  private originalsByBatch = new Map<BatchedMesh | InstancedMesh, Mesh[]>();
   private hidden: OriginalState[] = [];
   private materialSwaps: { mesh: Mesh; material: Material }[] = [];
   private compiled = false;
@@ -72,6 +77,11 @@ export class World {
     this.policy = options.policy ?? 'tagged';
     this.originalsMode = options.originals ?? 'hide';
     this.cullingMode = options.culling ?? 'bvh';
+    this.instanceThreshold = options.instanceThreshold ?? 64;
+  }
+
+  get instancedMeshes(): readonly InstancedMesh[] {
+    return this.instanced;
   }
 
   /** The BVH culling handle for a batch, when `culling: 'bvh'` is active. */
@@ -93,8 +103,9 @@ export class World {
     };
 
     const statics = classifications.filter((c) => c.kind === 'static').map((c) => c.object);
-    const result = batchStatics(statics, this.registry, this.scene);
+    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem });
     this.batches = result.batches;
+    this.instanced = result.instanced;
     this.slots = result.slots;
     this.originalsByBatch = result.originals;
     if (this.cullingMode === 'bvh') {
@@ -120,7 +131,7 @@ export class World {
     this.compiled = true;
     return {
       before,
-      after: { batches: this.batches.length, meshes: classifications.length - result.slots.size },
+      after: { batches: this.batches.length, instanced: this.instanced.length, meshes: classifications.length - result.slots.size },
       groups: result.groups,
       skipped,
       registry: this.registry.stats(),
@@ -154,6 +165,12 @@ export class World {
       (batch.material as Material).dispose();
       batch.dispose();
     }
+    for (const mesh of this.instanced) {
+      (mesh as CulledInstancedMesh).forgeCulling?.detach();
+      mesh.removeFromParent();
+      (mesh.material as Material).dispose();
+      mesh.dispose();
+    }
     for (const swap of this.materialSwaps) swap.mesh.material = swap.material;
     const restore = [...this.hidden].sort((a, b) => a.index - b.index);
     for (const state of restore) {
@@ -167,6 +184,7 @@ export class World {
       }
     }
     this.batches = [];
+    this.instanced = [];
     this.slots = new Map();
     this.originalsByBatch = new Map();
     this.cullingHandles = new Map();
@@ -181,9 +199,15 @@ export class World {
 
   /** The original mesh behind a raycast hit on a batch; the hit object itself otherwise. */
   resolve(intersection: Intersection): Object3D {
-    const batch = intersection.object as BatchedMesh;
-    if (batch.isBatchedMesh && intersection.batchId !== undefined) {
-      const original = this.originalsByBatch.get(batch)?.[intersection.batchId];
+    const object = intersection.object as BatchedMesh | CulledInstancedMesh;
+    if ((object as BatchedMesh).isBatchedMesh && intersection.batchId !== undefined) {
+      const original = this.originalsByBatch.get(object)?.[intersection.batchId];
+      if (original) return original;
+    }
+    if ((object as InstancedMesh).isInstancedMesh && intersection.instanceId !== undefined) {
+      const compacted = intersection.instanceId;
+      const master = (object as CulledInstancedMesh).visibleIds?.[compacted] ?? compacted;
+      const original = this.originalsByBatch.get(object)?.[master];
       if (original) return original;
     }
     return intersection.object;

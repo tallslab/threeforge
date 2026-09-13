@@ -27,6 +27,9 @@ export function expectedGpuDraws(object: Object3D, material: Material, scene: Sc
 export function instanceCounts(object: Object3D): { instances: number; instancesDrawn: number } {
   const o = object as Object3D & { isBatchedMesh?: boolean; isInstancedMesh?: boolean; instanceCount?: number; count?: number; _multiDrawCount?: number };
   if (o.isBatchedMesh) return { instances: o.instanceCount ?? 0, instancesDrawn: o._multiDrawCount ?? 0 };
-  if (o.isInstancedMesh) return { instances: o.count ?? 0, instancesDrawn: o.count ?? 0 };
+  if (o.isInstancedMesh) {
+    const total = (object.userData as { forge?: { instances?: number } }).forge?.instances;
+    return { instances: total ?? o.count ?? 0, instancesDrawn: o.count ?? 0 };
+  }
   return { instances: 1, instancesDrawn: 1 };
 }
