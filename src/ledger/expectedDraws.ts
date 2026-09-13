@@ -12,6 +12,9 @@ export interface BackendInfo {
  */
 export function expectedGpuDraws(object: Object3D, material: Material, scene: Scene, info: BackendInfo): number {
   let draws = 1;
+  // RenderObject.getDrawParameters() returns null for an instanced object with no instances: nothing is drawn.
+  const instanced = object as Object3D & { isInstancedMesh?: boolean; count?: number };
+  if (instanced.isInstancedMesh && (instanced.count ?? 0) === 0) return 0;
   const batched = object as Object3D & { isBatchedMesh?: boolean; _multiDrawCount?: number };
   if (batched.isBatchedMesh) {
     const n = batched._multiDrawCount ?? 0;

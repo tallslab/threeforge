@@ -52,12 +52,13 @@ export class FakeRenderer {
       scene.overrideMaterial = null;
     }
     scene.traverse((object) => {
-      const mesh = object as Mesh;
-      if (!mesh.isMesh || !object.visible) return;
+      const mesh = object as Mesh & { isPoints?: boolean; isSprite?: boolean; isLine?: boolean };
+      // Like the real render list: meshes, points, sprites and lines are all render items.
+      if (!(mesh.isMesh || mesh.isPoints || mesh.isSprite || mesh.isLine) || !object.visible) return;
       if (!object.layers.test(camera.layers)) return;
       if (isShadowPass && !object.castShadow) return;
       const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      const groups = mesh.geometry.groups.length > 0 && Array.isArray(mesh.material) ? mesh.geometry.groups : [null];
+      const groups = mesh.isMesh && mesh.geometry.groups.length > 0 && Array.isArray(mesh.material) ? mesh.geometry.groups : [null];
       for (const group of groups) {
         const material = group ? materials[group.materialIndex ?? 0] : materials[0];
         if (!material) continue;
@@ -83,6 +84,12 @@ export class FakeRenderer {
   ): void {
     object.onBeforeRender(this as unknown as never, scene, camera, geometry, material, group as never);
     const effective = scene.overrideMaterial ?? material;
+    // Like RenderObject.getDrawParameters(): an instanced object with no instances is not drawn at all.
+    const instanced = object as { isInstancedMesh?: boolean; count?: number };
+    if (instanced.isInstancedMesh && (instanced.count ?? 0) === 0) {
+      object.onAfterRender(this as unknown as never, scene, camera, geometry, material, group as never);
+      return;
+    }
     let draws = 1;
     const batched = object as BatchedMesh & { _multiDrawCount?: number };
     if (batched.isBatchedMesh) {

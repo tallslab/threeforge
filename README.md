@@ -4,7 +4,7 @@ Scene compiler + draw-call diagnostics for three.js (r186, `three/webgpu` with i
 Three.js stays the renderer. threeforge takes a naively assembled scene, rewrites it into a batched one
 at load time, and tells you exactly why every remaining draw call exists.
 
-Status: Phase 5 (dogfooding on public assets). The naive test scene (500 props, 40 material recipes, a new material per prop) goes from
+Status: Phase 6 (dogfooding on public assets and game content: combat animation, shadowed lights, VFX, post-processing). The naive test scene (500 props, 40 material recipes, a new material per prop) goes from
 **503 to 28** scene submissions with pixel-identical output (**18** with `dynamics: 'batch-sync'`), and the
 20k-instance field scene goes from 3892 submissions to **3 instanced draws** with BVH culling, cutting render CPU
 from 43 ms to 7 ms per frame in headless Chromium; LODs cut its rendered triangles from 140k to 51k. Verified on
@@ -19,6 +19,8 @@ ledger.attach(renderer);                      // patches renderObject/render on 
 
 tag.static(crate);                            // batched by compile()
 tag.dynamic(player);                          // left alone, counted
+// Untagged meshes are batched under policy 'auto'; meshes under bones, animated nodes (pass `animations`),
+// dynamic geometry, transmissive materials and instanced/skinned/morphing meshes are never batched.
 
 await prepareLods(scene, { ratios: [0.5, 0.2] });   // optional: meshoptimizer LODs per geometry
 
@@ -61,7 +63,8 @@ Dev overlay: `import { createOverlay } from 'threeforge/overlay'; createOverlay(
 - **instances / instancesDrawn / drawCommands**: scene instances submitted, instances left after per-instance
   culling, and GPU draw commands regardless of API packaging (a multi-draw of N ranges is N, an instanced draw is 1).
 - **reasons**: `batched`, `instanced`, `dynamic`, `skinned`, `morph`, `transparent`, `unique-material`, `untagged`,
-  `multi-material-group`, `excluded:<rule>`, `unsupported-material`, `renderer-internal`, `fullscreen-pass`.
+  `multi-material-group`, `points`, `sprite`, `line`, `excluded:<rule>`, `unsupported-material`, `renderer-internal`,
+  `fullscreen-pass`, `occlusion-proxy`.
 
 ## Commands
 
@@ -73,6 +76,6 @@ Dev overlay: `import { createOverlay } from 'threeforge/overlay'; createOverlay(
 | `pnpm spike` | three's experimental `SceneOptimizer` on the same scene, for comparison |
 | `pnpm assets` | download ~570 MB of public glTF test content (Khronos, three.js, Kenney, Poly Haven) into `test/assets/files/` |
 | `pnpm assets:report` | compile every downloaded model, check pixel parity, write `docs/assets-report.md` |
-| `pnpm dev` | test app: `http://localhost:5179/?scene=naive&compile=1&overlay=1&budget=30&animate=1&dynamics=batch-sync` (also `scene=field&count=20000`, `scene=gltf&asset=Sponza`, `scene=biome&dynamics=batch-sync`) |
+| `pnpm dev` | test app: `http://localhost:5179/?scene=naive&compile=1&overlay=1&budget=30&animate=1&dynamics=batch-sync` (also `scene=field&count=20000`, `scene=gltf&asset=Sponza`, `scene=biome&dynamics=batch-sync`, `scene=arena&bloom=1&assemble=1`) |
 
 See `docs/design.md` for the architecture and `docs/spike-scene-optimizer.md` for the baseline measurement.

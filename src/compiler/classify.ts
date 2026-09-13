@@ -1,4 +1,4 @@
-import { PropertyBinding, type AnimationClip, type Material, type Mesh, type Object3D } from 'three';
+import { DynamicDrawUsage, PropertyBinding, StreamDrawUsage, type AnimationClip, type Material, type Mesh, type Object3D } from 'three';
 import { effectiveTag } from '../ledger/reasons.js';
 
 export type MeshKind = 'static' | 'dynamic' | 'skinned' | 'morph' | 'excluded' | 'untagged' | 'unsupported';
@@ -10,11 +10,17 @@ export interface Classification {
   rule: string;
 }
 
+/** A clip resolved against the whole graph, or clips resolved under a specific root (one per animated character). */
+export type AnimationSource = AnimationClip | { root: Object3D; clips: AnimationClip[] };
+
 export interface ClassifyOptions {
   /** `tagged` (default): only `tag.static()` meshes are batched. `auto`: untagged plain meshes are batched too. */
   policy?: 'tagged' | 'auto';
-  /** Clips that will drive this graph; every node they target (and its descendants) is dynamic. */
-  animations?: AnimationClip[];
+  /**
+   * Clips that will drive this graph; every node they target (and its descendants) is dynamic. Pass
+   * `{ root, clips }` per character when several share bone or node names, since names resolve by first match.
+   */
+  animations?: AnimationSource[];
 }
 
 type MeshLike = Mesh & { isSkinnedMesh?: boolean; isInstancedMesh?: boolean; morphTargetInfluences?: number[] };
@@ -34,6 +40,10 @@ export function exclusionRule(mesh: Mesh): string | null {
   // instanced mesh presents one identity matrix for every instance, so refraction would be wrong.
   const material = mesh.material as Material & { transmission?: number };
   if (!Array.isArray(mesh.material) && (material.transmission ?? 0) > 0) return 'transmission';
+  // Geometry rewritten at runtime (trails, ribbons, soft bodies): a batch copies vertices once.
+  const geometry = mesh.geometry;
+  const attributes = [...Object.values(geometry.attributes), ...(geometry.index ? [geometry.index] : [])] as Array<{ usage?: number }>;
+  if (attributes.some((a) => a.usage === DynamicDrawUsage || a.usage === StreamDrawUsage)) return 'dynamic-geometry';
   if (Array.isArray(mesh.material)) return 'multi-material';
   if (mesh.layers.mask !== 1) return 'layers';
   if (mesh.renderOrder !== 0) return 'render-order';
@@ -63,16 +73,29 @@ export function classify(root: Object3D, options: ClassifyOptions = {}): Classif
 }
 
 /** Objects targeted by any track of the given clips, resolved the way AnimationMixer does (name, uuid or path). */
-export function animatedRoots(root: Object3D, clips: AnimationClip[]): Set<Object3D> {
+export function animatedRoots(root: Object3D, sources: AnimationSource[]): Set<Object3D> {
   const roots = new Set<Object3D>();
-  for (const clip of clips) {
-    for (const track of clip.tracks) {
-      const { nodeName } = PropertyBinding.parseTrackName(track.name);
-      const node = nodeName ? PropertyBinding.findNode(root, nodeName) : root;
-      if (node) roots.add(node as Object3D);
+  for (const source of sources) {
+    const base = (source as { root?: Object3D }).root ?? root;
+    const clips = (source as { clips?: AnimationClip[] }).clips ?? [source as AnimationClip];
+    for (const clip of clips) {
+      for (const track of clip.tracks) {
+        const { nodeName } = PropertyBinding.parseTrackName(track.name);
+        const node = nodeName ? PropertyBinding.findNode(base, nodeName) : base;
+        if (node) roots.add(node as Object3D);
+      }
     }
   }
   return roots;
+}
+
+function underBone(object: Object3D): boolean {
+  let current: Object3D | null = object.parent;
+  while (current) {
+    if ((current as { isBone?: boolean }).isBone) return true;
+    current = current.parent;
+  }
+  return false;
 }
 
 function underAnimated(object: Object3D, animated: Set<Object3D>): boolean {
@@ -91,6 +114,8 @@ function decide(mesh: MeshLike, policy: 'tagged' | 'auto', animated: Set<Object3
   if (isShader(mesh.material)) return { kind: 'unsupported', rule: 'shader-material' };
   const tag = effectiveTag(mesh);
   if (tag === 'dynamic') return { kind: 'dynamic', rule: 'tag:dynamic' };
+  // Anything hanging off a bone (a weapon in a hand) moves with the rig, whatever its tag says.
+  if (underBone(mesh)) return { kind: 'dynamic', rule: 'bone-parented' };
   if (underAnimated(mesh, animated)) return { kind: 'dynamic', rule: 'animated' };
   const excluded = exclusionRule(mesh);
   if (excluded) return { kind: 'excluded', rule: excluded };

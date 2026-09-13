@@ -1,4 +1,4 @@
-# threeforge design (Phases 1 to 5)
+# threeforge design (Phases 1 to 6)
 
 ## The problem
 
@@ -192,6 +192,39 @@ The same scene on the native WebGPU backend matches at 0.00 % too, after two bac
 Public asset report: WebGL2 104/104 clean; WebGPU 103/104, the exception being `polyhaven-fir_sapling_medium`
 (1.5 M triangles of alpha-tested foliage) at 0.64 % changed pixels with 0 unattributed draws, which reads as
 leaf-edge coverage differences from the changed draw order rather than missing or moved geometry.
+
+## Phase 6: game content (combat, lighting, VFX, animation)
+
+`scene=arena` builds a fight arena from CC0 game packs: Kenney mini characters (skinned, 32 clips including
+melee and kick attacks, cross-faded at a deterministic time), blocky characters (rigid hierarchies animated by
+node tracks), weapons parented under hand bones, arena and dungeon props, two shadowed spot lights and a
+shadowed point light plus torches, and VFX: additive particle systems (`Points` with dynamic positions), health
+and hit sprites, a sword trail with dynamic geometry, floor decals, a flipbook quad, and optional bloom
+post-processing (`bloom=1`) and per-fighter character assembly (`assemble=1`).
+
+Rules and fixes this content produced:
+
+- **Bone-parented meshes are dynamic** whatever their tag: a weapon in a hand moves with the rig. With
+  `dynamics: 'batch-sync'` they join batches and follow the bone through matrix sync (121 synced objects in the
+  arena: 12 weapons, 96 blocky body parts, torches).
+- **Dynamic geometry is never batched**: attributes with `DynamicDrawUsage` / `StreamDrawUsage` (trails,
+  ribbons, particle positions) mark a mesh `excluded:dynamic-geometry`, since a batch copies vertices once.
+- **Animations resolve per root**: many characters share bone and node names, and three resolves track names
+  by first match, so `animations` accepts `{ root, clips }` entries, one per animated character.
+- **Points, sprites and lines get their own ledger reasons** instead of `untagged`; the compiler never touches them.
+- **Batches share the canonical material when every instance is white**, so runtime uniform changes (emissive
+  flicker, opacity, texture offsets) keep propagating; a white clone with per-instance colours is used otherwise.
+- **Zero-instance draws cost nothing**: `RenderObject.getDrawParameters()` returns null for an instanced object
+  with no instances, so both backends skip it; the ledger's cost model does the same (it showed up as
+  `unattributed: -2` in the point light's shadow pass).
+- **Shadow maps render once per animation frame**: `ShadowNode` gates on three's node `frameId`, which only
+  advances on animation-frame ticks, so several `render()` calls in one task show shadow passes only on the first.
+  The harness's `frameAsync()` yields to an animation frame before rendering; apps that render on demand should
+  expect the same.
+
+Arena on both backends: 2,756 naive submissions (761 main, 611 and 609 for the spot shadows, 776 for the point
+light's six faces) become 400 (120 main, 53, 53, 175) with 0.01 % pixels changed, 0 unattributed, and the
+fighters still animating afterwards.
 
 ## WebGPU in the test harness
 

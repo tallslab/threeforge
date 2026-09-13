@@ -89,10 +89,24 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
   const result: BatchResult = { batches: [], instanced: [], groups: [], slots: new Map(), originals: new Map(), singletons: [], lodGeometryIds: new Map() };
   const perProgram = new Map<string, number>();
   const perProgramInstanced = new Map<string, number>();
+  const isWhite = (m: Material) => {
+    const c = (m as Material & { color?: Color }).color;
+    return c === undefined || (c.r === 1 && c.g === 1 && c.b === 1);
+  };
 
   for (const group of groups.values()) {
     const { programHash, variantHash } = registry.describe(group.canonical);
     const canonicalHasColor = (group.canonical as Material & { color?: Color }).color !== undefined;
+    // When every instance is white the canonical material itself can drive the batch: no clone, so uniform
+    // changes made at runtime (emissive, opacity, texture offsets) keep propagating. Otherwise a white clone
+    // carries the per-instance colours.
+    const shareCanonical = group.meshes.every((m) => isWhite(m.material as Material));
+    const batchMaterial = (): { material: Material; perInstanceColor: boolean } => {
+      if (shareCanonical) return { material: group.canonical, perInstanceColor: false };
+      const material = group.canonical.clone();
+      if (canonicalHasColor) (material as Material & { color: Color }).color.copy(_white);
+      return { material, perInstanceColor: canonicalHasColor };
+    };
 
     // Opaque geometry repeated many times gets hardware instancing; whatever is left is batched.
     if (!group.canonical.transparent && group.meshes.length >= instanceThreshold) {
@@ -108,11 +122,10 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
           remaining.push(...meshes);
           continue;
         }
-        const material = group.canonical.clone();
-        if (canonicalHasColor) (material as Material & { color: Color }).color.copy(_white);
-        material.name = `${group.canonical.name || group.canonical.type} (forge instanced)`;
+        const { material, perInstanceColor } = batchMaterial();
+        if (material !== group.canonical) material.name = `${group.canonical.name || group.canonical.type} (forge instanced)`;
         const matrices = meshes.map((m) => m.matrixWorld);
-        const colors = canonicalHasColor ? meshes.map((m) => (m.material as Material & { color: Color }).color) : null;
+        const colors = perInstanceColor ? meshes.map((m) => (m.material as Material & { color: Color }).color) : null;
         const lods = lodDistances ? lodsOf(geometry) : [];
         const instanced = createCulledInstancedMesh(geometry, material, matrices, colors, coordinateSystem, {
           ...(lodDistances ? { lods, distances: lodDistances } : {}),
@@ -170,10 +183,8 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
       maxIndexCount += geometry.index?.count ?? 0;
     }
 
-    const material = group.canonical.clone();
-    const hasColor = canonicalHasColor;
-    if (hasColor) (material as Material & { color: Color }).color.copy(_white);
-    material.name = `${group.canonical.name || group.canonical.type} (forge batch)`;
+    const { material, perInstanceColor: hasColor } = batchMaterial();
+    if (material !== group.canonical) material.name = `${group.canonical.name || group.canonical.type} (forge batch)`;
 
     const index = perProgram.get(programHash) ?? 0;
     perProgram.set(programHash, index + 1);

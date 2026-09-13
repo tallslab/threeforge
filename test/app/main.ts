@@ -1,11 +1,13 @@
-import { AmbientLight, AnimationMixer, BatchedMesh, Box3, BoxGeometry, Color, DirectionalLight, Frustum, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Sphere, Vector3, type AnimationClip } from 'three';
+import { AmbientLight, AnimationMixer, BatchedMesh, Box3, BoxGeometry, Color, DirectionalLight, Frustum, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Sphere, Vector3, type AnimationClip, type Object3D } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
+import * as THREE from 'three';
 import { DrawCallLedger, MaterialRegistry, World, assembleCharacter, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot } from 'threeforge';
 import { createOverlay } from 'threeforge/overlay';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
 import { buildFieldScene, type FieldScene } from '../scenes/field.js';
 import { buildCharacter, type CharacterParts } from '../scenes/character.js';
 import { buildBiome, type Biome } from './biome.js';
+import { buildArena, type Arena } from './arena.js';
 
 export type BackendName = 'webgl2' | 'webgpu';
 
@@ -46,9 +48,13 @@ export interface GltfInfo {
   linesPoints: number;
   radius: number;
   loadMs: number;
+  clips: string[];
+  bones: number;
 }
 
 export interface ForgeHarness {
+  /** The three namespace, for in-page probes from Playwright. */
+  three: typeof THREE;
   ready: boolean;
   error?: string;
   backend: BackendName;
@@ -65,6 +71,9 @@ export interface ForgeHarness {
   /** Loaded glTF asset summary when `scene=gltf&asset=<name>`. */
   gltf?: GltfInfo;
   biome?: Biome;
+  arena?: Arena;
+  /** Pose animations and effects at time t (arena). */
+  setTime(t: number): void;
   compile(): CompileReport;
   decompile(): void;
   /** Cast a ray straight down from above (x, z) and resolve the hit through the world. */
@@ -72,6 +81,12 @@ export interface ForgeHarness {
   renderOnce(): RenderOnceResult;
   /** Render once and return the ledger's frame snapshot (with items when asked). */
   frame(options?: { items?: boolean }): FrameSnapshot;
+  /**
+   * Like `frame()` but after yielding to an animation frame first. three advances its node frameId only on
+   * animation-frame ticks, and shadow maps (and other once-per-frame passes) render at most once per frameId,
+   * so several `frame()` calls inside one task only show shadow passes on the first.
+   */
+  frameAsync(options?: { items?: boolean }): Promise<FrameSnapshot>;
   /** Meshes whose bounding sphere intersects the camera frustum (the same test the renderer applies). */
   visibleMeshes(): number;
   /** Task 2 spike: run three's experimental SceneOptimizer on a fresh naive scene and measure it. */
@@ -117,7 +132,9 @@ try {
   let assembled: AssembledCharacter | undefined;
   let gltfInfo: GltfInfo | undefined;
   let biome: Biome | undefined;
+  let arena: Arena | undefined;
   let clips: AnimationClip[] = [];
+  let animationSources: Array<AnimationClip | { root: Object3D; clips: AnimationClip[] }> = [];
   if (params.get('freeze') === '1') {
     // Freeze the clock so time-driven TSL materials (water) render identically across frames.
     const frozen = performance.now();
@@ -141,7 +158,33 @@ try {
     loader.setMeshoptDecoder(MeshoptDecoder);
     return loader;
   };
-  if (sceneName === 'biome') {
+  if (sceneName === 'arena') {
+    const [{ RoomEnvironment }, { PMREMGenerator }] = await Promise.all([import('three/addons/environments/RoomEnvironment.js'), import('three/webgpu')]);
+    const loader = await makeLoader();
+    if (params.get('shadows') !== '0') renderer.shadowMap.enabled = true;
+    arena = await buildArena({
+      loader,
+      fighters: Number(params.get('fighters') ?? '12'),
+      blocky: Number(params.get('blocky') ?? '16'),
+      vfx: params.get('vfx') !== '0',
+      shadows: params.get('shadows') !== '0',
+      assemble: params.get('assemble') === '1',
+    });
+    scene = arena.scene;
+    animationSources = arena.animations;
+    if (params.get('env') !== '0') {
+      const pmrem = new PMREMGenerator(renderer);
+      scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      scene.environmentIntensity = 0.15;
+    }
+    camera.near = 0.5;
+    camera.far = 400;
+    camera.position.set(-38, 34, 58);
+    camera.lookAt(0, 3, 0);
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
+    arena.setTime(Number(params.get('t') ?? '1'));
+  } else if (sceneName === 'biome') {
     const [{ RoomEnvironment }, { PMREMGenerator }] = await Promise.all([import('three/addons/environments/RoomEnvironment.js'), import('three/webgpu')]);
     const loader = await makeLoader();
     biome = await buildBiome({ loader, density: Number(params.get('density') ?? '1'), water: params.get('water') !== '0', hiPoly: params.get('hipoly') !== '0' });
@@ -155,11 +198,14 @@ try {
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
   } else if (sceneName === 'gltf') {
-    const assetName = params.get('asset') ?? '';
+    const assetName = params.get('asset') ?? params.get('url') ?? '';
     const lists = await Promise.all(
       ['/index.json', '/kits-index.json'].map((u) => fetch(u).then((r) => (r.ok ? r.json() : [])).catch(() => [])),
     );
-    const entry = (lists.flat() as Array<{ name: string; entry?: string; error?: string }>).find((a) => a.name === assetName);
+    // Either a named asset from the index, or any served file via ?url=<path under test/assets/files>.
+    const entry = params.has('url')
+      ? { name: assetName, entry: params.get('url')!.replace(/^\//, '') }
+      : (lists.flat() as Array<{ name: string; entry?: string; error?: string }>).find((a) => a.name === assetName);
     if (!entry?.entry) throw new Error(`asset "${assetName}" not found in test/assets/files (run pnpm assets)`);
     const [{ RoomEnvironment }, { PMREMGenerator }] = await Promise.all([import('three/addons/environments/RoomEnvironment.js'), import('three/webgpu')]);
     const loader = await makeLoader();
@@ -211,7 +257,11 @@ try {
       vertices += g.attributes.position?.count ?? 0;
       triangles += (g.index ? g.index.count : (g.attributes.position?.count ?? 0)) / 3;
     });
-    gltfInfo = { name: assetName, meshes, materials: materials.size, vertices, triangles: Math.round(triangles), animations: clips.length, skinned, morph, instanced, linesPoints, radius, loadMs: Math.round(loadMs) };
+    let bones = 0;
+    gltf.scene.traverse((o) => {
+      if ((o as { isBone?: boolean }).isBone) bones++;
+    });
+    gltfInfo = { name: assetName, meshes, materials: materials.size, vertices, triangles: Math.round(triangles), animations: clips.length, skinned, morph, instanced, linesPoints, radius, loadMs: Math.round(loadMs), clips: clips.map((c) => c.name), bones };
   } else if (sceneName === 'character') {
     scene = new Scene();
     scene.background = new Color(0x202830);
@@ -344,7 +394,7 @@ try {
     registry,
     ledger,
     policy: (params.get('policy') ?? (sceneName === 'gltf' ? 'auto' : 'tagged')) as 'auto' | 'tagged',
-    animations: clips,
+    animations: animationSources.length > 0 ? animationSources : clips,
     dynamics: params.get('dynamics') === 'batch-sync' ? 'batch-sync' : 'separate',
     ...(useLod ? { lod: { distances: [Number(params.get('lod0') ?? '200'), Number(params.get('lod1') ?? '600')] } } : {}),
     ...(params.has('chunk') ? { chunkSize: Number(params.get('chunk')) } : {}),
@@ -382,9 +432,32 @@ try {
     };
   }
 
+  function setTime(t: number): void {
+    arena?.setTime(t);
+    // Torch billboards face the camera.
+    scene.traverse((o) => {
+      if (o.name.startsWith('torch-')) o.lookAt(camera.position);
+    });
+  }
+
+  // Optional bloom post-processing: the scene becomes a nested pass under a fullscreen quad.
+  let postProcessing: { render(): void } | null = null;
+  if (params.get('bloom') === '1') {
+    const [{ PostProcessing }, { pass }, { bloom }] = await Promise.all([import('three/webgpu'), import('three/tsl'), import('three/addons/tsl/display/BloomNode.js')]);
+    const scenePass = pass(scene, camera);
+    const post = new PostProcessing(renderer);
+    post.outputNode = scenePass.add(bloom(scenePass, 0.6, 0.4, 0.85));
+    postProcessing = post;
+  }
+
   function frame(options?: { items?: boolean }): FrameSnapshot {
-    renderer.render(scene, camera);
+    if (postProcessing) postProcessing.render();
+    else renderer.render(scene, camera);
     return ledger.frame(options);
+  }
+  async function frameAsync(options?: { items?: boolean }): Promise<FrameSnapshot> {
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    return frame(options);
   }
 
   if (params.get('animate') === '1') {
@@ -395,7 +468,7 @@ try {
     });
   }
 
-  window.__forge = { ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, compile, decompile, raycastDown, renderOnce, frame, visibleMeshes, spikeSceneOptimizer };
+  window.__forge = { three: THREE, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, setTime, compile, decompile, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
 } catch (error) {
   window.__forge = { ready: false, error: error instanceof Error ? error.stack ?? error.message : String(error) } as ForgeHarness;
   throw error;

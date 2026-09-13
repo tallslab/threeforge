@@ -1,10 +1,10 @@
-import { BoxGeometry, Mesh, MeshBasicMaterial, Vector3, WebGLCoordinateSystem, WebGPUCoordinateSystem, type AnimationClip, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Texture } from 'three';
+import { BoxGeometry, Mesh, MeshBasicMaterial, Vector3, WebGLCoordinateSystem, WebGPUCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Texture } from 'three';
 import type { DrawCallLedger } from '../ledger/DrawCallLedger.js';
 import { displayName } from '../ledger/reasons.js';
 import { MaterialRegistry, type RegistryStats } from '../registry/MaterialRegistry.js';
 import { batchStatics, type GroupReport, type Slot } from './batchStatics.js';
 import type { CulledInstancedMesh } from './instancing.js';
-import { classify, exclusionRule, type Classification } from './classify.js';
+import { classify, exclusionRule, type AnimationSource, type Classification } from './classify.js';
 import { attachBvhCulling, prependAfterRenderHook, prependRenderHook, type CullingHandle, type NestedPassPolicy } from './culling.js';
 
 /** Hidden originals live on this layer: invisible to default cameras and default raycasters, matrices still valid. */
@@ -38,8 +38,8 @@ export interface WorldOptions {
    * Costs one cheap submission per target. Needs a renderer with `isOccluded()` (WebGPURenderer, either backend).
    */
   occlusion?: boolean;
-  /** Clips that will drive this scene (e.g. `gltf.animations`); their targets and descendants stay dynamic. */
-  animations?: AnimationClip[];
+  /** Clips that will drive this scene (e.g. `gltf.animations`), or `{ root, clips }` per animated character. */
+  animations?: AnimationSource[];
   /**
    * Culling for nested render passes (reflections, portals). `auto` (default) is `reuse-main` on the WebGPU
    * backend, where a second instance-list change per frame is not picked up by the main pass, and `per-pass` on WebGL.
@@ -120,7 +120,7 @@ export class World {
   private readonly chunkSize: number | undefined;
   private readonly lod: { distances: number[] } | null;
   private readonly occlusion: boolean;
-  private readonly animations: AnimationClip[];
+  private readonly animations: AnimationSource[];
   private readonly nestedPassesOption: NestedPassPolicy | 'auto';
   private readonly materialsMode: 'canonical' | 'keep';
   private _mainCamera: Camera | null = null;
@@ -243,6 +243,8 @@ export class World {
       if (c.kind === 'excluded') this.ledger?.annotate(c.object, `excluded:${c.rule}`);
       // A static with nothing to share a draw with: the ledger should say why, even under policy 'auto'.
       if (c.kind === 'static') this.ledger?.annotate(c.object, 'unique-material');
+      // Dynamic by rule (under a bone, animated) rather than by tag: still a dynamic draw, not an untagged one.
+      if (c.kind === 'dynamic') this.ledger?.annotate(c.object, 'dynamic');
       this.canonicalise(c.object);
     }
 

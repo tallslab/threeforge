@@ -83,9 +83,9 @@ for (const asset of assets) {
       saveRow(row, forge.backend);
       throw error;
     }
-    const naive = await forge.page.evaluate(() => {
+    const naive = await forge.page.evaluate(async () => {
       const f = window.__forge;
-      for (let i = 0; i < 3; i++) f.frame(); // warm-up: reflectors and nested-pass pipelines settle a few frames late
+      for (let i = 0; i < 3; i++) await f.frameAsync(); // warm-up: reflectors and nested-pass pipelines settle a few frames late
       const frame = f.frame();
       return { totals: frame.totals, byReason: frame.byReason, info: f.gltf! };
     });
@@ -96,7 +96,7 @@ for (const asset of assets) {
       const f = window.__forge;
       const report = f.compile();
       await f.world.warmup(f.renderer, f.camera); // new batch pipelines compile asynchronously on WebGPU
-      for (let i = 0; i < 3; i++) f.frame();
+      for (let i = 0; i < 3; i++) await f.frameAsync();
       const frame = f.frame();
       const skipped = new Map<string, number>();
       for (const s of report.skipped) skipped.set(s.rule, (skipped.get(s.rule) ?? 0) + 1);

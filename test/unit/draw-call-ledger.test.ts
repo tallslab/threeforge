@@ -4,6 +4,7 @@ import {
   DirectionalLight,
   DoubleSide,
   Group,
+  InstancedMesh,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
@@ -132,6 +133,18 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
       const frame = ledger.frame();
       expect(frame.totals).toMatchObject({ sceneSubmissions: 1, gpuDraws: 6, reportedDrawCalls: 6, unattributed: 0 });
     }
+  });
+
+  it('expects no GPU draw for an InstancedMesh whose count is zero (the renderer skips it)', () => {
+    const { renderer, ledger, scene, camera } = attached();
+    const instanced = new InstancedMesh(box, new MeshStandardMaterial(), 8);
+    instanced.count = 0;
+    instanced.name = 'empty-instanced';
+    scene.add(instanced);
+    renderer.render(scene, camera);
+    const frame = ledger.frame({ items: true });
+    expect(frame.items?.find((i) => i.name === 'empty-instanced')).toMatchObject({ expectedGpuDraws: 0, instancesDrawn: 0 });
+    expect(frame.totals).toMatchObject({ sceneSubmissions: 1, gpuDraws: 1, reportedDrawCalls: 1, unattributed: 0 });
   });
 
   it('expects two GPU draws for double-sided transparent materials', () => {

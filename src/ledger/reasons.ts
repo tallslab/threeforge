@@ -16,6 +16,9 @@ export type Reason =
   | 'renderer-internal'
   | 'fullscreen-pass'
   | 'occlusion-proxy'
+  | 'points'
+  | 'sprite'
+  | 'line'
   | 'unclassified'
   | `excluded:${string}`;
 
@@ -106,6 +109,9 @@ export function reasonOf({ object, material, group, root, unsupported, annotatio
   if (!isDescendantOf(object, root)) return 'renderer-internal';
   if ((root as { isScene?: boolean }).isScene !== true) return 'fullscreen-pass';
   if ((object.userData.forge as { kind?: string } | undefined)?.kind === 'occlusion-proxy') return 'occlusion-proxy';
+  if (o.isPoints) return 'points';
+  if (o.isSprite) return 'sprite';
+  if (o.isLine) return 'line';
   if (o.isBatchedMesh) return 'batched';
   if (o.isInstancedMesh) return 'instanced';
   if (o.isSkinnedMesh) return 'skinned';

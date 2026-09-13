@@ -14,11 +14,22 @@ const kits = [
   { name: 'kenney-city-kit-suburban', url: 'https://kenney.nl/media/pages/assets/city-kit-suburban/2c871b7af2-1745479373/kenney_city-kit-suburban_20.zip' },
   { name: 'kenney-city-kit-roads', url: 'https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1787042796/kenney_city-kit-roads.zip' },
   { name: 'kenney-survival-kit', url: 'https://kenney.nl/media/pages/assets/survival-kit/4065a8185b-1712149243/kenney_survival-kit.zip' },
+  // Game content: arena, dungeon, weapons, animated characters, particle textures.
+  { name: 'kenney-mini-arena', url: 'https://kenney.nl/media/pages/assets/mini-arena/88f977a0cb-1709220730/kenney_mini-arena.zip' },
+  { name: 'kenney-mini-dungeon', url: 'https://kenney.nl/media/pages/assets/mini-dungeon/6cd72dc849-1785314274/kenney_mini-dungeon.zip' },
+  { name: 'kenney-blaster-kit', url: 'https://kenney.nl/media/pages/assets/blaster-kit/261d80a716-1753959510/kenney_blaster-kit_2.1.zip' },
+  { name: 'kenney-mini-characters', url: 'https://kenney.nl/media/pages/assets/mini-characters/bfc7e272b4-1774770718/kenney_mini-characters.zip' },
+  { name: 'kenney-modular-characters', url: 'https://kenney.nl/media/pages/assets/modular-characters/d84577feef-1677670340/kenney_modular-characters.zip' },
+  { name: 'kenney-blocky-characters', url: 'https://kenney.nl/media/pages/assets/blocky-characters/8369c0cf30-1749547469/kenney_blocky-characters_20.zip' },
+  { name: 'kenney-particle-pack', url: 'https://kenney.nl/media/pages/assets/particle-pack/f8fe0f8cb8-1677578741/kenney_particle-pack.zip', textures: true },
 ];
 const polyhavenExplicit = ['boulder_01', 'coast_rocks_01', 'coast_rocks_02', 'dead_tree_trunk_02', 'dead_quiver_trunk', 'covered_car', 'anthurium_botany_01', 'dandelion_01', 'dry_branches_medium_01', 'barrel_03', 'ammo_box', 'CoffeeCart_01'];
+const T = 'https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/';
 const singles = [
-  { name: 'ferrari', url: 'https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/models/gltf/ferrari.glb', tags: ['car', 'many-materials', 'transparent'] },
-  { name: 'waternormals', url: 'https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/textures/waternormals.jpg', tags: ['texture'] },
+  { name: 'ferrari', url: T + 'models/gltf/ferrari.glb', tags: ['car', 'many-materials', 'transparent'] },
+  { name: 'waternormals', url: T + 'textures/waternormals.jpg', tags: ['texture'] },
+  // VFX / lighting textures from the three.js examples.
+  ...['textures/sprites/spark1.png', 'textures/sprites/disc.png', 'textures/sprites/circle.png', 'textures/sprites/ball.png', 'textures/sprites/snowflake1.png', 'textures/lensflare/lensflare0.png', 'textures/lensflare/lensflare3.png', 'textures/sprite0.png', 'textures/disturb.jpg', 'textures/decal/decal-diffuse.png', 'textures/decal/decal-normal.jpg', 'textures/brick_diffuse.jpg', 'textures/brick_bump.jpg', 'textures/hardwood2_diffuse.jpg'].map((f) => ({ name: 'three-textures', url: T + f, tags: ['texture'] })),
 ];
 
 async function size(path) {
@@ -57,9 +68,11 @@ for (const kit of kits) {
       execSync(`unzip -o -q "${zip}" -d "${dir}"`);
       await writeFile(join(dir, '.extracted'), 'ok');
     }
-    const glbs = (await walk(dir)).filter((p) => p.toLowerCase().endsWith('.glb')).map((p) => relative(root, p));
-    index.push({ name: kit.name, kind: 'kit', source: 'kenney.nl (CC0)', bytes, glbs, tags: ['kit', 'low-poly', 'shared-palette'] });
-    console.log(`${kit.name.padEnd(30)} ${(bytes / 1e6).toFixed(1).padStart(6)} MB  ${glbs.length} glb`);
+    const all = await walk(dir);
+    const glbs = all.filter((p) => p.toLowerCase().endsWith('.glb')).map((p) => relative(root, p));
+    const textures = kit.textures ? all.filter((p) => /\.(png|jpg)$/i.test(p)).map((p) => relative(root, p)) : [];
+    index.push({ name: kit.name, kind: 'kit', source: 'kenney.nl (CC0)', bytes, glbs, textures, tags: ['kit', 'low-poly', 'shared-palette'] });
+    console.log(`${kit.name.padEnd(30)} ${(bytes / 1e6).toFixed(1).padStart(6)} MB  ${glbs.length} glb  ${textures.length} textures`);
   } catch (e) {
     console.log(`${kit.name.padEnd(30)} FAILED ${e.message}`);
     index.push({ name: kit.name, kind: 'kit', error: e.message });
@@ -97,6 +110,12 @@ for (const single of singles) {
   try {
     const name = single.url.split('/').pop();
     const bytes = await download(single.url, join(root, single.name, name));
+    if (single.name === 'three-textures') {
+      const existing = index.find((e) => e.name === 'three-textures') ?? (index.push({ name: 'three-textures', kind: 'kit', textures: [], glbs: [], source: 'mrdoob/three.js examples', bytes: 0, tags: ['texture'] }), index[index.length - 1]);
+      existing.textures.push(`three-textures/${name}`);
+      existing.bytes += bytes;
+      continue;
+    }
     index.push({ name: single.name, entry: `${single.name}/${name}`, source: single.url, bytes, tags: single.tags });
     console.log(`${single.name.padEnd(30)} ${(bytes / 1e6).toFixed(1).padStart(6)} MB`);
   } catch (e) {
