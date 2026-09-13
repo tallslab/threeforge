@@ -4,7 +4,7 @@ Scene compiler + draw-call diagnostics for three.js (r186, `three/webgpu` with i
 Three.js stays the renderer. threeforge takes a naively assembled scene, rewrites it into a batched one
 at load time, and tells you exactly why every remaining draw call exists.
 
-Status: Phase 3. The naive test scene (500 props, 40 material recipes, a new material per prop) goes from
+Status: Phase 4. The naive test scene (500 props, 40 material recipes, a new material per prop) goes from
 **503 to 28** scene submissions with pixel-identical output (**18** with `dynamics: 'batch-sync'`), and the
 20k-instance field scene goes from 3892 submissions to **3 instanced draws** with BVH culling, cutting render CPU
 from 43 ms to 7 ms per frame in headless Chromium; LODs cut its rendered triangles from 140k to 51k. Verified on
@@ -43,6 +43,10 @@ world.resolve(raycastHit);                    // BatchedMesh / InstancedMesh hit
 world.setVisible(crate, false);               // hide an original wherever it ended up
 world.decompile();                            // restore the original graph
 ```
+
+Characters: `assembleCharacter({ skeleton, wardrobe: [body, ...gear], equipped: [body, helmet] })` merges parts
+onto the shared rig (matched by bone name) into one skinned mesh with one atlas; `equip()` / `unequip()` change
+the vertex buffer, never the draw count.
 
 Dev overlay: `import { createOverlay } from 'threeforge/overlay'; createOverlay(ledger, { budget: 30 })`.
 

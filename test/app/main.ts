@@ -1,9 +1,10 @@
 import { BatchedMesh, BoxGeometry, Color, Frustum, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Vector3 } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
-import { DrawCallLedger, MaterialRegistry, World, prepareLods, tag, type CompileReport, type FrameSnapshot } from 'threeforge';
+import { DrawCallLedger, MaterialRegistry, World, assembleCharacter, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot } from 'threeforge';
 import { createOverlay } from 'threeforge/overlay';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
 import { buildFieldScene, type FieldScene } from '../scenes/field.js';
+import { buildCharacter, type CharacterParts } from '../scenes/character.js';
 
 export type BackendName = 'webgl2' | 'webgpu';
 
@@ -43,6 +44,8 @@ export interface ForgeHarness {
   world: World;
   naive?: NaiveScene;
   field?: FieldScene;
+  character?: CharacterParts;
+  assembled?: AssembledCharacter;
   compile(): CompileReport;
   decompile(): void;
   /** Cast a ray straight down from above (x, z) and resolve the hit through the world. */
@@ -91,7 +94,26 @@ try {
   let scene: Scene;
   let naive: NaiveScene | undefined;
   let field: FieldScene | undefined;
-  if (sceneName === 'field') {
+  let character: CharacterParts | undefined;
+  let assembled: AssembledCharacter | undefined;
+  if (sceneName === 'character') {
+    scene = new Scene();
+    scene.background = new Color(0x202830);
+    character = buildCharacter();
+    if (params.get('assemble') === '1') {
+      assembled = assembleCharacter({ skeleton: character.skeleton, wardrobe: [character.body, ...character.gear], equipped: [character.body, ...character.gear], atlas: { size: 256 } });
+      scene.add(assembled.mesh);
+    } else {
+      scene.add(character.body, ...character.gear);
+    }
+    const { AmbientLight, DirectionalLight } = await import('three');
+    const key = new DirectionalLight(0xffffff, 2.5);
+    key.position.set(3, 5, 4);
+    scene.add(new AmbientLight(0xffffff, 0.6), key);
+    camera.position.set(0, 1.6, 4.5);
+    camera.lookAt(0, 1.1, 0);
+    camera.updateMatrixWorld();
+  } else if (sceneName === 'field') {
     field = buildFieldScene({ count: Number(params.get('count') ?? '20000') });
     scene = field.scene;
     scene.background = new Color(0x202830);
@@ -240,7 +262,7 @@ try {
     });
   }
 
-  window.__forge = { ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, compile, decompile, raycastDown, renderOnce, frame, visibleMeshes, spikeSceneOptimizer };
+  window.__forge = { ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, compile, decompile, raycastDown, renderOnce, frame, visibleMeshes, spikeSceneOptimizer };
 } catch (error) {
   window.__forge = { ready: false, error: error instanceof Error ? error.stack ?? error.message : String(error) } as ForgeHarness;
   throw error;

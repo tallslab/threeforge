@@ -1,4 +1,4 @@
-# threeforge design (Phases 1 to 3)
+# threeforge design (Phases 1 to 4)
 
 ## The problem
 
@@ -18,6 +18,7 @@ nothing classifies a scene, applies batching with safe defaults, keeps it revers
 | instancing | `src/compiler/instancing.ts` | `InstancedMesh` with BVH-driven compaction of visible instances |
 | World | `src/compiler/World.ts` | `compile()`, `decompile()`, `resolve()`, `setVisible()`, `warmup()`, dynamic batch-sync, occlusion proxies |
 | lod | `src/lod/generateLods.ts` | `generateLods` / `prepareLods` / `lodsOf` on meshoptimizer (node and browser) |
+| character | `src/character/assembleCharacter.ts` | one skinned mesh + one atlas for a body and its gear; equip/unequip rebuild vertices only |
 | overlay | `src/overlay/index.ts` | dev panel driven by `ledger.frame()` |
 
 ## Material keys
@@ -127,6 +128,23 @@ per-instance colour), 4 roughness/metalness pairs, 6 textured, 2 map + normalMap
 
 Pixel parity is asserted against `test/e2e/__screenshots__/naive-webgl2.png` before and after compile.
 
+## Phase 4: character assembler
+
+`assembleCharacter({ skeleton, wardrobe, equipped })` is the PolyMorph lesson as a library feature. Every part
+is a `SkinnedMesh` with its own `Skeleton` instance (the way per-part exports arrive); parts are matched to the
+live rig **by bone name**, so bone order may differ per part, and a part naming a bone the rig lacks is rejected
+with the bone names. The wardrobe's textures (or plain colours for parts without a map) are packed once into a
+square grid atlas (`k = ceil(sqrt(parts))` cells), DataTextures resampled in pure JS (works in node) and other
+images through `OffscreenCanvas`. The merged geometry concatenates position/normal/uv/skinIndex/skinWeight and
+indices; UVs are clamped to [0, 1] (three's `SphereGeometry` emits slightly negative pole U) and mapped onto
+each cell's texel centres with a half-texel inset so linear filtering never bleeds across cells. Skin indices
+are rewritten through the bone map. The result is one `SkinnedMesh` bound with the body's bind matrix to the
+shared skeleton; rig roots parented under a part are re-parented under it so the parts can leave the scene.
+`equip()` / `unequip()` rebuild the geometry and dispose the old one; the mesh, material, atlas and skeleton
+never change, so the draw count cannot. Limits: one colour map per part (normal/roughness maps are not
+atlassed), UVs outside [0, 1] are clamped rather than wrapped, and parts must share the body's bind pose.
+Measured: body + 4 gear = 5 skinned submissions become 1 on both backends, pixel parity within 1%.
+
 ## WebGPU in the test harness
 
 WebGPU only exists in secure contexts, so adapter checks must run on the served page, not `about:blank`. The
@@ -147,4 +165,4 @@ confirming the backend cost model the ledger uses.
 - Untagged meshes are never batched under the default policy; `policy: 'auto'` batches them.
 - Instanced meshes are re-compacted for every camera that renders them (a shadow pass costs a second upload).
 - `culling: 'linear'` only affects batches; instanced meshes always use BVH compaction (it is their only culling).
-- Phase 4 is the character assembler (gear merged onto a shared skeleton); Phase 5 puts Wanderer on it.
+- Phase 5 puts Wanderer on it: real assets will decide what the ledger flags next.

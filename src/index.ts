@@ -19,3 +19,4 @@ export { attachBvhCulling, prependAfterRenderHook, prependRenderHook, levelFor, 
 export { createCulledInstancedMesh, type CulledInstancedMesh, type InstanceCullingHandle, type InstancingOptions } from './compiler/instancing.js';
 export type { BatchOptions } from './compiler/batchStatics.js';
 export { generateLods, lodsOf, prepareLods, type LodOptions, type PrepareLodsReport } from './lod/generateLods.js';
+export { assembleCharacter, type AssembledCharacter, type AssembleOptions, type AtlasCell, type CharacterReport } from './character/assembleCharacter.js';
