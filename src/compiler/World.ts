@@ -25,6 +25,8 @@ export interface WorldOptions {
    * their world matrices are copied in whenever they change, before each cull. Colour changes are not synced.
    */
   dynamics?: 'separate' | 'batch-sync';
+  /** World-space cell size. Splits each material group into one batch per cell: tight bounds for whole-chunk culling and a unit for streaming. */
+  chunkSize?: number;
 }
 
 export interface CompileOptions {
@@ -77,6 +79,7 @@ export class World {
   private readonly cullingMode: 'bvh' | 'linear';
   private readonly instanceThreshold: number;
   private readonly dynamicsMode: 'separate' | 'batch-sync';
+  private readonly chunkSize: number | undefined;
   private cullingHandles = new Map<BatchedMesh, CullingHandle>();
   private syncRestores: (() => void)[] = [];
   private syncedSet = new Set<Mesh>();
@@ -97,6 +100,7 @@ export class World {
     this.cullingMode = options.culling ?? 'bvh';
     this.instanceThreshold = options.instanceThreshold ?? 64;
     this.dynamicsMode = options.dynamics ?? 'separate';
+    this.chunkSize = options.chunkSize;
   }
 
   get instancedMeshes(): readonly InstancedMesh[] {
@@ -132,7 +136,7 @@ export class World {
         if (rule === null) statics.push(c.object);
       }
     }
-    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem });
+    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem, chunkSize: this.chunkSize });
     this.batches = result.batches;
     this.instanced = result.instanced;
     this.slots = result.slots;

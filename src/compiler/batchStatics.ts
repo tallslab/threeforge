@@ -13,11 +13,15 @@ export interface BatchOptions {
   /** A geometry repeated at least this many times inside one opaque group becomes an InstancedMesh. */
   instanceThreshold?: number;
   coordinateSystem?: CoordinateSystem;
+  /** World-space cell size; when set, each material group is split into one batch per cell (tight bounds, streamable). */
+  chunkSize?: number;
 }
 
 export interface GroupReport {
   name: string;
   kind: 'batched' | 'instanced';
+  /** Cell coordinates when `chunkSize` is set, else null. */
+  chunk: [number, number, number] | null;
   programHash: string;
   variantHash: string;
   instances: number;
@@ -42,6 +46,7 @@ interface Group {
   meshes: Mesh[];
   castShadow: boolean;
   receiveShadow: boolean;
+  chunk: [number, number, number] | null;
 }
 
 const _white = new Color(0xffffff);
@@ -53,14 +58,20 @@ const _white = new Color(0xffffff);
 export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene: Scene, options: BatchOptions = {}): BatchResult {
   const instanceThreshold = options.instanceThreshold ?? 64;
   const coordinateSystem = options.coordinateSystem ?? WebGLCoordinateSystem;
+  const chunkSize = options.chunkSize;
   const groups = new Map<string, Group>();
   for (const mesh of statics) {
     if (Array.isArray(mesh.material)) continue;
     const canonical = registry.register(mesh.material);
     const keys = registry.keys(canonical);
-    const key = `${keys.variantKey}|${attributeSignature(mesh.geometry)}|${mesh.castShadow ? 1 : 0}${mesh.receiveShadow ? 1 : 0}`;
+    let chunk: [number, number, number] | null = null;
+    if (chunkSize !== undefined && chunkSize > 0) {
+      const e = mesh.matrixWorld.elements;
+      chunk = [Math.floor(e[12]! / chunkSize), Math.floor(e[13]! / chunkSize), Math.floor(e[14]! / chunkSize)];
+    }
+    const key = `${keys.variantKey}|${attributeSignature(mesh.geometry)}|${mesh.castShadow ? 1 : 0}${mesh.receiveShadow ? 1 : 0}|${chunk ? chunk.join(',') : ''}`;
     let group = groups.get(key);
-    if (!group) groups.set(key, (group = { canonical, meshes: [], castShadow: mesh.castShadow, receiveShadow: mesh.receiveShadow }));
+    if (!group) groups.set(key, (group = { canonical, meshes: [], castShadow: mesh.castShadow, receiveShadow: mesh.receiveShadow, chunk }));
     group.meshes.push(mesh);
   }
 
@@ -104,6 +115,7 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
         result.groups.push({
           name: instanced.name,
           kind: 'instanced',
+          chunk: group.chunk,
           programHash,
           variantHash,
           instances: meshes.length,
@@ -169,6 +181,7 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
     result.groups.push({
       name: batch.name,
       kind: 'batched',
+      chunk: group.chunk,
       programHash,
       variantHash,
       instances: group.meshes.length,

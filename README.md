@@ -4,8 +4,10 @@ Scene compiler + draw-call diagnostics for three.js (r186, `three/webgpu` with i
 Three.js stays the renderer. threeforge takes a naively assembled scene, rewrites it into a batched one
 at load time, and tells you exactly why every remaining draw call exists.
 
-Phase 1 status: the naive test scene (500 props, 40 material recipes, a new material per prop) goes from
-**503 to 28** scene submissions with pixel-identical output, and `pnpm budget` fails CI above 30.
+Status: Phase 2. The naive test scene (500 props, 40 material recipes, a new material per prop) goes from
+**503 to 28** scene submissions with pixel-identical output (**18** with `dynamics: 'batch-sync'`), and the
+20k-instance field scene goes from 3892 submissions to **3 instanced draws** with BVH culling, cutting render CPU
+from 43 ms to 7 ms per frame in headless Chromium. `pnpm budget` fails CI above 30.
 
 ```ts
 import { DrawCallLedger, MaterialRegistry, World, tag } from 'threeforge';
@@ -17,15 +19,22 @@ ledger.attach(renderer);                      // patches renderObject/render on 
 tag.static(crate);                            // batched by compile()
 tag.dynamic(player);                          // left alone, counted
 
-const world = new World(scene, { registry, ledger });
-const report = world.compile();               // statics -> BatchedMesh per material variant, reversible
+const world = new World(scene, {
+  registry, ledger,
+  policy: 'tagged',          // or 'auto' to batch untagged meshes too
+  culling: 'bvh',            // per-instance frustum culling on every batch (bvh.js)
+  instanceThreshold: 64,     // geometry repeated this often becomes a culled InstancedMesh
+  dynamics: 'batch-sync',    // tagged dynamics ride in batches; their matrices sync each frame
+});
+const report = world.compile({ coordinateSystem: renderer.coordinateSystem });
 await world.warmup(renderer, camera);         // optional: compile shaders + upload textures now
 
 renderer.render(scene, camera);
 ledger.frame();                               // JSON snapshot: totals, passes, byReason, programs
 ledger.report();                              // text table
 ledger.budget({ maxSubmissions: 30 });        // { pass, actual, max, offenders }
-world.resolve(raycastHit);                    // BatchedMesh hit -> original mesh
+world.resolve(raycastHit);                    // BatchedMesh / InstancedMesh hit -> original mesh
+world.setVisible(crate, false);               // hide an original wherever it ended up
 world.decompile();                            // restore the original graph
 ```
 
@@ -39,7 +48,9 @@ Dev overlay: `import { createOverlay } from 'threeforge/overlay'; createOverlay(
   N draws on WebGPU (or on WebGL without `WEBGL_multi_draw`); double-sided transparent materials draw twice.
 - **reportedDrawCalls / unattributed**: what `renderer.info` counted during the frame, and the part the ledger
   could not explain. Tests hold this at 0.
-- **reasons**: `batched`, `dynamic`, `skinned`, `morph`, `transparent`, `unique-material`, `untagged`,
+- **instances / instancesDrawn / drawCommands**: scene instances submitted, instances left after per-instance
+  culling, and GPU draw commands regardless of API packaging (a multi-draw of N ranges is N, an instanced draw is 1).
+- **reasons**: `batched`, `instanced`, `dynamic`, `skinned`, `morph`, `transparent`, `unique-material`, `untagged`,
   `multi-material-group`, `excluded:<rule>`, `unsupported-material`, `renderer-internal`, `fullscreen-pass`.
 
 ## Commands
@@ -50,6 +61,6 @@ Dev overlay: `import { createOverlay } from 'threeforge/overlay'; createOverlay(
 | `pnpm e2e` | Playwright on the WebGL2 backend in headless Chromium; a best-effort `webgpu` project self-skips without an adapter |
 | `pnpm budget` | the CI gate; `FORGE_BUDGET=25 pnpm budget` to tighten |
 | `pnpm spike` | three's experimental `SceneOptimizer` on the same scene, for comparison |
-| `pnpm dev` | test app: `http://localhost:5179/?scene=naive&compile=1&overlay=1&budget=30&animate=1` |
+| `pnpm dev` | test app: `http://localhost:5179/?scene=naive&compile=1&overlay=1&budget=30&animate=1&dynamics=batch-sync` (also `scene=field&count=20000`) |
 
 See `docs/design.md` for the architecture and `docs/spike-scene-optimizer.md` for the baseline measurement.
