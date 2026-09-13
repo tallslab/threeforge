@@ -5,6 +5,7 @@ import { displayName, flagsOf, kindOf, reasonOf, type Reason } from './reasons.j
 import { budgetsFor, type Budgets } from './budgets.js';
 import { hintsFor, type HintContext } from './hints.js';
 import { estimateMemory } from './memory.js';
+import { measureOverdraw, type OverdrawRenderer, type OverdrawResult } from './overdraw.js';
 import { FORGE_TAG_KEY } from '../tags.js';
 import { scanLights, type LightInfo } from './sections.js';
 import { buildFrame, emptyFrame, emptySections, type BudgetResult, type FrameEnv, type FrameSnapshot, type MemorySnapshot, type SubmissionRecord, type Tier } from './snapshot.js';
@@ -82,6 +83,8 @@ export class DrawCallLedger {
   private graphStats: { objects: number; autoUpdatedMatrices: number; at: number } = { objects: 0, autoUpdatedMatrices: 0, at: -1 };
   private memoryStats: MemorySnapshot = emptySections().memory;
   private hintContext: HintContext = {};
+  private overdraw: OverdrawResult | null = null;
+  private paused = false;
   private readonly budgetOverrides: Partial<Budgets>;
 
   constructor(options: DrawCallLedgerOptions = {}) {
@@ -190,6 +193,22 @@ export class DrawCallLedger {
     return budgetsFor(this.environment.tier, this.budgetOverrides);
   }
 
+  /**
+   * Measure overdraw (fragments per pixel, opaque and transparent) with two low-resolution count renders; the
+   * result rides along in every following `frame()` until the next measurement. Not counted as a frame.
+   */
+  async measureOverdraw(scene: Scene, camera: Camera, options: { scale?: number } = {}): Promise<OverdrawResult> {
+    if (!this.renderer) throw new Error('attach a renderer first');
+    this.paused = true;
+    try {
+      this.overdraw = await measureOverdraw(this.renderer as unknown as OverdrawRenderer, scene, camera, options);
+    } finally {
+      this.paused = false;
+    }
+    this.last = { ...this.last, overdraw: { ...this.last.overdraw, ...this.overdraw, measured: true } };
+    return this.overdraw;
+  }
+
   /** Recount and return the memory estimate now. */
   measureMemory(): MemorySnapshot {
     this.rescan();
@@ -233,6 +252,7 @@ export class DrawCallLedger {
   }
 
   private enter(scene: Object3D, camera: Camera): void {
+    if (this.paused) return;
     if (this.depth === 0 && this.renderer) {
       this.current = {
         mainScene: null,
@@ -278,6 +298,7 @@ export class DrawCallLedger {
   }
 
   private exit(): void {
+    if (this.paused) return;
     this.depth--;
     this.contexts.pop();
     if (this.depth > 0 || !this.current || !this.renderer) return;
@@ -303,6 +324,12 @@ export class DrawCallLedger {
       lights: this.current.lights,
       js: { renderMs: this.now() - this.current.startedAt, frameMs, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices },
       memory: this.memoryStats,
+      overdraw: {
+        opaque: this.overdraw?.opaque ?? 0,
+        transparent: this.overdraw?.transparent ?? 0,
+        transparentSubmissions: this.lastItems.filter((i) => i.transparent && i.pass === 'main' && i.reason !== 'renderer-internal').length,
+        measured: this.overdraw !== null,
+      },
     });
     this.last.hints = hintsFor(this.last, this.budgets(), this.hintContext);
     this.current = null;

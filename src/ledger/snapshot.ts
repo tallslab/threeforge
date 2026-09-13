@@ -202,9 +202,10 @@ export interface FrameInput {
   lights?: LightInfo[];
   js?: JsSnapshot;
   memory?: MemorySnapshot;
+  overdraw?: OverdrawSnapshot;
 }
 
-export function buildFrame({ env, items, reportedDrawCalls, triangles, programs, descriptions, lights = [], js, memory }: FrameInput): FrameSnapshot {
+export function buildFrame({ env, items, reportedDrawCalls, triangles, programs, descriptions, lights = [], js, memory, overdraw }: FrameInput): FrameSnapshot {
   const passes = new Map<string, PassSnapshot>();
   const byReason = new Map<string, ReasonSnapshot>();
   const programMap = new Map<string, ProgramSnapshot>();
@@ -263,6 +264,7 @@ export function buildFrame({ env, items, reportedDrawCalls, triangles, programs,
     lighting: lightingOf(lights, items),
     ...(js ? { js } : {}),
     ...(memory ? { memory } : {}),
+    ...(overdraw ? { overdraw } : {}),
     totals: {
       submissions: items.length,
       sceneSubmissions,

@@ -1,4 +1,4 @@
-import { AmbientLight, AnimationMixer, BatchedMesh, Box3, BoxGeometry, Color, DirectionalLight, Frustum, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Sphere, Vector3, type AnimationClip, type Object3D } from 'three';
+import { AmbientLight, AnimationMixer, BatchedMesh, Box3, BoxGeometry, Color, DirectionalLight, Frustum, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Sphere, Vector3, type AnimationClip, type Object3D, type OrthographicCamera } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import * as THREE from 'three';
 import { DrawCallLedger, MaterialRegistry, World, assembleCharacter, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot } from 'threeforge';
@@ -76,6 +76,8 @@ export interface ForgeHarness {
   setTime(t: number): void;
   compile(): CompileReport;
   decompile(): void;
+  /** Two low-resolution count renders: fragments per pixel, opaque and transparent. */
+  measureOverdraw(cam?: PerspectiveCamera | OrthographicCamera): Promise<{ opaque: number; transparent: number }>;
   /** Cast a ray straight down from above (x, z) and resolve the hit through the world. */
   raycastDown(x: number, z: number): { hitCount: number; hitIsBatch: boolean; resolvedName: string | null };
   renderOnce(): RenderOnceResult;
@@ -421,6 +423,8 @@ try {
     createOverlay(ledger, { budget: params.has('budget') ? Number(params.get('budget')) : undefined });
   }
 
+  const measureOverdraw = (cam?: PerspectiveCamera | OrthographicCamera) => ledger.measureOverdraw(scene, cam ?? camera);
+
   function raycastDown(x: number, z: number): { hitCount: number; hitIsBatch: boolean; resolvedName: string | null } {
     const raycaster = new Raycaster(new Vector3(x, 60, z), new Vector3(0, -1, 0));
     const hits = raycaster.intersectObjects(scene.children, true);
@@ -468,7 +472,7 @@ try {
     });
   }
 
-  window.__forge = { three: THREE, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, setTime, compile, decompile, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
+  window.__forge = { three: THREE, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
 } catch (error) {
   window.__forge = { ready: false, error: error instanceof Error ? error.stack ?? error.message : String(error) } as ForgeHarness;
   throw error;
