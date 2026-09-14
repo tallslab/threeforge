@@ -1,5 +1,5 @@
-import { PNG } from 'pngjs';
 import { expect, test } from './fixtures.js';
+import { pixelDiff } from './pixels.js';
 
 /**
  * three r186's `renderer.compileAsync()` builds render objects after `renderObject()` has restored
@@ -8,16 +8,6 @@ import { expect, test } from './fixtures.js';
  * render objects then draw wrong for the rest of the session. `world.warmup()` must leave the picture exactly as
  * a cold first frame would, in both of its modes, on both backends.
  */
-function pixelDiff(a: Buffer, b: Buffer): number {
-  const pa = PNG.sync.read(a);
-  const pb = PNG.sync.read(b);
-  let n = 0;
-  for (let i = 0; i < pa.width * pa.height; i++) {
-    const o = i * 4;
-    if (Math.max(Math.abs(pa.data[o]! - pb.data[o]!), Math.abs(pa.data[o + 1]! - pb.data[o + 1]!), Math.abs(pa.data[o + 2]! - pb.data[o + 2]!)) > 24) n++;
-  }
-  return n / (pa.width * pa.height);
-}
 
 const cases = [
   { asset: 'polyhaven-fir_sapling_medium', what: 'alpha-blended double-sided foliage batched into one BatchedMesh', repaired: 1 },

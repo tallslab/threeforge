@@ -1,17 +1,5 @@
-import { PNG } from 'pngjs';
 import { expect, test } from './fixtures.js';
-
-function pixelDiff(a: Buffer, b: Buffer): number {
-  const pa = PNG.sync.read(a);
-  const pb = PNG.sync.read(b);
-  let n = 0;
-  for (let i = 0; i < pa.width * pa.height; i++) {
-    const o = i * 4;
-    if (Math.max(Math.abs(pa.data[o]! - pb.data[o]!), Math.abs(pa.data[o + 1]! - pb.data[o + 1]!), Math.abs(pa.data[o + 2]! - pb.data[o + 2]!)) > 24) n++;
-  }
-  return n / (pa.width * pa.height);
-}
-const settle = (page: import('@playwright/test').Page) => page.evaluate(async () => { for (let i = 0; i < 3; i++) await window.__forge.frameAsync(); });
+import { pixelDiff, settle } from './pixels.js';
 
 test('freezing: the compiled village recomposes far fewer matrices per frame with the same pixels', async ({ forge }) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');

@@ -5,8 +5,8 @@
  * FORGE_ASSETS=Fox,Duck limits the run.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { PNG } from 'pngjs';
 import { expect, test } from './fixtures.js';
+import { pixelDiff } from './pixels.js';
 
 interface AssetEntry {
   name: string;
@@ -58,20 +58,6 @@ function saveRow(row: Row, backend: string): Row[] {
   return rows;
 }
 
-function pixelDiff(a: Buffer, b: Buffer): number {
-  const pa = PNG.sync.read(a);
-  const pb = PNG.sync.read(b);
-  if (pa.width !== pb.width || pa.height !== pb.height) return 1;
-  let differing = 0;
-  const n = pa.width * pa.height;
-  for (let i = 0; i < n; i++) {
-    const o = i * 4;
-    const d = Math.max(Math.abs(pa.data[o]! - pb.data[o]!), Math.abs(pa.data[o + 1]! - pb.data[o + 1]!), Math.abs(pa.data[o + 2]! - pb.data[o + 2]!));
-    if (d > 24) differing++;
-  }
-  return differing / n;
-}
-
 for (const asset of assets) {
   test(`asset ${asset.name}`, async ({ forge }) => {
     test.setTimeout(180_000);
@@ -103,7 +89,7 @@ for (const asset of assets) {
       return { report: { batches: report.after.batches, instanced: report.after.instanced, meshes: report.after.meshes, groups: report.groups.length }, totals: frame.totals, byReason: frame.byReason, skipped: [...skipped.entries()] };
     });
     const after = await forge.page.screenshot({ type: 'png' });
-    const diff = pixelDiff(before, after);
+    const diff = pixelDiff(before, after, { requireSameSize: true });
     const restored = await forge.page.evaluate(() => {
       window.__forge.decompile();
       return window.__forge.frame().totals.sceneSubmissions;

@@ -1,16 +1,5 @@
-import { PNG } from 'pngjs';
 import { expect, test } from './fixtures.js';
-
-function pixelDiff(a: Buffer, b: Buffer): number {
-  const pa = PNG.sync.read(a);
-  const pb = PNG.sync.read(b);
-  let n = 0;
-  for (let i = 0; i < pa.width * pa.height; i++) {
-    const o = i * 4;
-    if (Math.max(Math.abs(pa.data[o]! - pb.data[o]!), Math.abs(pa.data[o + 1]! - pb.data[o + 1]!), Math.abs(pa.data[o + 2]! - pb.data[o + 2]!)) > 24) n++;
-  }
-  return n / (pa.width * pa.height);
-}
+import { pixelDiff } from './pixels.js';
 
 /** The crowd as animated instances: 200 skinned characters become one draw per prototype part, still moving. */
 test('crowd: animated instances replace 200 skinned draws with 16, animate, and look like the mixers', async ({ forge }) => {

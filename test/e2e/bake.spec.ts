@@ -1,21 +1,10 @@
-import { PNG } from 'pngjs';
 import { expect, test } from './fixtures.js';
+import { pixelDiff, settle } from './pixels.js';
 
 /**
  * The bake must never change a pixel: a wrong deletion is visible, a missed one is invisible. Every case compares the
  * naive render with the baked one and inspects what the bake reports it removed.
  */
-function pixelDiff(a: Buffer, b: Buffer): number {
-  const pa = PNG.sync.read(a);
-  const pb = PNG.sync.read(b);
-  let n = 0;
-  for (let i = 0; i < pa.width * pa.height; i++) {
-    const o = i * 4;
-    if (Math.max(Math.abs(pa.data[o]! - pb.data[o]!), Math.abs(pa.data[o + 1]! - pb.data[o + 1]!), Math.abs(pa.data[o + 2]! - pb.data[o + 2]!)) > 24) n++;
-  }
-  return n / (pa.width * pa.height);
-}
-const settle = (page: import('@playwright/test').Page) => page.evaluate(async () => { for (let i = 0; i < 3; i++) await window.__forge.frameAsync(); });
 
 test('baking the village keeps the pixels and draws one mesh per group', async ({ forge }) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');

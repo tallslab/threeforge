@@ -1,26 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { PNG } from 'pngjs';
 import { expect, test } from './fixtures.js';
-
-function pixelDiff(a: Buffer, b: Buffer, diffPath?: string): number {
-  const pa = PNG.sync.read(a);
-  const pb = PNG.sync.read(b);
-  const out = new PNG({ width: pa.width, height: pa.height });
-  let differing = 0;
-  const n = pa.width * pa.height;
-  for (let i = 0; i < n; i++) {
-    const o = i * 4;
-    const d = Math.max(Math.abs(pa.data[o]! - pb.data[o]!), Math.abs(pa.data[o + 1]! - pb.data[o + 1]!), Math.abs(pa.data[o + 2]! - pb.data[o + 2]!));
-    const hit = d > 24;
-    if (hit) differing++;
-    out.data[o] = hit ? 255 : pa.data[o]! >> 2;
-    out.data[o + 1] = hit ? 0 : pa.data[o + 1]! >> 2;
-    out.data[o + 2] = hit ? 0 : pa.data[o + 2]! >> 2;
-    out.data[o + 3] = 255;
-  }
-  if (diffPath) writeFileSync(diffPath, PNG.sync.write(out));
-  return differing / n;
-}
+import { pixelDiff } from './pixels.js';
 
 test('the fight arena (skinned fighters, weapons on bones, shadowed lights, VFX) compiles with the same pixels and every draw explained', async ({ forge }) => {
   test.setTimeout(600_000);
@@ -48,7 +28,7 @@ test('the fight arena (skinned fighters, weapons on bones, shadowed lights, VFX)
   mkdirSync('test-results/arena', { recursive: true });
   writeFileSync(`test-results/arena/before-${forge.backend}.png`, before);
   writeFileSync(`test-results/arena/after-${forge.backend}.png`, after);
-  const diff = pixelDiff(before, after, `test-results/arena/diff-${forge.backend}.png`);
+  const diff = pixelDiff(before, after, { diffPath: `test-results/arena/diff-${forge.backend}.png` });
   console.log(JSON.stringify({ counts: naive.counts, naive: naive.totals.sceneSubmissions, compiled: compiled.totals.sceneSubmissions, after: compiled.after, synced: compiled.synced, skipped: compiled.skipped, passes: compiled.passes.map((p) => `${p.id}=${p.submissions}`), diffPct: (diff * 100).toFixed(2) }));
 
   // Animation must still drive the scene after compile: advance time and expect pixels to change.

@@ -1,18 +1,7 @@
-import { PNG } from 'pngjs';
 import { expect, test } from './fixtures.js';
+import { pixelDiff, settle } from './pixels.js';
 
 /** Sprite batching must not change a pixel: every case compares the naive render with the compiled one. */
-function pixelDiff(a: Buffer, b: Buffer): number {
-  const pa = PNG.sync.read(a);
-  const pb = PNG.sync.read(b);
-  let n = 0;
-  for (let i = 0; i < pa.width * pa.height; i++) {
-    const o = i * 4;
-    if (Math.max(Math.abs(pa.data[o]! - pb.data[o]!), Math.abs(pa.data[o + 1]! - pb.data[o + 1]!), Math.abs(pa.data[o + 2]! - pb.data[o + 2]!)) > 24) n++;
-  }
-  return n / (pa.width * pa.height);
-}
-const settle = (page: import('@playwright/test').Page) => page.evaluate(async () => { for (let i = 0; i < 3; i++) await window.__forge.frameAsync(); });
 
 test('the lake: 2000 raindrop sprites become one submission per pass, pixels stay, decompile restores', async ({ forge }) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');

@@ -1,16 +1,5 @@
-import { PNG } from 'pngjs';
 import { expect, test } from './fixtures.js';
-
-function pixelDiff(a: Buffer, b: Buffer): number {
-  const pa = PNG.sync.read(a);
-  const pb = PNG.sync.read(b);
-  let n = 0;
-  for (let i = 0; i < pa.width * pa.height; i++) {
-    const o = i * 4;
-    if (Math.max(Math.abs(pa.data[o]! - pb.data[o]!), Math.abs(pa.data[o + 1]! - pb.data[o + 1]!), Math.abs(pa.data[o + 2]! - pb.data[o + 2]!)) > 24) n++;
-  }
-  return n / (pa.width * pa.height);
-}
+import { pixelDiff } from './pixels.js';
 
 /** The optimized zen world streams its chunks with the camera: textures leave the GPU and come back, nothing leaks, the view never changes. */
 test('zen: chunks stream with the camera, free their textures, and the start frame matches naive', async ({ forge }) => {
