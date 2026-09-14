@@ -437,6 +437,7 @@ try {
     ...(params.get('materials') === 'keep' ? { materials: 'keep' as const } : {}),
     ...(params.get('nested') === 'per-pass' ? { nestedPasses: 'per-pass' as const } : {}),
     ...(params.has('bake') ? { bake: params.get('bake') === 'buried' ? { removeBuried: true } : true } : {}),
+    ...(params.get('sprites') === 'keep' ? { sprites: 'keep' as const } : {}),
     ...(bench?.worldOptions ?? {}),
   });
   const compile = (): CompileReport => {

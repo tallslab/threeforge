@@ -65,7 +65,9 @@ test('the fight arena (skinned fighters, weapons on bones, shadowed lights, VFX)
   expect(compiled.passes.map((p) => p.id)).toEqual(expect.arrayContaining(['shadow:spot-1', 'shadow:spot-2', 'shadow:point-1', 'main']));
   expect(compiled.byReason.skinned?.submissions).toBeGreaterThan(0);
   expect(compiled.byReason.points?.submissions).toBe(6);
-  expect(compiled.byReason.sprite?.submissions).toBeGreaterThan(0);
+  // Health bars and hit markers share two materials: two sprite batches instead of 16 sprite draws.
+  expect(compiled.byReason['sprite-batch']?.submissions).toBe(2);
+  expect(compiled.byReason.sprite?.submissions).toBeUndefined();
   // Weapons hang off hand bones: dynamic, and with batch-sync they ride in batches (counted in `synced`).
   expect(compiled.synced).toBeGreaterThanOrEqual(naive.counts.fighters! + naive.counts.blocky! * 6);
   expect(compiled.skipped).toEqual(expect.arrayContaining([expect.arrayContaining(['dynamic-geometry'])]));

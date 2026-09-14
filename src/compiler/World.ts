@@ -1,4 +1,4 @@
-import { BoxGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, Vector3, Vector4, WebGLCoordinateSystem, WebGPUCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Texture } from 'three';
+import { BoxGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, Vector3, Vector4, WebGLCoordinateSystem, WebGPUCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Sprite, type Texture } from 'three';
 import type { DrawCallLedger } from '../ledger/DrawCallLedger.js';
 import { displayName } from '../ledger/reasons.js';
 import { MaterialRegistry, type RegistryStats } from '../registry/MaterialRegistry.js';
@@ -6,6 +6,8 @@ import { batchStatics, type GroupReport, type Slot, rebake, type BakedGroup } fr
 import type { BakeOptions } from './bake.js';
 import type { CulledInstancedMesh } from './instancing.js';
 import { classify, exclusionRule, type AnimationSource, type Classification } from './classify.js';
+import { buildSpriteBatch, type SpriteBatch } from './spriteBatch.js';
+import { groupSprites } from './sprites.js';
 import { attachBvhCulling, prependAfterRenderHook, prependRenderHook, type CullingHandle, type NestedPassPolicy } from './culling.js';
 
 /** Hidden originals live on this layer: invisible to default cameras and default raycasters, matrices still valid. */
@@ -55,6 +57,13 @@ export interface WorldOptions {
    * Modules with `userData.forgeBake = false` pass through untouched. Hiding a baked module rebakes its group.
    */
   bake?: boolean | BakeOptions;
+  /**
+   * `batch` (default): sprites sharing a material (by registry keys) become one instanced billboard draw whose
+   * instances follow the originals every frame; `keep` leaves every Sprite its own draw.
+   */
+  sprites?: 'batch' | 'keep';
+  /** Sprites a material needs before its group is batched (default 4). */
+  spriteThreshold?: number;
 }
 
 export interface CompileOptions {
@@ -75,7 +84,7 @@ export interface BakeSummary {
 
 export interface CompileReport {
   before: { meshes: number; materials: number };
-  after: { batches: number; instanced: number; baked: number; meshes: number };
+  after: { batches: number; instanced: number; baked: number; spriteBatches: number; meshes: number };
   /** Totals over the baked groups, null when `bake` is off. */
   bake: BakeSummary | null;
   groups: GroupReport[];
@@ -139,7 +148,7 @@ function compiledWrongByCompileAsync(material: Material): boolean {
 }
 
 interface OriginalState {
-  mesh: Mesh;
+  mesh: Object3D;
   parent: Object3D;
   index: number;
   layersMask: number;
@@ -190,6 +199,9 @@ export class World {
   private instanced: InstancedMesh[] = [];
   private baked: BakedGroup[] = [];
   private readonly bakeOptions: BakeOptions | null;
+  private readonly spriteMode: 'batch' | 'keep';
+  private readonly spriteThreshold: number;
+  private spriteBatchList: SpriteBatch[] = [];
   private slots = new Map<Mesh, Slot>();
   private originalsByBatch = new Map<BatchedMesh | InstancedMesh, Mesh[]>();
   private hidden: OriginalState[] = [];
@@ -212,6 +224,8 @@ export class World {
     this.nestedPassesOption = options.nestedPasses ?? 'auto';
     this.materialsMode = options.materials ?? 'canonical';
     this.bakeOptions = options.bake === true ? {} : options.bake ? options.bake : null;
+    this.spriteMode = options.sprites ?? 'batch';
+    this.spriteThreshold = options.spriteThreshold ?? 4;
   }
 
   /** The camera of the outermost render in the current or last frame (tracked once compiled with `reuse-main`). */
@@ -233,6 +247,11 @@ export class World {
   }
 
   /** One mesh per baked group (empty unless `bake` is on). */
+  /** One mesh per batched sprite group (`forge:sprites:<programHash>:<n>`). */
+  get spriteBatches(): readonly Mesh[] {
+    return this.spriteBatchList.map((b) => b.mesh);
+  }
+
   get bakedMeshes(): readonly Mesh[] {
     return this.baked.map((b) => b.mesh);
   }
@@ -310,9 +329,29 @@ export class World {
         this.hidden.push({ mesh, parent, index: parent.children.indexOf(mesh), layersMask: mesh.layers.mask, matrixAutoUpdate: mesh.matrixAutoUpdate, synced: this.syncedSet.has(mesh) });
       }
     }
+    // Sprites: one instanced billboard draw per material, driven by the hidden originals every frame.
+    const spriteSkips: CompileReport['skipped'] = [];
+    if (this.spriteMode === 'batch') {
+      const sprites: Sprite[] = [];
+      this.scene.traverse((o) => {
+        if ((o as Sprite).isSprite) sprites.push(o as Sprite);
+      });
+      const grouped = groupSprites(sprites, this.spriteThreshold, (m) => this.registry.describe(m));
+      const sync = (camera: Camera): boolean => nestedPasses === 'per-pass' || camera === this._mainCamera;
+      grouped.groups.forEach((group, i) => {
+        const batch = buildSpriteBatch(group, i, { sync, root: this.scene });
+        this.scene.add(batch.mesh);
+        this.spriteBatchList.push(batch);
+        for (const sprite of group.sprites) {
+          const parent = sprite.parent;
+          if (parent) this.hidden.push({ mesh: sprite, parent, index: parent.children.indexOf(sprite), layersMask: sprite.layers.mask, matrixAutoUpdate: sprite.matrixAutoUpdate, synced: true });
+        }
+      });
+      for (const { sprite, rule } of grouped.skipped) spriteSkips.push({ name: displayName(sprite, this.scene), rule });
+    }
     for (const state of this.hidden) this.hideOriginal(state);
 
-    const skipped: CompileReport['skipped'] = [];
+    const skipped: CompileReport['skipped'] = [...spriteSkips];
     for (const c of classifications) {
       if (result.slots.has(c.object)) continue;
       let rule = c.kind === 'static' ? 'singleton' : c.rule;
@@ -329,7 +368,7 @@ export class World {
     this.compiled = true;
     return {
       before,
-      after: { batches: this.batches.length, instanced: this.instanced.length, baked: this.baked.length, meshes: classifications.length - result.slots.size },
+      after: { batches: this.batches.length, instanced: this.instanced.length, baked: this.baked.length, spriteBatches: this.spriteBatchList.length, meshes: classifications.length - result.slots.size },
       bake: this.bakeOptions ? this.bakeSummary() : null,
       groups: result.groups,
       skipped,
@@ -529,6 +568,11 @@ export class World {
       if (b.ownsMaterial) (b.mesh.material as Material).dispose();
     }
     this.baked = [];
+    for (const batch of this.spriteBatchList) {
+      batch.mesh.removeFromParent();
+      batch.dispose();
+    }
+    this.spriteBatchList = [];
     for (const swap of this.materialSwaps) swap.mesh.material = swap.material;
     const restore = [...this.hidden].sort((a, b) => a.index - b.index);
     for (const state of restore) {

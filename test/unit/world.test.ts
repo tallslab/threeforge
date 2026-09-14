@@ -86,7 +86,7 @@ describe('World.compile', () => {
     expect(batches.every((b) => /^forge:batch:[0-9a-f]{8}:\d+$/.test(b.name))).toBe(true);
 
     expect(report.before).toEqual({ meshes: 9, materials: 9 });
-    expect(report.after).toEqual({ batches: 2, instanced: 0, baked: 0, meshes: 3 });
+    expect(report.after).toEqual({ batches: 2, instanced: 0, baked: 0, spriteBatches: 0, meshes: 3 });
     expect(report.groups).toHaveLength(2);
     expect(report.groups.map((g) => g.instances).sort()).toEqual([2, 4]);
     expect(report.groups.find((g) => g.instances === 4)?.geometries).toBe(2);
@@ -153,7 +153,7 @@ describe('World.compile', () => {
     scene.add(a, b);
     const report = new World(scene).compile();
     expect(batchesIn(scene)).toHaveLength(0);
-    expect(report.after).toEqual({ batches: 0, instanced: 0, baked: 0, meshes: 2 });
+    expect(report.after).toEqual({ batches: 0, instanced: 0, baked: 0, spriteBatches: 0, meshes: 2 });
     expect(a.material).toBe(b.material);
   });
 
@@ -320,7 +320,7 @@ describe('World instancing', () => {
     expect(instanced[0]!.name).toMatch(/^forge:instanced:[0-9a-f]{8}:\d+$/);
     expect(batchesIn(scene)).toHaveLength(1);
     expect(batchesIn(scene)[0]!.instanceCount).toBe(5);
-    expect(report.after).toEqual({ batches: 1, instanced: 1, baked: 0, meshes: 0 });
+    expect(report.after).toEqual({ batches: 1, instanced: 1, baked: 0, spriteBatches: 0, meshes: 0 });
   });
 
   it('respects instanceThreshold and never instances transparent groups', () => {
