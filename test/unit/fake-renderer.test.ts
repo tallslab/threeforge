@@ -49,7 +49,9 @@ describe('FakeRenderer sceneHooks', () => {
   it('calls scene.onBeforeRender(renderer, scene, camera, renderTarget) at the start of every render only when sceneHooks is on', () => {
     const { scene, camera } = sceneWithCamera();
     const calls: unknown[][] = [];
+    const afterTargets: unknown[] = [];
     scene.onBeforeRender = (...args) => void calls.push(args);
+    scene.onAfterRender = (...args) => void afterTargets.push(args[3]);
     new FakeRenderer().render(scene, camera);
     expect(calls).toHaveLength(0);
     const renderer = new FakeRenderer({ sceneHooks: true });
@@ -58,7 +60,16 @@ describe('FakeRenderer sceneHooks', () => {
     expect(calls[0]![0]).toBe(renderer);
     expect(calls[0]![1]).toBe(scene);
     expect(calls[0]![2]).toBe(camera);
-    expect(calls[0]![3]).toBeNull();
+    // A canvas render draws into the renderer's frame-buffer target (Renderer._getFrameBufferTarget); both hooks get it.
+    expect(calls[0]![3]).toMatchObject({ isPostProcessingRenderTarget: true });
+    expect(calls[0]![3]).toBe(renderer.frameBufferTarget);
+    expect(afterTargets.at(-1)).toBe(renderer.frameBufferTarget);
+    // A render into an explicit target passes that target instead.
+    const target = { name: 'reflection' };
+    renderer.renderTarget = target;
+    renderer.render(scene, camera);
+    expect(calls[1]![3]).toBe(target);
+    expect(afterTargets.at(-1)).toBe(target);
   });
 });
 
@@ -373,7 +384,7 @@ describe('FakeRenderer draw rules (RenderObject.getDrawParameters, Info.update)'
     quads.instanceCount = 40;
     renderer.render(scene, camera);
     expect(renderer.info.render.drawCalls).toBe(1 + 2);
-    expect(renderer.info.render.triangles).toBe(2 + 40 * 2 + 2);
+    expect(renderer.info.render.triangles).toBe(1 + 40 * 2 + 1); // the output quad is one fullscreen triangle per render
   });
 
   it('counts triangles per draw: instanceCount x count / 3, per multi-draw slot for batches', () => {
@@ -394,8 +405,11 @@ describe('FakeRenderer draw rules (RenderObject.getDrawParameters, Info.update)'
       scene.updateMatrixWorld();
       renderer.render(scene, camera);
       const rows = Object.fromEntries(renderer.passes[0]!.draws.map((d) => [d.object.name, [d.drawCalls, d.triangles, d.instanceCount]]));
-      expect(rows).toEqual({ box: [1, 12, 1], instanced: [1, 36, 3], batch: [batchDraws, 24, 1], 'Output Color Transform': [1, 2, 1] });
-      expect(renderer.info.render.triangles).toBe(12 + 36 + 24 + 2);
+      expect(rows).toEqual({ box: [1, 12, 1], instanced: [1, 36, 3], batch: [batchDraws, 24, 1], 'Output Color Transform': [1, 1, 1] });
+      expect(renderer.info.render.triangles).toBe(12 + 36 + 24 + 1);
+      // Renderer._renderOutput draws a QuadMesh: the shared 3-vertex QuadGeometry, one triangle.
+      expect((renderer.outputQuad as Mesh & { isQuadMesh?: boolean }).isQuadMesh).toBe(true);
+      expect(renderer.outputQuad.geometry.attributes.position!.count).toBe(3);
       expect(renderer.info.render.drawCalls).toBe(1 + 1 + batchDraws + 1);
     }
   });

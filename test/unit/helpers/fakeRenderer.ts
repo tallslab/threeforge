@@ -5,14 +5,15 @@
  * - Renderer._renderScene: the render list in traversal order, opaque items first, then a back-side pass of transmissive
  *   double-sided items, then transparent items (three also sorts each list; tests control order by insertion); the
  *   lights node of the projected lights as renderObject's argument 7; `scene.onAfterRender`, plus
- *   `scene.onBeforeRender` with `sceneHooks`. Non-Scene roots (quads) use an internal scene, like three's `_scene`.
+ *   `scene.onBeforeRender` with `sceneHooks`, both given the render's target (`renderer.frameBufferTarget` for a canvas
+ *   render). Non-Scene roots (quads) use an internal scene, like three's `_scene`.
  * - Renderer.renderObject: object hooks around the call, the override copy (`transparent`, the shadow side, restored
  *   side) and two draws, BackSide then FrontSide, for double-sided transparent materials.
  * - RenderObject.getDrawParameters and the backends' Info.update: nothing for zero instances or an empty range; one
  *   draw per call, N per BatchedMesh on WebGPU or on WebGL without WEBGL_multi_draw; triangles = instances x count / 3.
  * - ShadowNode and PointShadowNode: shadow maps per light (see `shadowLights`), six faces per point light, VSM quads.
  * Every Scene render without an override material also draws an "Output Color Transform" quad, like three's output
- * pass. Not modelled: frustum culling, sorting, matrix updates (call `scene.updateMatrixWorld()`), pipeline readiness.
+ * pass (a QuadMesh: one fullscreen triangle). Not modelled: frustum culling, sorting, matrix updates (call `scene.updateMatrixWorld()`), pipeline readiness.
  */
 import {
   BackSide,
@@ -30,7 +31,6 @@ import {
   OrthographicCamera,
   PCFShadowMap,
   PerspectiveCamera,
-  PlaneGeometry,
   Scene,
   Vector2,
   Vector3,
@@ -66,7 +66,11 @@ export interface FakeRendererOptions {
    * `receiveShadow`, after its onBeforeRender and before its draw, as AnalyticLightNode's ShadowNode does.
    */
   shadowTrigger?: 'first-receiver';
-  /** Call `scene.onBeforeRender(renderer, scene, camera, renderTarget)` at the start of every render() call, as three does. */
+  /**
+   * Call `scene.onBeforeRender(renderer, scene, camera, renderTarget)` at the start of every render() call, as three
+   * does. `renderTarget` (also passed to `scene.onAfterRender`) is `renderer.renderTarget`, or
+   * `renderer.frameBufferTarget` when that is null: a canvas render draws into the frame-buffer target.
+   */
   sceneHooks?: boolean;
   /** Record the render() calls and draws of the last frame in `renderer.passes` (see FakePass). */
   record?: boolean;
@@ -180,6 +184,11 @@ export class FakeRenderer {
   /** +1 at the start of every outermost render(): the fake's NodeFrame.frameId (three advances it once per animation frame). */
   frameId = 0;
   renderTarget: object | null = null;
+  /**
+   * Renderer._getFrameBufferTarget: the target a render with no render target draws into (three's defaults, an sRGB
+   * output colour space, need one) and that the scene hooks receive. The output quad then resolves it to the canvas.
+   */
+  readonly frameBufferTarget = { isPostProcessingRenderTarget: true };
 
   private readonly options: FakeRendererOptions;
   /** ShadowBaseNode's shadow material, flagged so renderObject derives the shadow side for it. */
@@ -206,12 +215,13 @@ export class FakeRenderer {
       : { hasFeature: (name: string) => name === 'WEBGL_multi_draw' && multiDraw };
     this.shadowLights = [...(options.shadowLight ? [options.shadowLight] : []), ...(options.shadowLights ?? [])];
     this.shadowMap = { enabled: this.shadowLights.length > 0, type: PCFShadowMap };
-    // Like three's "Output Color Transform" quad: rendered every frame, never part of the user scene.
-    this.outputQuad = new Mesh(new PlaneGeometry(2, 2), new Material());
-    this.outputQuad.name = 'Output Color Transform';
-    // ShadowNode.vsmPass draws a QuadMesh (one fullscreen triangle) with each blur material.
+    // QuadMesh's shared QuadGeometry: one fullscreen triangle.
     const triangle = new BufferGeometry();
     triangle.setAttribute('position', new Float32BufferAttribute([-1, 3, 0, -1, -1, 0, 3, -1, 0], 3));
+    // Like three's "Output Color Transform" QuadMesh (Renderer._renderOutput): rendered every frame, never part of the user scene.
+    this.outputQuad = Object.assign(new Mesh(triangle, new Material()), { isQuadMesh: true });
+    this.outputQuad.name = 'Output Color Transform';
+    // ShadowNode.vsmPass draws a QuadMesh with each blur material.
     this.vsmQuad = Object.assign(new Mesh(triangle, new Material()), { isQuadMesh: true });
     this.vsmMaterials = ['VSMVertical', 'VSMHorizontal'].map((name) => Object.assign(new Material(), { name }));
   }
@@ -248,6 +258,8 @@ export class FakeRenderer {
     const renderObjectFunction = this.renderObjectFunction;
     const lightsNode = this.lightsNodeFor(scene);
     const previousLights = lightsNode.getLights();
+    // Renderer._renderScene: with no render target the pass draws into the frame-buffer target; both scene hooks get it.
+    const hookTarget = this.renderTarget ?? this.frameBufferTarget;
     const call: RenderCall = { pass: null, pending: [] };
     if (this.options.record) {
       call.pass = {
@@ -264,7 +276,7 @@ export class FakeRenderer {
       this.passes.push(call.pass);
     }
     this.calls.push(call);
-    if (this.options.sceneHooks) (sceneRef.onBeforeRender as (...args: unknown[]) => void)(this, scene, camera, this.renderTarget);
+    if (this.options.sceneHooks) (sceneRef.onBeforeRender as (...args: unknown[]) => void)(this, scene, camera, hookTarget);
 
     // Renderer._projectObject into the render list.
     const opaque: RenderItem[] = [];
@@ -321,7 +333,7 @@ export class FakeRenderer {
     for (const { draw, texture, counts } of call.pending) draw.batchIds = slotIds(counts, this.uploads.get(texture)!.data);
     lightsNode.setLights(previousLights);
     this.calls.pop();
-    (sceneRef.onAfterRender as (...args: unknown[]) => void)(this, scene, camera, this.renderTarget);
+    (sceneRef.onAfterRender as (...args: unknown[]) => void)(this, scene, camera, hookTarget);
   }
 
   renderObject(
