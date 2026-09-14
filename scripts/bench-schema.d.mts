@@ -41,3 +41,4 @@ export const SCENE_IDS: readonly string[];
 export const METRIC_KEYS: readonly string[];
 export const ENV_KEYS: readonly string[];
 export function validateDeviceResult(value: unknown): { ok: true; result: DeviceResult } | { ok: false; errors: string[] };
+export function expandWire(value: unknown): { value: unknown; error?: undefined } | { error: string; value?: undefined };

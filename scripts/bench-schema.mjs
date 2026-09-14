@@ -20,8 +20,42 @@ function str(v, path, errors) {
   if (typeof v !== 'string' || v.length > MAX_STRING) errors.push(`${path}: expected a string of at most ${MAX_STRING} characters`);
 }
 
-/** `{ ok: true, result }` or `{ ok: false, errors }` with one line per problem. */
-export function validateDeviceResult(value) {
+/**
+ * The issue body carries metrics as arrays in `metricKeys` order (shorter URLs). Returns the object form, or an
+ * error string when the key list is not exactly METRIC_KEYS or an array has the wrong length.
+ */
+export function expandWire(value) {
+  if (!isObject(value) || !('metricKeys' in value)) return { value };
+  const keys = value.metricKeys;
+  if (!Array.isArray(keys) || keys.length !== METRIC_KEYS.length || keys.some((k, i) => k !== METRIC_KEYS[i])) return { error: 'metricKeys: expected exactly the 15 metric keys in order' };
+  const scenes = {};
+  if (isObject(value.scenes)) {
+    for (const [id, block] of Object.entries(value.scenes)) {
+      if (!isObject(block)) {
+        scenes[id] = block;
+        continue;
+      }
+      const expanded = {};
+      for (const [variant, arr] of Object.entries(block)) {
+        if (!Array.isArray(arr)) {
+          expanded[variant] = arr;
+          continue;
+        }
+        if (arr.length !== keys.length) return { error: `scenes.${id}.${variant}: expected ${keys.length} values` };
+        expanded[variant] = Object.fromEntries(keys.map((k, i) => [k, arr[i]]));
+      }
+      scenes[id] = expanded;
+    }
+  }
+  const { metricKeys: _keys, ...rest } = value;
+  return { value: { ...rest, scenes: isObject(value.scenes) ? scenes : value.scenes } };
+}
+
+/** `{ ok: true, result }` or `{ ok: false, errors }` with one line per problem. Accepts the wire form too. */
+export function validateDeviceResult(input) {
+  const wire = expandWire(input);
+  if (wire.error) return { ok: false, errors: [wire.error] };
+  const value = wire.value;
   const errors = [];
   if (!isObject(value)) return { ok: false, errors: ['result: expected an object'] };
   keysExactly(value, ['schemaVersion', 'kind', 'id', 'createdAt', 'env', 'scenes'], 'result', errors);

@@ -29,6 +29,14 @@ describe('validateDeviceResult', () => {
     expect(bad((r) => (r.id = '../etc'))).toEqual([expect.stringContaining('id')]);
     expect(validateDeviceResult('nope').ok).toBe(false);
   });
+
+  it('expands the wire form (metric arrays in metricKeys order) before validating', () => {
+    const keys = Object.keys(metrics(1));
+    const wire = { ...result, metricKeys: keys, scenes: Object.fromEntries(Object.entries(scenes).map(([id, b]) => [id, { naive: keys.map((k) => (b.naive as Record<string, number>)[k]), optimized: keys.map((k) => (b.optimized as Record<string, number>)[k]) }])) };
+    expect(validateDeviceResult(wire)).toEqual({ ok: true, result });
+    expect(validateDeviceResult({ ...wire, metricKeys: keys.slice(1) }).ok).toBe(false);
+    expect(validateDeviceResult({ ...wire, scenes: { ...wire.scenes, zen: { naive: [1, 2], optimized: wire.scenes.zen!.optimized } } }).ok).toBe(false);
+  });
 });
 
 describe('ingest', () => {
