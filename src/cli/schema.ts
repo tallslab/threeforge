@@ -26,7 +26,7 @@ export const SNAPSHOT_SCHEMA = {
     overdraw: obj({ opaque: number, transparent: number, transparentSubmissions: integer, particles: integer, pixels: integer, measured: boolean }),
     skinning: obj({ submissions: integer, vertices: integer, bones: integer, skeletons: integer, maxBones: integer, morphTargets: integer }),
     lighting: obj({ lights: obj({ directional: integer, point: integer, spot: integer, hemisphere: integer, ambient: integer, other: integer }), shadowLights: integer, shadowPasses: integer, shadowCasters: integer, shadowTexels: integer, shadowSubmissions: integer }),
-    js: obj({ renderMs: number, frameMs: number, objects: integer, autoUpdatedMatrices: integer }),
+    js: obj({ renderMs: number, frameMs: number, objects: integer, autoUpdatedMatrices: integer, hiddenOriginals: integer, skipped: integer }),
     memory: obj({ textures: obj({ count: integer, bytes: integer }), geometries: obj({ count: integer, bytes: integer }), renderTargets: obj({ count: integer, bytes: integer }), estimated: { const: true } }),
     hints: arr(hint),
     items: arr(obj({ name: string, kind: string, materialType: string, programHash: string, variantHash: string, transparent: boolean, pass: string, reason: string, flags: arr(string), expectedGpuDraws: integer, instances: integer, instancesDrawn: integer, vertices: integer, bones: integer, skeleton: nullable(integer), morphTargets: integer })),

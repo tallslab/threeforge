@@ -40,6 +40,8 @@ export interface DrawCallLedgerOptions {
 /** Scene-graph statistics recounted at most every RESCAN_EVERY frames (a full traversal). */
 const _bufferSize = new Vector2();
 const RESCAN_EVERY = 60;
+/** Layer 31 mask, where World parks batched originals. */
+const HIDDEN_MASK = (1 << 31) >>> 0;
 const FRAME_WINDOW = 60;
 
 type InternalRecord = SubmissionRecord & { description: string };
@@ -85,7 +87,8 @@ export class DrawCallLedger {
   private readonly frameStarts: number[] = [];
   private framesSeen = 0;
   private lastScene: Object3D | null = null;
-  private graphStats: { objects: number; autoUpdatedMatrices: number; at: number } = { objects: 0, autoUpdatedMatrices: 0, at: -1 };
+  private graphStats: { objects: number; autoUpdatedMatrices: number; hiddenOriginals: number; at: number } = { objects: 0, autoUpdatedMatrices: 0, hiddenOriginals: 0, at: -1 };
+  private scheduler: { skippedRecently(): number } | null = null;
   private memoryStats: MemorySnapshot = emptySections().memory;
   private hintContext: HintContext = {};
   private overdraw: OverdrawResult | null = null;
@@ -167,9 +170,11 @@ export class DrawCallLedger {
     if (!scene) return;
     let objects = 0;
     let auto = 0;
+    let hidden = 0;
     const ctx: Required<HintContext> = { staticAutoUpdated: [], pointShadowLights: [], transmissive: [] };
     scene.traverse((o) => {
       objects++;
+      if (o.layers.mask === HIDDEN_MASK) hidden++;
       if (o.matrixAutoUpdate && o.matrixWorldAutoUpdate) {
         auto++;
         if ((o.userData as Record<string, unknown>)[FORGE_TAG_KEY] === 'static' && (o as { isMesh?: boolean }).isMesh) ctx.staticAutoUpdated.push(displayName(o, scene));
@@ -186,11 +191,16 @@ export class DrawCallLedger {
     });
     this.hintContext = ctx;
     // The scene object itself is not part of the count.
-    this.graphStats = { objects: objects - 1, autoUpdatedMatrices: auto - 1, at: this.framesSeen };
+    this.graphStats = { objects: objects - 1, autoUpdatedMatrices: auto - 1, hiddenOriginals: hidden, at: this.framesSeen };
     const memory = this.renderer?.info.memory;
     this.memoryStats = estimateMemory(scene, { textures: memory?.textures ?? 0, geometries: memory?.geometries ?? 0 }, this.environment.viewport);
-    this.last = { ...this.last, js: { ...this.last.js, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices }, memory: this.memoryStats };
+    this.last = { ...this.last, js: { ...this.last.js, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals }, memory: this.memoryStats };
     this.last = { ...this.last, hints: hintsFor(this.last, this.budgets(), this.hintContext) };
+  }
+
+  /** A RenderScheduler whose skipped ticks the js section reports; null detaches. */
+  attachScheduler(scheduler: { skippedRecently(): number } | null): void {
+    this.scheduler = scheduler;
   }
 
   /** The budgets hints are judged against: the environment's tier plus constructor overrides. */
@@ -329,7 +339,7 @@ export class DrawCallLedger {
       programs: this.renderer.info.memory.programs,
       descriptions,
       lights: this.current.lights,
-      js: { renderMs: this.now() - this.current.startedAt, frameMs, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices },
+      js: { renderMs: this.now() - this.current.startedAt, frameMs, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals, skipped: this.scheduler?.skippedRecently() ?? 0 },
       memory: this.memoryStats,
       overdraw: {
         opaque: this.overdraw?.opaque ?? 0,

@@ -367,4 +367,24 @@ describe('DrawCallLedger snapshot, report and budget', () => {
     expect(frame.items?.find((i) => i.name === 'forge:sprites:abcd:0')).toMatchObject({ instances: 40, instancesDrawn: 40, expectedGpuDraws: 1 });
     expect(frame.totals.unattributed).toBe(0);
   });
+
+  it('counts hidden originals on layer 31 and reports the attached scheduler\'s skipped ticks', () => {
+    const { renderer, ledger, scene, camera } = attached();
+    const a = new Mesh(box, new MeshStandardMaterial());
+    const b = new Mesh(box, new MeshStandardMaterial());
+    const c = new Mesh(box, new MeshStandardMaterial());
+    b.layers.set(31);
+    c.layers.set(31);
+    scene.add(a, b, c);
+    renderer.render(scene, camera);
+    ledger.rescan();
+    expect(ledger.frame().js.hiddenOriginals).toBe(2);
+    expect(ledger.frame().js.skipped).toBe(0);
+    ledger.attachScheduler({ skippedRecently: () => 7 });
+    renderer.render(scene, camera);
+    expect(ledger.frame().js.skipped).toBe(7);
+    ledger.attachScheduler(null);
+    renderer.render(scene, camera);
+    expect(ledger.frame().js.skipped).toBe(0);
+  });
 });

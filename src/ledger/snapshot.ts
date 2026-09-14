@@ -110,6 +110,10 @@ export interface JsSnapshot {
   objects: number;
   /** Objects whose world matrix three recomputes every frame. */
   autoUpdatedMatrices: number;
+  /** Batched originals kept in the graph on the hidden layer: three still walks them every frame. */
+  hiddenOriginals: number;
+  /** Ticks a RenderScheduler skipped among its last 60 (0 without one). */
+  skipped: number;
 }
 
 export interface MemorySnapshot {
@@ -162,7 +166,7 @@ export function emptySections(): FrameSections {
     overdraw: { opaque: 0, transparent: 0, transparentSubmissions: 0, particles: 0, pixels: 0, measured: false },
     skinning: { submissions: 0, vertices: 0, bones: 0, skeletons: 0, maxBones: 0, morphTargets: 0 },
     lighting: { lights: { directional: 0, point: 0, spot: 0, hemisphere: 0, ambient: 0, other: 0 }, shadowLights: 0, shadowPasses: 0, shadowCasters: 0, shadowTexels: 0, shadowSubmissions: 0 },
-    js: { renderMs: 0, frameMs: 0, objects: 0, autoUpdatedMatrices: 0 },
+    js: { renderMs: 0, frameMs: 0, objects: 0, autoUpdatedMatrices: 0, hiddenOriginals: 0, skipped: 0 },
     memory: { textures: { count: 0, bytes: 0 }, geometries: { count: 0, bytes: 0 }, renderTargets: { count: 0, bytes: 0 }, estimated: true },
     hints: [],
   };

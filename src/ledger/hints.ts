@@ -38,6 +38,8 @@ export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): H
   if (f.lighting.shadowTexels > b.shadowTexels) push('lighting', 'warn', 'shadow-texels', `${f.lighting.shadowTexels} shadow texels per frame, budget ${b.shadowTexels}`);
   for (const name of ctx.transmissive ?? []) push('overdraw', 'info', 'transmission', `'${name}' uses transmission: it renders in two passes and copies the frame buffer`, [name]);
   if (f.memory.textures.bytes > b.textureBytes) push('memory', 'warn', 'texture-bytes', `${mb(f.memory.textures.bytes)} of textures, budget ${mb(b.textureBytes)}: compress to KTX2 or shrink`);
+  if (f.js.objects > b.objects) push('js', 'warn', 'js-objects', `${f.js.objects} objects walked by three every frame (matrices and culling), budget ${b.objects}: batch, detach originals, flatten empty groups`);
+  if (f.js.hiddenOriginals >= 1000) push('js', 'info', 'detach-originals', `${f.js.hiddenOriginals} hidden originals are still walked every frame: construct World with originals: 'detach'`);
   if (ctx.staticAutoUpdated?.length) push('js', 'info', 'static-auto-update', `${ctx.staticAutoUpdated.length} static-tagged objects still auto-update their matrices every frame`, ctx.staticAutoUpdated.slice(0, 5));
   return hints;
 }

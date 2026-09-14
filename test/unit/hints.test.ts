@@ -60,4 +60,16 @@ describe('hintsFor', () => {
     expect(hintsFor(f, budgetsFor('desktop')).some((h) => h.code === 'sprites-unbatched')).toBe(false);
     expect(budgetsFor('phone-mid').particles).toBe(15_000);
   });
+
+  it('warns on objects over budget and points at detaching hidden originals', () => {
+    const f = emptyFrame(env);
+    f.js.objects = 3000;
+    expect(hintsFor(f, budgetsFor('phone-low')).find((h) => h.code === 'js-objects')).toMatchObject({ category: 'js', severity: 'warn' });
+    f.js.objects = 0;
+    f.js.hiddenOriginals = 1000;
+    expect(hintsFor(f, budgetsFor('desktop')).find((h) => h.code === 'detach-originals')).toMatchObject({ category: 'js', severity: 'info' });
+    f.js.hiddenOriginals = 999;
+    expect(hintsFor(f, budgetsFor('desktop')).some((h) => h.code === 'detach-originals')).toBe(false);
+    expect(budgetsFor('phone-mid').objects).toBe(5_000);
+  });
 });

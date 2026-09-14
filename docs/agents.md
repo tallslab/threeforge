@@ -89,6 +89,8 @@ estimate, and `hints`. Read `after` when present, otherwise `before`.
 | `shadow-texels` | lighting | warn | Lower light.shadow.mapSize, cast shadows from fewer lights, freeze static shadow maps, and turn shadows off on the low tier. |
 | `transmission` | overdraw | info | Keep transmission for a few hero objects, set forceSinglePass when the object is not double sided, and fake distant glass with opacity. |
 | `texture-bytes` | memory | warn | Compress textures to KTX2 (toktx or gltf-transform), cap sizes per tier, share atlases, and drop mipmaps only for UI textures. |
+| `js-objects` | js | warn | Compile with World so statics batch, pass originals: "detach" so hidden originals leave the graph, flatten empty groups, and keep helper objects out of the rendered scene. |
+| `detach-originals` | js | info | Construct World with originals: "detach": the originals leave the graph (and both per-frame walks) and decompile() puts them back at their old index. |
 | `static-auto-update` | js | info | After placing a static object set matrixAutoUpdate = false (and matrixWorldAutoUpdate = false on whole static subtrees); update matrices manually when something does move. |
 
 ## Bake (opt in, verify by pixels)
