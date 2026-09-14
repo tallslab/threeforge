@@ -194,7 +194,7 @@ export class World {
   private readonly cullingMode: 'bvh' | 'linear';
   private readonly instanceThreshold: number;
   private readonly dynamicsMode: 'separate' | 'batch-sync';
-  private readonly chunkSize: number | undefined;
+  private readonly chunkSizeOption: number | undefined;
   private readonly lod: { distances: number[] } | null;
   private readonly occlusion: boolean;
   private readonly animations: AnimationSource[];
@@ -233,7 +233,7 @@ export class World {
     this.cullingMode = options.culling ?? 'bvh';
     this.instanceThreshold = options.instanceThreshold ?? 64;
     this.dynamicsMode = options.dynamics ?? 'separate';
-    this.chunkSize = options.chunkSize;
+    this.chunkSizeOption = options.chunkSize;
     this.lod = options.lod ?? null;
     this.occlusion = options.occlusion ?? false;
     this.animations = options.animations ?? [];
@@ -265,6 +265,25 @@ export class World {
 
   /** One mesh per baked group (empty unless `bake` is on). */
   /** Objects `compile()` froze beyond the hidden originals (unbatched statics and all-static ancestors). */
+  /** The `chunkSize` option: world-space cell size, or undefined when statics are not split by cell. */
+  get chunkSize(): number | undefined {
+    return this.chunkSizeOption;
+  }
+
+  /** Compiled batches, instanced groups and baked meshes by cell (`x,y,z`); empty without `chunkSize` or before compile. */
+  chunks(): Map<string, Object3D[]> {
+    const out = new Map<string, Object3D[]>();
+    for (const object of [...this.batches, ...this.instanced, ...this.baked.map((b) => b.mesh)]) {
+      const cell = object.userData.forgeChunk as [number, number, number] | null | undefined;
+      if (!cell) continue;
+      const key = cell.join(',');
+      const list = out.get(key) ?? [];
+      list.push(object);
+      out.set(key, list);
+    }
+    return out;
+  }
+
   get frozenObjects(): readonly Object3D[] {
     return this.frozenList.map((f) => f.object);
   }
@@ -329,7 +348,7 @@ export class World {
       }
     }
     const noBake = new Set<Mesh>([...syncRule.entries()].filter(([, rule]) => rule === null).map(([mesh]) => mesh));
-    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem, chunkSize: this.chunkSize, nestedPasses, mainCamera, ...(this.lod ? { lodDistances: this.lod.distances } : {}), ...(this.bakeOptions ? { bake: this.bakeOptions, noBake } : {}) });
+    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem, chunkSize: this.chunkSizeOption, nestedPasses, mainCamera, ...(this.lod ? { lodDistances: this.lod.distances } : {}), ...(this.bakeOptions ? { bake: this.bakeOptions, noBake } : {}) });
     this.batches = result.batches;
     this.instanced = result.instanced;
     this.baked = result.baked;

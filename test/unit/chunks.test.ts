@@ -40,6 +40,18 @@ describe('World chunkSize', () => {
     ]);
   });
 
+  it('indexes compiled objects by cell for streaming', () => {
+    const { scene } = line(8, 10);
+    const world = new World(scene, { chunkSize: 20 });
+    expect(world.chunkSize).toBe(20);
+    expect(world.chunks().size).toBe(0);
+    world.compile();
+    const chunks = world.chunks();
+    expect([...chunks.keys()]).toEqual(['0,0,0', '1,0,0', '2,0,0', '3,0,0']);
+    expect(chunks.get('1,0,0')![0]!.userData.forgeChunk).toEqual([1, 0, 0]);
+    expect(new World(new Scene()).chunks().size).toBe(0);
+  });
+
   it('keeps one batch per group when chunkSize is not set and reports chunk as null', () => {
     const { scene } = line(8, 10);
     const report = new World(scene).compile();

@@ -160,6 +160,7 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
         perProgramInstanced.set(programHash, index + 1);
         instanced.levels.forEach((level, L) => {
           level.name = L === 0 ? `forge:instanced:${programHash}:${index}` : `forge:instanced:${programHash}:${index}:lod${L}`;
+          level.userData.forgeChunk = group.chunk;
           level.castShadow = group.castShadow;
           level.receiveShadow = group.receiveShadow;
           scene.add(level);
@@ -239,6 +240,7 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
 
     const batch = new BatchedMesh(group.meshes.length, maxVertexCount, maxIndexCount, material);
     batch.name = `forge:batch:${programHash}:${index}`;
+    batch.userData.forgeChunk = group.chunk;
     batch.sortObjects = material.transparent;
     batch.perObjectFrustumCulled = true;
     batch.castShadow = group.castShadow;
@@ -315,6 +317,7 @@ function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, 
   }
   const mesh = new Mesh(result.geometry, material);
   mesh.name = name;
+  mesh.userData.forgeChunk = group.chunk;
   mesh.castShadow = group.castShadow;
   mesh.receiveShadow = group.receiveShadow;
   mesh.matrixAutoUpdate = false;
