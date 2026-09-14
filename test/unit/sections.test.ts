@@ -17,7 +17,7 @@ describe('skinningOf', () => {
       rec({ kind: 'skinned', vertices: 999, bones: 40, skeleton: 0, pass: 'shadow:sun' }),
       rec({ kind: 'mesh', vertices: 1000 }),
     ];
-    expect(skinningOf(items)).toEqual({ submissions: 3, vertices: 220, bones: 52, skeletons: 2, maxBones: 40, morphTargets: 3 });
+    expect(skinningOf(items)).toEqual({ submissions: 3, vertices: 220, bones: 52, skeletons: 2, maxBones: 40, morphTargets: 3, vatInstances: 0, vatVertices: 0 });
   });
 });
 

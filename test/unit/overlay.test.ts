@@ -51,7 +51,7 @@ describe('formatOverlay v2', () => {
     f.totals.gpuDraws = 500;
     f.totals.triangles = 120_000;
     f.overdraw = { opaque: 1.31, transparent: 0.42, transparentSubmissions: 4, particles: 300, pixels: 480_000, measured: true };
-    f.skinning = { submissions: 2, vertices: 6400, bones: 44, skeletons: 1, maxBones: 44, morphTargets: 0 };
+    f.skinning = { submissions: 2, vertices: 6400, bones: 44, skeletons: 1, maxBones: 44, morphTargets: 0, vatInstances: 0, vatVertices: 0 };
     f.lighting = { lights: { directional: 1, point: 0, spot: 0, hemisphere: 1, ambient: 0, other: 0 }, shadowLights: 1, shadowPasses: 1, shadowCasters: 20, shadowTexels: 1_048_576, shadowSubmissions: 20 };
     f.js = { renderMs: 2.4, frameMs: 16.7, objects: 512, autoUpdatedMatrices: 12, hiddenOriginals: 0, skipped: 0 };
     f.memory = { textures: { count: 8, bytes: 20 * 1024 * 1024 }, geometries: { count: 30, bytes: 3 * 1024 * 1024 }, renderTargets: { count: 2, bytes: 5 * 1024 * 1024 }, estimated: true };
@@ -60,7 +60,7 @@ describe('formatOverlay v2', () => {
     expect(lines[0]).toBe('threeforge webgpu phone-mid  27 / 30 submissions  PASS');
     expect(lines).toContain('draw calls   27 submissions · 500 gpu draws · 120k tris');
     expect(lines).toContain('overdraw     1.31 opaque · 0.42 transparent fragments/px · 4 transparent · 300 particles');
-    expect(lines).toContain('skinning     2 meshes · 6.4k verts · 44 bones · 1 skeletons');
+    expect(lines).toContain('skinning     2 meshes · 6.4k verts · 44 bones · 1 skeletons · 0 vat instances');
     expect(lines).toContain('lighting     2 lights · 1 shadow · 20 casters · 1.0M texels');
     expect(lines).toContain('js           2.4 ms render · 16.7 ms frame · 512 objects · 12 auto-matrices · 0 hidden · 0 skipped');
     expect(lines).toContain('memory       ~28 MB (tex 20 · geo 3 · rt 5)');

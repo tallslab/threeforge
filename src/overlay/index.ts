@@ -16,7 +16,7 @@ export function formatCostRows(frame: FrameSnapshot): string[] {
   return [
     `draw calls   ${t.sceneSubmissions} submissions · ${t.gpuDraws} gpu draws · ${fmt(t.triangles)} tris`,
     `overdraw     ${o.measured ? `${o.opaque.toFixed(2)} opaque · ${o.transparent.toFixed(2)} transparent fragments/px` : 'not measured'} · ${o.transparentSubmissions} transparent · ${o.particles} particles`,
-    `skinning     ${s.submissions} meshes · ${fmt(s.vertices)} verts · ${s.bones} bones · ${s.skeletons} skeletons`,
+    `skinning     ${s.submissions} meshes · ${fmt(s.vertices)} verts · ${s.bones} bones · ${s.skeletons} skeletons · ${s.vatInstances} vat instances`,
     `lighting     ${lights} lights · ${l.shadowLights} shadow · ${l.shadowCasters} casters · ${fmt(l.shadowTexels)} texels`,
     `js           ${j.renderMs.toFixed(1)} ms render · ${j.frameMs.toFixed(1)} ms frame · ${j.objects} objects · ${j.autoUpdatedMatrices} auto-matrices · ${j.hiddenOriginals} hidden · ${j.skipped} skipped`,
     `memory       ~${mb(m.textures.bytes + m.geometries.bytes + m.renderTargets.bytes)} MB (tex ${mb(m.textures.bytes)} · geo ${mb(m.geometries.bytes)} · rt ${mb(m.renderTargets.bytes)})`,

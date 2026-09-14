@@ -34,12 +34,12 @@ describe('hintsFor', () => {
       'unsupported-material': { submissions: 1, gpuDraws: 1, top: ['shader'] },
     };
     f.overdraw = { opaque: 1.2, transparent: 2.5, transparentSubmissions: 30, particles: 0, pixels: 0, measured: true };
-    f.skinning = { submissions: 200, vertices: 100_000, bones: 8000, skeletons: 200, maxBones: 60, morphTargets: 0 };
+    f.skinning = { submissions: 200, vertices: 100_000, bones: 8000, skeletons: 200, maxBones: 60, morphTargets: 0, vatInstances: 0, vatVertices: 0 };
     f.lighting = { lights: { directional: 1, point: 1, spot: 0, hemisphere: 0, ambient: 0, other: 0 }, shadowLights: 2, shadowPasses: 7, shadowCasters: 10, shadowTexels: 6 * 1024 * 1024, shadowSubmissions: 70 };
     f.memory = { textures: { count: 10, bytes: 200 * 1024 * 1024 }, geometries: { count: 1, bytes: 0 }, renderTargets: { count: 0, bytes: 0 }, estimated: true };
     const hints = hintsFor(f, budgetsFor('phone-low'), { staticAutoUpdated: ['tree-1'], pointShadowLights: ['lamp'], transmissive: ['glass'] });
     expect(hints.map((h) => h.code).sort()).toEqual(
-      ['over-budget-submissions', 'over-budget-triangles', 'point-light-shadow', 'programs', 'shadow-texels', 'skinned-vertices', 'static-auto-update', 'texture-bytes', 'transmission', 'transparent-overdraw', 'unique-materials', 'unsupported-material', 'untagged'].sort(),
+      ['over-budget-submissions', 'over-budget-triangles', 'point-light-shadow', 'programs', 'shadow-texels', 'skinned-vertices', 'bones-over-budget', 'skinned-crowd', 'static-auto-update', 'texture-bytes', 'transmission', 'transparent-overdraw', 'unique-materials', 'unsupported-material', 'untagged'].sort(),
     );
     expect(hints.find((h) => h.code === 'untagged')).toEqual({ category: 'drawCalls', severity: 'warn', code: 'untagged', message: '7 untagged meshes: tag.static() or tag.dynamic() them', objects: ['crate', 'barrel'] });
   });
@@ -71,5 +71,17 @@ describe('hintsFor', () => {
     f.js.hiddenOriginals = 999;
     expect(hintsFor(f, budgetsFor('desktop')).some((h) => h.code === 'detach-originals')).toBe(false);
     expect(budgetsFor('phone-mid').objects).toBe(5_000);
+  });
+
+  it('warns on bones over budget and points crowds at animation textures', () => {
+    const f = emptyFrame(env);
+    f.skinning.bones = 6000;
+    expect(hintsFor(f, budgetsFor('phone-mid')).find((h) => h.code === 'bones-over-budget')).toMatchObject({ category: 'skinning', severity: 'warn' });
+    f.skinning.bones = 0;
+    f.skinning.submissions = 50;
+    expect(hintsFor(f, budgetsFor('desktop')).find((h) => h.code === 'skinned-crowd')).toMatchObject({ category: 'skinning', severity: 'info' });
+    f.skinning.submissions = 49;
+    expect(hintsFor(f, budgetsFor('desktop')).some((h) => h.code === 'skinned-crowd')).toBe(false);
+    expect(budgetsFor('phone-low').bones).toBe(2_000);
   });
 });

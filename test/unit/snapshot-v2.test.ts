@@ -8,7 +8,7 @@ describe('snapshot v2', () => {
     const f = emptyFrame(env);
     expect(f.schemaVersion).toBe(2);
     expect(f.overdraw).toEqual({ opaque: 0, transparent: 0, transparentSubmissions: 0, particles: 0, pixels: 0, measured: false });
-    expect(f.skinning).toEqual({ submissions: 0, vertices: 0, bones: 0, skeletons: 0, maxBones: 0, morphTargets: 0 });
+    expect(f.skinning).toEqual({ submissions: 0, vertices: 0, bones: 0, skeletons: 0, maxBones: 0, morphTargets: 0, vatInstances: 0, vatVertices: 0 });
     expect(f.lighting).toEqual({ lights: { directional: 0, point: 0, spot: 0, hemisphere: 0, ambient: 0, other: 0 }, shadowLights: 0, shadowPasses: 0, shadowCasters: 0, shadowTexels: 0, shadowSubmissions: 0 });
     expect(f.js).toEqual({ renderMs: 0, frameMs: 0, objects: 0, autoUpdatedMatrices: 0, hiddenOriginals: 0, skipped: 0 });
     expect(f.memory).toEqual({ textures: { count: 0, bytes: 0 }, geometries: { count: 0, bytes: 0 }, renderTargets: { count: 0, bytes: 0 }, estimated: true });

@@ -34,6 +34,8 @@ export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): H
   const sprites = f.byReason.sprite;
   if (sprites && sprites.submissions >= 8) push('overdraw', 'info', 'sprites-unbatched', `${sprites.submissions} sprites drawn one by one: World batches sprites that share a material (sprites: 'batch')`, sprites.top);
   if (f.skinning.vertices > b.skinnedVertices) push('skinning', 'warn', 'skinned-vertices', `${f.skinning.vertices} skinned vertices per frame, budget ${b.skinnedVertices}`);
+  if (f.skinning.bones > b.bones) push('skinning', 'warn', 'bones-over-budget', `${f.skinning.bones} skeleton bones updated on the CPU every frame, budget ${b.bones} for this tier`);
+  if (f.skinning.submissions >= 50) push('skinning', 'info', 'skinned-crowd', `${f.skinning.submissions} skinned draws: bake the clips to an animation texture and instance the characters (AnimatedInstances)`);
   for (const name of ctx.pointShadowLights ?? []) push('lighting', 'warn', 'point-light-shadow', `point light '${name}' renders 6 shadow faces per frame; use a spot light or freeze its map`, [name]);
   if (f.lighting.shadowTexels > b.shadowTexels) push('lighting', 'warn', 'shadow-texels', `${f.lighting.shadowTexels} shadow texels per frame, budget ${b.shadowTexels}`);
   for (const name of ctx.transmissive ?? []) push('overdraw', 'info', 'transmission', `'${name}' uses transmission: it renders in two passes and copies the frame buffer`, [name]);

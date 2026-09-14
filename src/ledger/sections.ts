@@ -18,8 +18,16 @@ export function skinningOf(items: SubmissionRecord[]): SkinningSnapshot {
   let vertices = 0;
   let maxBones = 0;
   let morphTargets = 0;
+  let vatInstances = 0;
+  let vatVertices = 0;
   for (const item of items) {
-    if (item.kind !== 'skinned' || item.pass !== 'main') continue;
+    if (item.pass !== 'main') continue;
+    if (item.reason === 'vat-instanced') {
+      vatInstances += item.instancesDrawn;
+      vatVertices += item.vertices * item.instancesDrawn;
+      continue;
+    }
+    if (item.kind !== 'skinned') continue;
     submissions++;
     vertices += item.vertices;
     morphTargets += item.morphTargets;
@@ -28,7 +36,7 @@ export function skinningOf(items: SubmissionRecord[]): SkinningSnapshot {
   }
   let bones = 0;
   for (const b of skeletons.values()) bones += b;
-  return { submissions, vertices, bones, skeletons: skeletons.size, maxBones, morphTargets };
+  return { submissions, vertices, bones, skeletons: skeletons.size, maxBones, morphTargets, vatInstances, vatVertices };
 }
 
 export function scanLights(scene: Object3D): LightInfo[] {
