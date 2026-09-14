@@ -28,6 +28,7 @@ export { generateLods, lodsOf, prepareLods, type LodOptions, type PrepareLodsRep
 export { assembleCharacter, type AssembledCharacter, type AssembleOptions, type AtlasCell, type CharacterReport } from './character/assembleCharacter.js';
 export { formatCostRows, formatHints, formatOverlay } from './overlay/index.js';
 export { groupSprites, fillSpriteInstances, spriteRule, isVisibleInGraph, type SpriteGroup, type SpriteSkip, type SpriteFillOptions, type SpriteKeys } from './compiler/sprites.js';
+export { AnimatedInstances, type AnimatedInstancesOptions, type ClipOptions } from './skinning/AnimatedInstances.js';
 export { bakeAnimationTexture, type AnimationClipRange, type AnimationPart, type AnimationTexture, type BakeAnimationOptions } from './skinning/bakeAnimationTexture.js';
 export { DayNight, type DayNightColors, type DayNightOptions, type DayNightShadowOptions } from './lighting/DayNight.js';
 export { ShadowBudget, type ShadowBudgetOptions, type ShadowBudgetReport, type ShadowLightReport } from './lighting/ShadowBudget.js';

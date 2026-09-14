@@ -6,6 +6,7 @@ export type Reason =
   | 'batched'
   | 'baked'
   | 'sprite-batch'
+  | 'vat-instanced'
   | 'instanced'
   | 'unique-material'
   | 'dynamic'
@@ -114,6 +115,7 @@ export function reasonOf({ object, material, group, root, unsupported, annotatio
   if (forgeKind === 'occlusion-proxy') return 'occlusion-proxy';
   if (forgeKind === 'bake') return 'baked';
   if (forgeKind === 'sprites') return 'sprite-batch';
+  if (forgeKind === 'vat') return 'vat-instanced';
   if (o.isPoints) return 'points';
   if (o.isSprite) return 'sprite';
   if (o.isLine) return 'line';
