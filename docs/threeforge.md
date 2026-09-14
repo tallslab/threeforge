@@ -405,6 +405,27 @@ runners render on SwiftShader). `pnpm bench:baseline` promotes results and rewri
 table. Current baselines: village 303 → 28, forest 5 706 → 13, bossfight 2 780 → 424, daynight 605 → 55,
 zen 10 879 → 125, rpg 4 → 1; crowd and lake wait for the skinning and overdraw modules.
 
+### Device bench page
+
+`bench-app/` is a static page (`pnpm bench:app` to run it, `pnpm build:bench-app` to build it, the `pages` workflow
+deploys it to GitHub Pages) that runs the same eight scenes on the visitor's device. It imports `BENCH_SCENES`
+unchanged (the two scenes that fetch files take their URLs from `BenchContext.url()`, so the page works under a
+Pages base path) and `test/app/benchMetrics.ts`, which the CI runner also imports, so the metrics cannot drift.
+It picks WebGPU when `navigator.gpu` exists and `renderer.init()` succeeds, else WebGL2 (`?backend=webgl2` forces
+it); each scene gets a fresh registry and ledger, runs 10 warm-up and 60 measured frames with the deterministic
+clock, one overdraw measurement, then `decompile()` and disposal of every geometry, material and texture before
+the next scene, so phones do not run out of GPU memory. A two-second fill-rate probe (transparent fullscreen layers,
+doubled until a frame misses vsync) is reported as `env.fillRateGPix`, informational. The result
+(`{ schemaVersion: 1, kind: 'device', id, createdAt, env, scenes }`, `scenes` identical to a `pnpm bench` result)
+is submitted as a prefilled GitHub issue (metrics travel as arrays in `metricKeys` order to keep the URL short; a
+copy-and-paste fallback uses the issue template). `scripts/bench-ingest.mjs` extracts the JSON fence, expands the
+wire form, validates it with `scripts/bench-schema.mjs` (exact key sets, finite non-negative numbers, capped
+strings, known scenes, `unattributed === 0`), writes `bench/devices/<id>.json`; `scripts/bench-devices.mjs`
+rewrites `docs/devices.md` and `bench/devices/index.json` (served as `devices.json` on the page). The
+`bench-results` workflow runs on issues titled `bench:` or labelled `bench-result`, commits, and closes the issue
+with the file name; a rejected result gets the validation errors as a comment. Device numbers are published, never
+gated.
+
 ## 12. Development, tests, CI, release
 
 - `pnpm dev` opens the harness (`test/app`, `window.__forge`) with query parameters: `scene=naive|field|character|
@@ -445,8 +466,8 @@ Skinned meshes are measured but not yet instanced (baked animation textures, SP4
 and their overdraw measured but not yet budgeted or scaled (SP3: `ResolutionScaler`, `ParticleBudget`, transparency
 hints); lighting helpers (`DayNight`, `ShadowBudget`) are SP5; per-frame JS (`RenderScheduler`, static-subtree matrix
 freezing) is SP6; memory and streaming (`ResourceTracker`, loader pipeline, chunk `Streamer`) is SP7;
-`threeforge optimize` shipped in 0.3.0 (section 10); the device bench page with GitHub-native result submission
-follows. Specs live in `docs/superpowers/specs`, plans in
+`threeforge optimize` shipped in 0.3.0 (section 10) and the device bench page with GitHub-native results is in
+section 11. Specs live in `docs/superpowers/specs`, plans in
 `docs/superpowers/plans`.
 
 ## 15. Glossary

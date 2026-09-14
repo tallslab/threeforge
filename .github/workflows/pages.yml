@@ -1,0 +1,47 @@
+name: pages
+# Deploys the device bench page (bench-app) to GitHub Pages. One-time setting: Settings → Pages → Source: GitHub Actions.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: test/assets/files
+          key: assets-${{ hashFiles('scripts/fetch-kits.mjs', 'scripts/fetch-assets.mjs', 'test/assets/manifest.json') }}
+      - run: FORGE_KITS_ONLY=1 pnpm assets:kits
+      - run: pnpm build:bench-app
+        env:
+          VITE_FORGE_REPO: ${{ github.repository }}
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/bench-app
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

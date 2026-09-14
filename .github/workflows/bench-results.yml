@@ -1,0 +1,65 @@
+name: bench-results
+# Ingests a device bench result posted as an issue by the bench page: validate the JSON fence, store it under
+# bench/devices/<id>.json, regenerate docs/devices.md and close the issue. The issue body reaches node only through
+# an environment variable; the shell never expands it.
+on:
+  issues:
+    types: [opened, edited]
+permissions:
+  contents: write
+  issues: write
+concurrency:
+  group: bench-results
+jobs:
+  ingest:
+    if: startsWith(github.event.issue.title, 'bench:') || contains(join(github.event.issue.labels.*.name, ','), 'bench-result')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate and store the result
+        id: ingest
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          set +e
+          OUT=$(node scripts/bench-ingest.mjs 2>&1)
+          STATUS=$?
+          set -e
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          {
+            echo 'message<<EOF'
+            echo "$OUT"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+      - name: Regenerate the table and commit
+        if: steps.ingest.outputs.status == '0'
+        run: |
+          node scripts/bench-devices.mjs
+          git config user.name "threeforge-bench[bot]"
+          git config user.email "threeforge-bench[bot]@users.noreply.github.com"
+          git add bench/devices docs/devices.md
+          git commit -m "bench: device result from #${{ github.event.issue.number }}"
+          git push origin main
+      - name: Close with the file name
+        if: steps.ingest.outputs.status == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MESSAGE: ${{ steps.ingest.outputs.message }}
+          NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: gh issue close "$NUMBER" --repo "$REPO" --comment "Recorded as \`$MESSAGE\` and added to docs/devices.md. Thank you."
+      - name: Report a rejected result
+        if: steps.ingest.outputs.status != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MESSAGE: ${{ steps.ingest.outputs.message }}
+          NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          BODY=$(printf 'The result could not be recorded:\n\n```\n%s\n```\nEdit the issue to fix the JSON block and it will be checked again.' "$MESSAGE")
+          gh issue comment "$NUMBER" --repo "$REPO" --body "$BODY"

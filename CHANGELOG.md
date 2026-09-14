@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Device bench page (`bench-app/`, deployed by the `pages` workflow): runs the eight benchmark scenes on any device, shows the `pnpm bench` metrics plus real frame times, and submits the result as a GitHub issue; the `bench-results` workflow validates it, stores it under `bench/devices/` and regenerates `docs/devices.md`. Not part of the npm package.
+
 ## 0.3.0 — 2026-09-14
 
 - `threeforge optimize <file>`: glTF-Transform build-time pipeline with three presets (`safe` never changes a pixel; `balanced` adds quantize and WebP textures; `aggressive` adds simplify), per-step reports, load-time requirements (`requires`), verification by rendering the original and the optimized file through the harness and compiling both, and a verdict that fails on lost pixels, clips, skins or morph targets. `optimize_asset` on the MCP server, `schema optimize`, `optimizeAsset` in `threeforge/cli`.

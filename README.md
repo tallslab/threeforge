@@ -177,6 +177,15 @@ apple metal-3 · tier desktop · three 186
 | rpg | 4 → 1 (4.0×) | 5 → 2 | 365 → 365 | 0.50 / 0.01 → 0.50 / 0.01 | 326 → 326 | 0 → 0 | 3 → 3 | 1.0 → 1.0 | 16.6 → 16.7 |
 <!-- bench:end -->
 
+### Run it on your device
+
+The same eight scenes run in any browser at the deployed bench page (`https://<owner>.github.io/<repo>/` once
+Pages is enabled; locally `pnpm bench:app` after `FORGE_KITS_ONLY=1 pnpm assets:kits`). It picks WebGPU when the
+browser has it, else WebGL2, measures each scene naive and optimized with the same ledger `pnpm bench` uses, shows
+real frame times, and offers to submit the result as a prefilled GitHub issue. The `bench-results` workflow
+validates the JSON, stores it under `bench/devices/`, and regenerates the public table in
+[docs/devices.md](docs/devices.md) and on the page. No server, no account beyond GitHub.
+
 ## Warm-up
 
 `world.warmup(renderer, camera)` renders one real frame under a 1x1 scissor, so every pipeline the first visible

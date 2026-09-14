@@ -8,3 +8,13 @@
    --access public`; it needs the `NPM_TOKEN` repository secret (an npm automation token).
 
 Consumers: `npm i -D threeforge playwright && npx playwright install chromium`, then `npx threeforge`.
+
+## Device bench page and results (one-time repository settings)
+
+- Settings → Pages → Source: **GitHub Actions**. The `pages` workflow then deploys `dist/bench-app` on every push to
+  `main`; the page's submit button targets this repository through `VITE_FORGE_REPO`.
+- Create the `bench-result` label (the issue template applies it; the `bench-results` workflow also accepts any
+  issue whose title starts with `bench:`).
+- The `bench-results` workflow commits to `main` with the default `GITHUB_TOKEN`: branch protection must allow
+  that (or add a bypass for GitHub Actions), otherwise the push step fails and the issue stays open.
+- `pnpm bench:devices` regenerates `docs/devices.md` locally from `bench/devices/*.json`.

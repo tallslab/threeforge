@@ -1,0 +1,17 @@
+name: Device bench result
+description: Paste the JSON from the threeforge bench page
+title: "bench: <gpu> · <backend> · <tier>"
+labels: [bench-result]
+body:
+  - type: markdown
+    attributes:
+      value: The bench page shows this JSON after a run. Paste it inside the fence below; the bench-results workflow validates it and adds your device to docs/devices.md.
+  - type: textarea
+    id: result
+    attributes:
+      label: Result
+      value: |
+        ```json
+        ```
+    validations:
+      required: true
