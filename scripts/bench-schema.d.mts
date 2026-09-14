@@ -11,6 +11,8 @@ export interface DeviceMetrics {
   textureBytes: number;
   geometryBytes: number;
   renderTargetBytes: number;
+  particles: number;
+  fillMegapixels: number;
   renderMs: number;
   frameMs: number;
   unattributed: number;

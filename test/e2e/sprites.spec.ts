@@ -43,9 +43,9 @@ test('the lake: 2000 raindrop sprites become one submission per pass, pixels sta
   expect(compiled.batch).toBe(2);
   expect(compiled.submissions).toBeLessThan(120);
   expect(compiled.unattributed).toBe(0);
-  // The batch has no per-instance culling: every drop counts, where three culled the naive ones outside the view.
-  expect(compiled.particles).toBe(2000);
-  expect(naive.particles).toBeLessThanOrEqual(2000);
+  // The batch culls per instance like three culls sprites: the same drops are drawn.
+  expect(compiled.particles).toBe(naive.particles);
+  expect(naive.particles).toBeLessThan(2000);
   const diff = pixelDiff(before, after);
   console.log(`lake sprite batch pixel diff ${(diff * 100).toFixed(3)}% · submissions ${naive.submissions} -> ${compiled.submissions}`);
   expect(diff).toBeLessThan(0.005);

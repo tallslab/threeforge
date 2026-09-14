@@ -1,6 +1,6 @@
 # threeforge for AI agents
 
-threeforge 0.3.0 is a frame-budget compiler and diagnostics layer for three.js games (r186, WebGPU with a
+threeforge 0.4.0 is a frame-budget compiler and diagnostics layer for three.js games (r186, WebGPU with a
 WebGL2 fallback). This file is what `npx threeforge` prints. Everything below is scriptable from a terminal and
 prints JSON with `--json`.
 
@@ -49,7 +49,7 @@ browser can call them directly.
 
 ```json
 {
-  "schemaVersion": 1, "tool": "threeforge", "version": "0.3.0", "command": "analyze",
+  "schemaVersion": 1, "tool": "threeforge", "version": "0.4.0", "command": "analyze",
   "input": { "file": "scene.glb", "backend": "webgpu", "tier": "phone-mid", "budget": null, "frames": 30, "compile": true },
   "env": { "three": "186", "backend": "webgpu", "gpu": "apple metal-3", "tier": "phone-mid" },
   "asset": { "meshes": 12, "materials": 5, "vertices": 40210, "triangles": 38000, "animations": 1, "skinned": 1, "morph": 0, "loadMs": 120 },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Group, PerspectiveCamera, Scene, Sprite, SpriteMaterial, Vector2, type Material } from 'three';
+import { Frustum, Group, Matrix4, PerspectiveCamera, Scene, Sprite, SpriteMaterial, Vector2, type Material } from 'three';
 import { fillSpriteInstances, groupSprites, isVisibleInGraph, spriteRule } from '../../src/compiler/sprites.js';
 
 /** Keys the way the registry describes materials: same map and flags → same variant, colour separate. */
@@ -67,20 +67,43 @@ describe('fillSpriteInstances', () => {
 
   it('copies world positions and scales in input order, collapsing invisible sprites', () => {
     const { scene, sprites, centers, scales } = setup();
-    expect(fillSpriteInstances(sprites, centers, scales, { camera: null, sorted: false, cap: Infinity, root: scene })).toBe(3);
+    expect(fillSpriteInstances(sprites, centers, scales, { camera: null, sorted: false, cap: Infinity, root: scene, frustum: null })).toBe(3);
     expect([...centers]).toEqual([0, 0, -10, 1, 0, -5, 2, 0, -20]);
     expect([...scales]).toEqual([2, 3, 0, 0, 1, 1]);
   });
 
   it('sorts back to front for the camera when asked, and a cap keeps the nearest', () => {
     const { scene, sprites, camera, centers, scales } = setup();
-    expect(fillSpriteInstances(sprites, centers, scales, { camera, sorted: true, cap: Infinity, root: scene })).toBe(3);
+    expect(fillSpriteInstances(sprites, centers, scales, { camera, sorted: true, cap: Infinity, root: scene, frustum: null })).toBe(3);
     expect([...centers]).toEqual([2, 0, -20, 0, 0, -10, 1, 0, -5]);
     expect([...scales]).toEqual([1, 1, 2, 3, 0, 0]);
-    expect(fillSpriteInstances(sprites, centers, scales, { camera, sorted: true, cap: 2, root: scene })).toBe(2);
+    expect(fillSpriteInstances(sprites, centers, scales, { camera, sorted: true, cap: 2, root: scene, frustum: null })).toBe(2);
     expect([...centers.slice(0, 6)]).toEqual([0, 0, -10, 1, 0, -5]);
-    expect(fillSpriteInstances(sprites, centers, scales, { camera: null, sorted: false, cap: 1, root: scene })).toBe(1);
+    expect(fillSpriteInstances(sprites, centers, scales, { camera: null, sorted: false, cap: 1, root: scene, frustum: null })).toBe(1);
     expect([...centers.slice(0, 3)]).toEqual([0, 0, -10]);
+  });
+
+  it('culls instances outside the frustum like three culls sprites, before sorting and capping', () => {
+    const { scene, sprites, camera, centers, scales } = setup();
+    sprites[1]!.visible = true;
+    const behind = spriteAt(0, 0, 10, m, [1, 1]);
+    const farLeft = spriteAt(-100, 0, -10, m, [1, 1]);
+    const edge = spriteAt(-6.5, 0, -11, m, [2, 2]); // centre just outside a 60° frustum at z = -11 (half-extent 6.35), but its quad reaches in
+    scene.add(behind, farLeft, edge);
+    scene.updateMatrixWorld(true);
+    const frustum = new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    const all = [...sprites, behind, farLeft, edge];
+    expect(fillSpriteInstances(all, new Float32Array(all.length * 3), new Float32Array(all.length * 2), { camera, sorted: true, cap: Infinity, root: scene, frustum })).toBe(4);
+    const out = new Float32Array(all.length * 3);
+    fillSpriteInstances(all, out, new Float32Array(all.length * 2), { camera, sorted: true, cap: Infinity, root: scene, frustum });
+    expect([...out.slice(0, 12)]).toEqual([2, 0, -20, -6.5, 0, -11, 0, 0, -10, 1, 0, -5]);
+    expect(fillSpriteInstances(all, centers, scales, { camera: null, sorted: false, cap: Infinity, root: scene, frustum: null })).toBe(6);
+    // Only the four side planes cull: a reflector's oblique projection puts the near plane on the mirror, and the far
+    // plane never matters for sprites, so a drop beyond the camera's far plane stays.
+    const beyond = spriteAt(0, 0, -500, m, [1, 1]);
+    scene.add(beyond);
+    scene.updateMatrixWorld(true);
+    expect(fillSpriteInstances([...all, beyond], new Float32Array(21), new Float32Array(14), { camera, sorted: false, cap: Infinity, root: scene, frustum })).toBe(5);
   });
 
   it('isVisibleInGraph walks the parents up to the root', () => {

@@ -275,8 +275,10 @@ export class World {
     const nestedPasses: NestedPassPolicy =
       this.nestedPassesOption === 'auto' ? (coordinateSystem === WebGPUCoordinateSystem ? 'reuse-main' : 'per-pass') : this.nestedPassesOption;
     const mainCamera = (): Camera | null => this._mainCamera;
-    if (nestedPasses === 'reuse-main') {
-      // Scene hooks bracket every render() call; depth 0 is the outermost render and its camera is the main camera.
+    // Scene hooks bracket every render() call; depth 0 is the outermost render and its camera is the main camera.
+    // `reuse-main` culls batches for it only; sprite batches always sync for it only (see below), so the hooks
+    // are installed whenever either needs them.
+    if (nestedPasses === 'reuse-main' || this.spriteMode === 'batch') {
       this.sceneHookRestores.push(
         prependRenderHook(this.scene, (_renderer, _scene, camera) => {
           if (this.renderDepth === 0) this._mainCamera = camera;
@@ -337,7 +339,10 @@ export class World {
         if ((o as Sprite).isSprite) sprites.push(o as Sprite);
       });
       const grouped = groupSprites(sprites, this.spriteThreshold, (m) => this.registry.describe(m));
-      const sync = (camera: Camera): boolean => nestedPasses === 'per-pass' || camera === this._mainCamera;
+      // One sync per frame, for the main camera: three uploads the node-bound instance attributes once per frame,
+      // so a second fill for a nested pass (a reflection) would be what the main pass draws. Nested passes draw the
+      // main camera's list instead, on both backends.
+      const sync = (camera: Camera): boolean => this._mainCamera === null || camera === this._mainCamera;
       grouped.groups.forEach((group, i) => {
         const batch = buildSpriteBatch(group, i, { sync, root: this.scene });
         this.scene.add(batch.mesh);

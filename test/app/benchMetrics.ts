@@ -21,6 +21,10 @@ export interface BenchMetrics {
   textureBytes: number;
   geometryBytes: number;
   renderTargetBytes: number;
+  /** Particles drawn per frame (points vertices, sprites, sprite-batch instances). */
+  particles: number;
+  /** (opaque + transparent fragments per pixel) × drawing-buffer pixels, in millions: the fill cost per frame. */
+  fillMegapixels: number;
   renderMs: number;
   frameMs: number;
   unattributed: number;
@@ -41,6 +45,8 @@ export function metricsOf(f: FrameSnapshot, renderMs: number, frameMs: number): 
     textureBytes: f.memory.textures.bytes,
     geometryBytes: f.memory.geometries.bytes,
     renderTargetBytes: f.memory.renderTargets.bytes,
+    particles: f.overdraw.particles,
+    fillMegapixels: Number((((f.overdraw.opaque + f.overdraw.transparent) * f.overdraw.pixels) / 1e6).toFixed(3)),
     renderMs,
     frameMs,
     unattributed: f.totals.unattributed,

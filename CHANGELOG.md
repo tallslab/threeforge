@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-09-14
 
+- Sprite batching in `World.compile()`: sprites sharing a material become one instanced `SpriteNodeMaterial` draw synced from the originals every frame (`sprites`, `spriteThreshold` options; reason `sprite-batch`). Lake benchmark: 3 548 → 7 submissions.
+- `ParticleBudget` (caps points and sprite batches to the tier's particle budget, scales point sizes) and `ResolutionScaler` (dynamic pixel ratio on the median frame time).
+- Ledger: `overdraw.particles`, `overdraw.pixels`; budget `particles`; hints `particles-over-budget`, `sprites-unbatched`; bench metrics `particles`, `fillMegapixels`. `docs/vfx.md` conventions.
 - Device bench page (`bench-app/`, deployed by the `pages` workflow): runs the eight benchmark scenes on any device, shows the `pnpm bench` metrics plus real frame times, and submits the result as a GitHub issue; the `bench-results` workflow validates it, stores it under `bench/devices/` and regenerates `docs/devices.md`. Not part of the npm package.
 
 ## 0.3.0 — 2026-09-14

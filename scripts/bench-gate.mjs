@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-export const DETERMINISTIC = ['sceneSubmissions', 'gpuDraws', 'triangles', 'programs', 'overdrawOpaque', 'overdrawTransparent', 'skinnedVertices', 'shadowCasters', 'shadowTexels', 'textureBytes', 'geometryBytes', 'renderTargetBytes'];
+export const DETERMINISTIC = ['sceneSubmissions', 'gpuDraws', 'triangles', 'programs', 'overdrawOpaque', 'overdrawTransparent', 'skinnedVertices', 'shadowCasters', 'shadowTexels', 'textureBytes', 'geometryBytes', 'renderTargetBytes', 'particles', 'fillMegapixels'];
 export const TIMING = ['renderMs', 'frameMs'];
 
 /** Lower is better for every metric. A metric fails when it is worse by `tolerance` (fraction) or more. */
@@ -39,13 +39,13 @@ const k = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1000 ? `${(n / 10
 /** Markdown table: one row per scene, naive → optimized per metric family. */
 export function table(result) {
   const lines = [
-    '| scene | submissions naive → opt | gpu draws | triangles | overdraw opaque / transparent | skinned verts | shadow texels | memory MB | render ms | frame ms |',
-    '|---|---|---|---|---|---|---|---|---|---|',
+    '| scene | submissions naive → opt | gpu draws | triangles | overdraw opaque / transparent | particles | fill MPix | skinned verts | shadow texels | memory MB | render ms | frame ms |',
+    '|---|---|---|---|---|---|---|---|---|---|---|---|',
   ];
   for (const [scene, { naive: n, optimized: o }] of Object.entries(result.scenes)) {
     if (!n || !o) continue;
     lines.push(
-      `| ${scene} | ${n.sceneSubmissions} → ${o.sceneSubmissions} (${(n.sceneSubmissions / Math.max(1, o.sceneSubmissions)).toFixed(1)}×) | ${n.gpuDraws} → ${o.gpuDraws} | ${k(n.triangles)} → ${k(o.triangles)} | ${n.overdrawOpaque.toFixed(2)} / ${n.overdrawTransparent.toFixed(2)} → ${o.overdrawOpaque.toFixed(2)} / ${o.overdrawTransparent.toFixed(2)} | ${k(n.skinnedVertices)} → ${k(o.skinnedVertices)} | ${k(n.shadowTexels)} → ${k(o.shadowTexels)} | ${mb(n)} → ${mb(o)} | ${n.renderMs.toFixed(1)} → ${o.renderMs.toFixed(1)} | ${n.frameMs.toFixed(1)} → ${o.frameMs.toFixed(1)} |`,
+      `| ${scene} | ${n.sceneSubmissions} → ${o.sceneSubmissions} (${(n.sceneSubmissions / Math.max(1, o.sceneSubmissions)).toFixed(1)}×) | ${n.gpuDraws} → ${o.gpuDraws} | ${k(n.triangles)} → ${k(o.triangles)} | ${n.overdrawOpaque.toFixed(2)} / ${n.overdrawTransparent.toFixed(2)} → ${o.overdrawOpaque.toFixed(2)} / ${o.overdrawTransparent.toFixed(2)} | ${k(n.particles ?? 0)} → ${k(o.particles ?? 0)} | ${(n.fillMegapixels ?? 0).toFixed(2)} → ${(o.fillMegapixels ?? 0).toFixed(2)} | ${k(n.skinnedVertices)} → ${k(o.skinnedVertices)} | ${k(n.shadowTexels)} → ${k(o.shadowTexels)} | ${mb(n)} → ${mb(o)} | ${n.renderMs.toFixed(1)} → ${o.renderMs.toFixed(1)} | ${n.frameMs.toFixed(1)} → ${o.frameMs.toFixed(1)} |`,
     );
   }
   return lines.join('\n');

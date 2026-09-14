@@ -1,4 +1,4 @@
-import { DynamicDrawUsage, InstancedBufferAttribute, InstancedBufferGeometry, Mesh, NormalBlending, PlaneGeometry, type Camera, type Object3D } from 'three';
+import { DynamicDrawUsage, Frustum, InstancedBufferAttribute, InstancedBufferGeometry, Matrix4, Mesh, NormalBlending, PlaneGeometry, type Camera, type CoordinateSystem, type Object3D } from 'three';
 import { SpriteNodeMaterial } from 'three/webgpu';
 import { instancedDynamicBufferAttribute } from 'three/tsl';
 import { prependRenderHook } from './culling.js';
@@ -70,10 +70,14 @@ export function buildSpriteBatch(group: SpriteGroup, index: number, options: Spr
   mesh.matrixAutoUpdate = false;
   mesh.userData.forge = { kind: 'sprites', cap: Infinity };
   const sorted = source.transparent && source.blending === NormalBlending;
-  const restoreHook = prependRenderHook(mesh, (_renderer, _scene, camera) => {
+  const frustum = new Frustum();
+  const projScreen = new Matrix4();
+  const restoreHook = prependRenderHook(mesh, (renderer, _scene, camera) => {
     if (!options.sync(camera)) return;
     const cap = (mesh.userData.forge as { cap?: number }).cap ?? Infinity;
-    const count = fillSpriteInstances(group.sprites, centers.array as Float32Array, scales.array as Float32Array, { camera, sorted, cap, root: options.root });
+    projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    frustum.setFromProjectionMatrix(projScreen, (renderer as { coordinateSystem?: CoordinateSystem }).coordinateSystem);
+    const count = fillSpriteInstances(group.sprites, centers.array as Float32Array, scales.array as Float32Array, { camera, sorted, cap, root: options.root, frustum });
     geometry.instanceCount = count;
     centers.needsUpdate = true;
     scales.needsUpdate = true;

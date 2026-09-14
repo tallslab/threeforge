@@ -6,7 +6,7 @@ import { renderDevices, writeDevices } from '../../scripts/bench-devices.mjs';
 import { extractJson, ingest } from '../../scripts/bench-ingest.mjs';
 import { validateDeviceResult } from '../../scripts/bench-schema.mjs';
 
-const metrics = (n: number) => ({ sceneSubmissions: n, gpuDraws: n, triangles: 100, programs: 3, overdrawOpaque: 1, overdrawTransparent: 0.1, skinnedVertices: 0, shadowCasters: 0, shadowTexels: 0, textureBytes: 1, geometryBytes: 2, renderTargetBytes: 3, renderMs: 1.5, frameMs: 16.7, unattributed: 0 });
+const metrics = (n: number) => ({ sceneSubmissions: n, gpuDraws: n, triangles: 100, programs: 3, overdrawOpaque: 1, overdrawTransparent: 0.1, skinnedVertices: 0, shadowCasters: 0, shadowTexels: 0, textureBytes: 1, geometryBytes: 2, renderTargetBytes: 3, particles: 100, fillMegapixels: 0.5, renderMs: 1.5, frameMs: 16.7, unattributed: 0 });
 const scenes = Object.fromEntries(['village', 'forest', 'crowd', 'bossfight', 'lake', 'daynight', 'zen', 'rpg'].map((id) => [id, { naive: metrics(300), optimized: metrics(30) }]));
 const env = { three: '186', backend: 'webgpu' as const, multiDraw: false, tier: 'phone-mid' as const, gpu: 'Apple A16', dpr: 3, viewport: [390, 844] as [number, number], ua: 'Mozilla/5.0 (iPhone)', platform: 'iPhone', cores: 6, deviceMemory: null, fillRateGPix: 4.2 };
 const result = { schemaVersion: 1 as const, kind: 'device' as const, id: '2026-09-14-abcd1234', createdAt: '2026-09-14T10:00:00.000Z', env, scenes };

@@ -66,6 +66,7 @@ npx threeforge inspect http://localhost:5173 --compile --json
 | `src/ledger` | `DrawCallLedger`, the v2 snapshot, reasons, expected GPU draws, sections (skinning, lighting), memory estimate, measured overdraw, budgets and tiers, hints |
 | `src/compiler` | `classify` (rules), `batchStatics` (batches, instancing, bake), `bake` (geometry bake), `culling` (BVH, hooks), `instancing` (compacted InstancedMesh), `geometryCompat`, `World` (compile/decompile/resolve/warmup) |
 | `src/lod` | meshoptimizer LOD generation |
+| `src/overdraw` | `ParticleBudget` (particle caps per tier) and `ResolutionScaler` (dynamic drawing-buffer scale) |
 | `src/character` | the character assembler (gear merged onto one skeleton, one atlas) |
 | `src/overlay` | text formatting of a snapshot and the DOM overlay |
 | `src/agent` | `exposeToAgents` (the `window.__threeforge` hook) |
@@ -170,10 +171,12 @@ Other methods: `ledger.report()` (text), `ledger.budget({ maxSubmissions })` →
 | shadow texels | 4 M | 1 M | 262 k |
 | texture bytes | 512 MB | 192 MB | 96 MB |
 | frame ms | 16.6 | 16.6 | 33 |
+| particles per frame | 60 k | 15 k | 5 k |
 
 Hint codes (`hintsFor`, remedies in `npx threeforge explain --all`): `over-budget-submissions`,
 `over-budget-triangles`, `untagged`, `unique-materials`, `unsupported-material`, `programs`, `transparent-overdraw`,
-`skinned-vertices`, `point-light-shadow`, `shadow-texels`, `transmission`, `texture-bytes`, `static-auto-update`.
+`skinned-vertices`, `point-light-shadow`, `shadow-texels`, `transmission`, `texture-bytes`, `static-auto-update`,
+`particles-over-budget`, `sprites-unbatched`.
 
 ### Overlay
 
@@ -246,6 +249,8 @@ provide), `dynamic-geometry` (`DynamicDrawUsage` / `StreamDrawUsage` attributes)
 | `nestedPasses` | `'auto'` | `'reuse-main'` on WebGPU, `'per-pass'` on WebGL2 (see culling) |
 | `materials` | `'canonical'` | `'keep'` leaves each mesh's material instance |
 | `bake` | off | `true` or `BakeOptions`: baked mesh per finished group (section 8) |
+| `sprites` | `'batch'` | sprites sharing a material become one instanced billboard draw synced each frame; `'keep'` leaves them |
+| `spriteThreshold` | 4 | sprites a material needs before its group is batched |
 
 ### Culling, instancing, chunks, LOD, occlusion
 
@@ -284,6 +289,36 @@ renders one real frame under a 1×1 scissor: the only way in three r186 to get e
 uses. `async` runs `renderer.compileAsync()` (yields between objects) and then disposes and rebuilds the materials
 three compiles wrong that way (transparent double-sided and transmissive ones; see section 13). Result:
 `{ mode, textures, repaired }`.
+
+### Overdraw modules: sprite batching, ParticleBudget, ResolutionScaler
+
+- **Sprite batching** (`src/compiler/sprites.ts`, `src/compiler/spriteBatch.ts`): `compile()` collects every
+  `Sprite`, groups them by material keys (`variantHash` and colour), and for each group of at least
+  `spriteThreshold` builds one `Mesh` over an `InstancedBufferGeometry` unit quad with a `SpriteNodeMaterial` copied
+  from the group's `SpriteMaterial`; `positionNode` and `scaleNode` read per-instance attributes. The originals go
+  to the hidden layer and keep auto-updating; a `FORGE_HOOK` render hook on the batch copies their world
+  positions and scales into the attributes once per frame, for the main camera only (an invisible sprite gets
+  scale 0; instances outside the four side planes of the frustum are left out, so the count matches what three
+  would have drawn), sorted back to front by projected depth when the material blends normally (what three does
+  for sprites), and sets `instanceCount`. Nested passes (reflections) draw the main camera's list on both
+  backends: three refreshes an object's attributes only on its first render object of a frame, so a second fill
+  for a nested camera would be what the main pass draws (section 13). Reason
+  `sprite-batch`, name `forge:sprites:<programHash>:<n>`, `after.spriteBatches` in the report; skipped sprites
+  carry `sprite-center`, `layers`, `render-order`, `custom-hook` or `sprite-threshold`. `decompile()` restores.
+- **`ParticleBudget`** (`src/overdraw/ParticleBudget.ts`): `new ParticleBudget({ tier, particles?, pointSizeScale? })
+  .apply(root)` counts every `Points` object (what its `drawRange` draws), every sprite batch (its instances) and
+  every single sprite; over the tier's `particles` budget, points and batches shrink by one common ratio (points
+  through `setDrawRange`, batches through `userData.forge.cap`, which the sync hook honours by keeping the nearest
+  instances) so the total fits alongside the single sprites, which cannot be capped. `PointsMaterial.size` is
+  multiplied by `pointSizeScale` (0.75 on `phone-low`). Returns `{ tier, budget, before, after, ratio, systems }`;
+  `release()` restores; `apply()` again re-derives from the originals.
+- **`ResolutionScaler`** (`src/overdraw/ResolutionScaler.ts`): `new ResolutionScaler(renderer, { target?, tier?,
+  min, max, step, window, ledger? })`; `update(frameMs)` every frame; every `window` frames the median decides:
+  above `target × 1.05` the scale steps down, below `target × 0.7` it steps up, clamped to `[min, max]`; a change
+  calls `renderer.setPixelRatio(base × scale)` (three resizes the drawing buffer) and updates the ledger's
+  `env.dpr`. `set(scale)`, `dispose()`. Overdraw per pixel is unchanged; `overdraw.pixels` shrinks.
+- **Ledger**: `overdraw.particles`, `overdraw.pixels`; hints `particles-over-budget`, `sprites-unbatched`; bench
+  metrics `particles` and `fillMegapixels` (fragments per pixel × pixels). Conventions for effects: `docs/vfx.md`.
 
 ## 8. Bake: one mesh per finished group
 
@@ -459,12 +494,18 @@ gated.
   bytes: the overdraw target uses 32-texel row multiples and decodes halves.
 - three's experimental `SceneOptimizer` batches everything including skinned meshes and disposes shared geometry; it
   was measured as the spike baseline (`docs/spike-scene-optimizer.md`) and not used.
+- After `onBeforeRender`, `_renderObjectDirect` refreshes geometry attributes, nodes and bindings only when
+  `needsRefresh()` says the render object is new this frame; a second render object of the same object (a
+  reflection pass) gets a shared refresh without attribute uploads. Attributes written in a hook for a nested
+  pass are therefore what the main pass draws: sprite batches fill their instance attributes once per frame, for
+  the main camera, and nested passes reuse that list (the lake's raindrops stayed at 0.3 % pixel difference only
+  after this).
 
 ## 14. Limits and roadmap
 
-Skinned meshes are measured but not yet instanced (baked animation textures, SP4); sprites and particles are counted
-and their overdraw measured but not yet budgeted or scaled (SP3: `ResolutionScaler`, `ParticleBudget`, transparency
-hints); lighting helpers (`DayNight`, `ShadowBudget`) are SP5; per-frame JS (`RenderScheduler`, static-subtree matrix
+Skinned meshes are measured but not yet instanced (baked animation textures, SP4); overdraw modules shipped in
+0.4.0 (section 7: sprite batching, `ParticleBudget`, `ResolutionScaler`); soft-particle materials are documented,
+not built (`docs/vfx.md`); lighting helpers (`DayNight`, `ShadowBudget`) are SP5; per-frame JS (`RenderScheduler`, static-subtree matrix
 freezing) is SP6; memory and streaming (`ResourceTracker`, loader pipeline, chunk `Streamer`) is SP7;
 `threeforge optimize` shipped in 0.3.0 (section 10) and the device bench page with GitHub-native results is in
 section 11. Specs live in `docs/superpowers/specs`, plans in

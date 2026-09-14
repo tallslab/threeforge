@@ -23,7 +23,7 @@ test('measured overdraw: one opaque full-screen quad reads 1, two stacked transp
   });
   expect(r.measured.opaque).toBeCloseTo(1, 1);
   expect(r.measured.transparent).toBeCloseTo(2, 1);
-  expect(r.frame).toEqual({ opaque: r.measured.opaque, transparent: r.measured.transparent, transparentSubmissions: 2, measured: true });
+  expect(r.frame).toEqual({ opaque: r.measured.opaque, transparent: r.measured.transparent, transparentSubmissions: 2, particles: 0, pixels: 800 * 600, measured: true });
   // The measurement renders are not frames: the following real frame still attributes every draw.
   expect(r.unattributed).toBe(0);
   expect(r.sceneSubmissions).toBe(3);

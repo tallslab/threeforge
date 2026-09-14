@@ -12,7 +12,7 @@ by cost, not by genre:
 | Cost | The ledger measures | threeforge does (**shipped**) |
 |---|---|---|
 | Draw calls | submissions by reason, GPU draws, programs, triangles | **material registry, static batching, group bake (seams, duplicates, buried faces, welding), auto-instancing, spatial chunks, BVH culling, LOD, occlusion, character assembler** |
-| Overdraw / fill rate | opaque and transparent fragments per pixel (measured, not estimated) | transparency budget, VFX conventions, particle caps, dynamic resolution (next) |
+| Overdraw / fill rate | opaque and transparent fragments per pixel (measured), particles drawn, pixels | **sprite batching, particle caps per tier (`ParticleBudget`), dynamic resolution (`ResolutionScaler`), transparency hints, [VFX conventions](docs/vfx.md)** |
 | Skinning | skinned vertices, bones, skeletons | **gear merged onto one skeleton**; baked animation textures for crowds (next) |
 | Lighting & shadows | lights, shadow lights, casters, shadow texels | one sun + gradient sky day/night, shadow budget per tier (next) |
 | Per-frame JS | render ms, frame ms, auto-updated matrices | dirty-flag matrices, render-on-change (next) |
@@ -108,6 +108,14 @@ the vertex buffer, never the draw count.
 
 Dev overlay: `import { createOverlay } from 'threeforge/overlay'; createOverlay(ledger, { budget: 30 })`.
 
+## Overdraw: sprites, particles, resolution
+
+Sprites that share a material become one instanced billboard draw at `compile()` (the lake's 2 000 raindrops:
+3 548 → 7 submissions, 0.3 % of pixels changed). `new ParticleBudget({ tier }).apply(scene)` caps points and sprite
+batches so the frame draws at most the tier's particle budget. `new ResolutionScaler(renderer, { tier, ledger })`
+with `update(frameMs)` each frame steps the drawing buffer down while the median frame time misses the budget.
+What to do with effects so this stays cheap: [docs/vfx.md](docs/vfx.md).
+
 ## Bake: one mesh per finished group
 
 `new World(scene, { bake: true })` turns each finished static group into one world-space mesh instead of a
@@ -150,31 +158,31 @@ the committed baselines; the table below is generated from those baselines, neve
 
 ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver) · tier desktop · three 186
 
-| scene | submissions naive → opt | gpu draws | triangles | overdraw opaque / transparent | skinned verts | shadow texels | memory MB | render ms | frame ms |
-|---|---|---|---|---|---|---|---|---|---|
-| village | 303 → 28 (10.8×) | 304 → 29 | 36.7k → 36.7k | 0.79 / 0.03 → 0.72 / 0.02 | 158 → 158 | 0 → 0 | 4 → 4 | 2.6 → 0.9 | 19.5 → 16.8 |
-| forest | 5706 → 13 (438.9×) | 5707 → 10 | 391.1k → 99.3k | 1.45 / 0.35 → 0.91 / 0.35 | 0 → 0 | 0 → 0 | 4 → 4 | 32.6 → 2.1 | 138.9 → 80.9 |
-| crowd | 401 → 401 (1.0×) | 402 → 402 | 151.6k → 151.6k | 0.87 / 0.01 → 0.87 / 0.01 | 271.0k → 271.0k | 0 → 0 | 15 → 15 | 4.3 → 4.6 | 35.3 → 37.2 |
-| bossfight | 2780 → 424 (6.6×) | 2787 → 346 | 161.7k → 152.5k | 1.14 / 1.24 → 1.14 / 1.24 | 16.4k → 16.4k | 3.67M → 3.67M | 106 → 107 | 23.0 → 9.5 | 128.9 → 111.5 |
-| lake | 3548 → 3522 (1.0×) | 3549 → 3523 | 8.0k → 8.0k | 0.90 / 0.95 → 0.86 / 0.95 | 0 → 0 | 0 → 0 | 4 → 4 | 23.9 → 25.1 | 100.7 → 102.1 |
-| daynight | 605 → 55 (11.0×) | 606 → 56 | 73.4k → 73.4k | 0.79 / 0.02 → 0.72 / 0.02 | 158 → 158 | 4.19M → 4.19M | 20 → 20 | 4.5 → 1.6 | 34.4 → 30.2 |
-| zen | 10879 → 125 (87.0×) | 10880 → 98 | 141.1k → 141.1k | 1.63 / 0.81 → 1.53 / 0.81 | 0 → 0 | 0 → 0 | 4 → 4 | 75.6 → 17.1 | 272.6 → 201.8 |
-| rpg | 4 → 1 (4.0×) | 5 → 2 | 365 → 365 | 0.50 / 0.01 → 0.50 / 0.01 | 326 → 326 | 0 → 0 | 3 → 3 | 0.4 → 0.3 | 16.7 → 16.7 |
+| scene | submissions naive → opt | gpu draws | triangles | overdraw opaque / transparent | particles | fill MPix | skinned verts | shadow texels | memory MB | render ms | frame ms |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| village | 303 → 28 (10.8×) | 304 → 29 | 36.7k → 36.7k | 0.79 / 0.03 → 0.72 / 0.02 | 0 → 0 | 0.39 → 0.36 | 158 → 158 | 0 → 0 | 4 → 4 | 2.6 → 0.9 | 18.7 → 16.6 |
+| forest | 5706 → 13 (438.9×) | 5707 → 10 | 391.1k → 99.3k | 1.45 / 0.35 → 0.91 / 0.35 | 0 → 0 | 0.86 → 0.60 | 0 → 0 | 0 → 0 | 4 → 4 | 31.5 → 2.0 | 135.6 → 82.6 |
+| crowd | 401 → 401 (1.0×) | 402 → 402 | 151.6k → 151.6k | 0.87 / 0.01 → 0.87 / 0.01 | 0 → 0 | 0.42 → 0.42 | 271.0k → 271.0k | 0 → 0 | 15 → 15 | 4.4 → 4.5 | 36.0 → 36.4 |
+| bossfight | 2780 → 370 (7.5×) | 2787 → 292 | 161.7k → 152.5k | 1.14 / 1.24 → 1.14 / 1.23 | 7.6k → 7.6k | 1.14 → 1.14 | 16.4k → 16.4k | 3.67M → 3.67M | 106 → 107 | 22.5 → 9.3 | 123.6 → 107.6 |
+| lake | 3548 → 7 (506.9×) | 3549 → 8 | 8.0k → 8.2k | 0.90 / 0.95 → 0.86 / 0.85 | 1.8k → 1.8k | 0.89 → 0.82 | 0 → 0 | 0 → 0 | 4 → 4 | 24.5 → 1.8 | 98.6 → 75.8 |
+| daynight | 605 → 55 (11.0×) | 606 → 56 | 73.4k → 73.4k | 0.79 / 0.02 → 0.72 / 0.02 | 0 → 0 | 0.39 → 0.35 | 158 → 158 | 4.19M → 4.19M | 20 → 20 | 4.6 → 1.5 | 32.6 → 28.8 |
+| zen | 10879 → 125 (87.0×) | 10880 → 98 | 141.1k → 141.1k | 1.63 / 0.81 → 1.53 / 0.81 | 0 → 0 | 1.17 → 1.12 | 0 → 0 | 0 → 0 | 4 → 4 | 73.8 → 18.0 | 267.7 → 203.0 |
+| rpg | 4 → 1 (4.0×) | 5 → 2 | 365 → 365 | 0.50 / 0.01 → 0.50 / 0.01 | 0 → 0 | 0.19 → 0.19 | 326 → 326 | 0 → 0 | 3 → 3 | 0.3 → 0.3 | 16.7 → 16.7 |
 
 ### webgpu
 
 apple metal-3 · tier desktop · three 186
 
-| scene | submissions naive → opt | gpu draws | triangles | overdraw opaque / transparent | skinned verts | shadow texels | memory MB | render ms | frame ms |
-|---|---|---|---|---|---|---|---|---|---|
-| village | 303 → 28 (10.8×) | 304 → 304 | 36.7k → 36.7k | 0.79 / 0.03 → 0.72 / 0.02 | 158 → 158 | 0 → 0 | 4 → 5 | 3.0 → 1.5 | 16.7 → 16.7 |
-| forest | 5706 → 13 (438.9×) | 5707 → 10 | 391.1k → 99.3k | 1.45 / 0.35 → 0.92 / 0.35 | 0 → 0 | 0 → 0 | 4 → 4 | 31.2 → 3.2 | 32.0 → 16.6 |
-| crowd | 401 → 401 (1.0×) | 402 → 402 | 151.6k → 151.6k | 0.87 / 0.01 → 0.87 / 0.01 | 271.0k → 271.0k | 0 → 0 | 15 → 15 | 4.9 → 4.8 | 16.7 → 16.6 |
-| bossfight | 2780 → 424 (6.6×) | 2787 → 2350 | 161.7k → 311.6k | 1.14 / 1.24 → 1.14 / 1.24 | 16.4k → 16.4k | 3.67M → 3.67M | 107 → 107 | 22.6 → 8.9 | 23.3 → 16.7 |
-| lake | 3548 → 3522 (1.0×) | 3549 → 3549 | 8.0k → 8.0k | 0.90 / 0.95 → 0.86 / 0.95 | 0 → 0 | 0 → 0 | 4 → 4 | 23.0 → 24.0 | 23.6 → 24.6 |
-| daynight | 605 → 55 (11.0×) | 606 → 606 | 73.4k → 73.4k | 0.79 / 0.02 → 0.72 / 0.02 | 158 → 158 | 4.19M → 4.19M | 20 → 21 | 4.8 → 1.8 | 16.7 → 16.6 |
-| zen | 10879 → 125 (87.0×) | 10880 → 98 | 141.1k → 141.1k | 1.63 / 0.81 → 1.53 / 0.81 | 0 → 0 | 0 → 0 | 4 → 4 | 75.7 → 16.8 | 76.7 → 16.9 |
-| rpg | 4 → 1 (4.0×) | 5 → 2 | 365 → 365 | 0.50 / 0.01 → 0.50 / 0.01 | 326 → 326 | 0 → 0 | 3 → 3 | 1.0 → 1.0 | 16.6 → 16.7 |
+| scene | submissions naive → opt | gpu draws | triangles | overdraw opaque / transparent | particles | fill MPix | skinned verts | shadow texels | memory MB | render ms | frame ms |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| village | 303 → 28 (10.8×) | 304 → 304 | 36.7k → 36.7k | 0.79 / 0.03 → 0.72 / 0.02 | 0 → 0 | 0.39 → 0.36 | 158 → 158 | 0 → 0 | 4 → 5 | 2.9 → 1.5 | 16.6 → 16.6 |
+| forest | 5706 → 13 (438.9×) | 5707 → 10 | 391.1k → 99.3k | 1.45 / 0.35 → 0.92 / 0.35 | 0 → 0 | 0.86 → 0.61 | 0 → 0 | 0 → 0 | 4 → 4 | 31.6 → 2.4 | 32.1 → 16.7 |
+| crowd | 401 → 401 (1.0×) | 402 → 402 | 151.6k → 151.6k | 0.87 / 0.01 → 0.87 / 0.01 | 0 → 0 | 0.42 → 0.42 | 271.0k → 271.0k | 0 → 0 | 15 → 15 | 4.4 → 4.5 | 16.7 → 16.6 |
+| bossfight | 2780 → 370 (7.5×) | 2787 → 2296 | 161.7k → 311.6k | 1.14 / 1.24 → 1.14 / 1.23 | 7.6k → 7.6k | 1.14 → 1.14 | 16.4k → 16.4k | 3.67M → 3.67M | 107 → 107 | 22.1 → 8.2 | 22.9 → 16.6 |
+| lake | 3548 → 7 (506.9×) | 3549 → 34 | 8.0k → 8.2k | 0.90 / 0.95 → 0.86 / 0.85 | 1.8k → 1.8k | 0.89 → 0.82 | 0 → 0 | 0 → 0 | 4 → 4 | 22.8 → 2.5 | 23.3 → 16.7 |
+| daynight | 605 → 55 (11.0×) | 606 → 606 | 73.4k → 73.4k | 0.79 / 0.02 → 0.72 / 0.02 | 0 → 0 | 0.39 → 0.35 | 158 → 158 | 4.19M → 4.19M | 20 → 21 | 4.5 → 1.7 | 16.7 → 16.6 |
+| zen | 10879 → 125 (87.0×) | 10880 → 98 | 141.1k → 141.1k | 1.63 / 0.81 → 1.53 / 0.81 | 0 → 0 | 1.17 → 1.12 | 0 → 0 | 0 → 0 | 4 → 4 | 74.2 → 18.0 | 75.2 → 18.2 |
+| rpg | 4 → 1 (4.0×) | 5 → 2 | 365 → 365 | 0.50 / 0.01 → 0.50 / 0.01 | 0 → 0 | 0.18 → 0.18 | 326 → 326 | 0 → 0 | 3 → 3 | 0.8 → 0.7 | 16.7 → 16.7 |
 <!-- bench:end -->
 
 ### Run it on your device
@@ -205,8 +213,10 @@ rebuilds them in a scissored frame. The result reports `{ mode, textures, repair
 - **instances / instancesDrawn / drawCommands**: scene instances submitted, instances left after per-instance
   culling, and GPU draw commands regardless of API packaging (a multi-draw of N ranges is N, an instanced draw is 1).
 - **reasons**: `batched`, `instanced`, `dynamic`, `skinned`, `morph`, `transparent`, `unique-material`, `untagged`,
-  `multi-material-group`, `points`, `sprite`, `line`, `excluded:<rule>`, `unsupported-material`, `renderer-internal`,
-  `fullscreen-pass`, `occlusion-proxy`.
+  `multi-material-group`, `points`, `sprite`, `sprite-batch`, `line`, `excluded:<rule>`, `unsupported-material`,
+  `renderer-internal`, `fullscreen-pass`, `occlusion-proxy`.
+- **overdraw.particles / overdraw.pixels**: quads drawn per frame (points vertices, sprites, sprite-batch instances)
+  and drawing-buffer pixels; the bench's `fillMegapixels` is fragments per pixel × pixels.
 
 ## Commands
 

@@ -5,7 +5,7 @@ import { extractJson } from '../../scripts/bench-ingest.mjs';
 import { validateDeviceResult } from '../../scripts/bench-schema.mjs';
 import type { SceneId } from '../../test/app/benchMetrics.js';
 
-const metrics = (n: number) => ({ sceneSubmissions: n, gpuDraws: n, triangles: 100, programs: 3, overdrawOpaque: 1.23456, overdrawTransparent: 0.1, skinnedVertices: 0, shadowCasters: 0, shadowTexels: 0, textureBytes: 1, geometryBytes: 2, renderTargetBytes: 3, renderMs: 1.23456, frameMs: 16.66666, unattributed: 0 });
+const metrics = (n: number) => ({ sceneSubmissions: n, gpuDraws: n, triangles: 100, programs: 3, overdrawOpaque: 1.23456, overdrawTransparent: 0.1, skinnedVertices: 0, shadowCasters: 0, shadowTexels: 0, textureBytes: 1, geometryBytes: 2, renderTargetBytes: 3, particles: 100, fillMegapixels: 0.5, renderMs: 1.23456, frameMs: 16.66666, unattributed: 0 });
 const ids: SceneId[] = ['village', 'forest', 'crowd', 'bossfight', 'lake', 'daynight', 'zen', 'rpg'];
 const env = { three: '186', backend: 'webgpu' as const, multiDraw: false, tier: 'phone-mid' as const, gpu: 'Apple A16 GPU', dpr: 3, viewport: [390, 844] as [number, number], ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)', platform: 'iPhone', cores: 6, deviceMemory: null, fillRateGPix: 4.25 };
 const scenes = Object.fromEntries(ids.map((id) => [id, { naive: metrics(300), optimized: metrics(30) }])) as Record<SceneId, { naive: ReturnType<typeof metrics>; optimized: ReturnType<typeof metrics> }>;
@@ -20,7 +20,7 @@ describe('submit', () => {
     const body = issueBody(result);
     const parsed = JSON.parse(extractJson(body)!);
     expect(Array.isArray(parsed.scenes.zen.naive)).toBe(true);
-    expect(parsed.metricKeys).toHaveLength(15);
+    expect(parsed.metricKeys).toHaveLength(17);
     const v = validateDeviceResult(parsed);
     expect(v.ok).toBe(true);
     if (!v.ok) throw new Error('unreachable');
