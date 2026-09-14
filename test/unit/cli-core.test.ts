@@ -131,7 +131,7 @@ describe('parseArgs optimize', () => {
 });
 
 describe('optimize schema and summary', () => {
-  const counts = { nodes: 1, meshes: 1, primitives: 1, materials: 1, textures: 0, accessors: 2, vertices: 4, triangles: 2 };
+  const counts = { nodes: 1, meshes: 1, primitives: 1, materials: 1, textures: 0, textureBytes: 0, accessors: 2, vertices: 4, triangles: 2 };
   const stats = { ...counts, bytes: 100, textureBytes: 0, animations: 0, skins: 0, morphTargets: 0, extensions: [] as string[] };
   const parsed = parseArgs(['optimize', 'a.glb', '--compress', 'meshopt']);
   const input: OptimizeInput = parsed.name === 'optimize' ? parsed.input : (undefined as never);
@@ -164,6 +164,8 @@ describe('optimize schema and summary', () => {
     expect(text).toContain('PASS');
     expect(text).toContain('100 B → 60 B');
     expect(text).toContain('materials 6 → 1');
+    expect(text).not.toContain('extensions');
+    expect(text).not.toContain('bytes 100');
     expect(text).toContain('dedup: materials 6 → 1');
     expect(text).toContain('textures: skipped');
     expect(text).toContain('setMeshoptDecoder');

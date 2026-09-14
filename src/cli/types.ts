@@ -119,6 +119,8 @@ export interface Counts {
   primitives: number;
   materials: number;
   textures: number;
+  /** Encoded image bytes of every texture. */
+  textureBytes: number;
   accessors: number;
   vertices: number;
   triangles: number;
@@ -126,7 +128,6 @@ export interface Counts {
 
 export interface AssetStats extends Counts {
   bytes: number;
-  textureBytes: number;
   animations: number;
   skins: number;
   morphTargets: number;

@@ -25,7 +25,7 @@ const log = () => {};
 describe('countsOf and statsOf', () => {
   it('tally nodes, meshes, primitives, materials, textures, accessors, vertices and triangles', () => {
     const doc = quads(3);
-    expect(countsOf(doc)).toEqual({ nodes: 3, meshes: 3, primitives: 3, materials: 3, textures: 0, accessors: 6, vertices: 12, triangles: 6 });
+    expect(countsOf(doc)).toEqual({ nodes: 3, meshes: 3, primitives: 3, materials: 3, textures: 0, textureBytes: 0, accessors: 6, vertices: 12, triangles: 6 });
     expect(statsOf(doc, 1234)).toMatchObject({ bytes: 1234, textureBytes: 0, animations: 0, skins: 0, morphTargets: 0, extensions: [] });
   });
 });
@@ -79,6 +79,7 @@ describe('applySteps', () => {
     const with_ = await loadDeps([step('textures', { format: 'webp', size: 32, quality: 85 })], true);
     const [applied] = await applySteps(doc, [step('textures', { format: 'webp', size: 32, quality: 85 })], with_, log);
     expect(applied!.applied).toBe(true);
+    expect(applied!.after.textureBytes).not.toBe(applied!.before.textureBytes);
     expect(doc.getRoot().listTextures()[0]!.getMimeType()).toBe('image/webp');
     expect(doc.getRoot().listTextures()[0]!.getSize()).toEqual([32, 32]);
     expect(statsOf(doc, 0).extensions).toContain('EXT_texture_webp');

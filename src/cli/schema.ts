@@ -71,8 +71,8 @@ function document(command: 'analyze' | 'inspect', input: Schema, assetSchema: Sc
 export const ANALYZE_SCHEMA = document('analyze', obj({ file: string, backend: { enum: ['webgl2', 'webgpu'] }, tier: { enum: ['auto', 'desktop', 'phone-mid', 'phone-low'] }, budget: nullable(number), frames: integer, compile: boolean, bake: { enum: ['off', 'on', 'buried'] }, views: integer, timeout: number, headed: boolean }), asset, nullable(parity));
 export const INSPECT_SCHEMA = document('inspect', runInput({ url: string }), { type: 'null' }, { type: 'null' });
 
-const counts = obj({ nodes: integer, meshes: integer, primitives: integer, materials: integer, textures: integer, accessors: integer, vertices: integer, triangles: integer });
-const assetStats = obj({ nodes: integer, meshes: integer, primitives: integer, materials: integer, textures: integer, accessors: integer, vertices: integer, triangles: integer, bytes: integer, textureBytes: integer, animations: integer, skins: integer, morphTargets: integer, extensions: arr(string) });
+const counts = obj({ nodes: integer, meshes: integer, primitives: integer, materials: integer, textures: integer, textureBytes: integer, accessors: integer, vertices: integer, triangles: integer });
+const assetStats = obj({ nodes: integer, meshes: integer, primitives: integer, materials: integer, textures: integer, textureBytes: integer, accessors: integer, vertices: integer, triangles: integer, bytes: integer, animations: integer, skins: integer, morphTargets: integer, extensions: arr(string) });
 const stepName = { enum: ['dedup', 'instance', 'palette', 'flatten', 'join', 'weld', 'simplify', 'resample', 'prune', 'textures', 'quantize', 'meshopt'] };
 const optimizeInput = obj({
   file: string,

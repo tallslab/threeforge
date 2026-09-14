@@ -1,5 +1,6 @@
 import { formatCostRows, formatHints } from '../overlay/index.js';
-import type { AgentDocument, Counts, OptimizeDocument } from './types.js';
+import { describeChange } from './transform.js';
+import type { AgentDocument, OptimizeDocument } from './types.js';
 
 /** The human summary (stderr in --json mode): one screen, the verdict first. */
 export function summarize(doc: AgentDocument): string {
@@ -23,21 +24,15 @@ export function summarize(doc: AgentDocument): string {
 const bytes = (n: number): string => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : n >= 1e3 ? `${(n / 1e3).toFixed(0)} kB` : `${n} B`);
 const pct = (before: number, after: number): string => (before > 0 ? ` (${after >= before ? '+' : '−'}${Math.abs(((after - before) / before) * 100).toFixed(0)} %)` : '');
 
-function changed(before: Counts, after: Counts): string {
-  const parts: string[] = [];
-  for (const key of Object.keys(before) as Array<keyof Counts>) if (before[key] !== after[key]) parts.push(`${key} ${before[key]} → ${after[key]}`);
-  return parts.length ? parts.join(', ') : 'no change';
-}
-
 /** The human summary of an optimize run (stderr in --json mode). */
 export function summarizeOptimize(doc: OptimizeDocument): string {
   const { before, after } = doc.stats;
   const lines = [
     `threeforge optimize ${doc.input.file} → ${doc.output.file} · preset ${doc.input.preset} · ${doc.steps.map((s) => s.name).join(', ') || 'no steps'}`,
     `${doc.verdict.pass ? 'PASS' : 'FAIL'}${doc.verdict.reasons.length ? ': ' + doc.verdict.reasons.join('; ') : ''}`,
-    `${bytes(before.bytes)} → ${bytes(after.bytes)}${pct(before.bytes, after.bytes)} · ${changed(before, after)}`,
+    `${bytes(before.bytes)} → ${bytes(after.bytes)}${pct(before.bytes, after.bytes)} · ${describeChange(before, after)}`,
   ];
-  for (const step of doc.steps) lines.push(`  ${step.name}: ${step.applied ? changed(step.before, step.after) : (step.note ?? 'skipped')} (${step.ms} ms)`);
+  for (const step of doc.steps) lines.push(`  ${step.name}: ${step.applied ? describeChange(step.before, step.after) : (step.note ?? 'skipped')} (${step.ms} ms)`);
   if (doc.requires.length) lines.push(`requires: ${doc.requires.map((r) => `${r.extension} → ${r.code ?? r.needs}`).join(' · ')}`);
   if (doc.verify) {
     const v = doc.verify;

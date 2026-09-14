@@ -67,7 +67,8 @@ export function countsOf(doc: Document): Counts {
       triangles += mode === 4 ? Math.floor(elements / 3) : mode === 5 || mode === 6 ? Math.max(0, elements - 2) : 0;
     }
   }
-  return { nodes: root.listNodes().length, meshes: root.listMeshes().length, primitives, materials: root.listMaterials().length, textures: root.listTextures().length, accessors: root.listAccessors().length, vertices, triangles };
+  const textures = root.listTextures();
+  return { nodes: root.listNodes().length, meshes: root.listMeshes().length, primitives, materials: root.listMaterials().length, textures: textures.length, textureBytes: textures.reduce((sum, t) => sum + (t.getImage()?.byteLength ?? 0), 0), accessors: root.listAccessors().length, vertices, triangles };
 }
 
 export function statsOf(doc: Document, bytes: number): AssetStats {
@@ -77,7 +78,6 @@ export function statsOf(doc: Document, bytes: number): AssetStats {
   return {
     ...countsOf(doc),
     bytes,
-    textureBytes: root.listTextures().reduce((sum, t) => sum + (t.getImage()?.byteLength ?? 0), 0),
     animations: root.listAnimations().length,
     skins: root.listSkins().length,
     morphTargets,
@@ -108,10 +108,12 @@ export function requirementsOf(extensions: string[]): Requirement[] {
   return out;
 }
 
-/** "materials 148 → 10, meshes 109 → 63" or "no change". */
+export const COUNT_KEYS: ReadonlyArray<keyof Counts> = ['nodes', 'meshes', 'primitives', 'materials', 'textures', 'textureBytes', 'accessors', 'vertices', 'triangles'];
+
+/** "materials 148 → 10, meshes 109 → 63" or "no change"; only the count keys, so asset stats can be passed too. */
 export function describeChange(before: Counts, after: Counts): string {
   const parts: string[] = [];
-  for (const key of Object.keys(before) as Array<keyof Counts>) if (before[key] !== after[key]) parts.push(`${key} ${before[key]} → ${after[key]}`);
+  for (const key of COUNT_KEYS) if (before[key] !== after[key]) parts.push(`${key} ${before[key]} → ${after[key]}`);
   return parts.length ? parts.join(', ') : 'no change';
 }
 
