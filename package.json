@@ -44,7 +44,8 @@
     "bench:table": "node scripts/bench-table.mjs",
     "assets:kits": "node scripts/fetch-kits.mjs",
     "build:lib": "tsc -p tsconfig.build.json",
-    "build:cli-app": "node scripts/copy-decoders.mjs && vite build --config vite.cli.config.ts"
+    "build:cli-app": "node scripts/copy-decoders.mjs && vite build --config vite.cli.config.ts",
+    "bench:devices": "node scripts/bench-devices.mjs"
   },
   "peerDependencies": {
     "@modelcontextprotocol/sdk": ">=1.20.0",
