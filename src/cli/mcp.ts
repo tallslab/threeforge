@@ -2,9 +2,10 @@ import { analyzeAsset } from './analyze.js';
 import { EnvironmentError } from './browser.js';
 import { explain, REMEDIES } from './explain.js';
 import { inspectApp } from './inspect.js';
+import { optimizeAsset } from './optimize.js';
 import { PageError } from './measure.js';
 import { UsageError } from './args.js';
-import type { AnalyzeInput, InspectInput } from './types.js';
+import type { AnalyzeInput, InspectInput, OptimizeInput } from './types.js';
 import { VERSION } from '../version.js';
 
 const INSTALL = 'npm i -D @modelcontextprotocol/sdk zod';
@@ -76,6 +77,56 @@ export async function serveMcp(): Promise<void> {
     },
   );
   server.registerTool(
+    'optimize_asset',
+    {
+      title: 'Optimize a glTF asset at build time',
+      description: 'Rewrite a .glb/.gltf with glTF-Transform (safe preset: dedup, palette, weld, resample, prune; balanced adds quantize and WebP textures; aggressive adds simplify), write <name>.forge.glb, render the original and the result through the same harness and compare pixels, compile both with threeforge, and return per-step counts, load-time requirements and a verdict.',
+      inputSchema: {
+        file: z.string().describe('Path to a .glb or .gltf file'),
+        out: z.string().optional().describe('Output path (default <name>.forge.glb next to the input)'),
+        preset: z.enum(['safe', 'balanced', 'aggressive']).default('safe').describe('safe never changes a pixel; balanced quantizes and compresses textures; aggressive also simplifies to 50 % triangles'),
+        simplify: z.number().optional().describe('Simplify ratio in (0, 1]; overrides the preset'),
+        compress: z.enum(['none', 'meshopt']).default('none').describe('meshopt needs loader.setMeshoptDecoder in the app'),
+        textures: z.enum(['none', 'webp', 'avif']).optional().describe('Texture format (needs sharp); overrides the preset'),
+        textureSize: z.number().int().positive().optional().describe('Longest texture side in pixels'),
+        verify: z.boolean().default(true).describe('Render both files and compare pixels; false runs without a browser'),
+        parity: z.number().default(0.5).describe('Allowed percent of changed pixels between the original and the optimized render'),
+        views: z.number().int().nonnegative().default(2).describe('Extra orbit views for the comparison'),
+        ...runShape,
+      },
+    },
+    async (args: Record<string, unknown>) => {
+      try {
+        const input: OptimizeInput = {
+          file: String(args.file),
+          out: typeof args.out === 'string' ? args.out : null,
+          preset: (args.preset as OptimizeInput['preset']) ?? 'safe',
+          steps: {},
+          simplify: typeof args.simplify === 'number' ? args.simplify : null,
+          simplifyError: 0.001,
+          compress: (args.compress as OptimizeInput['compress']) ?? 'none',
+          textures: (args.textures as OptimizeInput['textures']) ?? null,
+          textureSize: typeof args.textureSize === 'number' ? args.textureSize : null,
+          textureQuality: 85,
+          verify: args.verify !== false,
+          parity: typeof args.parity === 'number' ? args.parity : 0.5,
+          views: Number(args.views ?? 2),
+          backend: args.backend as OptimizeInput['backend'],
+          tier: args.tier as OptimizeInput['tier'],
+          budget: typeof args.budget === 'number' ? args.budget : null,
+          frames: Number(args.frames ?? 30),
+          compile: args.compile !== false,
+          timeout: Number(args.timeout ?? 60000),
+          headed: false,
+        };
+        if (input.simplify !== null && !(input.simplify > 0 && input.simplify <= 1)) throw new UsageError('simplify must be in (0, 1]');
+        return ok(await optimizeAsset(input));
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+  server.registerTool(
     'explain_hint',
     {
       title: 'Explain a hint code',
@@ -97,8 +148,12 @@ interface McpServerLike {
   connect(transport: unknown): Promise<void>;
 }
 interface ZodLike {
-  enum(values: [string, ...string[]]): { default(v: string): { describe(d: string): unknown } };
-  number(): { int(): { nonnegative(): { optional(): { describe(d: string): unknown }; default(v: number): { describe(d: string): unknown } }; positive(): { default(v: number): { describe(d: string): unknown } } } };
+  enum(values: [string, ...string[]]): { default(v: string): { describe(d: string): unknown }; optional(): { describe(d: string): unknown } };
+  number(): {
+    optional(): { describe(d: string): unknown };
+    default(v: number): { describe(d: string): unknown };
+    int(): { nonnegative(): { optional(): { describe(d: string): unknown }; default(v: number): { describe(d: string): unknown } }; positive(): { default(v: number): { describe(d: string): unknown }; optional(): { describe(d: string): unknown } } };
+  };
   boolean(): { default(v: boolean): { describe(d: string): unknown } };
   string(): { describe(d: string): unknown; optional(): { describe(d: string): unknown } };
 }
