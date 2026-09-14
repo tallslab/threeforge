@@ -33,6 +33,11 @@ describe('parseArgs', () => {
     expect(parseArgs(['--help'])).toEqual({ name: 'help' });
   });
 
+  it('parses decoders with a directory', () => {
+    expect(parseArgs(['decoders', 'public/_decoders'])).toEqual({ name: 'decoders', dir: 'public/_decoders' });
+    expect(() => parseArgs(['decoders'])).toThrow(UsageError);
+  });
+
   it('rejects bad input with a UsageError', () => {
     expect(() => parseArgs(['analyze'])).toThrow(UsageError);
     expect(() => parseArgs(['analyze', 'a.glb', '--backend', 'metal'])).toThrow(/backend/);

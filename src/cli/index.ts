@@ -20,6 +20,7 @@ const FALLBACK_HELP = `threeforge ${VERSION} — frame-budget compiler and diagn
   threeforge explain <hint-code> | --all [--json]                             what a hint means and how to fix it
   threeforge schema [snapshot|analyze|inspect|optimize|all] [--json]           JSON Schemas of what the commands print
   threeforge mcp                                                              stdio MCP server (analyze_asset, inspect_app, optimize_asset, explain_hint)
+  threeforge decoders <dir>                                                  copies three's Draco and Basis decoders for createLoader()
 
 Exit codes: 0 pass · 1 verdict failed · 2 usage · 3 environment (install: npm i -D playwright && npx playwright install chromium) · 4 page error
 Commands: ${COMMANDS.join(', ')}`;
@@ -82,6 +83,12 @@ async function run(command: Command): Promise<number> {
     case 'mcp': {
       const { serveMcp } = await import('./mcp.js');
       await serveMcp();
+      return 0;
+    }
+    case 'decoders': {
+      const { copyDecoders } = await import('./decoders.js');
+      const out = copyDecoders(command.dir);
+      process.stdout.write(`decoders copied to ${out.draco} and ${out.basis}\nconst loader = await createLoader(renderer, { decoders: '/<served path of ${command.dir}>/' });\n`);
       return 0;
     }
   }

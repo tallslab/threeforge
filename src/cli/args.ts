@@ -12,12 +12,13 @@ export type Command =
   | { name: 'optimize'; input: OptimizeInput; json: boolean }
   | { name: 'explain'; code: string | null; all: boolean; json: boolean }
   | { name: 'schema'; which: SchemaChoice; json: boolean }
-  | { name: 'mcp' };
+  | { name: 'mcp' }
+  | { name: 'decoders'; dir: string };
 
 const BACKENDS: Backend[] = ['webgl2', 'webgpu'];
 const TIERS: TierChoice[] = ['auto', 'desktop', 'phone-mid', 'phone-low'];
 const SCHEMAS: SchemaChoice[] = ['snapshot', 'analyze', 'inspect', 'optimize', 'all'];
-export const COMMANDS = ['analyze', 'inspect', 'optimize', 'explain', 'schema', 'mcp'] as const;
+export const COMMANDS = ['analyze', 'inspect', 'optimize', 'explain', 'schema', 'mcp', 'decoders'] as const;
 
 interface Flags {
   positional: string[];
@@ -144,6 +145,11 @@ export function parseArgs(argv: string[]): Command {
     }
     case 'mcp':
       return { name: 'mcp' };
+    case 'decoders': {
+      const dir = rest[0];
+      if (!dir) throw new UsageError('decoders needs a directory: threeforge decoders public/_decoders');
+      return { name: 'decoders', dir };
+    }
     default:
       throw new UsageError(`unknown command "${command}"; commands: ${COMMANDS.join(', ')}`);
   }
