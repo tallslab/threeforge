@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0 — 2026-09-14
+
+- `createLoader(renderer, options)`: a GLTFLoader with Draco, KTX2 (formats detected on the renderer) and meshopt in one call; `disposeLoader`; `threeforge decoders <dir>` copies three's decoder files.
+- `ResourceTracker` (reference-counted release across owners, registry materials untouched), `collectResources`, `unreferencedResources`.
+- `Streamer`: chunk residency by camera distance over `world.chunks()` and uncompiled static tiles; unloaded chunks free their GPU copies.
+- Ledger: `memory.unreferenced` (renderer-held resources the scene no longer reaches), `memory.chunks`; budget `geometryBytes`; hints `geometry-bytes`, `unreferenced-resources`. Zen benchmark rebuilt on 64 textured ground tiles with fog and streamed in the optimized variant (baselines promoted). `docs/memory.md`.
+
 ## 0.7.0 — 2026-09-14
 
 - `bakeAnimationTexture`: every clip of a skinned prototype baked to one float texture of bone matrices (multiple skeletons side by side), transform and pose restored.

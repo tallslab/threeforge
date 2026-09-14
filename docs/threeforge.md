@@ -72,7 +72,7 @@ npx threeforge inspect http://localhost:5173 --compile --json
 | `src/character` | the character assembler (gear merged onto one skeleton, one atlas) |
 | `src/overlay` | text formatting of a snapshot and the DOM overlay |
 | `src/agent` | `exposeToAgents` (the `window.__threeforge` hook) |
-| `src/cli` | the `threeforge` CLI (`analyze`, `inspect`, `optimize`, `explain`, `schema`, `mcp`), the MCP server, JSON schemas, hint remedies, the glTF-Transform pipeline (node only, optional peers loaded lazily) |
+| `src/cli` | the `threeforge` CLI (`analyze`, `inspect`, `optimize`, `explain`, `schema`, `mcp`, `decoders`), the MCP server, JSON schemas, hint remedies, the glTF-Transform pipeline (node only, optional peers loaded lazily) |
 | `cli-app` | the harness page shipped inside the package for `threeforge analyze` |
 | `test/app` | the development harness (`pnpm dev`) with every test scene and benchmark scene |
 | `test/scenes`, `test/app/scenes` | deterministic scenes (naive, field, forest, character) and the eight benchmark scenes |
@@ -133,7 +133,8 @@ skinning:  submissions, vertices, bones, skeletons, maxBones, morphTargets, vatI
 lighting:  lights { directional, point, spot, hemisphere, ambient, other }, shadowLights, shadowPasses,
            shadowCasters, shadowTexels, shadowSubmissions
 js:        renderMs, frameMs, objects, autoUpdatedMatrices
-memory:    textures { count, bytes }, geometries { count, bytes }, renderTargets { count, bytes }, estimated: true
+memory:    textures { count, bytes }, geometries { count, bytes }, renderTargets { count, bytes },
+           unreferenced { geometries, textures }, chunks { total, resident }, estimated: true
 hints:     [{ category, severity, code, message, objects }]
 items?:    per-submission records with ledger.frame({ items: true })
 ```
@@ -155,6 +156,11 @@ items?:    per-submission records with ledger.frame({ items: true })
 - **memory** estimates bytes: textures `w · h · 4 · bytesPerChannel · (mipmaps ? 4/3 : 1) · (cube ? 6 : 1)`, compressed
   textures Σ mip bytes, geometries Σ attribute and index bytes, render targets from shadow maps and the renderer's
   half-float frame-buffer target. `ledger.measureMemory()` recounts now.
+- **memory.unreferenced** counts the geometries and textures the renderer still holds (`info.memory` counts) that the
+  scene no longer reaches, minus what three allocates for itself (one geometry, two frame-buffer textures, two per
+  shadow map); reachable includes BatchedMesh and skeleton textures and `material.userData.forgeTextures`. Recounted
+  with the graph statistics; `measureMemory()` recounts now. **memory.chunks** is the attached Streamer's residency,
+  read live.
 - **hints** are recomputed every frame from the snapshot and the budgets of the environment's tier.
 
 Other methods: `ledger.report()` (text), `ledger.budget({ maxSubmissions })` → `{ pass, actual, max, offenders }`,
@@ -181,7 +187,8 @@ Other methods: `ledger.report()` (text), `ledger.budget({ maxSubmissions })` →
 Hint codes (`hintsFor`, remedies in `npx threeforge explain --all`): `over-budget-submissions`,
 `over-budget-triangles`, `untagged`, `unique-materials`, `unsupported-material`, `programs`, `transparent-overdraw`,
 `skinned-vertices`, `point-light-shadow`, `shadow-texels`, `transmission`, `texture-bytes`, `static-auto-update`,
-`particles-over-budget`, `sprites-unbatched`, `js-objects`, `detach-originals`, `bones-over-budget`, `skinned-crowd`.
+`particles-over-budget`, `sprites-unbatched`, `js-objects`, `detach-originals`, `bones-over-budget`, `skinned-crowd`,
+`geometry-bytes`, `unreferenced-resources`.
 
 ### Overlay
 
@@ -395,6 +402,28 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
 - **Bench**: the optimized crowd bakes each of its eight prototypes and replaces its 25 characters with one
   `AnimatedInstances`: 401 → 17 submissions, 271 k skinned vertices → 0.
 
+### Memory and load: `createLoader`, `ResourceTracker`, `Streamer`
+
+- **`createLoader(renderer, { decoders, draco, ktx2, meshopt })`** (`src/load/createLoader.ts`): a `GLTFLoader` with
+  Draco, KTX2 (`detectSupport` after `renderer.init()`) and meshopt wired; the addons import lazily.
+  `disposeLoader(loader)` ends the worker pools. `threeforge decoders <dir>` (`src/cli/decoders.ts`) copies the
+  decoder files from the installed three.
+- **`ResourceTracker`** (`src/memory/ResourceTracker.ts`): `track(root | geometry | texture | material, owner?)`,
+  `release(owner)` disposes what no other owner holds (never a material the registry knows) and detaches an
+  Object3D owner, `dispose()`, `stats()`. `collectResources(root)` and `unreferencedResources(info, scene,
+  allowance)` are the building blocks (`src/memory/resources.ts`).
+- **`Streamer`** (`src/streaming/Streamer.ts`): residency of `world.chunks()` (batches, instanced groups and baked
+  meshes carry `userData.forgeChunk`) plus uncompiled static scene children placed by position, keyed by x and z.
+  Resident while the ground-plane distance from the camera to the cell's box is at most `radius` (default
+  `camera.far`), unloaded past `radius + margin × chunkSize` (first update strict). Unload removes the objects and
+  disposes the geometries and textures no resident chunk shares, including a BatchedMesh's matrix, indirect and
+  colour textures (never `BatchedMesh.dispose()`, which nulls them); load re-adds them and three re-uploads. `assign`,
+  `userData.forgeStream = false`, `stats()`, `onChange`, `dispose()`. `ledger.attachStreamer(streamer)`.
+- **Ledger**: `memory.unreferenced`, `memory.chunks`; budget `geometryBytes` (256 / 96 / 48 MB); hints
+  `geometry-bytes` and `unreferenced-resources` (eight or more). Authoring notes: `docs/memory.md`.
+- **Bench**: zen's ground is 64 tiles with a 512² texture each (85 MB) under fog to 600 m; the optimized variant
+  streams them: 32 of 64 chunks resident at the start camera, pixel-identical to naive.
+
 ## 8. Bake: one mesh per finished group
 
 `new World(scene, { bake: true | options })` replaces the `BatchedMesh` of each finished static group with one
@@ -449,6 +478,7 @@ swaps change data, not draw calls.
     [--compress meshopt] [--textures webp|avif] [--texture-size N] [--texture-quality 85] [--no-verify] [--parity 0.5]
     [--views 2] [--budget N] [--json]`: the build-time pipeline, see below.
   - `explain <code> | --all`: `{ code, category, severity, meaning, fix, api, docs }` per hint code.
+  - `decoders <dir>`: copies three's Draco decoder and Basis transcoder into `<dir>/{draco,basis}` for `createLoader` (no JSON output).
   - `schema [snapshot|analyze|inspect|optimize|all]`: JSON Schema (draft 2020-12) of everything printed.
   - `mcp`: stdio Model Context Protocol server with `analyze_asset`, `inspect_app`, `optimize_asset`, `explain_hint`.
 - **The document**: `{ schemaVersion: 1, tool, version, command, input, env, asset, before, after, compile, parity,
@@ -505,7 +535,7 @@ budgets the scene stresses):
 | `bossfight` | arena, 12 fighters, 16 blocky characters, 30 VFX systems, shadowed lights | overdraw, transparency |
 | `lake` | reflective water, 2 000 rain sprites, fog, wet ground | fill rate, weather |
 | `daynight` | the village under a sun cycle with a 2048² shadow map | lighting, shadows |
-| `zen` | 50 000 low-poly objects over 2 km² in 250 m chunks | chunking, memory |
+| `zen` | 50 000 low-poly objects over 2 km² on 64 textured ground tiles, 250 m chunks, fog to 600 m | chunk streaming, memory |
 | `rpg` | portrait 9:16, one character, gear swapped every 30 frames | character assembler |
 
 `pnpm bench [backend]` measures 10 warm-up and 60 measured frames per variant (medians), one overdraw and memory
@@ -584,7 +614,8 @@ Overdraw modules shipped in 0.4.0, per-frame JS (freezing, `markDirty`, `RenderS
 (`DayNight`, `ShadowBudget`, lightmap path) in 0.6.0 and skinning (`bakeAnimationTexture`, `AnimatedInstances`)
 in 0.7.0 (section 7); animated instances play one clip per instance without blending or root motion; soft-particle materials are documented, not built (`docs/vfx.md`); cascaded
 shadow maps (three's `CSMShadowNode`) are not wired yet; per-frame JS (`RenderScheduler`, static-subtree matrix
-freezing) is SP6; memory and streaming (`ResourceTracker`, loader pipeline, chunk `Streamer`) is SP7;
+freezing) is SP6; memory and load (`createLoader`, `ResourceTracker`, chunk `Streamer`) shipped in 0.8.0 (section 7):
+the Streamer keeps CPU copies and re-uploads, it does not fetch chunk data on demand (that needs incremental compile);
 `threeforge optimize` shipped in 0.3.0 (section 10) and the device bench page with GitHub-native results is in
 section 11. Specs live in `docs/superpowers/specs`, plans in
 `docs/superpowers/plans`.
