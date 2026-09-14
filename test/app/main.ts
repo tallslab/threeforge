@@ -1,7 +1,7 @@
 import { AmbientLight, AnimationMixer, BatchedMesh, Box3, BoxGeometry, Color, DirectionalLight, Frustum, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Sphere, Vector3, type AnimationClip, type Object3D, type OrthographicCamera } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import * as THREE from 'three';
-import { DrawCallLedger, MaterialRegistry, ParticleBudget, RenderScheduler, ResolutionScaler, ShadowBudget, World, assembleCharacter, detectTier, exposeToAgents, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot, type ParticleBudgetReport, type ShadowBudgetReport, type Tier } from 'threeforge';
+import { AnimatedInstances, DrawCallLedger, MaterialRegistry, ParticleBudget, RenderScheduler, ResolutionScaler, ShadowBudget, World, bakeAnimationTexture, assembleCharacter, detectTier, exposeToAgents, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot, type ParticleBudgetReport, type ShadowBudgetReport, type Tier } from 'threeforge';
 import { createOverlay } from 'threeforge/overlay';
 import { BENCH_SCENES, type BenchScene } from './scenes/index.js';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
@@ -85,6 +85,8 @@ export interface ForgeHarness {
   shadowReport?: ShadowBudgetReport;
   /** `?freeze-shadow=1` (naive scene with shadows): the naive sun's shadow is frozen; call this to re-render it once. */
   refreshShadow?(): void;
+  /** `scene=vat`: the animated-instances twin of the loaded character (`vatClip`, `vatTime` params). */
+  vat?: AnimatedInstances;
   /** Pose animations and effects at time t (arena). */
   setTime(t: number): void;
   compile(): CompileReport;
@@ -165,6 +167,7 @@ try {
   let biome: Biome | undefined;
   let arena: Arena | undefined;
   let bench: BenchScene | undefined;
+  let vatInstances: AnimatedInstances | undefined;
   const benchBuilder = BENCH_SCENES[sceneName];
   let clips: AnimationClip[] = [];
   let animationSources: Array<AnimationClip | { root: Object3D; clips: AnimationClip[] }> = [];
@@ -305,6 +308,39 @@ try {
       if ((o as { isBone?: boolean }).isBone) bones++;
     });
     gltfInfo = { name: assetName, meshes, materials: materials.size, vertices, triangles: Math.round(triangles), animations: clips.length, skinned, morph, instanced, linesPoints, radius, loadMs: Math.round(loadMs), clips: clips.map((c) => c.name), bones };
+  } else if (sceneName === 'vat') {
+    // One skinned character (left, driven by a mixer) next to its AnimatedInstances twin (right): the two must match.
+    const loader = await makeLoader();
+    const kits = (await fetch('/kits-index.json').then((r) => (r.ok ? r.json() : [])).catch(() => [])) as Array<{ name: string; glbs?: string[] }>;
+    const kit = kits.find((k) => k.name === 'kenney-mini-characters');
+    const file = kit?.glbs?.find((g) => g.toLowerCase().endsWith(`/${params.get('asset') ?? 'character-male-a'}.glb`));
+    if (!file) throw new Error('kenney-mini-characters kit not found (run pnpm assets)');
+    const gltf = await loader.loadAsync('/' + file);
+    const SkeletonUtils = await import('three/addons/utils/SkeletonUtils.js');
+    scene = new Scene();
+    scene.background = new Color(0x202830);
+    const clipName = params.get('vatClip') ?? 'idle';
+    const original = SkeletonUtils.clone(gltf.scene) as Object3D;
+    original.position.set(-1, 0, 0);
+    scene.add(original);
+    const mixer = new AnimationMixer(original);
+    const clip = gltf.animations.find((c) => c.name === clipName) ?? gltf.animations[0]!;
+    mixer.clipAction(clip).play();
+    const animation = bakeAnimationTexture(gltf.scene, gltf.animations, { fps: 30 });
+    const vat = new AnimatedInstances({ animation, count: 1 });
+    vat.setMatrixAt(0, new Matrix4().makeTranslation(1, 0, 0));
+    vat.setClipAt(0, clip.name);
+    vat.addTo(scene);
+    const key = new DirectionalLight(0xffffff, 2.5);
+    key.position.set(3, 5, 4);
+    scene.add(new AmbientLight(0xffffff, 0.5), key);
+    camera.position.set(0, 1.4, 4.5);
+    camera.lookAt(0, 0.9, 0);
+    camera.updateMatrixWorld();
+    const t = Number(params.get('vatTime') ?? '0');
+    mixer.setTime(t);
+    vat.setTime(t);
+    vatInstances = vat;
   } else if (sceneName === 'character') {
     scene = new Scene();
     scene.background = new Color(0x202830);
@@ -540,7 +576,7 @@ try {
     });
   }
 
-  window.__forge = { three: THREE, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, particleReport, scaler, scheduler, shadowReport, refreshShadow, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
+  window.__forge = { three: THREE, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, particleReport, scaler, scheduler, shadowReport, refreshShadow, vat: vatInstances, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
 } catch (error) {
   window.__forge = { ready: false, error: error instanceof Error ? error.stack ?? error.message : String(error) } as ForgeHarness;
   throw error;

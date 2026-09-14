@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AnimationClip, Matrix4, QuaternionKeyframeTrack } from 'three';
+import { AnimationClip, Matrix4, QuaternionKeyframeTrack, Skeleton, SkinnedMesh } from 'three';
 import { bakeAnimationTexture } from '../../src/skinning/bakeAnimationTexture.js';
 import { buildRig } from './helpers/rig.js';
 
@@ -19,6 +19,7 @@ describe('bakeAnimationTexture', () => {
     expect(baked.clips).toEqual([{ name: 'spin', start: 0, frames: 11, duration: 1 }]);
     expect(baked.parts).toHaveLength(1);
     expect(baked.parts[0]!.mesh).toBe(mesh);
+    expect(baked.parts[0]!.boneOffset).toBe(0);
     expect(baked.parts[0]!.matrix.equals(new Matrix4())).toBe(true);
     const data = baked.texture.image.data as Float32Array;
     const first = row(data, 8, 0, 1);
@@ -36,5 +37,18 @@ describe('bakeAnimationTexture', () => {
     const baked = bakeAnimationTexture(root, [clip, still], { fps: 10 });
     expect(baked.clips.map((c) => [c.name, c.start, c.frames])).toEqual([['spin', 0, 11], ['still', 11, 6]]);
     expect(baked.texture.image.height).toBe(17);
+  });
+
+  it('concatenates the bones of every distinct skeleton and gives each part its bone offset', () => {
+    const { root, mesh, b, clip } = buildRig();
+    const hat = new SkinnedMesh(mesh.geometry, mesh.material);
+    hat.name = 'hat';
+    hat.bind(new Skeleton([b]));
+    root.add(hat);
+    root.updateMatrixWorld(true);
+    const baked = bakeAnimationTexture(root, [clip], { fps: 10 });
+    expect(baked.bones).toBe(3);
+    expect(baked.texture.image.width).toBe(12);
+    expect(baked.parts.map((p) => [p.mesh.name, p.boneOffset])).toEqual([['body', 0], ['hat', 2]]);
   });
 });

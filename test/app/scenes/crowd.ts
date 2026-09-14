@@ -1,5 +1,5 @@
 import { AnimationMixer, Color, DirectionalLight, HemisphereLight, Mesh, MeshStandardMaterial, PlaneGeometry, type AnimationClip, type Group } from 'three';
-import { tag } from 'threeforge';
+import { AnimatedInstances, bakeAnimationTexture, tag } from 'threeforge';
 import type { BenchBuilder } from './index.js';
 
 interface KitIndex {
@@ -10,7 +10,11 @@ interface KitIndex {
 
 const NAMES = ['character-male-a', 'character-male-b', 'character-male-c', 'character-female-a', 'character-female-b', 'character-female-c', 'character-male-d', 'character-female-d'];
 
-/** 200 skinned Kenney mini characters on a grid, every one animating a different clip with its own time offset. */
+/**
+ * 200 skinned Kenney mini characters on a grid, every one animating a different clip with its own time offset. The
+ * optimized variant bakes each of the eight prototypes' clips into an animation texture and draws its 25 characters
+ * as one instanced draw per part (`AnimatedInstances`), same places, clips and offsets.
+ */
 export const crowd: BenchBuilder = async ({ camera, params, loader: makeLoader, url }) => {
   const count = Number(params.get('count') ?? '200');
   const loader = await makeLoader();
@@ -37,6 +41,7 @@ export const crowd: BenchBuilder = async ({ camera, params, loader: makeLoader, 
   scene.add(ground);
   const mixers: Array<{ mixer: AnimationMixer; offset: number }> = [];
   const animations: Array<{ root: Group; clips: AnimationClip[] }> = [];
+  const characters: Array<{ object: Group; proto: number; clip: number; offset: number }> = [];
   const columns = 20;
   for (let i = 0; i < count; i++) {
     const proto = protos[i % protos.length]!;
@@ -50,6 +55,7 @@ export const crowd: BenchBuilder = async ({ camera, params, loader: makeLoader, 
     mixer.clipAction(clip).play();
     mixers.push({ mixer, offset: i * 0.13 });
     animations.push({ root: character, clips: proto.animations });
+    characters.push({ object: character, proto: i % protos.length, clip: i % proto.animations.length, offset: i * 0.13 });
   }
   const sun = new DirectionalLight(0xfff1e0, 2.5);
   sun.name = 'sun';
@@ -61,9 +67,30 @@ export const crowd: BenchBuilder = async ({ camera, params, loader: makeLoader, 
   camera.lookAt(0, 1, 0);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
+  let crowds: AnimatedInstances[] | null = null;
   const setTime = (t: number): void => {
-    for (const { mixer, offset } of mixers) mixer.setTime(t + offset);
+    if (crowds) for (const c of crowds) c.setTime(t);
+    else for (const { mixer, offset } of mixers) mixer.setTime(t + offset);
   };
   setTime(0);
-  return { scene, counts: { characters: count }, animations, setTime };
+  /** Optimized: one AnimatedInstances per prototype replaces its characters (the prototypes were never in the scene). */
+  const prepare = (): void => {
+    scene.updateMatrixWorld(true);
+    crowds = protos.map((proto, p) => {
+      const members = characters.filter((c) => c.proto === p);
+      const animation = bakeAnimationTexture(proto.scene, proto.animations, { fps: 30 });
+      const instances = new AnimatedInstances({ animation, count: members.length });
+      members.forEach((m, k) => {
+        instances.setMatrixAt(k, m.object.matrixWorld);
+        instances.setClipAt(k, m.clip, { offset: m.offset });
+      });
+      for (const m of members) scene.remove(m.object);
+      // Not tagged: `userData.forge` already carries the `vat` kind the ledger reads (a tag would overwrite it).
+      for (const mesh of instances.meshes) mesh.castShadow = false;
+      return instances.addTo(scene);
+    });
+    mixers.length = 0;
+    setTime(0);
+  };
+  return { scene, counts: { characters: count }, animations, setTime, prepare };
 };

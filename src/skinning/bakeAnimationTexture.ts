@@ -13,6 +13,8 @@ export interface AnimationPart {
   mesh: SkinnedMesh;
   /** The part's transform relative to the prototype root. */
   matrix: Matrix4;
+  /** Where this part's skeleton starts in a texture row (bones, not texels): parts with distinct skeletons follow each other. */
+  boneOffset: number;
 }
 
 /** Bone matrices of every clip frame in one float texture: row per frame, four RGBA texels per bone (its matrix columns). */
@@ -22,7 +24,8 @@ export interface AnimationTexture {
   bones: number;
   clips: AnimationClipRange[];
   parts: AnimationPart[];
-  skeleton: Skeleton;
+  /** Distinct skeletons in row order. */
+  skeletons: Skeleton[];
 }
 
 export interface BakeAnimationOptions {
@@ -35,9 +38,10 @@ const _quaternion = new Quaternion();
 const _scale = new Vector3();
 
 /**
- * Plays every clip on the prototype (moved to the origin for the duration), and copies `skeleton.boneMatrices`
- * (`bone.matrixWorld × boneInverse`, what three uploads as its bone texture) into one texture row per frame.
- * `AnimatedInstances` reads those rows per instance. The prototype's transform and pose are restored.
+ * Plays every clip on the prototype (moved to the origin for the duration), and copies every distinct skeleton's
+ * `boneMatrices` (`bone.matrixWorld × boneInverse`, what three uploads as its bone texture) into one texture row per
+ * frame, skeleton after skeleton. `AnimatedInstances` reads those rows per instance. The prototype's transform and
+ * pose are restored.
  */
 export function bakeAnimationTexture(prototype: Object3D, clips: AnimationClip[], options: BakeAnimationOptions = {}): AnimationTexture {
   const fps = options.fps ?? 30;
@@ -46,8 +50,19 @@ export function bakeAnimationTexture(prototype: Object3D, clips: AnimationClip[]
     if ((o as SkinnedMesh).isSkinnedMesh) parts.push(o as SkinnedMesh);
   });
   if (parts.length === 0) throw new Error('bakeAnimationTexture: the prototype has no SkinnedMesh');
-  const skeleton = parts[0]!.skeleton;
-  const bones = skeleton.bones.length;
+  const skeletons: Skeleton[] = [];
+  const offsets: number[] = [];
+  let bones = 0;
+  for (const part of parts) {
+    let k = skeletons.indexOf(part.skeleton);
+    if (k < 0) {
+      k = skeletons.length;
+      skeletons.push(part.skeleton);
+      offsets.push(bones);
+      bones += part.skeleton.bones.length;
+    }
+    part.userData.forgeBoneOffset = offsets[k];
+  }
   const width = bones * 4;
   const ranges: AnimationClipRange[] = [];
   let height = 0;
@@ -79,8 +94,10 @@ export function bakeAnimationTexture(prototype: Object3D, clips: AnimationClip[]
     for (let f = 0; f < range.frames; f++) {
       mixer.setTime(Math.min(clip.duration, f / fps));
       prototype.updateMatrixWorld(true);
-      skeleton.update();
-      data.set(skeleton.boneMatrices!.subarray(0, bones * 16), (range.start + f) * width * 4);
+      skeletons.forEach((skeleton, k) => {
+        skeleton.update();
+        data.set(skeleton.boneMatrices!.subarray(0, skeleton.bones.length * 16), ((range.start + f) * width + offsets[k]! * 4) * 4);
+      });
     }
     action.stop();
     mixer.uncacheClip(clip);
@@ -91,7 +108,7 @@ export function bakeAnimationTexture(prototype: Object3D, clips: AnimationClip[]
   prototype.quaternion.copy(_quaternion);
   prototype.scale.copy(_scale);
   prototype.updateMatrixWorld(true);
-  skeleton.update();
+  for (const skeleton of skeletons) skeleton.update();
 
   const texture = new DataTexture(data, width, height, RGBAFormat, FloatType);
   texture.name = `forge:animation:${prototype.name || 'prototype'}`;
@@ -100,5 +117,5 @@ export function bakeAnimationTexture(prototype: Object3D, clips: AnimationClip[]
   texture.generateMipmaps = false;
   texture.flipY = false;
   texture.needsUpdate = true;
-  return { texture, fps, bones, clips: ranges, parts: parts.map((mesh, i) => ({ mesh, matrix: partMatrices[i]! })), skeleton };
+  return { texture, fps, bones, clips: ranges, parts: parts.map((mesh, i) => ({ mesh, matrix: partMatrices[i]!, boneOffset: mesh.userData.forgeBoneOffset as number })), skeletons };
 }

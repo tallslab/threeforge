@@ -1,4 +1,4 @@
-import { DynamicDrawUsage, InstancedBufferAttribute, InstancedBufferGeometry, InterleavedBuffer, Matrix4, Mesh, type Material, type Object3D } from 'three';
+import { DynamicDrawUsage, InstancedBufferAttribute, InstancedBufferGeometry, InstancedInterleavedBuffer, Matrix4, Mesh, type Material, type Object3D } from 'three';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { Fn, attribute, float, floor, instancedDynamicBufferAttribute, int, ivec2, mat3, mat4, mod, normalGeometry, normalLocal, positionGeometry, texture, uniform, vec4 } from 'three/tsl';
 import type { AnimationTexture } from './bakeAnimationTexture.js';
@@ -37,8 +37,12 @@ export class AnimatedInstances {
   readonly meshes: Mesh[];
   /** Per-instance `[clipStart, clipFrames, timeOffset, speed]`. */
   readonly clipAttribute: InstancedBufferAttribute;
-  /** Per-instance matrices, 16 floats each. */
-  readonly matrixBuffer: InterleavedBuffer;
+  /**
+   * Per-instance matrices, 16 floats each, as one interleaved buffer (four separate attributes would exceed WebGPU's
+   * eight vertex buffers). It must be the instanced kind: both backends derive the per-instance step from
+   * `isInstancedInterleavedBuffer`, and a plain `InterleavedBuffer` is read per vertex.
+   */
+  readonly matrixBuffer: InstancedInterleavedBuffer;
   private readonly timeUniform: { value: number };
   private readonly parts: Array<{ geometry: InstancedBufferGeometry; material: MeshStandardNodeMaterial }> = [];
   private seconds = 0;
@@ -49,7 +53,7 @@ export class AnimatedInstances {
     const { animation, count } = this;
     this.clipAttribute = new InstancedBufferAttribute(new Float32Array(count * 4), 4);
     this.clipAttribute.setUsage(DynamicDrawUsage);
-    this.matrixBuffer = new InterleavedBuffer(new Float32Array(count * 16), 16);
+    this.matrixBuffer = new InstancedInterleavedBuffer(new Float32Array(count * 16), 16, 1);
     this.matrixBuffer.setUsage(DynamicDrawUsage);
     for (let i = 0; i < count; i++) {
       _matrix.identity().toArray(this.matrixBuffer.array as Float32Array, i * 16);
@@ -92,8 +96,9 @@ export class AnimatedInstances {
       // Frame of this instance: the clip's start row plus the wrapped frame counter.
       const frame: N = floor(mod(time.mul(clip.w).add(clip.z).mul(fps), clip.y));
       const row: N = int(clip.x.add(frame));
+      const boneOffset: N = int(part.boneOffset);
       const bone = (index: N): N => {
-        const x: N = int(index).mul(4);
+        const x: N = int(index).add(boneOffset).mul(4);
         return mat4(animationTexture.load(ivec2(x, row)), animationTexture.load(ivec2(x.add(1), row)), animationTexture.load(ivec2(x.add(2), row)), animationTexture.load(ivec2(x.add(3), row)));
       };
       material.positionNode = Fn(() => {

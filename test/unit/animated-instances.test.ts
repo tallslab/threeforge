@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { InstancedBufferAttribute, InstancedBufferGeometry, Matrix4, Scene } from 'three';
+import { InstancedBufferAttribute, InstancedBufferGeometry, Matrix4, Scene, InstancedInterleavedBuffer } from 'three';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { AnimatedInstances } from '../../src/skinning/AnimatedInstances.js';
 import { bakeAnimationTexture } from '../../src/skinning/bakeAnimationTexture.js';
@@ -41,6 +41,9 @@ describe('AnimatedInstances', () => {
     expect(out.elements[13]).toBe(0.5);
     // InterleavedBuffer.needsUpdate is a setter that bumps the version.
     expect(instances.matrixBuffer.version).toBeGreaterThan(0);
+    // Both backends read an interleaved attribute per instance only when its buffer is the instanced kind.
+    expect(instances.matrixBuffer).toBeInstanceOf(InstancedInterleavedBuffer);
+    expect(instances.matrixBuffer.meshPerAttribute).toBe(1);
     instances.setClipAt(2, 'spin', { offset: 0.5, speed: 2 });
     const clip = instances.clipAttribute as InstancedBufferAttribute;
     expect([clip.getX(2), clip.getY(2), clip.getZ(2), clip.getW(2)]).toEqual([0, 11, 0.5, 2]);
