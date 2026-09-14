@@ -13,7 +13,8 @@ const scenes: Array<{ id: string; naiveMin: number; optimizedMax: number; counts
   // Sprites are not batched until SP3 and the water reflection renders them twice: the lake's optimized bound is loose on purpose.
   { id: 'lake', naiveMin: 1900, optimizedMax: 4200, counts: { rain: 2000 } },
   { id: 'daynight', naiveMin: 300, optimizedMax: 70, counts: { props: 300, shadowMap: 2048 } },
-  { id: 'zen', naiveMin: 5000, optimizedMax: 420, counts: { objects: 50000, chunks: 64 }, timeout: 600_000 },
+  // Fog ends the zen view at 600 m, so three's own frustum culling already drops most of the 50 000 objects in the naive variant.
+  { id: 'zen', naiveMin: 3000, optimizedMax: 420, counts: { objects: 50000, chunks: 64 }, timeout: 600_000 },
   // One of four gear pieces is always taken off: body + 3 gear naive, one merged skinned mesh optimized.
   { id: 'rpg', naiveMin: 4, optimizedMax: 1, counts: { gear: 4 } },
 ];

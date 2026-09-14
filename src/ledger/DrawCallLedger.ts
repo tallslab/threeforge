@@ -195,17 +195,20 @@ export class DrawCallLedger {
     this.graphStats = { objects: objects - 1, autoUpdatedMatrices: auto - 1, hiddenOriginals: hidden, at: this.framesSeen };
     const memory = this.renderer?.info.memory;
     this.memoryStats = estimateMemory(scene, { textures: memory?.textures ?? 0, geometries: memory?.geometries ?? 0 }, this.environment.viewport);
-    if (this.streamer) {
-      const s = this.streamer.stats();
-      this.memoryStats = { ...this.memoryStats, chunks: { total: s.chunks, resident: s.resident } };
-    }
-    this.last = { ...this.last, js: { ...this.last.js, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals }, memory: this.memoryStats };
+    this.last = { ...this.last, js: { ...this.last.js, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals }, memory: this.memoryNow() };
     this.last = { ...this.last, hints: hintsFor(this.last, this.budgets(), this.hintContext) };
   }
 
   /** A RenderScheduler whose skipped ticks the js section reports; null detaches. */
   attachScheduler(scheduler: { skippedRecently(): number } | null): void {
     this.scheduler = scheduler;
+  }
+
+  /** The last estimate with the attached streamer's residency read live (its stats are cheap; the traversal is not). */
+  private memoryNow(): MemorySnapshot {
+    if (!this.streamer) return this.memoryStats;
+    const s = this.streamer.stats();
+    return { ...this.memoryStats, chunks: { total: s.chunks, resident: s.resident } };
   }
 
   /** A Streamer whose chunk residency the memory section reports; null detaches. */
@@ -350,7 +353,7 @@ export class DrawCallLedger {
       descriptions,
       lights: this.current.lights,
       js: { renderMs: this.now() - this.current.startedAt, frameMs, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals, skipped: this.scheduler?.skippedRecently() ?? 0 },
-      memory: this.memoryStats,
+      memory: this.memoryNow(),
       overdraw: {
         opaque: this.overdraw?.opaque ?? 0,
         transparent: this.overdraw?.transparent ?? 0,

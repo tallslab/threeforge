@@ -14,13 +14,22 @@ function texturesOf(material: Material, into: Set<Texture>): void {
   for (const value of Object.values(material as unknown as Record<string, unknown>)) {
     if ((value as Texture | null)?.isTexture) into.add(value as Texture);
   }
+  // Node materials sample textures through TSL nodes the properties do not show; modules list them here (AnimatedInstances does).
+  const extra = material.userData.forgeTextures as unknown;
+  if (Array.isArray(extra)) for (const t of extra) if ((t as Texture | null)?.isTexture) into.add(t as Texture);
 }
 
-/** Every geometry, material and texture reachable from `root` (a Scene adds its background and environment). */
+/**
+ * Every geometry, material and texture reachable from `root`: material properties, node textures listed in
+ * `material.userData.forgeTextures`, a BatchedMesh's matrix/indirect/colour textures, a skeleton's bone texture, and
+ * for a Scene its background and environment.
+ */
 export function collectResources(root: Object3D, into: ResourceSets = emptyResourceSets()): ResourceSets {
   root.traverse((o) => {
-    const mesh = o as Object3D & { geometry?: BufferGeometry; material?: Material | Material[] };
+    const mesh = o as Object3D & { geometry?: BufferGeometry; material?: Material | Material[]; isBatchedMesh?: boolean; _matricesTexture?: Texture | null; _indirectTexture?: Texture | null; _colorsTexture?: Texture | null; isSkinnedMesh?: boolean; skeleton?: { boneTexture?: Texture | null } };
     if (mesh.geometry) into.geometries.add(mesh.geometry);
+    if (mesh.isBatchedMesh) for (const t of [mesh._matricesTexture, mesh._indirectTexture, mesh._colorsTexture]) if (t) into.textures.add(t);
+    if (mesh.isSkinnedMesh && mesh.skeleton?.boneTexture) into.textures.add(mesh.skeleton.boneTexture);
     const materials = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
     for (const material of materials) {
       into.materials.add(material);

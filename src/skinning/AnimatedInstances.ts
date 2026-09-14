@@ -108,6 +108,8 @@ export class AnimatedInstances {
         normalLocal.assign(mat3(instanceMatrix).mul(mat3(skin).mul(normalGeometry)));
         return instanceMatrix.mul(skin.mul(vec4(positionGeometry, 1))).xyz;
       })();
+      // The animation texture is sampled through a node, invisible to material properties: list it for collectResources.
+      material.userData.forgeTextures = [animation.texture];
       const mesh = new Mesh(geometry, material);
       mesh.name = `forge:vat:${part.mesh.name || 'part'}`;
       mesh.frustumCulled = false;

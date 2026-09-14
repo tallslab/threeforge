@@ -1,7 +1,7 @@
 import { AmbientLight, AnimationMixer, BatchedMesh, Box3, BoxGeometry, Color, DirectionalLight, Frustum, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Sphere, Vector3, type AnimationClip, type Object3D, type OrthographicCamera } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import * as THREE from 'three';
-import { AnimatedInstances, DrawCallLedger, MaterialRegistry, ParticleBudget, RenderScheduler, ResolutionScaler, ShadowBudget, World, bakeAnimationTexture, assembleCharacter, detectTier, exposeToAgents, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot, type ParticleBudgetReport, type ShadowBudgetReport, type Tier } from 'threeforge';
+import { AnimatedInstances, DrawCallLedger, MaterialRegistry, ParticleBudget, RenderScheduler, ResolutionScaler, ResourceTracker, ShadowBudget, World, bakeAnimationTexture, assembleCharacter, collectResources, createLoader, detectTier, disposeLoader, exposeToAgents, prepareLods, tag, unreferencedResources, type Streamer, type AssembledCharacter, type CompileReport, type FrameSnapshot, type ParticleBudgetReport, type ShadowBudgetReport, type Tier } from 'threeforge';
 import { createOverlay } from 'threeforge/overlay';
 import { BENCH_SCENES, type BenchScene } from './scenes/index.js';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
@@ -53,6 +53,14 @@ export interface GltfInfo {
   bones: number;
 }
 
+/** `__forge.memory`: load a named asset through createLoader, remove it with or without release, read the renderer's counts. */
+export interface MemoryHarness {
+  load(name: string): Promise<{ geometries: number; textures: number }>;
+  remove(): void;
+  release(): { geometries: number; textures: number };
+  info(): { geometries: number; textures: number; reachable: { geometries: number; textures: number }; renderTargets: number; unreferenced: { geometries: number; textures: number } };
+}
+
 export interface ForgeHarness {
   /** The three namespace, for in-page probes from Playwright. */
   three: typeof THREE;
@@ -87,6 +95,9 @@ export interface ForgeHarness {
   refreshShadow?(): void;
   /** `scene=vat`: the animated-instances twin of the loaded character (`vatClip`, `vatTime` params). */
   vat?: AnimatedInstances;
+  /** The optimized zen variant's chunk streamer (attached to the ledger). */
+  streamer?: Streamer;
+  memory: MemoryHarness;
   /** Pose animations and effects at time t (arena). */
   setTime(t: number): void;
   compile(): CompileReport;
@@ -376,6 +387,41 @@ try {
     throw new Error(`unknown scene "${sceneName}"`);
   }
 
+  const tracker = new ResourceTracker({ registry });
+  let loadedRoot: THREE.Object3D | null = null;
+  const memory: MemoryHarness = {
+    async load(name) {
+      const lists = await Promise.all(['/index.json', '/kits-index.json'].map((u) => fetch(u).then((r) => (r.ok ? r.json() : [])).catch(() => [])));
+      const entry = (lists.flat() as Array<{ name: string; entry?: string }>).find((a) => a.name === name);
+      if (!entry?.entry) throw new Error(`asset "${name}" not found in test/assets/files (run pnpm assets)`);
+      const loader = await createLoader(renderer, { decoders: '/_decoders/' });
+      const gltf = await loader.loadAsync('/' + entry.entry);
+      disposeLoader(loader);
+      loadedRoot = gltf.scene;
+      gltf.scene.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh) tag.static(o);
+      });
+      scene.add(gltf.scene);
+      tracker.track(gltf.scene);
+      const r = collectResources(gltf.scene);
+      return { geometries: r.geometries.size, textures: r.textures.size };
+    },
+    remove() {
+      loadedRoot?.removeFromParent();
+    },
+    release() {
+      const r = loadedRoot ? tracker.release(loadedRoot) : { geometries: 0, textures: 0, materials: 0 };
+      loadedRoot = null;
+      return { geometries: r.geometries, textures: r.textures };
+    },
+    info() {
+      const m = renderer.info.memory;
+      const estimate = ledger.measureMemory();
+      const reachable = collectResources(scene);
+      return { geometries: m.geometries, textures: m.textures, reachable: { geometries: reachable.geometries.size, textures: reachable.textures.size }, renderTargets: estimate.renderTargets.count, unreferenced: estimate.unreferenced };
+    },
+  };
+
   function renderOnce(): RenderOnceResult {
     // Delta inside one synchronous render() call: immune to info.autoReset running on three's own rAF.
     const before = renderer.info.render.drawCalls;
@@ -507,6 +553,7 @@ try {
     await bench.prepare?.(scene);
     compile();
     await bench.after?.(world);
+    if (bench.streamer) ledger.attachStreamer(bench.streamer);
     await world.warmup(renderer, camera);
   }
   if (params.get('overlay') === '1') {
@@ -576,7 +623,7 @@ try {
     });
   }
 
-  window.__forge = { three: THREE, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, particleReport, scaler, scheduler, shadowReport, refreshShadow, vat: vatInstances, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
+  window.__forge = { three: THREE, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, particleReport, scaler, scheduler, shadowReport, refreshShadow, vat: vatInstances, streamer: bench?.streamer, memory, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
 } catch (error) {
   window.__forge = { ready: false, error: error instanceof Error ? error.stack ?? error.message : String(error) } as ForgeHarness;
   throw error;

@@ -25,6 +25,11 @@ export function textureBytes(texture: Texture): number {
   return Math.round(texture.generateMipmaps ? (base * 4) / 3 : base);
 }
 
+/** Renderer-internal allocations present on an empty scene. */
+const INTERNAL_GEOMETRIES = 1;
+const FRAME_BUFFER_TEXTURES = 2;
+const SHADOW_MAP_TEXTURES = 2;
+
 export function geometryBytes(geometry: BufferGeometry): number {
   let bytes = geometry.index?.array.byteLength ?? 0;
   for (const attribute of Object.values(geometry.attributes)) bytes += attribute.array.byteLength;
@@ -58,8 +63,11 @@ export function estimateMemory(scene: Object3D, info: { textures: number; geomet
     textures: { count: Math.max(info.textures, textures.size), bytes: textureTotal },
     geometries: { count: Math.max(info.geometries, geometries.size), bytes: geometryTotal },
     renderTargets: { count: rtCount, bytes: rtBytes },
-    // Render-target textures (shadow maps, the frame buffer) count in info.memory.textures without being in the scene.
-    unreferenced: { geometries: Math.max(0, info.geometries - geometries.size), textures: Math.max(0, info.textures - textures.size - rtCount) },
+    // What the renderer allocates for itself counts in info.memory without being in the scene: one geometry, two
+    // textures for the frame buffer (colour and depth) and two per shadow map (measured on an empty
+    // scene and on the naive scene with shadows, both backends). Reachable textures that never rendered are not
+    // uploaded, so the count clamps at zero and is exact once everything reachable has been on screen.
+    unreferenced: { geometries: Math.max(0, info.geometries - geometries.size - INTERNAL_GEOMETRIES), textures: Math.max(0, info.textures - textures.size - FRAME_BUFFER_TEXTURES - SHADOW_MAP_TEXTURES * (rtCount - 1)) },
     chunks: { total: 0, resident: 0 },
     estimated: true,
   };

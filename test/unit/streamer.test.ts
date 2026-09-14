@@ -43,17 +43,17 @@ describe('Streamer', () => {
     const events: string[] = [];
     streamer.onChange((e) => events.push(`${e.kind} ${e.cell.join(',')}`));
     expect(streamer.stats()).toEqual({ chunks: 4, resident: 4, loads: 0, unloads: 0 });
-    // Camera x = 10: cells 0 (0..20) and 1 (20..40, distance 10) are within 25; cell 2 (distance 30) stays by hysteresis; cell 3 (distance 50) unloads.
+    // Camera x = 10: cells 0 (0..20) and 1 (20..40, distance 10) are within 25; the first update places strictly, so cells 2 (distance 30) and 3 (distance 50) unload.
     streamer.update();
-    expect(streamer.stats()).toEqual({ chunks: 4, resident: 3, loads: 0, unloads: 1 });
-    expect(events).toEqual(['unload 3,0,0']);
+    expect(streamer.stats()).toEqual({ chunks: 4, resident: 2, loads: 0, unloads: 2 });
+    expect(events).toEqual(['unload 2,0,0', 'unload 3,0,0']);
     expect(tiles[3]!.parent).toBeNull();
     expect(scene.getObjectByName('tile-3')).toBeUndefined();
     camera.position.x = 70;
     camera.updateMatrixWorld();
-    // Cell 3 (distance 0) loads; cell 0 (distance 50) unloads; cell 1 (distance 30) stays.
+    // Cells 3 (distance 0) and 2 (distance 10) load; cell 0 (distance 50 > 25 + 20) unloads; cell 1 (distance 30) stays by hysteresis.
     streamer.update();
-    expect(streamer.stats()).toEqual({ chunks: 4, resident: 3, loads: 1, unloads: 2 });
+    expect(streamer.stats()).toEqual({ chunks: 4, resident: 3, loads: 2, unloads: 3 });
     expect(tiles[3]!.parent).toBe(scene);
     expect(tiles[0]!.parent).toBeNull();
   });

@@ -6,7 +6,7 @@
 import type { AnimationClip, Object3D, PerspectiveCamera, Scene } from 'three';
 import type { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { WebGPURenderer } from 'three/webgpu';
-import type { Tier, World, WorldOptions } from 'threeforge';
+import type { Streamer, Tier, World, WorldOptions } from 'threeforge';
 import { bossfight } from './bossfight.js';
 import { crowd } from './crowd.js';
 import { daynight } from './daynight.js';
@@ -42,6 +42,8 @@ export interface BenchScene {
   animations?: Array<AnimationClip | { root: Object3D; clips: AnimationClip[] }>;
   /** Portrait 9:16 canvas (mobile RPG). */
   portrait?: boolean;
+  /** Set by `after` when the optimized variant streams chunks; the harness attaches it to the ledger. */
+  streamer?: Streamer;
 }
 
 export type BenchBuilder = (ctx: BenchContext) => Promise<BenchScene>;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BoxGeometry, DataTexture, Group, Mesh, MeshStandardMaterial, RGBAFormat, Scene, SphereGeometry, UnsignedByteType } from 'three';
+import { BatchedMesh, BoxGeometry, DataTexture, Group, Mesh, MeshStandardMaterial, RGBAFormat, Scene, SphereGeometry, UnsignedByteType, type Texture } from 'three';
 import { ResourceTracker } from '../../src/memory/ResourceTracker.js';
 import { collectResources, unreferencedResources } from '../../src/memory/resources.js';
 
@@ -18,6 +18,18 @@ describe('collectResources', () => {
     expect(r.materials.size).toBe(3);
     expect([...r.textures]).toEqual(expect.arrayContaining([map, env]));
     expect(r.textures.size).toBe(2);
+  });
+
+  it('sees node-material textures listed in userData.forgeTextures, BatchedMesh textures and skeleton bone textures', () => {
+    const node = tex();
+    const material = new MeshStandardMaterial();
+    material.userData.forgeTextures = [node];
+    const batch = new BatchedMesh(4, 64, 96, new MeshStandardMaterial());
+    const root = new Group().add(new Mesh(new BoxGeometry(), material), batch);
+    const r = collectResources(root);
+    expect(r.textures.has(node)).toBe(true);
+    expect(r.textures.has((batch as unknown as { _matricesTexture: Texture })._matricesTexture)).toBe(true);
+    expect(r.textures.size).toBeGreaterThanOrEqual(3);
   });
 });
 

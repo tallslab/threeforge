@@ -59,6 +59,8 @@ export class Streamer {
   private readonly listeners = new Set<(event: StreamerEvent) => void>();
   private loads = 0;
   private unloads = 0;
+  /** The first update places every chunk strictly by `radius`; hysteresis applies to the transitions after it. */
+  private placed = false;
 
   constructor(options: StreamerOptions) {
     const size = options.world.chunkSize;
@@ -128,10 +130,12 @@ export class Streamer {
 
   /** Loads and unloads chunks for the camera's current position; call it every frame or from a camera watcher. */
   update(): StreamerStats {
+    const unloadBeyond = this.placed ? this.radius + this.margin : this.radius;
+    this.placed = true;
     for (const chunk of this.chunks.values()) {
       const d = this.distance(chunk.cell);
       if (!chunk.resident && d <= this.radius) this.load(chunk);
-      else if (chunk.resident && d > this.radius + this.margin) this.unload(chunk);
+      else if (chunk.resident && d > unloadBeyond) this.unload(chunk);
     }
     return this.stats();
   }
