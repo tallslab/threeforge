@@ -19,7 +19,7 @@ export { estimateMemory, geometryBytes, textureBytes } from './ledger/memory.js'
 export { lightingOf, scanLights, skinningOf, type LightInfo } from './ledger/sections.js';
 export { classify, exclusionRule, animatedRoots, type Classification, type ClassifyOptions, type MeshKind } from './compiler/classify.js';
 export { attributeSignature, ensureIndexed, isBatchCompatible } from './compiler/geometryCompat.js';
-export { World, FORGE_HIDDEN_LAYER, type BakeSummary, type CompileOptions, type CompileReport, type WarmupOptions, type WarmupRenderer, type WarmupResult, type WorldOptions } from './compiler/World.js';
+export { World, FORGE_HIDDEN_LAYER, type BakeSummary, type CompileOptions, type CompileReport, type DirtyEvent, type WarmupOptions, type WarmupRenderer, type WarmupResult, type WorldOptions } from './compiler/World.js';
 export type { BakedGroup, GroupReport, Slot } from './compiler/batchStatics.js';
 export { attachBvhCulling, prependAfterRenderHook, prependRenderHook, levelFor, FORGE_HOOK, type CullingHandle, type CullingLod, type CullingOptions, type NestedPassPolicy } from './compiler/culling.js';
 export { createCulledInstancedMesh, type CulledInstancedMesh, type InstanceCullingHandle, type InstancingOptions } from './compiler/instancing.js';

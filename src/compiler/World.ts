@@ -89,6 +89,12 @@ export interface BakeSummary {
   excludedEntries: number;
 }
 
+/** What `world.onDirty` reports: the graph changed in a way that needs a new frame. */
+export interface DirtyEvent {
+  kind: 'markDirty' | 'setVisible' | 'compile' | 'decompile';
+  object?: Object3D;
+}
+
 export interface CompileReport {
   before: { meshes: number; materials: number };
   after: { batches: number; instanced: number; baked: number; spriteBatches: number; frozen: number; meshes: number };
@@ -210,6 +216,7 @@ export class World {
   private readonly spriteThreshold: number;
   private readonly freezeStatics: boolean;
   private frozenList: Array<{ object: Object3D; matrixAutoUpdate: boolean }> = [];
+  private dirtyListeners = new Set<(event: DirtyEvent) => void>();
   private spriteBatchList: SpriteBatch[] = [];
   private slots = new Map<Mesh, Slot>();
   private originalsByBatch = new Map<BatchedMesh | InstancedMesh, Mesh[]>();
@@ -397,6 +404,7 @@ export class World {
     }
 
     this.compiled = true;
+    this.emitDirty({ kind: 'compile' });
     return {
       before,
       after: { batches: this.batches.length, instanced: this.instanced.length, baked: this.baked.length, spriteBatches: this.spriteBatchList.length, frozen: this.frozenList.length, meshes: classifications.length - result.slots.size },
@@ -456,7 +464,54 @@ export class World {
   }
 
   /** Show or hide an original mesh, wherever it ended up. A baked module rebakes its group. */
+  /** Listen for graph changes that need a new frame (`markDirty`, `setVisible`, `compile`, `decompile`); returns the disposer. */
+  onDirty(listener: (event: DirtyEvent) => void): () => void {
+    this.dirtyListeners.add(listener);
+    return () => {
+      this.dirtyListeners.delete(listener);
+    };
+  }
+
+  private emitDirty(event: DirtyEvent): void {
+    for (const listener of this.dirtyListeners) listener(event);
+  }
+
+  /**
+   * Move a frozen static (or a whole subtree) on demand: recomposes every local matrix under `object`, recomputes
+   * the world matrices, and pushes every batched original in the subtree into its batch (BatchedMesh matrix and BVH
+   * leaf, InstancedMesh through its culling handle, baked groups by rebaking once). Sprite batches follow on their
+   * own. Returns the number of batched instances updated.
+   */
+  markDirty(object: Object3D): number {
+    object.traverse((o) => o.updateMatrix());
+    object.updateMatrixWorld(true);
+    let updated = 0;
+    const rebakes = new Set<BakedGroup>();
+    object.traverse((o) => {
+      const slot = this.slots.get(o as Mesh);
+      if (!slot) return;
+      const bakedGroup = this.baked.find((b) => b.mesh === slot.batch);
+      if (bakedGroup) {
+        rebakes.add(bakedGroup);
+        updated++;
+        return;
+      }
+      const target = slot.batch as BatchedMesh | CulledInstancedMesh;
+      if ((target as BatchedMesh).isBatchedMesh) {
+        (target as BatchedMesh).setMatrixAt(slot.instanceId, o.matrixWorld);
+        this.cullingHandles.get(target as BatchedMesh)?.move(slot.instanceId);
+      } else {
+        (target as CulledInstancedMesh).forgeCulling.setMatrixAt(slot.instanceId, o.matrixWorld);
+      }
+      updated++;
+    });
+    for (const group of rebakes) rebake(group);
+    this.emitDirty({ kind: 'markDirty', object });
+    return updated;
+  }
+
   setVisible(original: Mesh, visible: boolean): void {
+    this.emitDirty({ kind: 'setVisible', object: original });
     const slot = this.slots.get(original);
     if (!slot) {
       original.visible = visible;
@@ -626,6 +681,7 @@ export class World {
     this.hidden = [];
     this.materialSwaps = [];
     this.compiled = false;
+    this.emitDirty({ kind: 'decompile' });
   }
 
   slotOf(mesh: Mesh): Slot | undefined {
