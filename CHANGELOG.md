@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0 — 2026-09-14
+
+- `DayNight`: sun, gradient sky dome, hemisphere light, fog and background from the hour of day; the shadow map re-renders only when the sun moved `everyDegrees`.
+- `ShadowBudget`: shadow maps fitted to the tier's texel budget, point shadows off on phones, an off-switch by tier, `freeze(light)` for static shadows.
+- Bake carries and welds every UV set (lightmaps survive). Bench metric `shadowPassesPerFrame` (baselines promoted: day/night 1 → 0.5).
+
 ## 0.5.0 — 2026-09-14
 
 - Freezing at compile (`freeze`, default on): unbatched statics and all-static ancestors get `matrixAutoUpdate = false`; `world.markDirty(object)` moves a frozen static and updates its batch, instance or bake; `world.onDirty(listener)`.

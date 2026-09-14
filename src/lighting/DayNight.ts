@@ -118,8 +118,9 @@ export class DayNight {
       const material = new MeshBasicMaterial({ vertexColors: true, side: BackSide, fog: false, depthWrite: false, toneMapped: false });
       this.dome = new Mesh(geometry, material);
       // Named rather than marked: the static tag owns `userData.forge`.
+      // Culling stays on: the dome surrounds the camera, so its sphere always intersects the frustum, and the
+      // compiler then treats it as a plain static singleton (frozen, one submission).
       this.dome.name = 'sky-dome';
-      this.dome.frustumCulled = false;
       tag.static(this.dome);
       scene.add(this.dome);
     } else {

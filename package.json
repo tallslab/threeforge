@@ -1,6 +1,6 @@
 {
   "name": "threeforge",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Frame-budget compiler and diagnostics for three.js games: batches naive scenes, measures every frame cost, explains what to fix. CLI and MCP for AI agents.",
   "type": "module",
   "license": "MIT",

@@ -68,6 +68,7 @@ npx threeforge inspect http://localhost:5173 --compile --json
 | `src/lod` | meshoptimizer LOD generation |
 | `src/overdraw` | `ParticleBudget` (particle caps per tier) and `ResolutionScaler` (dynamic drawing-buffer scale) |
 | `src/scheduler` | `RenderScheduler` (render on change) |
+| `src/lighting` | `DayNight` (sun, sky dome, hemisphere, fog, quantized shadow updates) and `ShadowBudget` (map sizes per tier, frozen shadows) |
 | `src/character` | the character assembler (gear merged onto one skeleton, one atlas) |
 | `src/overlay` | text formatting of a snapshot and the DOM overlay |
 | `src/agent` | `exposeToAgents` (the `window.__threeforge` hook) |
@@ -355,10 +356,28 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
   `detach-originals` (1 000 or more hidden originals: `originals: 'detach'`); bench metrics `objects` and
   `autoUpdatedMatrices`.
 
+### Lighting: `DayNight`, `ShadowBudget`, lightmaps
+
+- **`DayNight`** (`src/lighting/DayNight.ts`): one sun on a circle (rise 6, set 18, a faint moon below), a
+  gradient sky dome (`sky-dome`, vertex colours, static-tagged so it freezes and draws once), a hemisphere light,
+  fog and background following the horizon; `setTime(hours)` drives all of it and requests a shadow-map render
+  only when the sun moved `everyDegrees` (default 0.5) since the last one, through `shadow.needsUpdate` with
+  `autoUpdate` off. `refreshShadow()`, `dispose()`. The day/night benchmark renders the map every second frame.
+- **`ShadowBudget`** (`src/lighting/ShadowBudget.ts`): `apply(scene)` switches shadows off on the `off` tiers,
+  drops point-light shadows off phones, then halves the largest map until the texel sum fits the tier's
+  `shadowTexels` budget (floor `minMapSize`); three resizes the targets on the next shadow render. `release()`
+  restores. `ShadowBudget.freeze(light)` returns a `refresh()` for static lights.
+- **Lightmaps**: the registry keys `lightMap` and its channel, `attributeSignature` includes `uv1`, and the bake
+  carries and welds every UV set, so lightmapped statics batch and bake without losing their coordinates.
+  Authoring notes: `docs/lighting.md`.
+- **Bench**: `shadowPassesPerFrame` (mean over the measured frames) is gated; the optimized day/night and boss
+  fight apply `ShadowBudget` for the detected tier.
+
 ## 8. Bake: one mesh per finished group
 
 `new World(scene, { bake: true | options })` replaces the `BatchedMesh` of each finished static group with one
-world-space `Mesh` (`bakeGeometries` in `src/compiler/bake.ts`):
+world-space `Mesh` (`bakeGeometries` in `src/compiler/bake.ts`; every UV set present in all entries, `uv` to `uv3`,
+is carried and compared by the weld):
 
 1. **Gather**: positions and normals transformed to world space (mirrored matrices flip winding), uv when every
    module has it, colour from vertex colours × instance tint (then the material becomes a `vertexColors` clone).
@@ -539,8 +558,9 @@ gated.
 ## 14. Limits and roadmap
 
 Skinned meshes are measured but not yet instanced (baked animation textures, SP4); overdraw modules shipped in
-0.4.0 and per-frame JS (freezing, `markDirty`, `RenderScheduler`) in 0.5.0 (section 7); soft-particle materials are
-documented, not built (`docs/vfx.md`); lighting helpers (`DayNight`, `ShadowBudget`) are SP5; per-frame JS (`RenderScheduler`, static-subtree matrix
+0.4.0, per-frame JS (freezing, `markDirty`, `RenderScheduler`) in 0.5.0 and lighting (`DayNight`, `ShadowBudget`,
+lightmap path) in 0.6.0 (section 7); soft-particle materials are documented, not built (`docs/vfx.md`); cascaded
+shadow maps (three's `CSMShadowNode`) are not wired yet; per-frame JS (`RenderScheduler`, static-subtree matrix
 freezing) is SP6; memory and streaming (`ResourceTracker`, loader pipeline, chunk `Streamer`) is SP7;
 `threeforge optimize` shipped in 0.3.0 (section 10) and the device bench page with GitHub-native results is in
 section 11. Specs live in `docs/superpowers/specs`, plans in
