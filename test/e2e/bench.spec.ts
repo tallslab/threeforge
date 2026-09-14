@@ -19,6 +19,7 @@ for (const id of SCENE_IDS) {
           const f = window.__forge;
           const render: number[] = [];
           const frames: number[] = [];
+          const shadowPasses: number[] = [];
           for (let i = 0; i < warm; i++) {
             f.bench?.setTime?.(i / 60);
             await f.frameAsync();
@@ -31,6 +32,7 @@ for (const id of SCENE_IDS) {
             const now = performance.now();
             render.push(frame.js.renderMs);
             frames.push(now - last);
+            shadowPasses.push(frame.lighting.shadowPasses);
             last = now;
           }
           const median = (a: number[]): number => {
@@ -40,7 +42,7 @@ for (const id of SCENE_IDS) {
           const overdraw = await f.measureOverdraw();
           f.ledger.rescan();
           frame = await f.frameAsync();
-          return { frame, overdraw, renderMs: median(render), frameMs: median(frames) };
+          return { frame, overdraw, renderMs: median(render), frameMs: median(frames), shadowPassesPerFrame: shadowPasses.reduce((a, b) => a + b, 0) / Math.max(1, shadowPasses.length) };
         },
         { warm: WARM, measured: MEASURED },
       );
@@ -52,7 +54,7 @@ for (const id of SCENE_IDS) {
       const file = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { schemaVersion: 1, env, scenes: {} };
       file.env = env;
       file.scenes[id] ??= {};
-      file.scenes[id][variant] = metricsOf({ ...out.frame, overdraw: { ...out.frame.overdraw, ...out.overdraw, measured: true } }, out.renderMs, out.frameMs);
+      file.scenes[id][variant] = metricsOf({ ...out.frame, overdraw: { ...out.frame.overdraw, ...out.overdraw, measured: true } }, out.renderMs, out.frameMs, out.shadowPassesPerFrame);
       writeFileSync(path, JSON.stringify(file, null, 2));
     });
   }

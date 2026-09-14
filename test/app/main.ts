@@ -192,7 +192,7 @@ try {
     return loader;
   };
   if (benchBuilder) {
-    bench = await benchBuilder({ renderer, camera, params, loader: makeLoader, url: (p) => '/' + p.replace(/^\//, '') });
+    bench = await benchBuilder({ renderer, camera, params, loader: makeLoader, url: (p) => '/' + p.replace(/^\//, ''), tier });
     scene = bench.scene;
     animationSources = bench.animations ?? [];
     if (bench.portrait) {

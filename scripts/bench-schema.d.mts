@@ -15,6 +15,7 @@ export interface DeviceMetrics {
   fillMegapixels: number;
   objects: number;
   autoUpdatedMatrices: number;
+  shadowPassesPerFrame: number;
   renderMs: number;
   frameMs: number;
   unattributed: number;

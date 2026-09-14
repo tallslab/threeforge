@@ -113,7 +113,7 @@ async function runOne(host: Host, id: SceneId, variant: 'naive' | 'optimized', m
   camera.position.set(0, 110, 150);
   camera.lookAt(0, 0, 0);
   camera.updateMatrixWorld();
-  const bench = await BENCH_SCENES[id]!({ renderer, camera, params: new URLSearchParams(), loader: () => makeLoader(renderer), url });
+  const bench = await BENCH_SCENES[id]!({ renderer, camera, params: new URLSearchParams(), loader: () => makeLoader(renderer), url, tier: host.tier });
   const width = bench.portrait ? 450 : 800;
   const height = bench.portrait ? 800 : 600;
   renderer.setSize(width, height, false);
@@ -140,6 +140,7 @@ async function runOne(host: Host, id: SceneId, variant: 'naive' | 'optimized', m
     }
     const render: number[] = [];
     const frames: number[] = [];
+    const shadowPasses: number[] = [];
     let last = performance.now();
     for (let i = 0; i < measured; i++) {
       bench.setTime?.((WARM + i) / 60);
@@ -147,13 +148,14 @@ async function runOne(host: Host, id: SceneId, variant: 'naive' | 'optimized', m
       const now = performance.now();
       render.push(f.js.renderMs);
       frames.push(now - last);
+      shadowPasses.push(f.lighting.shadowPasses);
       last = now;
       if (i % 10 === 0) onProgress(`${id} ${variant} · frame ${i + 1}/${measured}`);
     }
     const overdraw = await ledger.measureOverdraw(scene, camera);
     ledger.rescan();
     const frame = await frameAsync();
-    return metricsOf({ ...frame, overdraw: { ...frame.overdraw, ...overdraw, measured: true } }, median(render), median(frames));
+    return metricsOf({ ...frame, overdraw: { ...frame.overdraw, ...overdraw, measured: true } }, median(render), median(frames), shadowPasses.reduce((a, b) => a + b, 0) / Math.max(1, shadowPasses.length));
   } finally {
     world.decompile();
     disposeScene(scene);

@@ -6,7 +6,7 @@
 import type { AnimationClip, Object3D, PerspectiveCamera, Scene } from 'three';
 import type { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { WebGPURenderer } from 'three/webgpu';
-import type { World, WorldOptions } from 'threeforge';
+import type { Tier, World, WorldOptions } from 'threeforge';
 import { bossfight } from './bossfight.js';
 import { crowd } from './crowd.js';
 import { daynight } from './daynight.js';
@@ -23,6 +23,8 @@ export interface BenchContext {
   loader(): Promise<GLTFLoader>;
   /** Resolves a path under the served asset root (test/assets/files, or the bench page's public dir). */
   url(path: string): string;
+  /** The detected (or forced) device tier: optimized variants size shadows and particles for it. */
+  tier: Tier;
 }
 
 export interface BenchScene {

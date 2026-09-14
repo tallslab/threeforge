@@ -29,13 +29,15 @@ export interface BenchMetrics {
   objects: number;
   /** Objects whose matrices three recomposes every frame (freezing lowers it). */
   autoUpdatedMatrices: number;
+  /** Mean shadow passes per measured frame (a frozen or quantized shadow map renders on few of them). */
+  shadowPassesPerFrame: number;
   renderMs: number;
   frameMs: number;
   unattributed: number;
 }
 
 /** Shared by the CI runner (test/e2e/bench.spec.ts) and the device bench page so the two cannot drift. */
-export function metricsOf(f: FrameSnapshot, renderMs: number, frameMs: number): BenchMetrics {
+export function metricsOf(f: FrameSnapshot, renderMs: number, frameMs: number, shadowPassesPerFrame: number): BenchMetrics {
   return {
     sceneSubmissions: f.totals.sceneSubmissions,
     gpuDraws: f.totals.gpuDraws,
@@ -53,6 +55,7 @@ export function metricsOf(f: FrameSnapshot, renderMs: number, frameMs: number): 
     fillMegapixels: Number((((f.overdraw.opaque + f.overdraw.transparent) * f.overdraw.pixels) / 1e6).toFixed(3)),
     objects: f.js.objects,
     autoUpdatedMatrices: f.js.autoUpdatedMatrices,
+    shadowPassesPerFrame: Number(shadowPassesPerFrame.toFixed(3)),
     renderMs,
     frameMs,
     unattributed: f.totals.unattributed,

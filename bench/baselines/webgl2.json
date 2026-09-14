@@ -27,8 +27,9 @@
         "fillMegapixels": 0.394,
         "objects": 310,
         "autoUpdatedMatrices": 310,
+        "shadowPassesPerFrame": 0,
         "renderMs": 2.5999999940395355,
-        "frameMs": 19.099999994039536,
+        "frameMs": 18.80000001192093,
         "unattributed": 0
       },
       "optimized": {
@@ -48,8 +49,9 @@
         "fillMegapixels": 0.357,
         "objects": 325,
         "autoUpdatedMatrices": 33,
+        "shadowPassesPerFrame": 0,
         "renderMs": 1,
-        "frameMs": 17,
+        "frameMs": 16.799999982118607,
         "unattributed": 0
       }
     },
@@ -71,8 +73,9 @@
         "fillMegapixels": 0.864,
         "objects": 7004,
         "autoUpdatedMatrices": 7004,
-        "renderMs": 32.69999998807907,
-        "frameMs": 138,
+        "shadowPassesPerFrame": 0,
+        "renderMs": 33.30000001192093,
+        "frameMs": 138.59999999403954,
         "unattributed": 0
       },
       "optimized": {
@@ -92,8 +95,9 @@
         "fillMegapixels": 0.605,
         "objects": 7016,
         "autoUpdatedMatrices": 15,
-        "renderMs": 2.199999988079071,
-        "frameMs": 84.40000000596046,
+        "shadowPassesPerFrame": 0,
+        "renderMs": 2.100000023841858,
+        "frameMs": 87.2999999821186,
         "unattributed": 0
       }
     },
@@ -115,8 +119,9 @@
         "fillMegapixels": 0.425,
         "objects": 2203,
         "autoUpdatedMatrices": 2203,
-        "renderMs": 4.5999999940395355,
-        "frameMs": 38.599999994039536,
+        "shadowPassesPerFrame": 0,
+        "renderMs": 4.5,
+        "frameMs": 37.60000002384186,
         "unattributed": 0
       },
       "optimized": {
@@ -136,8 +141,9 @@
         "fillMegapixels": 0.425,
         "objects": 2203,
         "autoUpdatedMatrices": 2202,
-        "renderMs": 4.700000017881393,
-        "frameMs": 39.099999994039536,
+        "shadowPassesPerFrame": 0,
+        "renderMs": 4.5,
+        "frameMs": 37.20000001788139,
         "unattributed": 0
       }
     },
@@ -159,8 +165,9 @@
         "fillMegapixels": 1.143,
         "objects": 1497,
         "autoUpdatedMatrices": 1497,
-        "renderMs": 23.400000005960464,
-        "frameMs": 131.69999998807907,
+        "shadowPassesPerFrame": 3,
+        "renderMs": 23.399999976158142,
+        "frameMs": 129.09999999403954,
         "unattributed": 0
       },
       "optimized": {
@@ -180,8 +187,9 @@
         "fillMegapixels": 1.138,
         "objects": 1528,
         "autoUpdatedMatrices": 440,
-        "renderMs": 9.899999976158142,
-        "frameMs": 116.2000000178814,
+        "shadowPassesPerFrame": 3,
+        "renderMs": 10.5,
+        "frameMs": 116.5,
         "unattributed": 0
       }
     },
@@ -203,8 +211,9 @@
         "fillMegapixels": 0.89,
         "objects": 2046,
         "autoUpdatedMatrices": 2046,
-        "renderMs": 26.099999994039536,
-        "frameMs": 97.7999999821186,
+        "shadowPassesPerFrame": 0,
+        "renderMs": 25.69999998807907,
+        "frameMs": 99.09999999403954,
         "unattributed": 0
       },
       "optimized": {
@@ -224,8 +233,9 @@
         "fillMegapixels": 0.821,
         "objects": 2048,
         "autoUpdatedMatrices": 2006,
-        "renderMs": 2,
-        "frameMs": 74.90000000596046,
+        "shadowPassesPerFrame": 0,
+        "renderMs": 1.9000000059604645,
+        "frameMs": 76.69999998807907,
         "unattributed": 0
       }
     },
@@ -247,19 +257,20 @@
         "fillMegapixels": 0.39,
         "objects": 310,
         "autoUpdatedMatrices": 310,
+        "shadowPassesPerFrame": 1,
         "renderMs": 4.700000017881393,
-        "frameMs": 33.89999997615814,
+        "frameMs": 35,
         "unattributed": 0
       },
       "optimized": {
-        "sceneSubmissions": 55,
-        "gpuDraws": 56,
-        "triangles": 73403,
+        "sceneSubmissions": 28,
+        "gpuDraws": 29,
+        "triangles": 36703,
         "programs": 40,
         "overdrawOpaque": 0.7166697233915329,
         "overdrawTransparent": 0.01819160704811414,
         "skinnedVertices": 158,
-        "shadowCasters": 27,
+        "shadowCasters": 0,
         "shadowTexels": 4194304,
         "textureBytes": 10240,
         "geometryBytes": 757220,
@@ -268,8 +279,9 @@
         "fillMegapixels": 0.353,
         "objects": 325,
         "autoUpdatedMatrices": 33,
+        "shadowPassesPerFrame": 0.5,
         "renderMs": 1.5,
-        "frameMs": 29.599999994039536,
+        "frameMs": 28.69999998807907,
         "unattributed": 0
       }
     },
@@ -291,8 +303,9 @@
         "fillMegapixels": 1.17,
         "objects": 50003,
         "autoUpdatedMatrices": 50003,
-        "renderMs": 75.89999997615814,
-        "frameMs": 266.69999998807907,
+        "shadowPassesPerFrame": 0,
+        "renderMs": 83.09999999403954,
+        "frameMs": 316.5,
         "unattributed": 0
       },
       "optimized": {
@@ -312,8 +325,9 @@
         "fillMegapixels": 1.122,
         "objects": 50387,
         "autoUpdatedMatrices": 386,
-        "renderMs": 17.599999994039536,
-        "frameMs": 199.7999999821186,
+        "shadowPassesPerFrame": 0,
+        "renderMs": 22,
+        "frameMs": 271.2000000178814,
         "unattributed": 0
       }
     },
@@ -335,6 +349,7 @@
         "fillMegapixels": 0.186,
         "objects": 10,
         "autoUpdatedMatrices": 10,
+        "shadowPassesPerFrame": 0,
         "renderMs": 0.4000000059604645,
         "frameMs": 16.69999998807907,
         "unattributed": 0
@@ -356,8 +371,9 @@
         "fillMegapixels": 0.186,
         "objects": 6,
         "autoUpdatedMatrices": 6,
-        "renderMs": 0.30000001192092896,
-        "frameMs": 16.599999994039536,
+        "shadowPassesPerFrame": 0,
+        "renderMs": 0.4000000059604645,
+        "frameMs": 16.69999998807907,
         "unattributed": 0
       }
     }

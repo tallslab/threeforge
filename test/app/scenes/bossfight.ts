@@ -1,8 +1,9 @@
+import { ShadowBudget } from 'threeforge';
 import { buildArena } from '../arena.js';
 import type { BenchBuilder } from './index.js';
 
 /** The fight arena with 30 simultaneous particle effects, sprites, decals and shadowed spot and point lights. */
-export const bossfight: BenchBuilder = async ({ renderer, camera, params, loader: makeLoader }) => {
+export const bossfight: BenchBuilder = async ({ renderer, camera, params, loader: makeLoader, tier }) => {
   const [{ RoomEnvironment }, { PMREMGenerator }] = await Promise.all([import('three/addons/environments/RoomEnvironment.js'), import('three/webgpu')]);
   const loader = await makeLoader();
   renderer.shadowMap.enabled = true;
@@ -18,5 +19,9 @@ export const bossfight: BenchBuilder = async ({ renderer, camera, params, loader
   camera.updateMatrixWorld();
   arena.setTime(1);
   // Tagged dynamics (blocky character parts, weapons on bones) ride in batches and sync their matrices each frame.
-  return { scene: arena.scene, counts: { ...arena.counts, effects: arena.counts.effects ?? 30 }, animations: arena.animations, setTime: arena.setTime, worldOptions: { dynamics: 'batch-sync' } };
+  // The optimized variant sizes the shadow maps for the tier (no change on desktop; 262k texels on phone-low).
+  const prepare = (): void => {
+    new ShadowBudget({ tier }).apply(arena.scene);
+  };
+  return { scene: arena.scene, counts: { ...arena.counts, effects: arena.counts.effects ?? 30 }, animations: arena.animations, setTime: arena.setTime, worldOptions: { dynamics: 'batch-sync' }, prepare };
 };
