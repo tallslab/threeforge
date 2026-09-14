@@ -78,3 +78,109 @@ export interface AgentDocument {
   verdict: Verdict;
   timings: { totalMs: number };
 }
+
+export type StepName = 'dedup' | 'instance' | 'palette' | 'flatten' | 'join' | 'weld' | 'simplify' | 'resample' | 'prune' | 'textures' | 'quantize' | 'meshopt';
+export type Preset = 'safe' | 'balanced' | 'aggressive';
+export type TextureFormat = 'webp' | 'avif';
+
+export interface OptimizeInput {
+  file: string;
+  /** Output path; null = `<name>.forge.glb` next to the input. */
+  out: string | null;
+  preset: Preset;
+  /** Per-step overrides from `--<step>` (true) and `--no-<step>` (false). */
+  steps: Partial<Record<StepName, boolean>>;
+  /** Simplify ratio (0, 1]; null = the preset decides. */
+  simplify: number | null;
+  simplifyError: number;
+  compress: 'none' | 'meshopt';
+  /** Texture format; 'none' disables the step; null = the preset decides. */
+  textures: TextureFormat | 'none' | null;
+  /** Longest texture side in pixels; null = the preset decides (no resize outside presets). */
+  textureSize: number | null;
+  textureQuality: number;
+  verify: boolean;
+  /** Pixel parity threshold in percent between the original and the optimized render. */
+  parity: number;
+  views: number;
+  backend: Backend;
+  tier: TierChoice;
+  budget: number | null;
+  frames: number;
+  compile: boolean;
+  timeout: number;
+  headed: boolean;
+}
+
+/** Cheap per-step tally of a glTF document. */
+export interface Counts {
+  nodes: number;
+  meshes: number;
+  primitives: number;
+  materials: number;
+  textures: number;
+  accessors: number;
+  vertices: number;
+  triangles: number;
+}
+
+export interface AssetStats extends Counts {
+  bytes: number;
+  textureBytes: number;
+  animations: number;
+  skins: number;
+  morphTargets: number;
+  extensions: string[];
+}
+
+export interface StepReport {
+  name: StepName;
+  applied: boolean;
+  ms: number;
+  /** Why a step was skipped, or what it needs. */
+  note: string | null;
+  before: Counts;
+  after: Counts;
+}
+
+/** What the optimized file needs from the loader. `code` is null when three's GLTFLoader handles it alone. */
+export interface Requirement {
+  extension: string;
+  needs: string;
+  code: string | null;
+}
+
+/** after − before; compiled submissions are null when the run did not compile. */
+export interface OptimizeDelta {
+  bytes: number;
+  materials: number;
+  vertices: number;
+  triangles: number;
+  sceneSubmissions: { naive: number; compiled: number | null };
+  loadMs: number;
+  memoryBytes: number;
+}
+
+export interface OptimizeVerify {
+  backend: Backend;
+  /** Original naive render vs optimized naive render, per view. */
+  parity: Parity;
+  original: AgentDocument;
+  optimized: AgentDocument;
+  delta: OptimizeDelta;
+}
+
+export interface OptimizeDocument {
+  schemaVersion: 1;
+  tool: 'threeforge';
+  version: string;
+  command: 'optimize';
+  input: OptimizeInput;
+  output: { file: string; bytes: number };
+  stats: { before: AssetStats; after: AssetStats };
+  steps: StepReport[];
+  requires: Requirement[];
+  verify: OptimizeVerify | null;
+  verdict: Verdict;
+  timings: { transformMs: number; verifyMs: number; totalMs: number };
+}
