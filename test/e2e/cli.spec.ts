@@ -1,5 +1,7 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from './fixtures.js';
@@ -7,6 +9,20 @@ import { expect, test } from './fixtures.js';
 /** The built CLI, as an agent would run it: `node dist/cli/index.js …` (npx threeforge … after install). */
 const bin = 'dist/cli/index.js';
 const run = (args: string[]) => spawnSync('node', [bin, ...args], { encoding: 'utf8', timeout: 300_000, env: { ...process.env } });
+/** Like `run`, but keeps this process's event loop free (a server in the test can answer); SIGKILL after `timeout`. */
+const runAsync = (args: string[], timeout: number) =>
+  new Promise<{ status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string }>((done) => {
+    const child = spawn('node', [bin, ...args], { env: { ...process.env } });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk));
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk));
+    const timer = setTimeout(() => child.kill('SIGKILL'), timeout);
+    child.on('close', (status, signal) => {
+      clearTimeout(timer);
+      done({ status, signal, stdout, stderr });
+    });
+  });
 const asset = (name: string): string => {
   const index = JSON.parse(readFileSync('test/assets/files/index.json', 'utf8')) as Array<{ name: string; entry: string }>;
   return `test/assets/files/${index.find((a) => a.name === name)!.entry}`;
@@ -84,6 +100,36 @@ test('inspect reports a page without the hook as a page error (exit 4)', () => {
   const r = run(['inspect', 'http://localhost:5179/?scene=nope', '--timeout', '8000', '--json']);
   expect(r.status).toBe(4);
   expect(r.stderr).toMatch(/__threeforge|exposeToAgents|harness failed/);
+});
+
+test('analyze exits 3 promptly when Chromium cannot launch', ({ backend }) => {
+  const started = Date.now();
+  const r = spawnSync('node', [bin, 'analyze', sample(), '--backend', backend, '--json'], { encoding: 'utf8', timeout: 20_000, env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: '/nonexistent' } });
+  const ms = Date.now() - started;
+  expect(r.status, `${r.stderr}\n(signal ${r.signal} after ${ms} ms)`).toBe(3);
+  expect(r.stderr).toContain('environment: could not launch Chromium');
+  expect(r.stdout).toBe('');
+  // Well under the 5 s exit watchdog: the static server is closed, nothing holds the event loop.
+  expect(ms).toBeLessThan(5_000);
+});
+
+test('inspect exits 4 when the hook never resolves a frame, bounded by --timeout', async ({ backend }) => {
+  test.setTimeout(60_000);
+  const hook = `window.__threeforge = { version: 'stuck', schemaVersion: 2, frame: () => ({}), frameAsync: () => new Promise(() => {}), measureMemory: () => ({}), hints: () => [], report: () => '' };`;
+  const server = createServer((_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(`<!doctype html><title>stuck</title><script>${hook}</script>`));
+  await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
+  try {
+    const { port } = server.address() as AddressInfo;
+    const started = Date.now();
+    const r = await runAsync(['inspect', `http://127.0.0.1:${port}/`, '--backend', backend, '--frames', '2', '--timeout', '3000', '--json'], 30_000);
+    const ms = Date.now() - started;
+    expect(r.status, `${r.stderr}\n(signal ${r.signal} after ${ms} ms)`).toBe(4);
+    expect(r.stderr).toMatch(/page: .*timed out after 3000 ms/);
+    expect(r.stdout).toBe('');
+    expect(ms).toBeLessThan(20_000);
+  } finally {
+    await new Promise<void>((ok) => server.close(() => ok()));
+  }
 });
 
 test('explain, schema and help are pure and fast', () => {

@@ -1,10 +1,8 @@
 import { analyzeAsset } from './analyze.js';
-import { EnvironmentError } from './browser.js';
+import { EnvironmentError, exitCodeFor, UsageError } from './errors.js';
 import { explain, REMEDIES } from './explain.js';
 import { inspectApp } from './inspect.js';
 import { optimizeAsset } from './optimize.js';
-import { PageError } from './measure.js';
-import { UsageError } from './args.js';
 import type { AnalyzeInput, InspectInput, OptimizeInput } from './types.js';
 import { VERSION } from '../version.js';
 
@@ -13,10 +11,7 @@ const INSTALL = 'npm i -D @modelcontextprotocol/sdk zod';
 type ToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: boolean };
 
 const ok = (value: unknown): ToolResult => ({ content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] });
-const fail = (error: unknown): ToolResult => {
-  const code = error instanceof UsageError ? 2 : error instanceof EnvironmentError ? 3 : error instanceof PageError ? 4 : 4;
-  return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: error instanceof Error ? error.message : String(error), code }) }] };
-};
+const fail = (error: unknown): ToolResult => ({ isError: true, content: [{ type: 'text', text: JSON.stringify({ error: error instanceof Error ? error.message : String(error), code: exitCodeFor(error) }) }] });
 
 /**
  * `threeforge mcp`: a stdio Model Context Protocol server with the same operations as the CLI. Agents that prefer

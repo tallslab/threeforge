@@ -3,6 +3,11 @@
 ## Unreleased
 
 - `analyze`'s harness page now disposes its PMREM environment generator, `RoomEnvironment` and Draco/KTX2 loaders after use; every `analyze` document previously carried a false `unreferenced-resources` hint (13 geometries, 4 textures) even for a single skinned mesh like the Fox.
+- `analyze` and `optimize` now exit 3 promptly when Chromium cannot launch; before, the exit-3 message printed and the process never exited because the static server stayed open.
+- `analyze`, `inspect` and `optimize` bound every `page.evaluate` by `--timeout` and exit 4 with `page: <step> timed out after <ms> ms`; a hook whose `frameAsync` never settled used to hang past `--timeout`.
+- The CLI closes its static server and browser on every path, newest first, each close bounded to 5 s; the first error is reported. A finished command (all but `mcp`) exits at most 5 s after flushing its output even if a handle lingers.
+- `window.__threeforge.frameAsync()` rejects when the render throws; it used to stay pending forever.
+- Programmatic `analyzeAsset`, `analyzeAssetWithShots`, `inspectApp` and `optimizeAsset` take an optional trailing `deps` (`{ launch, serve, appDir }`, type `CliDeps`).
 
 ## 0.8.0 — 2026-09-14
 

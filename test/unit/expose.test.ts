@@ -46,4 +46,17 @@ describe('exposeToAgents', () => {
     expect(target.__threeforge!.compile).toBeUndefined();
     expect((await target.__threeforge!.frameAsync()).totals.submissions).toBe(0);
   });
+
+  it('frameAsync rejects when the render throws on a later animation frame', async () => {
+    const { scene, camera } = sceneWithCamera();
+    const ledger = new DrawCallLedger();
+    const renderer = {
+      render: () => {
+        throw new Error('device lost');
+      },
+    };
+    const target: { __threeforge?: AgentHook } = {};
+    exposeToAgents({ ledger, renderer: renderer as never, scene, camera, target, requestFrame: (cb) => setTimeout(cb, 0) });
+    await expect(target.__threeforge!.frameAsync()).rejects.toThrow('device lost');
+  }, 2000);
 });

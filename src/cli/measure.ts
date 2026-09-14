@@ -1,8 +1,14 @@
 import type { FrameSnapshot } from '../ledger/snapshot.js';
 import type { PlaywrightPage } from './browser.js';
+import { PageError } from './errors.js';
+import { withTimeout } from './lifecycle.js';
 
-/** Page-side error (missing hook, thrown load, timeout): exit code 4. */
-export class PageError extends Error {}
+export { PageError };
+
+/** `page.evaluate` of an expression, bounded by `timeout` ms: a page that never answers becomes a PageError naming `what`. */
+export function evaluateWithin<R>(page: PlaywrightPage, what: string, timeout: number, expression: string): Promise<R> {
+  return withTimeout(what, timeout, () => page.evaluate<R>(expression));
+}
 
 export interface Measurement {
   snapshot: FrameSnapshot;
@@ -12,15 +18,20 @@ export interface Measurement {
 
 /**
  * Drives `window.__threeforge`: N frames through `frameAsync` (one per animation frame, so shadow maps update),
- * then an overdraw and a memory measurement, then the snapshot. Timings are medians over the frames.
+ * then an overdraw and a memory measurement, then the snapshot. Timings are medians over the frames. The whole
+ * measurement is bounded by `timeout` ms (a hook whose frameAsync never settles becomes a PageError).
  */
-export async function measureViaHook(page: PlaywrightPage, frames: number): Promise<Measurement> {
-  const result = await page.evaluate<Measurement | { error: string }>(
+export async function measureViaHook(page: PlaywrightPage, frames: number, timeout = 60_000): Promise<Measurement> {
+  const count = Math.max(1, Math.round(frames));
+  const result = await evaluateWithin<Measurement | { error: string }>(
+    page,
+    `measuring ${count} frames`,
+    timeout,
     `(async () => {
       const hook = window.__threeforge;
       if (!hook || hook.schemaVersion !== 2) return { error: 'window.__threeforge is missing: call exposeToAgents({ ledger, world, renderer, scene, camera }) in the app' };
       const render = []; const intervals = []; let last = performance.now();
-      for (let i = 0; i < ${Math.max(1, Math.round(frames))}; i++) {
+      for (let i = 0; i < ${count}; i++) {
         const f = await hook.frameAsync();
         const now = performance.now(); render.push(f.js.renderMs); intervals.push(now - last); last = now;
       }

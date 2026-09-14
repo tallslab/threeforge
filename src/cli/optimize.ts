@@ -2,8 +2,8 @@ import { existsSync, statSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { VERSION } from '../version.js';
 import { analyzeAssetWithShots, pixelDiffPct } from './analyze.js';
-import { UsageError } from './args.js';
-import { EnvironmentError } from './browser.js';
+import { EnvironmentError, UsageError } from './errors.js';
+import type { CliDeps } from './lifecycle.js';
 import { planSteps } from './pipeline.js';
 import { applySteps, createIO, DRACO_INSTALL, loadDeps, requirementsOf, statsOf } from './transform.js';
 import type { AgentDocument, AnalyzeInput, AssetStats, OptimizeDelta, OptimizeDocument, OptimizeInput, OptimizeVerify, Parity, Verdict } from './types.js';
@@ -16,7 +16,7 @@ export function defaultOutputPath(file: string): string {
 }
 
 /** `threeforge optimize <file>`: transform with glTF-Transform, write, verify by rendering both files, judge. */
-export async function optimizeAsset(input: OptimizeInput, log: (line: string) => void = () => {}): Promise<OptimizeDocument> {
+export async function optimizeAsset(input: OptimizeInput, log: (line: string) => void = () => {}, cliDeps: CliDeps = {}): Promise<OptimizeDocument> {
   const started = Date.now();
   const file = resolve(input.file);
   if (!existsSync(file) || !statSync(file).isFile()) throw new UsageError(`file not found: ${input.file}`);
@@ -47,7 +47,7 @@ export async function optimizeAsset(input: OptimizeInput, log: (line: string) =>
   const requires = requirementsOf(after.extensions);
   log(`wrote ${out}: ${after.bytes} bytes (${((100 * after.bytes) / Math.max(1, before.bytes)).toFixed(0)} % of the input)`);
   const verifyStarted = Date.now();
-  const verify = input.verify ? await verifyPair(file, out, input, log) : null;
+  const verify = input.verify ? await verifyPair(file, out, input, log, cliDeps) : null;
   const verifyMs = input.verify ? Date.now() - verifyStarted : 0;
   const verdict = judge(before, after, verify, input.budget);
   return {
@@ -66,12 +66,17 @@ export async function optimizeAsset(input: OptimizeInput, log: (line: string) =>
   };
 }
 
-async function verifyPair(original: string, optimized: string, input: OptimizeInput, log: (line: string) => void): Promise<OptimizeVerify> {
+/**
+ * Both files go through `analyzeAssetWithShots`, each with its own server and browser on its own resource stack
+ * (closed before the next render starts). One shared browser would share GPU and shader caches between the two
+ * renders and skew `delta.loadMs`.
+ */
+async function verifyPair(original: string, optimized: string, input: OptimizeInput, log: (line: string) => void, deps: CliDeps): Promise<OptimizeVerify> {
   const base: Omit<AnalyzeInput, 'file'> = { backend: input.backend, tier: input.tier, budget: null, frames: input.frames, compile: input.compile, bake: 'off', views: input.views, timeout: input.timeout, headed: input.headed };
   log(`verifying on ${input.backend}: original`);
-  const a = await analyzeAssetWithShots({ ...base, file: original }, log, true);
+  const a = await analyzeAssetWithShots({ ...base, file: original }, log, true, deps);
   log(`verifying on ${input.backend}: optimized`);
-  const b = await analyzeAssetWithShots({ ...base, file: optimized }, log, true);
+  const b = await analyzeAssetWithShots({ ...base, file: optimized }, log, true, deps);
   const views = a.shots.map((shot, i) => ({ view: shot.view, diffPct: Number(pixelDiffPct(shot.png, b.shots[i]!.png).toFixed(3)) }));
   const worst = views.length ? Math.max(...views.map((v) => v.diffPct)) : 0;
   const parity: Parity = { diffPct: worst, threshold: input.parity, pass: worst <= input.parity, views };

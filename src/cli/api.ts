@@ -9,6 +9,7 @@ export { ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA, SNAPSHOT_SCHEMA } from
 export { parseArgs, UsageError, COMMANDS, type Command } from './args.js';
 export { EnvironmentError, launchBrowser } from './browser.js';
 export { PageError, measureViaHook } from './measure.js';
+export type { CliDeps } from './lifecycle.js';
 export { serveStatic } from './server.js';
 export { summarize, summarizeOptimize } from './format.js';
 export { exitCodeOf, verdictOf } from './verdict.js';

@@ -3,12 +3,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { VERSION } from '../version.js';
 import { analyzeAsset } from './analyze.js';
-import { parseArgs, UsageError, COMMANDS, type Command } from './args.js';
-import { EnvironmentError } from './browser.js';
+import { parseArgs, COMMANDS, type Command } from './args.js';
+import { EnvironmentError, exitCodeFor, PageError, UsageError } from './errors.js';
 import { explain, REMEDIES } from './explain.js';
 import { summarize, summarizeOptimize } from './format.js';
 import { inspectApp } from './inspect.js';
-import { PageError } from './measure.js';
+import { armExitWatchdog } from './lifecycle.js';
 import { ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA, SNAPSHOT_SCHEMA } from './schema.js';
 import { exitCodeOf } from './verdict.js';
 
@@ -106,20 +106,14 @@ async function main(): Promise<void> {
     process.exitCode = await run(command);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (error instanceof UsageError) {
-      process.stderr.write(`${message}\n`);
-      process.exitCode = 2;
-    } else if (error instanceof EnvironmentError) {
-      process.stderr.write(`environment: ${message}\n`);
-      process.exitCode = 3;
-    } else if (error instanceof PageError) {
-      process.stderr.write(`page: ${message}\n`);
-      process.exitCode = 4;
-    } else {
-      process.stderr.write(`error: ${error instanceof Error ? (error.stack ?? message) : message}\n`);
-      process.exitCode = 4;
-    }
+    if (error instanceof UsageError) process.stderr.write(`${message}\n`);
+    else if (error instanceof EnvironmentError) process.stderr.write(`environment: ${message}\n`);
+    else if (error instanceof PageError) process.stderr.write(`page: ${message}\n`);
+    else process.stderr.write(`error: ${error instanceof Error ? (error.stack ?? message) : message}\n`);
+    process.exitCode = exitCodeFor(error);
   }
+  // mcp keeps serving on stdin after run() resolves; every other command is finished here and must not linger.
+  if (command.name !== 'mcp') await armExitWatchdog();
 }
 
 await main();

@@ -15,7 +15,7 @@ export interface AgentHook {
   schemaVersion: 2;
   /** The last frame's snapshot; does not render. */
   frame(): FrameSnapshot;
-  /** Waits one animation frame (shadow maps update once per tick), renders if it can, returns the snapshot. */
+  /** Waits one animation frame (shadow maps update once per tick), renders if it can, returns the snapshot. Rejects when the render throws. */
   frameAsync(): Promise<FrameSnapshot>;
   /** Present while a World was given and is not compiled: batch the scene. */
   compile?(): CompileReport;
@@ -58,10 +58,15 @@ export function exposeToAgents(options: ExposeOptions): () => void {
     schemaVersion: 2,
     frame: () => ledger.frame(),
     frameAsync: () =>
-      new Promise((resolve) => {
+      new Promise((resolve, reject) => {
         requestFrame(() => {
-          if (canRender) renderer!.render(scene!, camera!);
-          resolve(ledger.frame());
+          // The callback runs outside the executor: without the catch a throwing render leaves the promise pending.
+          try {
+            if (canRender) renderer!.render(scene!, camera!);
+            resolve(ledger.frame());
+          } catch (error) {
+            reject(error);
+          }
         });
       }),
     measureMemory: () => ledger.measureMemory(),

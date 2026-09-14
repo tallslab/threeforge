@@ -1,7 +1,8 @@
+import { UsageError } from './errors.js';
 import { PRESETS, STEP_NAMES } from './pipeline.js';
 import type { AnalyzeInput, Backend, BakeChoice, InspectInput, OptimizeInput, Preset, StepName, TextureFormat, TierChoice } from './types.js';
 
-export class UsageError extends Error {}
+export { UsageError };
 
 export type SchemaChoice = 'snapshot' | 'analyze' | 'inspect' | 'optimize' | 'all';
 

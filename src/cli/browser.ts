@@ -1,7 +1,7 @@
+import { EnvironmentError } from './errors.js';
 import type { Backend } from './types.js';
 
-/** Missing Playwright or browser (exit code 3). The message carries the exact install command. */
-export class EnvironmentError extends Error {}
+export { EnvironmentError };
 
 export interface BrowserHandle {
   newPage(): Promise<PlaywrightPage>;
