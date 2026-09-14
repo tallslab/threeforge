@@ -1,7 +1,7 @@
 import { AmbientLight, AnimationMixer, BatchedMesh, Box3, BoxGeometry, Color, DirectionalLight, Frustum, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Sphere, Vector3, type AnimationClip, type Object3D, type OrthographicCamera } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import * as THREE from 'three';
-import { DrawCallLedger, MaterialRegistry, ParticleBudget, ResolutionScaler, World, assembleCharacter, detectTier, exposeToAgents, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot, type ParticleBudgetReport, type Tier } from 'threeforge';
+import { DrawCallLedger, MaterialRegistry, ParticleBudget, RenderScheduler, ResolutionScaler, World, assembleCharacter, detectTier, exposeToAgents, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot, type ParticleBudgetReport, type Tier } from 'threeforge';
 import { createOverlay } from 'threeforge/overlay';
 import { BENCH_SCENES, type BenchScene } from './scenes/index.js';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
@@ -79,6 +79,8 @@ export interface ForgeHarness {
   particleReport?: ParticleBudgetReport;
   /** `?scale=<s>`: a ResolutionScaler set to that scale (its base is the harness pixel ratio 1). */
   scaler?: ResolutionScaler;
+  /** `?scheduler=1`: frame() ticks this RenderScheduler instead of rendering unconditionally. */
+  scheduler?: RenderScheduler;
   /** Pose animations and effects at time t (arena). */
   setTime(t: number): void;
   compile(): CompileReport;
@@ -510,8 +512,10 @@ try {
     postProcessing = post;
   }
 
+  const scheduler = params.get('scheduler') === '1' ? new RenderScheduler({ renderer, scene, camera, ledger, world }) : undefined;
   function frame(options?: { items?: boolean }): FrameSnapshot {
-    if (postProcessing) postProcessing.render();
+    if (scheduler) scheduler.tick(performance.now());
+    else if (postProcessing) postProcessing.render();
     else renderer.render(scene, camera);
     return ledger.frame(options);
   }
@@ -528,7 +532,7 @@ try {
     });
   }
 
-  window.__forge = { three: THREE, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, particleReport, scaler, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
+  window.__forge = { three: THREE, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, particleReport, scaler, scheduler, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
 } catch (error) {
   window.__forge = { ready: false, error: error instanceof Error ? error.stack ?? error.message : String(error) } as ForgeHarness;
   throw error;
