@@ -38,3 +38,4 @@ export { buildSpriteBatch, type SpriteBatch, type SpriteBatchOptions } from './c
 export { ParticleBudget, type ParticleBudgetOptions, type ParticleBudgetReport, type ParticleSystemReport } from './overdraw/ParticleBudget.js';
 export { ResolutionScaler, type ResolutionScalerOptions, type ScalerRenderer } from './overdraw/ResolutionScaler.js';
 export { bakeGeometries, type BakeEntry, type BakeOptions, type BakeReport, type BakeResult, type BuriedOptions } from './compiler/bake.js';
+export { createLoader, decoderPaths, disposeLoader, type CreateLoaderOptions } from './load/createLoader.js';
