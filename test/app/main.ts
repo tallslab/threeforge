@@ -1,7 +1,7 @@
 import { AmbientLight, AnimationMixer, BatchedMesh, Box3, BoxGeometry, Color, DirectionalLight, Frustum, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Sphere, Vector3, type AnimationClip, type Object3D, type OrthographicCamera } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import * as THREE from 'three';
-import { DrawCallLedger, MaterialRegistry, ParticleBudget, RenderScheduler, ResolutionScaler, World, assembleCharacter, detectTier, exposeToAgents, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot, type ParticleBudgetReport, type Tier } from 'threeforge';
+import { DrawCallLedger, MaterialRegistry, ParticleBudget, RenderScheduler, ResolutionScaler, ShadowBudget, World, assembleCharacter, detectTier, exposeToAgents, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot, type ParticleBudgetReport, type ShadowBudgetReport, type Tier } from 'threeforge';
 import { createOverlay } from 'threeforge/overlay';
 import { BENCH_SCENES, type BenchScene } from './scenes/index.js';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
@@ -81,6 +81,10 @@ export interface ForgeHarness {
   scaler?: ResolutionScaler;
   /** `?scheduler=1`: frame() ticks this RenderScheduler instead of rendering unconditionally. */
   scheduler?: RenderScheduler;
+  /** `?shadowBudget=1`: the ShadowBudget report for the detected (or forced) tier. */
+  shadowReport?: ShadowBudgetReport;
+  /** `?freeze-shadow=1` (naive scene with shadows): the naive sun's shadow is frozen; call this to re-render it once. */
+  refreshShadow?(): void;
   /** Pose animations and effects at time t (arena). */
   setTime(t: number): void;
   compile(): CompileReport;
@@ -474,6 +478,10 @@ try {
   }
   let particleReport: ParticleBudgetReport | undefined;
   if (params.get('particles') === '1') particleReport = new ParticleBudget({ tier }).apply(scene);
+  let shadowReport: ShadowBudgetReport | undefined;
+  if (params.get('shadowBudget') === '1') shadowReport = new ShadowBudget({ tier }).apply(scene);
+  let refreshShadow: (() => void) | undefined;
+  if (params.get('freeze-shadow') === '1' && naive) refreshShadow = ShadowBudget.freeze(naive.lights.directional);
   let scaler: ResolutionScaler | undefined;
   if (params.has('scale')) {
     scaler = new ResolutionScaler(renderer, { tier, ledger });
@@ -532,7 +540,7 @@ try {
     });
   }
 
-  window.__forge = { three: THREE, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, particleReport, scaler, scheduler, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
+  window.__forge = { three: THREE, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, particleReport, scaler, scheduler, shadowReport, refreshShadow, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
 } catch (error) {
   window.__forge = { ready: false, error: error instanceof Error ? error.stack ?? error.message : String(error) } as ForgeHarness;
   throw error;
