@@ -1,7 +1,7 @@
 import { AmbientLight, AnimationMixer, BatchedMesh, Box3, BoxGeometry, Color, DirectionalLight, Frustum, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Sphere, Vector3, type AnimationClip, type Object3D, type OrthographicCamera } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import * as THREE from 'three';
-import { DrawCallLedger, MaterialRegistry, World, assembleCharacter, detectTier, exposeToAgents, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot, type Tier } from 'threeforge';
+import { DrawCallLedger, MaterialRegistry, ParticleBudget, ResolutionScaler, World, assembleCharacter, detectTier, exposeToAgents, prepareLods, tag, type AssembledCharacter, type CompileReport, type FrameSnapshot, type ParticleBudgetReport, type Tier } from 'threeforge';
 import { createOverlay } from 'threeforge/overlay';
 import { BENCH_SCENES, type BenchScene } from './scenes/index.js';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
@@ -75,6 +75,10 @@ export interface ForgeHarness {
   bench?: { counts: Record<string, number>; variant: 'naive' | 'optimized'; setTime?(t: number): void };
   biome?: Biome;
   arena?: Arena;
+  /** `?particles=1`: the ParticleBudget report for the detected (or forced) tier. */
+  particleReport?: ParticleBudgetReport;
+  /** `?scale=<s>`: a ResolutionScaler set to that scale (its base is the harness pixel ratio 1). */
+  scaler?: ResolutionScaler;
   /** Pose animations and effects at time t (arena). */
   setTime(t: number): void;
   compile(): CompileReport;
@@ -465,6 +469,13 @@ try {
   if (params.get('overlay') === '1') {
     createOverlay(ledger, { budget: params.has('budget') ? Number(params.get('budget')) : undefined });
   }
+  let particleReport: ParticleBudgetReport | undefined;
+  if (params.get('particles') === '1') particleReport = new ParticleBudget({ tier }).apply(scene);
+  let scaler: ResolutionScaler | undefined;
+  if (params.has('scale')) {
+    scaler = new ResolutionScaler(renderer, { tier, ledger });
+    scaler.set(Number(params.get('scale')));
+  }
 
   const measureOverdraw = (cam?: PerspectiveCamera | OrthographicCamera) => ledger.measureOverdraw(scene, cam ?? camera);
 
@@ -516,7 +527,7 @@ try {
     });
   }
 
-  window.__forge = { three: THREE, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
+  window.__forge = { three: THREE, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, particleReport, scaler, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
 } catch (error) {
   window.__forge = { ready: false, error: error instanceof Error ? error.stack ?? error.message : String(error) } as ForgeHarness;
   throw error;
