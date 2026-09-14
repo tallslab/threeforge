@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>threeforge device bench</title>
+    <style>
+      :root { color-scheme: dark; --bg: #101418; --panel: #181e25; --line: #2a3340; --text: #e6ebf0; --muted: #94a3b8; --accent: #7cc4ff; }
+      html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+      main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      h2 { font-size: 16px; margin: 24px 0 8px; }
+      p { margin: 6px 0; }
+      .muted { color: var(--muted); }
+      .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
+      button, select, a.button { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; font: inherit; text-decoration: none; cursor: pointer; }
+      button[disabled] { opacity: 0.5; cursor: default; }
+      a.button, button.primary { border-color: var(--accent); color: var(--accent); }
+      #canvasMount canvas { width: 100%; max-width: 800px; height: auto; display: block; background: #000; border: 1px solid var(--line); }
+      .scroll { overflow-x: auto; }
+      table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      th { color: var(--muted); font-weight: 500; }
+      pre { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px; overflow-x: auto; max-height: 240px; font-size: 12px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>threeforge device bench</h1>
+      <p class="muted">Eight scenes, naive and optimized, measured on this device with the same ledger <code>pnpm bench</code> uses. Keep the page in the foreground; a full run takes one to three minutes.</p>
+      <p id="device" class="muted">detecting the GPU…</p>
+      <div class="row">
+        <label>backend <select id="backend"><option value="auto">auto (WebGPU, else WebGL2)</option><option value="webgpu">webgpu</option><option value="webgl2">webgl2</option></select></label>
+        <button id="run" class="primary">Run the benchmark</button>
+        <span id="progress" class="muted">idle</span>
+      </div>
+      <div id="canvasMount"></div>
+      <h2>This device</h2>
+      <div class="scroll">
+        <table id="live">
+          <thead><tr><th>scene</th><th>submissions naive → opt</th><th>triangles</th><th>overdraw opaque / transparent</th><th>skinned verts</th><th>memory MB</th><th>render ms</th><th>frame ms</th></tr></thead>
+          <tbody id="liveBody"></tbody>
+        </table>
+      </div>
+      <section id="submit" hidden>
+        <h2>Submit to the public table</h2>
+        <p class="muted">The result opens as a GitHub issue; a workflow validates it and adds this device to the table below. Nothing but the JSON shown here is sent.</p>
+        <div class="row">
+          <a id="issue" class="button" target="_blank" rel="noopener" hidden>Open the prefilled issue</a>
+          <span id="manual" hidden>Copy the JSON and paste it into <a id="template" href="#" target="_blank" rel="noopener">a new bench-result issue</a>.</span>
+          <button id="copy">Copy JSON</button>
+        </div>
+        <pre id="json"></pre>
+      </section>
+      <h2>Public results <span id="devicesCount" class="muted"></span></h2>
+      <div class="scroll">
+        <table id="devices">
+          <thead><tr><th>device</th><th>backend</th><th>tier</th><th>fill GPix/s</th><th>village</th><th>forest</th><th>crowd</th><th>bossfight</th><th>lake</th><th>daynight</th><th>zen</th><th>rpg</th><th>date</th></tr></thead>
+          <tbody id="devicesBody"></tbody>
+        </table>
+      </div>
+      <p class="muted">Cells are naive → optimized scene submissions and median frame ms. Source and methodology: <a href="https://github.com/threeforge" rel="noopener">the threeforge repository</a>, <code>docs/bench.md</code> and <code>docs/devices.md</code>.</p>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

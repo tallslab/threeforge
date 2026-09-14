@@ -7,3 +7,4 @@ playwright-report
 test/assets/files
 bench/results/
 cli-app/public/
+bench-app/public/

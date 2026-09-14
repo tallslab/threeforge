@@ -1,0 +1,97 @@
+import { SCENE_IDS, type BenchMetrics, type SceneId } from '../test/app/benchMetrics.js';
+import { createHost, runBench, type Host } from './runner.js';
+import { issueBody, issueUrl, type DeviceResult } from './submit.js';
+import { deviceRows, liveRows } from './table.js';
+
+declare global {
+  interface Window {
+    /** What the e2e reads: readiness, the chosen backend, progress text, the result and a done flag. */
+    __bench: { ready: boolean; error?: string; backend?: string; env?: DeviceResult['env']; progress: string; result: DeviceResult | null; done: boolean };
+  }
+}
+
+const REPO = import.meta.env.VITE_FORGE_REPO ?? '';
+const params = new URLSearchParams(location.search);
+const $ = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
+window.__bench = { ready: false, progress: '', result: null, done: false };
+
+const live: Partial<Record<SceneId, { naive?: BenchMetrics; optimized?: BenchMetrics }>> = {};
+const setProgress = (text: string): void => {
+  window.__bench.progress = text;
+  $('progress').textContent = text;
+};
+const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+async function start(host: Host): Promise<void> {
+  $('run').setAttribute('disabled', '');
+  $('submit').hidden = true;
+  const ids = params.get('scenes')?.split(',').filter((s): s is SceneId => (SCENE_IDS as readonly string[]).includes(s)) ?? [...SCENE_IDS];
+  const measured = Math.max(1, Number(params.get('measured') ?? '60'));
+  try {
+    const result = await runBench(host, {
+      sceneIds: ids.length ? ids : [...SCENE_IDS],
+      measured,
+      probe: params.get('probe') !== '0',
+      onProgress: setProgress,
+      onScene: (id, variant, m) => {
+        (live[id] ??= {})[variant] = m;
+        $('liveBody').innerHTML = liveRows(live);
+      },
+    });
+    window.__bench.result = result;
+    window.__bench.env = result.env;
+    $('json').textContent = issueBody(result);
+    const url = issueUrl(REPO, result);
+    const link = $<HTMLAnchorElement>('issue');
+    if (url) {
+      link.href = url;
+      link.hidden = false;
+      $('manual').hidden = true;
+    } else {
+      link.hidden = true;
+      $('manual').hidden = false;
+      $<HTMLAnchorElement>('template').href = REPO ? `https://github.com/${REPO}/issues/new?template=bench-result.yml` : '#';
+    }
+    $('submit').hidden = false;
+    setProgress(`done · ${ids.length || SCENE_IDS.length} scenes on ${host.backend} · ${result.env.gpu}${result.env.fillRateGPix === null ? '' : ` · fill ${result.env.fillRateGPix.toFixed(1)} GPix/s`}`);
+  } catch (error) {
+    window.__bench.error = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    setProgress(`failed: ${describe(error)}`);
+  } finally {
+    window.__bench.done = true;
+    $('run').removeAttribute('disabled');
+  }
+}
+
+async function main(): Promise<void> {
+  $('liveBody').innerHTML = liveRows({});
+  fetch(new URL('devices.json', document.baseURI).href)
+    .then((r) => (r.ok ? r.json() : []))
+    .then((list: DeviceResult[]) => {
+      $('devicesBody').innerHTML = deviceRows(list);
+      $('devicesCount').textContent = `${list.length} result${list.length === 1 ? '' : 's'}`;
+    })
+    .catch(() => {});
+  const select = $<HTMLSelectElement>('backend');
+  const want = params.get('backend') === 'webgl2' ? 'webgl2' : params.get('backend') === 'webgpu' ? 'webgpu' : 'auto';
+  select.value = want;
+  select.addEventListener('change', () => {
+    const q = new URLSearchParams(location.search);
+    if (select.value === 'auto') q.delete('backend');
+    else q.set('backend', select.value);
+    location.search = q.toString();
+  });
+  const host = await createHost(want, $('canvasMount'));
+  window.__bench.ready = true;
+  window.__bench.backend = host.backend;
+  $('device').textContent = `${host.gpu} · ${host.backend} · tier ${host.tier} · dpr ${devicePixelRatio} · ${navigator.hardwareConcurrency ?? '?'} cores`;
+  $('run').addEventListener('click', () => void start(host));
+  $('copy').addEventListener('click', () => void navigator.clipboard.writeText($('json').textContent ?? ''));
+  if (params.get('auto') === '1') await start(host);
+}
+
+main().catch((error) => {
+  window.__bench.error = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  window.__bench.done = true;
+  setProgress(`failed: ${describe(error)}`);
+});

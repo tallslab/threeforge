@@ -10,7 +10,8 @@
     "AGENTS.md",
     "llms.txt",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "!dist/bench-app"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -45,7 +46,9 @@
     "assets:kits": "node scripts/fetch-kits.mjs",
     "build:lib": "tsc -p tsconfig.build.json",
     "build:cli-app": "node scripts/copy-decoders.mjs && vite build --config vite.cli.config.ts",
-    "bench:devices": "node scripts/bench-devices.mjs"
+    "bench:devices": "node scripts/bench-devices.mjs",
+    "build:bench-app": "node scripts/bench-app-assets.mjs && vite build --config vite.bench.config.ts",
+    "bench:app": "node scripts/bench-app-assets.mjs && vite --config vite.bench.config.ts"
   },
   "peerDependencies": {
     "@modelcontextprotocol/sdk": ">=1.20.0",
