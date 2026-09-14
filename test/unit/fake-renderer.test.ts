@@ -1,0 +1,425 @@
+import { describe, expect, it } from 'vitest';
+import {
+  BackSide,
+  BatchedMesh,
+  BoxGeometry,
+  DirectionalLight,
+  DoubleSide,
+  FrontSide,
+  InstancedBufferGeometry,
+  InstancedMesh,
+  Matrix4,
+  Mesh,
+  MeshPhysicalMaterial,
+  MeshStandardMaterial,
+  PlaneGeometry,
+  PointLight,
+  Vector2,
+  VSMShadowMap,
+  type Light,
+  type Material,
+  type Object3D,
+} from 'three';
+import { FakeRenderer, sceneWithCamera, type FakePass, type FakeRendererOptions } from './helpers/fakeRenderer.js';
+
+/**
+ * The fake against three r186's own behaviour (node_modules/three/src), not against the ledger: Renderer._renderScene,
+ * Renderer.renderObject, RenderObject.getDrawParameters, the backends' Info.update, ShadowNode and PointShadowNode.
+ */
+
+/** 12 triangles. */
+const box = new BoxGeometry(1, 1, 1);
+
+function sun(name = 'sun'): DirectionalLight {
+  const light = new DirectionalLight();
+  light.name = name;
+  light.castShadow = true;
+  return light;
+}
+
+function named<T extends Object3D>(object: T, name: string): T {
+  object.name = name;
+  return object;
+}
+
+const cube = (name: string, material: Material = new MeshStandardMaterial()) => named(new Mesh(box, material), name);
+const shadowPasses = (renderer: FakeRenderer): FakePass[] => renderer.passes.filter((p) => p.kind === 'shadow');
+
+describe('FakeRenderer sceneHooks', () => {
+  it('calls scene.onBeforeRender(renderer, scene, camera, renderTarget) at the start of every render only when sceneHooks is on', () => {
+    const { scene, camera } = sceneWithCamera();
+    const calls: unknown[][] = [];
+    scene.onBeforeRender = (...args) => void calls.push(args);
+    new FakeRenderer().render(scene, camera);
+    expect(calls).toHaveLength(0);
+    const renderer = new FakeRenderer({ sceneHooks: true });
+    renderer.render(scene, camera);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]![0]).toBe(renderer);
+    expect(calls[0]![1]).toBe(scene);
+    expect(calls[0]![2]).toBe(camera);
+    expect(calls[0]![3]).toBeNull();
+  });
+});
+
+describe("FakeRenderer shadowTrigger: 'first-receiver'", () => {
+  it("renders the shadow map inside the first receiver's renderObject, after its onBeforeRender and before its draw", () => {
+    const light = sun();
+    const log: string[] = [];
+    const run = (options: FakeRendererOptions) => {
+      log.length = 0;
+      const renderer = new FakeRenderer({ shadowLights: [light], ...options });
+      const { scene, camera } = sceneWithCamera();
+      const a = cube('a');
+      const b = cube('b');
+      b.receiveShadow = true;
+      const c = cube('c');
+      c.castShadow = true;
+      for (const o of [a, b, c]) {
+        o.onBeforeRender = (_r, _s, cam) => void log.push(`${o.name}:before:${cam === camera ? 'main' : 'shadow'}`);
+        o.onAfterRender = (_r, _s, cam) => void log.push(`${o.name}:after:${cam === camera ? 'main' : 'shadow'}:${renderer.info.render.drawCalls}`);
+      }
+      scene.add(light, a, b, c);
+      renderer.render(scene, camera);
+      return [...log];
+    };
+    expect(run({ shadowTrigger: 'first-receiver' })).toEqual(['a:before:main', 'a:after:main:1', 'b:before:main', 'c:before:shadow', 'c:after:shadow:2', 'b:after:main:3', 'c:before:main', 'c:after:main:4']);
+    // Unset, the map renders before the render list (the fake's previous model).
+    expect(run({})).toEqual(['c:before:shadow', 'c:after:shadow:1', 'a:before:main', 'a:after:main:2', 'b:before:main', 'b:after:main:3', 'c:before:main', 'c:after:main:4']);
+  });
+});
+
+describe('FakeRenderer record', () => {
+  it('records every render() call of the last frame as a pass with its draws', () => {
+    const light = sun();
+    const { scene, camera } = sceneWithCamera();
+    const caster = cube('caster');
+    caster.castShadow = true;
+    scene.add(light, caster, cube('plain'));
+    const quiet = new FakeRenderer({ shadowLights: [light] });
+    quiet.render(scene, camera);
+    expect(quiet.passes).toEqual([]);
+
+    const renderer = new FakeRenderer({ shadowLights: [light], record: true });
+    renderer.render(scene, camera);
+    expect(renderer.passes).toHaveLength(2);
+    const [main, shadow] = renderer.passes as [FakePass, FakePass];
+    expect(main).toMatchObject({ kind: 'render', depth: 0, frameId: 1, light: null, face: null, renderTarget: null });
+    expect(main.scene).toBe(scene);
+    expect(main.camera).toBe(camera);
+    expect(main.draws.map((d) => d.object.name)).toEqual(['caster', 'plain', 'Output Color Transform']);
+    expect(shadow).toMatchObject({ kind: 'shadow', depth: 1, frameId: 1, face: null });
+    expect(shadow.light).toBe(light);
+    expect(shadow.camera).toBe(light.shadow.camera);
+    expect(shadow.projectionMatrix.equals(light.shadow.camera.projectionMatrix)).toBe(true);
+    expect(shadow.draws).toHaveLength(1);
+    expect(shadow.draws[0]).toMatchObject({ side: BackSide, drawCalls: 1, triangles: 12, instanceCount: 1, batchIds: null });
+    expect(shadow.draws[0]!.object).toBe(caster);
+    expect((shadow.draws[0]!.material as Material & { isShadowPassMaterial?: boolean }).isShadowPassMaterial).toBe(true);
+
+    renderer.render(scene, camera);
+    expect(renderer.passes.map((p) => [p.kind, p.frameId])).toEqual([
+      ['render', 2],
+      ['shadow', 2],
+    ]);
+  });
+
+  it('resolves batch ids against the index texture as uploaded: at draw time on WebGL, at the end of the render() call on WebGPU', () => {
+    for (const webgpu of [false, true]) {
+      const light = sun();
+      light.position.set(100, 10, 0);
+      light.target.position.set(100, 0, 0);
+      const renderer = new FakeRenderer({ webgpu, shadowLights: [light], shadowTrigger: 'first-receiver', record: true });
+      const { scene, camera } = sceneWithCamera();
+      const batch = named(new BatchedMesh(2, box.attributes.position!.count * 2, box.index!.count * 2, new MeshStandardMaterial()), 'batch');
+      const geometryId = batch.addGeometry(box);
+      batch.setMatrixAt(batch.addInstance(geometryId), new Matrix4()); // instance 0: only the main camera sees it
+      batch.setMatrixAt(batch.addInstance(geometryId), new Matrix4().makeTranslation(100, 0, 0)); // instance 1: only the sun sees it
+      batch.castShadow = true;
+      const receiver = cube('receiver');
+      receiver.receiveShadow = true;
+      scene.add(light, light.target, batch, receiver);
+      scene.updateMatrixWorld();
+      renderer.render(scene, camera);
+      const ids = (kind: FakePass['kind']) => renderer.passes.find((p) => p.kind === kind)!.draws.filter((d) => d.object === batch).map((d) => d.batchIds);
+      expect(ids('shadow')).toEqual([[1]]);
+      // The receiver's shadow render re-culls the batch after the main pass recorded its draw. WebGL has drawn already;
+      // WebGPU submits the main pass after the shadow pass rewrote the shared index texture.
+      expect(ids('render')).toEqual(webgpu ? [[1]] : [[0]]);
+    }
+  });
+});
+
+describe('FakeRenderer shadowLights (ShadowNode.updateBefore)', () => {
+  it('renders one map per shadow light, only while renderer.shadowMap.enabled and light.castShadow', () => {
+    const a = sun('a');
+    const b = sun('b');
+    const renderer = new FakeRenderer({ shadowLights: [a, b], record: true });
+    expect(renderer.shadowMap.enabled).toBe(true);
+    const { scene, camera } = sceneWithCamera();
+    const caster = cube('caster');
+    caster.castShadow = true;
+    scene.add(a, b, caster);
+    renderer.render(scene, camera);
+    expect(shadowPasses(renderer).map((p) => p.light?.name)).toEqual(['a', 'b']);
+    b.castShadow = false;
+    renderer.render(scene, camera);
+    expect(shadowPasses(renderer).map((p) => p.light?.name)).toEqual(['a']);
+    renderer.shadowMap.enabled = false;
+    renderer.render(scene, camera);
+    expect(renderer.passes.map((p) => p.kind)).toEqual(['render']);
+    expect(new FakeRenderer().shadowMap.enabled).toBe(false);
+  });
+
+  it('renders a map only when shadow.autoUpdate or shadow.needsUpdate, and clears needsUpdate', () => {
+    const light = sun();
+    light.shadow.autoUpdate = false;
+    const renderer = new FakeRenderer({ shadowLights: [light], record: true });
+    const { scene, camera } = sceneWithCamera();
+    const caster = cube('caster');
+    caster.castShadow = true;
+    scene.add(light, caster);
+    renderer.render(scene, camera);
+    expect(shadowPasses(renderer)).toHaveLength(0);
+    light.shadow.needsUpdate = true;
+    renderer.render(scene, camera);
+    expect(shadowPasses(renderer)).toHaveLength(1);
+    expect(light.shadow.needsUpdate).toBe(false);
+    renderer.render(scene, camera);
+    expect(shadowPasses(renderer)).toHaveLength(0);
+  });
+
+  it('renders a map once per camera per frame: a second receiver does not, a nested render with another camera does', () => {
+    const light = sun();
+    const renderer = new FakeRenderer({ shadowLights: [light], shadowTrigger: 'first-receiver', record: true });
+    const { scene, camera } = sceneWithCamera();
+    const mirror = camera.clone();
+    const first = cube('first');
+    const second = cube('second');
+    first.receiveShadow = second.receiveShadow = true;
+    let reflected = false;
+    first.onBeforeRender = (_r, _s, cam) => {
+      if (cam !== camera || reflected) return;
+      reflected = true;
+      renderer.render(scene, mirror); // like a reflector: a nested render of the same scene from another camera
+    };
+    scene.add(light, first, second);
+    renderer.render(scene, camera);
+    expect(renderer.passes.map((p) => [p.kind, p.depth])).toEqual([
+      ['render', 0],
+      ['render', 1],
+      ['shadow', 2],
+      ['shadow', 1],
+    ]);
+    reflected = true;
+    renderer.render(scene, camera);
+    expect(renderer.passes.map((p) => p.kind)).toEqual(['render', 'shadow']);
+  });
+
+  it('renders six faces for a point light, re-aiming the same shadow camera per face', () => {
+    const lamp = named(new PointLight(), 'lamp');
+    lamp.castShadow = true;
+    lamp.position.set(0, 5, 0);
+    const renderer = new FakeRenderer({ shadowLights: [lamp], record: true });
+    const { scene, camera } = sceneWithCamera();
+    const caster = cube('caster');
+    caster.castShadow = true;
+    scene.add(lamp, caster);
+    scene.updateMatrixWorld();
+    renderer.render(scene, camera);
+    const faces = shadowPasses(renderer);
+    expect(faces.map((p) => p.face)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(faces.every((p) => p.camera === lamp.shadow.camera && p.light === lamp)).toBe(true);
+    expect(new Set(faces.map((p) => p.matrixWorldInverse.elements.join())).size).toBe(6);
+    expect(faces.every((p) => p.draws.length === 1)).toBe(true);
+  });
+});
+
+describe('FakeRenderer override material (Renderer.renderObject)', () => {
+  function shadowDraws(material: Material, setup: (renderer: FakeRenderer) => void = () => {}) {
+    const light = sun();
+    const renderer = new FakeRenderer({ shadowLights: [light], record: true });
+    setup(renderer);
+    const { scene, camera } = sceneWithCamera();
+    const caster = cube('caster', material);
+    caster.castShadow = true;
+    scene.add(light, caster);
+    renderer.render(scene, camera);
+    return { renderer, draws: shadowPasses(renderer)[0]!.draws };
+  }
+
+  it('resolves the shadow side as shadowSide ?? the flipped side, and keeps the source side under VSM', () => {
+    const sides = (material: Material, setup?: (renderer: FakeRenderer) => void) => shadowDraws(material, setup).draws.map((d) => d.side);
+    expect(sides(new MeshStandardMaterial({ side: FrontSide }))).toEqual([BackSide]);
+    expect(sides(new MeshStandardMaterial({ side: BackSide }))).toEqual([FrontSide]);
+    expect(sides(new MeshStandardMaterial({ side: DoubleSide }))).toEqual([DoubleSide]);
+    const explicit = new MeshStandardMaterial({ side: FrontSide });
+    explicit.shadowSide = DoubleSide;
+    expect(sides(explicit)).toEqual([DoubleSide]);
+    expect(sides(new MeshStandardMaterial({ side: FrontSide }), (r) => (r.shadowMap.type = VSMShadowMap))).toEqual([FrontSide]);
+  });
+
+  it('copies transparent onto the override material, draws double-sided transparent twice and restores the override side', () => {
+    const material = new MeshStandardMaterial({ transparent: true, side: DoubleSide });
+    const { renderer, draws } = shadowDraws(material);
+    expect(draws.map((d) => [d.side, d.drawCalls])).toEqual([
+      [BackSide, 1],
+      [FrontSide, 1],
+    ]);
+    const override = draws[0]!.material;
+    expect(override.transparent).toBe(true); // three copies it and never restores it
+    expect(override.side).toBe(FrontSide); // restored after the call
+    expect(material.side).toBe(DoubleSide);
+    const main = renderer.passes[0]!.draws.filter((d) => d.object.name === 'caster');
+    expect(main.map((d) => d.side)).toEqual([BackSide, FrontSide]);
+    expect(renderer.info.render.drawCalls).toBe(2 + 2 + 1); // shadow, main, output quad
+
+    const single = shadowDraws(new MeshStandardMaterial({ transparent: true, side: DoubleSide, forceSinglePass: true }));
+    expect(single.renderer.passes[0]!.draws.filter((d) => d.object.name === 'caster').map((d) => d.side)).toEqual([DoubleSide]);
+    // renderObject reads forceSinglePass from the override material, which three never copies it onto: two shadow draws.
+    expect(single.draws.map((d) => d.side)).toEqual([BackSide, FrontSide]);
+  });
+});
+
+describe('FakeRenderer render list (Renderer._renderScene, _renderTransparents)', () => {
+  it('passes a lights node as argument 7 whose getLights() lists the lights the camera projected', () => {
+    const renderer = new FakeRenderer();
+    const { scene, camera } = sceneWithCamera();
+    const key = new DirectionalLight();
+    const hidden = new DirectionalLight();
+    hidden.visible = false;
+    const otherLayer = new DirectionalLight();
+    otherLayer.layers.set(2);
+    scene.add(key, hidden, otherLayer, cube('m'));
+    const seen: Light[][] = [];
+    const renderObject = renderer.renderObject.bind(renderer);
+    renderer.renderObject = (...args: Parameters<FakeRenderer['renderObject']>) => {
+      if (args[0].name === 'm') seen.push([...(args[6] as { getLights(): Light[] }).getLights()]);
+      renderObject(...args);
+    };
+    renderer.render(scene, camera);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toHaveLength(1);
+    expect(seen[0]![0]).toBe(key);
+  });
+
+  it('renders opaque items, then a back-side pass of transmissive double-sided items, then the transparent list', () => {
+    const renderer = new FakeRenderer({ record: true });
+    const { scene, camera } = sceneWithCamera();
+    const glass = cube('glass', new MeshPhysicalMaterial({ transmission: 1, side: DoubleSide }));
+    const veil = cube('veil', new MeshStandardMaterial({ transparent: true }));
+    const wall = cube('wall');
+    const sides: string[] = [];
+    for (const o of [glass, veil, wall]) o.onBeforeRender = (_r, _s, _c, _g, material) => void sides.push(`${o.name}:${material.side}`);
+    scene.add(glass, veil, wall);
+    renderer.render(scene, camera);
+    expect(sides).toEqual([`wall:${FrontSide}`, `glass:${BackSide}`, `glass:${FrontSide}`, `veil:${FrontSide}`]);
+    expect(renderer.passes[0]!.draws.map((d) => [d.object.name, d.side, d.drawCalls])).toEqual([
+      ['wall', FrontSide, 1],
+      ['glass', BackSide, 1],
+      ['glass', FrontSide, 1],
+      ['veil', FrontSide, 1],
+      ['Output Color Transform', FrontSide, 1],
+    ]);
+    expect(glass.material.side).toBe(DoubleSide);
+  });
+
+  it('renders the two VSM blur quads after each non-point shadow map when vsmQuad is on and the type is VSM', () => {
+    const run = (options: FakeRendererOptions, vsm: boolean) => {
+      const light = sun();
+      const lamp = named(new PointLight(), 'lamp');
+      lamp.castShadow = true;
+      const renderer = new FakeRenderer({ shadowLights: [light, lamp], record: true, ...options });
+      if (vsm) renderer.shadowMap.type = VSMShadowMap;
+      const { scene, camera } = sceneWithCamera();
+      const receiver = cube('receiver');
+      receiver.receiveShadow = true;
+      scene.add(light, lamp, receiver);
+      renderer.render(scene, camera);
+      return renderer.passes;
+    };
+    const passes = run({ vsmQuad: true }, true);
+    expect(passes.map((p) => [p.kind, p.light?.name ?? null, p.draws.map((d) => d.object.name || d.material.name)])).toEqual([
+      ['render', null, ['receiver', 'Output Color Transform']],
+      ['shadow', 'sun', ['receiver']], // VSM also renders receivers into the map
+      ['vsm', 'sun', ['VSMVertical']],
+      ['vsm', 'sun', ['VSMHorizontal']],
+      ...Array.from({ length: 6 }, () => ['shadow', 'lamp', ['receiver']]),
+    ]);
+    const quad = passes[2]!;
+    expect((quad.scene as Object3D & { isQuadMesh?: boolean }).isQuadMesh).toBe(true);
+    expect(quad.draws[0]).toMatchObject({ drawCalls: 1, triangles: 1 });
+    expect(run({}, true).some((p) => p.kind === 'vsm')).toBe(false);
+    expect(run({ vsmQuad: true }, false).some((p) => p.kind === 'vsm')).toBe(false);
+  });
+});
+
+describe('FakeRenderer draw rules (RenderObject.getDrawParameters, Info.update)', () => {
+  it('draws nothing for an InstancedBufferGeometry with instanceCount 0 but still runs the object hooks', () => {
+    const renderer = new FakeRenderer();
+    const { scene, camera } = sceneWithCamera();
+    const plane = new PlaneGeometry(1, 1);
+    const quads = new InstancedBufferGeometry();
+    quads.setIndex(plane.getIndex());
+    quads.setAttribute('position', plane.getAttribute('position'));
+    quads.instanceCount = 0;
+    const sprites = named(new Mesh(quads, new MeshStandardMaterial()), 'sprites');
+    let after = 0;
+    sprites.onAfterRender = () => void after++;
+    scene.add(sprites);
+    renderer.render(scene, camera);
+    expect(renderer.info.render.drawCalls).toBe(1); // the output quad only
+    expect(after).toBe(1);
+    quads.instanceCount = 40;
+    renderer.render(scene, camera);
+    expect(renderer.info.render.drawCalls).toBe(1 + 2);
+    expect(renderer.info.render.triangles).toBe(2 + 40 * 2 + 2);
+  });
+
+  it('counts triangles per draw: instanceCount x count / 3, per multi-draw slot for batches', () => {
+    for (const [options, batchDraws] of [
+      [{ webgpu: true }, 2],
+      [{ webgpu: false, multiDraw: false }, 2],
+      [{ webgpu: false, multiDraw: true }, 1],
+    ] as const) {
+      const renderer = new FakeRenderer({ ...options, record: true });
+      const { scene, camera } = sceneWithCamera();
+      const instanced = named(new InstancedMesh(box, new MeshStandardMaterial(), 5), 'instanced');
+      instanced.count = 3;
+      const batch = named(new BatchedMesh(2, box.attributes.position!.count * 2, box.index!.count * 2, new MeshStandardMaterial()), 'batch');
+      const geometryId = batch.addGeometry(box);
+      batch.addInstance(geometryId);
+      batch.setMatrixAt(batch.addInstance(geometryId), new Matrix4().makeTranslation(1, 0, 0));
+      scene.add(cube('box'), instanced, batch);
+      scene.updateMatrixWorld();
+      renderer.render(scene, camera);
+      const rows = Object.fromEntries(renderer.passes[0]!.draws.map((d) => [d.object.name, [d.drawCalls, d.triangles, d.instanceCount]]));
+      expect(rows).toEqual({ box: [1, 12, 1], instanced: [1, 36, 3], batch: [batchDraws, 24, 1], 'Output Color Transform': [1, 2, 1] });
+      expect(renderer.info.render.triangles).toBe(12 + 36 + 24 + 2);
+      expect(renderer.info.render.drawCalls).toBe(1 + 1 + batchDraws + 1);
+    }
+  });
+
+  it('renderAsync awaits init() and then calls this.render', async () => {
+    const renderer = new FakeRenderer();
+    const { scene, camera } = sceneWithCamera();
+    const calls: string[] = [];
+    const init = renderer.init.bind(renderer);
+    renderer.init = async () => {
+      calls.push('init');
+      await Promise.resolve();
+      calls.push('init resolved');
+      return init();
+    };
+    renderer.render = (s, c) => void calls.push(`render ${s === scene && c === camera}`);
+    await renderer.renderAsync(scene, camera);
+    expect(calls).toEqual(['init', 'init resolved', 'render true']);
+  });
+
+  it("getDrawingBufferSize reports the drawing-buffer size, three's default 300x150 canvas unless set", () => {
+    const renderer = new FakeRenderer();
+    expect(renderer.getDrawingBufferSize(new Vector2()).toArray()).toEqual([300, 150]);
+    renderer.drawingBufferSize.set(800, 600);
+    expect(renderer.getDrawingBufferSize(new Vector2()).toArray()).toEqual([800, 600]);
+  });
+});
