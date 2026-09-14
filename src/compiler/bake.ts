@@ -72,7 +72,9 @@ const GOLDEN = Math.PI * (3 - Math.sqrt(5));
 interface Gathered {
   position: Float32Array;
   normal: Float32Array;
-  uv: Float32Array | null;
+  /** UV sets present in every entry (`uv`, `uv1`, `uv2`, `uv3`), and their gathered coordinates in the same order. */
+  uvSets: string[];
+  uvs: Float32Array[];
   color: Float32Array | null;
   /** Entry index per vertex. */
   vertexEntry: Uint32Array;
@@ -83,7 +85,8 @@ interface Gathered {
 }
 
 function gather(entries: BakeEntry[]): Gathered & { hasColor: boolean; hasUv: boolean } {
-  const hasUv = entries.every((e) => e.geometry.attributes.uv !== undefined);
+  const uvSets = ['uv', 'uv1', 'uv2', 'uv3'].filter((name) => entries.every((e) => e.geometry.attributes[name] !== undefined));
+  const hasUv = uvSets.includes('uv');
   const hasColor = entries.some((e) => e.geometry.attributes.color !== undefined || (e.color && (e.color.r !== 1 || e.color.g !== 1 || e.color.b !== 1)));
   let vertexTotal = 0;
   let triangleTotal = 0;
@@ -93,7 +96,7 @@ function gather(entries: BakeEntry[]): Gathered & { hasColor: boolean; hasUv: bo
   }
   const position = new Float32Array(vertexTotal * 3);
   const normal = new Float32Array(vertexTotal * 3);
-  const uv = hasUv ? new Float32Array(vertexTotal * 2) : null;
+  const uvs = uvSets.map(() => new Float32Array(vertexTotal * 2));
   const color = hasColor ? new Float32Array(vertexTotal * 3) : null;
   const vertexEntry = new Uint32Array(vertexTotal);
   const index = new Uint32Array(triangleTotal * 3);
@@ -116,13 +119,13 @@ function gather(entries: BakeEntry[]): Gathered & { hasColor: boolean; hasUv: bo
     const mirrored = e.matrix.determinant() < 0;
     const tint = e.color ?? null;
     const gColor = g.attributes.color;
-    const gUv = g.attributes.uv;
+    const gUvs = uvSets.map((name) => g.attributes[name]!);
     for (let i = 0; i < pos.count; i++) {
       v.fromBufferAttribute(pos, i).applyMatrix4(e.matrix);
       position.set([v.x, v.y, v.z], (vOffset + i) * 3);
       v.fromBufferAttribute(nrm, i).applyMatrix3(normalMatrix).normalize();
       normal.set([v.x, v.y, v.z], (vOffset + i) * 3);
-      if (uv && gUv) uv.set([gUv.getX(i), gUv.getY(i)], (vOffset + i) * 2);
+      for (let k = 0; k < gUvs.length; k++) uvs[k]!.set([gUvs[k]!.getX(i), gUvs[k]!.getY(i)], (vOffset + i) * 2);
       if (color) {
         const r = (gColor ? gColor.getX(i) : 1) * (tint ? tint.r : 1);
         const gc = (gColor ? gColor.getY(i) : 1) * (tint ? tint.g : 1);
@@ -146,7 +149,7 @@ function gather(entries: BakeEntry[]): Gathered & { hasColor: boolean; hasUv: bo
     vOffset += pos.count;
     tOffset += count / 3;
   });
-  return { position, normal, uv, color, vertexEntry, index, triangleEntry, locked, hasColor, hasUv };
+  return { position, normal, uvSets, uvs, color, vertexEntry, index, triangleEntry, locked, hasColor, hasUv };
 }
 
 /** Parity of the permutation taking (a, b, c) to sorted order: +1 even (same winding as sorted), -1 odd. */
@@ -415,20 +418,24 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
   const buckets = new Map<number, number[]>(); // posId -> output vertex ids
   const outPosition: number[] = [];
   const outNormal: number[] = [];
-  const outUv: number[] = [];
+  const outUvs: number[][] = g.uvSets.map(() => []);
   const outColor: number[] = [];
   const emit = (i: number): number => {
     const id = outPosition.length / 3;
     outPosition.push(g.position[i * 3]!, g.position[i * 3 + 1]!, g.position[i * 3 + 2]!);
     outNormal.push(g.normal[i * 3]!, g.normal[i * 3 + 1]!, g.normal[i * 3 + 2]!);
-    if (g.uv) outUv.push(g.uv[i * 2]!, g.uv[i * 2 + 1]!);
+    for (let k = 0; k < g.uvs.length; k++) outUvs[k]!.push(g.uvs[k]![i * 2]!, g.uvs[k]![i * 2 + 1]!);
     if (g.color) outColor.push(g.color[i * 3]!, g.color[i * 3 + 1]!, g.color[i * 3 + 2]!);
     return id;
   };
   const matches = (i: number, out: number): boolean => {
     const dot = g.normal[i * 3]! * outNormal[out * 3]! + g.normal[i * 3 + 1]! * outNormal[out * 3 + 1]! + g.normal[i * 3 + 2]! * outNormal[out * 3 + 2]!;
     if (dot < cosTol) return false;
-    if (g.uv && (Math.abs(g.uv[i * 2]! - outUv[out * 2]!) > 1e-5 || Math.abs(g.uv[i * 2 + 1]! - outUv[out * 2 + 1]!) > 1e-5)) return false;
+    for (let k = 0; k < g.uvs.length; k++) {
+      const set = g.uvs[k]!;
+      const outSet = outUvs[k]!;
+      if (Math.abs(set[i * 2]! - outSet[out * 2]!) > 1e-5 || Math.abs(set[i * 2 + 1]! - outSet[out * 2 + 1]!) > 1e-5) return false;
+    }
     if (g.color) for (let k = 0; k < 3; k++) if (Math.abs(g.color[i * 3 + k]! - outColor[out * 3 + k]!) > opts.colorTolerance) return false;
     return true;
   };
@@ -471,7 +478,7 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(new Float32Array(outPosition), 3));
   geometry.setAttribute('normal', new BufferAttribute(new Float32Array(outNormal), 3));
-  if (g.uv) geometry.setAttribute('uv', new BufferAttribute(new Float32Array(outUv), 2));
+  g.uvSets.forEach((name, k) => geometry.setAttribute(name, new BufferAttribute(new Float32Array(outUvs[k]!), 2)));
   if (g.color) geometry.setAttribute('color', new BufferAttribute(new Float32Array(outColor), 3));
   geometry.setIndex(new BufferAttribute(new Uint32Array(outIndex), 1));
   geometry.computeBoundingBox();

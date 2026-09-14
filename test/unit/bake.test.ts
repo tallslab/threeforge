@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BoxGeometry, Color, Matrix4, PlaneGeometry, Vector3 } from 'three';
+import { BoxGeometry, Color, Float32BufferAttribute, Matrix4, PlaneGeometry, Vector3 } from 'three';
 import { bakeGeometries, type BakeEntry } from '../../src/compiler/bake.js';
 
 const box = (x: number, size = 1, extra?: Partial<BakeEntry>): BakeEntry => ({ geometry: new BoxGeometry(size, size, size), matrix: new Matrix4().makeTranslation(x, 0, 0), ...extra });
@@ -104,5 +104,33 @@ describe('bakeGeometries', () => {
     const { report } = bakeGeometries([quad(false), quad(true)]);
     expect(report.contactFaces).toBe(4);
     expect(report.triangles).toBe(0);
+  });
+
+  it('carries every UV set (lightmap uv1) through the bake and welds only when they agree', () => {
+    // The second quad's uv continues the first's (u offset by its x), so the seam vertices agree on uv and only
+    // uv1 decides whether they weld.
+    const quad = (x: number, uv1Scale: number): BakeEntry => {
+      const g = new PlaneGeometry(1, 1);
+      const uv = g.getAttribute('uv');
+      for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) + x);
+      const uv1 = new Float32Array(uv.count * 2);
+      for (let i = 0; i < uv.count; i++) {
+        uv1[i * 2] = uv.getX(i) * uv1Scale;
+        uv1[i * 2 + 1] = uv.getY(i) * uv1Scale;
+      }
+      g.setAttribute('uv1', new Float32BufferAttribute(uv1, 2));
+      return { geometry: g, matrix: new Matrix4().makeTranslation(x, 0, 0) };
+    };
+    const same = bakeGeometries([quad(0, 0.5), quad(1, 0.5)]);
+    const uv1 = same.geometry.getAttribute('uv1');
+    expect(uv1).toBeDefined();
+    expect(uv1.itemSize).toBe(2);
+    // Two touching quads share the seam edge: two vertices weld when uv and uv1 agree.
+    expect(same.report.weldedVertices).toBe(2);
+    expect(same.geometry.getAttribute('position').count).toBe(6);
+    expect(Array.from(uv1.array as Float32Array).every((v) => v >= 0 && v <= 1)).toBe(true);
+    const differ = bakeGeometries([quad(0, 0.5), quad(1, 0.25)]);
+    expect(differ.report.weldedVertices).toBe(0);
+    expect(differ.geometry.getAttribute('position').count).toBe(8);
   });
 });
