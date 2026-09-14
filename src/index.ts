@@ -41,3 +41,4 @@ export { bakeGeometries, type BakeEntry, type BakeOptions, type BakeReport, type
 export { createLoader, decoderPaths, disposeLoader, type CreateLoaderOptions } from './load/createLoader.js';
 export { ResourceTracker, type ReleaseReport, type ResourceTrackerOptions, type TrackerStats } from './memory/ResourceTracker.js';
 export { collectResources, emptyResourceSets, unreferencedResources, type ResourceSets } from './memory/resources.js';
+export { Streamer, type StreamerEvent, type StreamerOptions, type StreamerStats } from './streaming/Streamer.js';
