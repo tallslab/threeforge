@@ -16,12 +16,11 @@ export default defineConfig<ForgeOptions>({
     viewport: { width: 800, height: 600 },
     backend: 'webgl2',
   },
-  webServer: {
-    command: 'pnpm exec vite --config vite.config.ts',
-    url: 'http://localhost:5179',
-    reuseExistingServer: true,
-    timeout: 30_000,
-  },
+  webServer: [
+    { command: 'pnpm exec vite --config vite.config.ts', url: 'http://localhost:5179', reuseExistingServer: true, timeout: 30_000 },
+    // The device bench page (test/e2e/bench-app.spec.ts); its public dir is filled from the downloaded kits first.
+    { command: 'node scripts/bench-app-assets.mjs && pnpm exec vite --config vite.bench.config.ts', url: 'http://localhost:5180', reuseExistingServer: true, timeout: 60_000 },
+  ],
   projects: [
     {
       name: 'webgl2',
