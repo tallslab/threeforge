@@ -22,7 +22,7 @@ function streakTexture(): DataTexture {
 }
 
 /** Reflective water, 2 000 raindrop sprites, fog, wet ground and rocks: fill rate, not draw calls, is the cost. */
-export const lake: BenchBuilder = async ({ camera, params }) => {
+export const lake: BenchBuilder = async ({ camera, params, url }) => {
   const rainCount = Number(params.get('rain') ?? '2000');
   const rng = mulberry32(5);
   const scene = new Scene();
@@ -32,7 +32,7 @@ export const lake: BenchBuilder = async ({ camera, params }) => {
   scene.fog = new Fog(fogColor.getHex(), 20, 260);
 
   const { WaterMesh } = await import('three/addons/objects/WaterMesh.js');
-  const normals = await new TextureLoader().loadAsync('/waternormals/waternormals.jpg');
+  const normals = await new TextureLoader().loadAsync(url('waternormals/waternormals.jpg'));
   normals.wrapS = normals.wrapT = RepeatWrapping;
   const water = new WaterMesh(new PlaneGeometry(300, 300), { waterNormals: normals, sunDirection: new Vector3(0.3, 0.8, 0.5).normalize(), sunColor: 0xffffff, waterColor: 0x1f4c66, distortionScale: 2.5 });
   water.rotation.x = -Math.PI / 2;

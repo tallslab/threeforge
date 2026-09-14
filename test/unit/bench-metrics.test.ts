@@ -1,0 +1,24 @@
+import { describe, expect, it } from 'vitest';
+import { MEASURED, metricsOf, SCENE_IDS, WARM } from '../../test/app/benchMetrics.js';
+import { emptyFrame } from '../../src/ledger/snapshot.js';
+
+describe('benchMetrics', () => {
+  it('maps a snapshot to the pnpm bench metric keys', () => {
+    const frame = emptyFrame({ three: '186', backend: 'webgl2', multiDraw: true, tier: 'desktop', gpu: 'x', dpr: 1, viewport: [800, 600] });
+    frame.totals.sceneSubmissions = 12;
+    frame.totals.gpuDraws = 30;
+    frame.totals.triangles = 1000;
+    frame.totals.programs = 3;
+    frame.overdraw.opaque = 1.5;
+    frame.overdraw.transparent = 0.25;
+    frame.skinning.vertices = 400;
+    frame.lighting.shadowCasters = 2;
+    frame.lighting.shadowTexels = 4096;
+    frame.memory.textures.bytes = 10;
+    frame.memory.geometries.bytes = 20;
+    frame.memory.renderTargets.bytes = 30;
+    expect(metricsOf(frame, 2.5, 16.7)).toEqual({ sceneSubmissions: 12, gpuDraws: 30, triangles: 1000, programs: 3, overdrawOpaque: 1.5, overdrawTransparent: 0.25, skinnedVertices: 400, shadowCasters: 2, shadowTexels: 4096, textureBytes: 10, geometryBytes: 20, renderTargetBytes: 30, renderMs: 2.5, frameMs: 16.7, unattributed: 0 });
+    expect(SCENE_IDS).toEqual(['village', 'forest', 'crowd', 'bossfight', 'lake', 'daynight', 'zen', 'rpg']);
+    expect([WARM, MEASURED]).toEqual([10, 60]);
+  });
+});

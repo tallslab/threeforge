@@ -21,6 +21,8 @@ export interface BenchContext {
   camera: PerspectiveCamera;
   params: URLSearchParams;
   loader(): Promise<GLTFLoader>;
+  /** Resolves a path under the served asset root (test/assets/files, or the bench page's public dir). */
+  url(path: string): string;
 }
 
 export interface BenchScene {

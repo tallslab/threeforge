@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { expect, test } from './fixtures.js';
-import type { FrameSnapshot } from '../../src/ledger/snapshot.js';
+import { MEASURED, metricsOf, SCENE_IDS, WARM } from '../app/benchMetrics.js';
 
 /**
  * The benchmark runner: every scene in both variants, 10 warm-up frames, 60 measured frames (medians), one overdraw
@@ -8,31 +8,7 @@ import type { FrameSnapshot } from '../../src/ledger/snapshot.js';
  * with the gate (scripts/bench-gate.mjs). Results merge on disk per test because Playwright restarts its worker
  * after a failure.
  */
-const SCENES = ['village', 'forest', 'crowd', 'bossfight', 'lake', 'daynight', 'zen', 'rpg'] as const;
-const WARM = 10;
-const MEASURED = 60;
-
-function metricsOf(f: FrameSnapshot, renderMs: number, frameMs: number) {
-  return {
-    sceneSubmissions: f.totals.sceneSubmissions,
-    gpuDraws: f.totals.gpuDraws,
-    triangles: f.totals.triangles,
-    programs: f.totals.programs,
-    overdrawOpaque: f.overdraw.opaque,
-    overdrawTransparent: f.overdraw.transparent,
-    skinnedVertices: f.skinning.vertices,
-    shadowCasters: f.lighting.shadowCasters,
-    shadowTexels: f.lighting.shadowTexels,
-    textureBytes: f.memory.textures.bytes,
-    geometryBytes: f.memory.geometries.bytes,
-    renderTargetBytes: f.memory.renderTargets.bytes,
-    renderMs,
-    frameMs,
-    unattributed: f.totals.unattributed,
-  };
-}
-
-for (const id of SCENES) {
+for (const id of SCENE_IDS) {
   for (const variant of ['naive', 'optimized'] as const) {
     test(`bench ${id} ${variant}`, async ({ forge }) => {
       test.setTimeout(900_000);

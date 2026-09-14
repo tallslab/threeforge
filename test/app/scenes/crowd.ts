@@ -11,18 +11,18 @@ interface KitIndex {
 const NAMES = ['character-male-a', 'character-male-b', 'character-male-c', 'character-female-a', 'character-female-b', 'character-female-c', 'character-male-d', 'character-female-d'];
 
 /** 200 skinned Kenney mini characters on a grid, every one animating a different clip with its own time offset. */
-export const crowd: BenchBuilder = async ({ camera, params, loader: makeLoader }) => {
+export const crowd: BenchBuilder = async ({ camera, params, loader: makeLoader, url }) => {
   const count = Number(params.get('count') ?? '200');
   const loader = await makeLoader();
   const SkeletonUtils = await import('three/addons/utils/SkeletonUtils.js');
-  const kits = (await fetch('/kits-index.json').then((r) => (r.ok ? r.json() : [])).catch(() => [])) as KitIndex[];
+  const kits = (await fetch(url('kits-index.json')).then((r) => (r.ok ? r.json() : [])).catch(() => [])) as KitIndex[];
   const kit = kits.find((k) => k.name === 'kenney-mini-characters' && !k.error);
   if (!kit?.glbs) throw new Error('kenney-mini-characters kit not found in test/assets/files (run pnpm assets)');
   const protos = await Promise.all(
     NAMES.map(async (name) => {
       const path = kit.glbs!.find((g) => g.toLowerCase().endsWith(`/${name}.glb`));
       if (!path) throw new Error(`${name}.glb missing from the mini-characters kit`);
-      const gltf = await loader.loadAsync('/' + path);
+      const gltf = await loader.loadAsync(url(path));
       return { scene: gltf.scene, animations: gltf.animations };
     }),
   );
