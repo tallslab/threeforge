@@ -1,4 +1,4 @@
-import { ShadowBudget } from 'threeforge';
+import { ShadowBudget, disposeLoader } from 'threeforge';
 import { buildArena } from '../arena.js';
 import type { BenchBuilder } from './index.js';
 
@@ -8,9 +8,13 @@ export const bossfight: BenchBuilder = async ({ renderer, camera, params, loader
   const loader = await makeLoader();
   renderer.shadowMap.enabled = true;
   const arena = await buildArena({ loader, fighters: Number(params.get('fighters') ?? '12'), blocky: 16, vfx: true, shadows: true, effects: Number(params.get('effects') ?? '30') });
+  disposeLoader(loader);
+  const roomEnvironment = new RoomEnvironment();
   const pmrem = new PMREMGenerator(renderer);
-  arena.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  arena.scene.environment = pmrem.fromScene(roomEnvironment, 0.04).texture;
   arena.scene.environmentIntensity = 0.15;
+  pmrem.dispose();
+  roomEnvironment.dispose();
   camera.near = 0.5;
   camera.far = 400;
   camera.position.set(-38, 34, 58);

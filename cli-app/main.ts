@@ -10,7 +10,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'meshoptimizer/decoder';
-import { DrawCallLedger, MaterialRegistry, World, detectTier, exposeToAgents, type Tier } from 'threeforge';
+import { DrawCallLedger, MaterialRegistry, World, detectTier, disposeLoader, exposeToAgents, type Tier } from 'threeforge';
 
 interface CliFacts {
   ready: boolean;
@@ -63,19 +63,23 @@ try {
   loader.setDRACOLoader(draco);
   const ktx2 = new KTX2Loader();
   ktx2.setTranscoderPath('./_decoders/basis/');
-  await ktx2.detectSupportAsync(renderer);
+  ktx2.detectSupport(renderer);
   loader.setKTX2Loader(ktx2);
   loader.setMeshoptDecoder(MeshoptDecoder);
 
   const t0 = performance.now();
   const gltf = await loader.loadAsync(file);
   const loadMs = performance.now() - t0;
+  disposeLoader(loader);
 
   const scene = new Scene();
   scene.background = new Color(0x202830);
   scene.add(gltf.scene);
+  const roomEnvironment = new RoomEnvironment();
   const pmrem = new PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environment = pmrem.fromScene(roomEnvironment, 0.04).texture;
+  pmrem.dispose();
+  roomEnvironment.dispose();
   const key = new DirectionalLight(0xffffff, 1.5);
   key.position.set(1, 2, 1.5);
   scene.add(new AmbientLight(0xffffff, 0.2), key);

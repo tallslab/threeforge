@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `analyze`'s harness page now disposes its PMREM environment generator, `RoomEnvironment` and Draco/KTX2 loaders after use; every `analyze` document previously carried a false `unreferenced-resources` hint (13 geometries, 4 textures) even for a single skinned mesh like the Fox.
+
 ## 0.8.0 — 2026-09-14
 
 - `createLoader(renderer, options)`: a GLTFLoader with Draco, KTX2 (formats detected on the renderer) and meshopt in one call; `disposeLoader`; `threeforge decoders <dir>` copies three's decoder files.

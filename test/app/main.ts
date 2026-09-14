@@ -200,7 +200,7 @@ try {
     loader.setDRACOLoader(draco);
     const ktx2 = new KTX2Loader();
     ktx2.setTranscoderPath('/_decoders/basis/');
-    await ktx2.detectSupportAsync(renderer);
+    ktx2.detectSupport(renderer);
     loader.setKTX2Loader(ktx2);
     loader.setMeshoptDecoder(MeshoptDecoder);
     return loader;
@@ -227,12 +227,16 @@ try {
       shadows: params.get('shadows') !== '0',
       assemble: params.get('assemble') === '1',
     });
+    disposeLoader(loader);
     scene = arena.scene;
     animationSources = arena.animations;
     if (params.get('env') !== '0') {
+      const roomEnvironment = new RoomEnvironment();
       const pmrem = new PMREMGenerator(renderer);
-      scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      scene.environment = pmrem.fromScene(roomEnvironment, 0.04).texture;
       scene.environmentIntensity = 0.15;
+      pmrem.dispose();
+      roomEnvironment.dispose();
     }
     camera.near = 0.5;
     camera.far = 400;
@@ -245,9 +249,13 @@ try {
     const [{ RoomEnvironment }, { PMREMGenerator }] = await Promise.all([import('three/addons/environments/RoomEnvironment.js'), import('three/webgpu')]);
     const loader = await makeLoader();
     biome = await buildBiome({ loader, density: Number(params.get('density') ?? '1'), water: params.get('water') !== '0', hiPoly: params.get('hipoly') !== '0' });
+    disposeLoader(loader);
     scene = biome.scene;
+    const roomEnvironment = new RoomEnvironment();
     const pmrem = new PMREMGenerator(renderer);
-    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environment = pmrem.fromScene(roomEnvironment, 0.04).texture;
+    pmrem.dispose();
+    roomEnvironment.dispose();
     camera.near = 2;
     camera.far = 2500;
     camera.position.set(-140, 150, 420);
@@ -269,11 +277,15 @@ try {
     const t0 = performance.now();
     const gltf = await loader.loadAsync('/' + entry.entry);
     const loadMs = performance.now() - t0;
+    disposeLoader(loader);
     scene = new Scene();
     scene.background = new Color(0x202830);
     scene.add(gltf.scene);
+    const roomEnvironment = new RoomEnvironment();
     const pmrem = new PMREMGenerator(renderer);
-    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environment = pmrem.fromScene(roomEnvironment, 0.04).texture;
+    pmrem.dispose();
+    roomEnvironment.dispose();
     const key = new DirectionalLight(0xffffff, 1.5);
     key.position.set(1, 2, 1.5);
     scene.add(new AmbientLight(0xffffff, 0.2), key);
@@ -327,6 +339,7 @@ try {
     const file = kit?.glbs?.find((g) => g.toLowerCase().endsWith(`/${params.get('asset') ?? 'character-male-a'}.glb`));
     if (!file) throw new Error('kenney-mini-characters kit not found (run pnpm assets)');
     const gltf = await loader.loadAsync('/' + file);
+    disposeLoader(loader);
     const SkeletonUtils = await import('three/addons/utils/SkeletonUtils.js');
     scene = new Scene();
     scene.background = new Color(0x202830);

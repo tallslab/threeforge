@@ -97,7 +97,7 @@ async function makeLoader(renderer: WebGPURenderer) {
   loader.setDRACOLoader(draco);
   const ktx2 = new KTX2Loader();
   ktx2.setTranscoderPath(url('_decoders/basis/'));
-  await ktx2.detectSupportAsync(renderer);
+  ktx2.detectSupport(renderer);
   loader.setKTX2Loader(ktx2);
   loader.setMeshoptDecoder(MeshoptDecoder);
   return loader;

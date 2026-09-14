@@ -36,6 +36,20 @@ test('analyze renders a sample asset, compiles it and prints the document', asyn
   expect(r.stderr).toContain('PASS');
 });
 
+test('analyze reports no false unreferenced-resources hint for the Fox (harness environment disposal)', async ({ forge }) => {
+  test.setTimeout(600_000);
+  const r = run(['analyze', sample(), '--backend', forge.backend, '--frames', '5', '--json']);
+  expect(r.status, r.stderr).toBe(0);
+  const doc = JSON.parse(r.stdout);
+  const codes = doc.hints.map((h: { code: string }) => h.code);
+  expect(codes).not.toContain('unreferenced-resources');
+  const snapshot = doc.after ?? doc.before;
+  const afterCodes = snapshot.hints.map((h: { code: string }) => h.code);
+  expect(afterCodes).not.toContain('unreferenced-resources');
+  const unreferenced = snapshot.memory.unreferenced.geometries + snapshot.memory.unreferenced.textures;
+  expect(unreferenced, JSON.stringify(snapshot.memory.unreferenced)).toBeLessThan(8);
+});
+
 test('analyze fails the verdict on a tiny budget (exit 1), usage on a missing file (exit 2), and --no-compile skips the compile', async ({ forge }) => {
   test.setTimeout(600_000);
   // The Fox compiles to exactly one submission, so a budget of 0 is the smallest failing budget.
