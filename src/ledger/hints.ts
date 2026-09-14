@@ -30,6 +30,9 @@ export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): H
   if (unsupported) push('drawCalls', 'error', 'unsupported-material', `${unsupported.submissions} ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer`, unsupported.top);
   if (t.programs > 40) push('drawCalls', 'warn', 'programs', `${t.programs} shader programs: fewer material variants means fewer compiles and switches`);
   if (f.overdraw.measured && f.overdraw.transparent > b.transparentOverdraw) push('overdraw', 'warn', 'transparent-overdraw', `${f.overdraw.transparent.toFixed(2)} transparent fragments per pixel, budget ${b.transparentOverdraw}`);
+  if (f.overdraw.particles > b.particles) push('overdraw', 'warn', 'particles-over-budget', `${f.overdraw.particles} particles drawn per frame, budget ${b.particles} for this tier: apply a ParticleBudget`);
+  const sprites = f.byReason.sprite;
+  if (sprites && sprites.submissions >= 8) push('overdraw', 'info', 'sprites-unbatched', `${sprites.submissions} sprites drawn one by one: World batches sprites that share a material (sprites: 'batch')`, sprites.top);
   if (f.skinning.vertices > b.skinnedVertices) push('skinning', 'warn', 'skinned-vertices', `${f.skinning.vertices} skinned vertices per frame, budget ${b.skinnedVertices}`);
   for (const name of ctx.pointShadowLights ?? []) push('lighting', 'warn', 'point-light-shadow', `point light '${name}' renders 6 shadow faces per frame; use a spot light or freeze its map`, [name]);
   if (f.lighting.shadowTexels > b.shadowTexels) push('lighting', 'warn', 'shadow-texels', `${f.lighting.shadowTexels} shadow texels per frame, budget ${b.shadowTexels}`);

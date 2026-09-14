@@ -23,7 +23,7 @@ export const SNAPSHOT_SCHEMA = {
     passes: arr(obj({ id: string, submissions: integer, gpuDraws: integer })),
     byReason: map(obj({ submissions: integer, gpuDraws: integer, top: arr(string) })),
     programs: map(obj({ type: string, description: string, submissions: integer })),
-    overdraw: obj({ opaque: number, transparent: number, transparentSubmissions: integer, measured: boolean }),
+    overdraw: obj({ opaque: number, transparent: number, transparentSubmissions: integer, particles: integer, pixels: integer, measured: boolean }),
     skinning: obj({ submissions: integer, vertices: integer, bones: integer, skeletons: integer, maxBones: integer, morphTargets: integer }),
     lighting: obj({ lights: obj({ directional: integer, point: integer, spot: integer, hemisphere: integer, ambient: integer, other: integer }), shadowLights: integer, shadowPasses: integer, shadowCasters: integer, shadowTexels: integer, shadowSubmissions: integer }),
     js: obj({ renderMs: number, frameMs: number, objects: integer, autoUpdatedMatrices: integer }),

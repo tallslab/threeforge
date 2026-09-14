@@ -75,6 +75,10 @@ export interface OverdrawSnapshot {
   /** Transparent fragments rasterised per pixel (measured). */
   transparent: number;
   transparentSubmissions: number;
+  /** Particles drawn per frame in the main pass: points vertices (honouring drawRange), sprites, sprite-batch instances. */
+  particles: number;
+  /** Drawing-buffer pixels at the frame (what a ResolutionScaler trades away). */
+  pixels: number;
   /** False until `ledger.measureOverdraw()` has run. */
   measured: boolean;
 }
@@ -155,7 +159,7 @@ export type FrameSections = Pick<FrameSnapshot, 'overdraw' | 'skinning' | 'light
 
 export function emptySections(): FrameSections {
   return {
-    overdraw: { opaque: 0, transparent: 0, transparentSubmissions: 0, measured: false },
+    overdraw: { opaque: 0, transparent: 0, transparentSubmissions: 0, particles: 0, pixels: 0, measured: false },
     skinning: { submissions: 0, vertices: 0, bones: 0, skeletons: 0, maxBones: 0, morphTargets: 0 },
     lighting: { lights: { directional: 0, point: 0, spot: 0, hemisphere: 0, ambient: 0, other: 0 }, shadowLights: 0, shadowPasses: 0, shadowCasters: 0, shadowTexels: 0, shadowSubmissions: 0 },
     js: { renderMs: 0, frameMs: 0, objects: 0, autoUpdatedMatrices: 0 },

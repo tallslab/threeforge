@@ -33,7 +33,7 @@ describe('hintsFor', () => {
       'unique-material': { submissions: 25, gpuDraws: 25, top: ['a'] },
       'unsupported-material': { submissions: 1, gpuDraws: 1, top: ['shader'] },
     };
-    f.overdraw = { opaque: 1.2, transparent: 2.5, transparentSubmissions: 30, measured: true };
+    f.overdraw = { opaque: 1.2, transparent: 2.5, transparentSubmissions: 30, particles: 0, pixels: 0, measured: true };
     f.skinning = { submissions: 200, vertices: 100_000, bones: 8000, skeletons: 200, maxBones: 60, morphTargets: 0 };
     f.lighting = { lights: { directional: 1, point: 1, spot: 0, hemisphere: 0, ambient: 0, other: 0 }, shadowLights: 2, shadowPasses: 7, shadowCasters: 10, shadowTexels: 6 * 1024 * 1024, shadowSubmissions: 70 };
     f.memory = { textures: { count: 10, bytes: 200 * 1024 * 1024 }, geometries: { count: 1, bytes: 0 }, renderTargets: { count: 0, bytes: 0 }, estimated: true };
@@ -46,5 +46,18 @@ describe('hintsFor', () => {
 
   it('is empty for a frame inside every budget', () => {
     expect(hintsFor(emptyFrame(env), budgetsFor('desktop'))).toEqual([]);
+  });
+
+  it('warns on particles over budget and mentions unbatched sprites', () => {
+    const f = emptyFrame(env);
+    f.overdraw.particles = 6000;
+    const hints = hintsFor(f, budgetsFor('phone-low'));
+    expect(hints.find((h) => h.code === 'particles-over-budget')).toMatchObject({ category: 'overdraw', severity: 'warn' });
+    f.overdraw.particles = 0;
+    f.byReason.sprite = { submissions: 8, gpuDraws: 8, top: ['rain-0'] };
+    expect(hintsFor(f, budgetsFor('desktop')).find((h) => h.code === 'sprites-unbatched')).toMatchObject({ category: 'overdraw', severity: 'info', objects: ['rain-0'] });
+    f.byReason.sprite.submissions = 7;
+    expect(hintsFor(f, budgetsFor('desktop')).some((h) => h.code === 'sprites-unbatched')).toBe(false);
+    expect(budgetsFor('phone-mid').particles).toBe(15_000);
   });
 });

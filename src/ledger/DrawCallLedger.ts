@@ -3,6 +3,7 @@ import { MaterialRegistry } from '../registry/MaterialRegistry.js';
 import { expectedGpuDraws, instanceCounts, type BackendInfo } from './expectedDraws.js';
 import { displayName, flagsOf, kindOf, reasonOf, type Reason } from './reasons.js';
 import { budgetsFor, type Budgets } from './budgets.js';
+import { Vector2 } from 'three';
 import { hintsFor, type HintContext } from './hints.js';
 import { estimateMemory } from './memory.js';
 import { measureOverdraw, type OverdrawRenderer, type OverdrawResult } from './overdraw.js';
@@ -19,6 +20,8 @@ export interface LedgerRenderer {
   info: { render: { drawCalls: number; triangles: number }; memory: { programs: number; textures?: number; geometries?: number } };
   backend?: unknown;
   getRenderTarget?(): { name?: string; texture?: { name?: string } } | null;
+  /** Drawing-buffer size in pixels; `overdraw.pixels` stays 0 without it. */
+  getDrawingBufferSize?(target: Vector2): Vector2;
 }
 
 interface BackendLike {
@@ -35,6 +38,7 @@ export interface DrawCallLedgerOptions {
 }
 
 /** Scene-graph statistics recounted at most every RESCAN_EVERY frames (a full traversal). */
+const _bufferSize = new Vector2();
 const RESCAN_EVERY = 60;
 const FRAME_WINDOW = 60;
 
@@ -331,6 +335,8 @@ export class DrawCallLedger {
         opaque: this.overdraw?.opaque ?? 0,
         transparent: this.overdraw?.transparent ?? 0,
         transparentSubmissions: this.lastItems.filter((i) => i.transparent && i.pass === 'main' && i.reason !== 'renderer-internal').length,
+        particles: this.lastItems.reduce((sum, i) => (i.pass !== 'main' ? sum : i.kind === 'points' ? sum + i.vertices : i.reason === 'sprite-batch' ? sum + i.instances : i.kind === 'sprite' ? sum + 1 : sum), 0),
+        pixels: this.renderer.getDrawingBufferSize ? (() => { const s = this.renderer.getDrawingBufferSize!(_bufferSize); return s.x * s.y; })() : 0,
         measured: this.overdraw !== null,
       },
     });
@@ -342,7 +348,11 @@ export class DrawCallLedger {
     const context = this.contexts[this.contexts.length - 1]!;
     const described = this.registry.describe(material);
     const reason = reasonOf({ object, material, group, root: context.root, unsupported: described.unsupported, annotation: this.annotations.get(object) });
-    const geometry = (object as { geometry?: { attributes?: { position?: { count: number } }; morphAttributes?: { position?: unknown[] } } }).geometry;
+    const geometry = (object as { geometry?: { attributes?: { position?: { count: number } }; morphAttributes?: { position?: unknown[] }; drawRange?: { start: number; count: number } } }).geometry;
+    const positionCount = geometry?.attributes?.position?.count ?? 0;
+    const range = geometry?.drawRange;
+    // Points draw what drawRange allows (ParticleBudget caps them there); meshes count their whole geometry.
+    const vertices = (object as { isPoints?: boolean }).isPoints && range && Number.isFinite(range.count) ? Math.max(0, Math.min(positionCount - range.start, range.count)) : positionCount;
     const skinned = object as { isSkinnedMesh?: boolean; skeleton?: { bones: unknown[] } };
     let skeleton: number | null = null;
     if (skinned.isSkinnedMesh && skinned.skeleton) {
@@ -363,7 +373,7 @@ export class DrawCallLedger {
       expectedGpuDraws: 0,
       instances: 0,
       instancesDrawn: 0,
-      vertices: geometry?.attributes?.position?.count ?? 0,
+      vertices,
       bones: skinned.isSkinnedMesh ? (skinned.skeleton?.bones.length ?? 0) : 0,
       skeleton,
       morphTargets: geometry?.morphAttributes?.position?.length ?? 0,

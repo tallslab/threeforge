@@ -28,8 +28,13 @@ export function expectedGpuDraws(object: Object3D, material: Material, scene: Sc
 
 /** Instances covered by a submission and how many of them the renderer will actually draw. */
 export function instanceCounts(object: Object3D): { instances: number; instancesDrawn: number } {
-  const o = object as Object3D & { isBatchedMesh?: boolean; isInstancedMesh?: boolean; instanceCount?: number; count?: number; _multiDrawCount?: number };
+  const o = object as Object3D & { isBatchedMesh?: boolean; isInstancedMesh?: boolean; instanceCount?: number; count?: number; _multiDrawCount?: number; geometry?: { isInstancedBufferGeometry?: boolean; instanceCount?: number } };
   if (o.isBatchedMesh) return { instances: o.instanceCount ?? 0, instancesDrawn: o._multiDrawCount ?? 0 };
+  // A plain mesh over an InstancedBufferGeometry (sprite batches): one draw, geometry.instanceCount instances.
+  if (o.geometry?.isInstancedBufferGeometry) {
+    const n = o.geometry.instanceCount ?? 0;
+    return { instances: n, instancesDrawn: n };
+  }
   if (o.isInstancedMesh) {
     const total = (object.userData as { forge?: { instances?: number } }).forge?.instances;
     return { instances: total ?? o.count ?? 0, instancesDrawn: o.count ?? 0 };

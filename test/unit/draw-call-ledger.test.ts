@@ -1,16 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import {
   BoxGeometry,
+  BufferGeometry,
   DirectionalLight,
   DoubleSide,
+  Float32BufferAttribute,
   Group,
+  InstancedBufferGeometry,
   InstancedMesh,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  PlaneGeometry,
+  Points,
+  PointsMaterial,
   ShaderMaterial,
   SkinnedMesh,
+  Sprite,
+  SpriteMaterial,
+  Vector2,
 } from 'three';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
@@ -328,5 +337,34 @@ describe('DrawCallLedger snapshot, report and budget', () => {
     const over = ledger.budget({ maxSubmissions: 2 });
     expect(over.pass).toBe(false);
     expect(over.offenders[0]).toMatchObject({ reason: 'dynamic', submissions: 4 });
+  });
+
+  it('counts particles (points honouring drawRange, sprites, sprite batches) and drawing-buffer pixels', () => {
+    const { renderer, ledger, scene, camera } = attached();
+    (renderer as unknown as { getDrawingBufferSize: (t: Vector2) => Vector2 }).getDrawingBufferSize = (t: Vector2) => t.set(800, 600);
+    const cloud = new BufferGeometry();
+    cloud.setAttribute('position', new Float32BufferAttribute(new Float32Array(1000 * 3), 3));
+    cloud.setDrawRange(0, 250);
+    const points = new Points(cloud, new PointsMaterial({ size: 2, transparent: true }));
+    points.name = 'smoke';
+    const sprite = new Sprite(new SpriteMaterial({ transparent: true }));
+    sprite.name = 'hit';
+    const quad = new InstancedBufferGeometry();
+    const plane = new PlaneGeometry(1, 1);
+    quad.setIndex(plane.getIndex());
+    quad.setAttribute('position', plane.getAttribute('position'));
+    quad.instanceCount = 40;
+    const batch = new Mesh(quad, new MeshBasicMaterial({ transparent: true }));
+    batch.name = 'forge:sprites:abcd:0';
+    batch.userData.forge = { kind: 'sprites' };
+    scene.add(points, sprite, batch);
+    renderer.render(scene, camera);
+    const frame = ledger.frame({ items: true });
+    expect(frame.overdraw.particles).toBe(250 + 1 + 40);
+    expect(frame.overdraw.pixels).toBe(480_000);
+    expect(frame.byReason['sprite-batch']?.submissions).toBe(1);
+    expect(frame.items?.find((i) => i.name === 'smoke')?.vertices).toBe(250);
+    expect(frame.items?.find((i) => i.name === 'forge:sprites:abcd:0')).toMatchObject({ instances: 40, instancesDrawn: 40, expectedGpuDraws: 1 });
+    expect(frame.totals.unattributed).toBe(0);
   });
 });

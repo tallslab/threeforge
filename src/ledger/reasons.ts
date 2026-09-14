@@ -5,6 +5,7 @@ import { tag, type ForgeTag } from '../tags.js';
 export type Reason =
   | 'batched'
   | 'baked'
+  | 'sprite-batch'
   | 'instanced'
   | 'unique-material'
   | 'dynamic'
@@ -112,6 +113,7 @@ export function reasonOf({ object, material, group, root, unsupported, annotatio
   const forgeKind = (object.userData.forge as { kind?: string } | undefined)?.kind;
   if (forgeKind === 'occlusion-proxy') return 'occlusion-proxy';
   if (forgeKind === 'bake') return 'baked';
+  if (forgeKind === 'sprites') return 'sprite-batch';
   if (o.isPoints) return 'points';
   if (o.isSprite) return 'sprite';
   if (o.isLine) return 'line';
