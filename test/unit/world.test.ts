@@ -86,7 +86,7 @@ describe('World.compile', () => {
     expect(batches.every((b) => /^forge:batch:[0-9a-f]{8}:\d+$/.test(b.name))).toBe(true);
 
     expect(report.before).toEqual({ meshes: 9, materials: 9 });
-    expect(report.after).toEqual({ batches: 2, instanced: 0, baked: 0, spriteBatches: 0, meshes: 3 });
+    expect(report.after).toEqual({ batches: 2, instanced: 0, baked: 0, spriteBatches: 0, frozen: 0, meshes: 3 });
     expect(report.groups).toHaveLength(2);
     expect(report.groups.map((g) => g.instances).sort()).toEqual([2, 4]);
     expect(report.groups.find((g) => g.instances === 4)?.geometries).toBe(2);
@@ -153,7 +153,9 @@ describe('World.compile', () => {
     scene.add(a, b);
     const report = new World(scene).compile();
     expect(batchesIn(scene)).toHaveLength(0);
-    expect(report.after).toEqual({ batches: 0, instanced: 0, baked: 0, spriteBatches: 0, meshes: 2 });
+    expect(report.after).toEqual({ batches: 0, instanced: 0, baked: 0, spriteBatches: 0, frozen: 1, meshes: 2 });
+    expect(a.matrixAutoUpdate).toBe(false);
+    expect(b.matrixAutoUpdate).toBe(true);
     expect(a.material).toBe(b.material);
   });
 
@@ -221,6 +223,31 @@ describe('World.decompile', () => {
     }
     const report = world.compile();
     expect(report.after.batches).toBe(2);
+  });
+
+  it('freezes all-static groups and unbatched statics at compile, restores them on decompile, and can be turned off', () => {
+    const { scene, statics } = mixedScene();
+    const props = new Group();
+    props.name = 'props';
+    scene.add(props);
+    props.add(statics[0]!, statics[1]!);
+    // A distinct material variant so it stays a singleton (a colour-only difference would join the batch).
+    const single = tag.static(new Mesh(box, new MeshStandardMaterial({ color: 0x999999, roughness: 0.1, metalness: 0.9 })));
+    single.name = 'single';
+    scene.add(single);
+    const world = new World(scene);
+    const report = world.compile();
+    expect(report.after.frozen).toBe(2);
+    expect(world.frozenObjects.map((o) => o.name).sort()).toEqual(['props', 'single']);
+    expect(props.matrixAutoUpdate).toBe(false);
+    expect(single.matrixAutoUpdate).toBe(false);
+    world.decompile();
+    expect(props.matrixAutoUpdate).toBe(true);
+    expect(single.matrixAutoUpdate).toBe(true);
+    expect(world.frozenObjects).toEqual([]);
+    const off = new World(scene, { freeze: false }).compile();
+    expect(off.after.frozen).toBe(0);
+    expect(single.matrixAutoUpdate).toBe(true);
   });
 
   it('with originals: "detach", removes originals from the graph and reattaches them at their old index', () => {
@@ -320,7 +347,7 @@ describe('World instancing', () => {
     expect(instanced[0]!.name).toMatch(/^forge:instanced:[0-9a-f]{8}:\d+$/);
     expect(batchesIn(scene)).toHaveLength(1);
     expect(batchesIn(scene)[0]!.instanceCount).toBe(5);
-    expect(report.after).toEqual({ batches: 1, instanced: 1, baked: 0, spriteBatches: 0, meshes: 0 });
+    expect(report.after).toEqual({ batches: 1, instanced: 1, baked: 0, spriteBatches: 0, frozen: 0, meshes: 0 });
   });
 
   it('respects instanceThreshold and never instances transparent groups', () => {

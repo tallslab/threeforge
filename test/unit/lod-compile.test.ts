@@ -92,7 +92,7 @@ describe('World lod (instanced path)', () => {
     const { scene, box } = await instancedScene();
     const world = new World(scene, { lod: { distances: [30] } });
     const report = world.compile();
-    expect(report.after).toEqual({ batches: 0, instanced: 2, baked: 0, spriteBatches: 0, meshes: 0 });
+    expect(report.after).toEqual({ batches: 0, instanced: 2, baked: 0, spriteBatches: 0, frozen: 0, meshes: 0 });
     const levels = world.instancedMeshes;
     expect(levels).toHaveLength(2);
     expect(levels[1]!.geometry).toBe(lodsOf(box)[0]);

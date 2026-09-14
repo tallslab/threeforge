@@ -5,7 +5,8 @@ import { MaterialRegistry, type RegistryStats } from '../registry/MaterialRegist
 import { batchStatics, type GroupReport, type Slot, rebake, type BakedGroup } from './batchStatics.js';
 import type { BakeOptions } from './bake.js';
 import type { CulledInstancedMesh } from './instancing.js';
-import { classify, exclusionRule, type AnimationSource, type Classification } from './classify.js';
+import { animatedRoots, classify, exclusionRule, type AnimationSource, type Classification } from './classify.js';
+import { freezableObjects } from './freeze.js';
 import { buildSpriteBatch, type SpriteBatch } from './spriteBatch.js';
 import { groupSprites } from './sprites.js';
 import { attachBvhCulling, prependAfterRenderHook, prependRenderHook, type CullingHandle, type NestedPassPolicy } from './culling.js';
@@ -64,6 +65,12 @@ export interface WorldOptions {
   sprites?: 'batch' | 'keep';
   /** Sprites a material needs before its group is batched (default 4). */
   spriteThreshold?: number;
+  /**
+   * `true` (default): after batching, unbatched static-tagged meshes and every ancestor whose whole subtree is
+   * static get `matrixAutoUpdate = false`, so three stops recomposing their matrices every frame. Move a frozen
+   * object with `world.markDirty(object)`. `decompile()` restores the flags.
+   */
+  freeze?: boolean;
 }
 
 export interface CompileOptions {
@@ -84,7 +91,7 @@ export interface BakeSummary {
 
 export interface CompileReport {
   before: { meshes: number; materials: number };
-  after: { batches: number; instanced: number; baked: number; spriteBatches: number; meshes: number };
+  after: { batches: number; instanced: number; baked: number; spriteBatches: number; frozen: number; meshes: number };
   /** Totals over the baked groups, null when `bake` is off. */
   bake: BakeSummary | null;
   groups: GroupReport[];
@@ -201,6 +208,8 @@ export class World {
   private readonly bakeOptions: BakeOptions | null;
   private readonly spriteMode: 'batch' | 'keep';
   private readonly spriteThreshold: number;
+  private readonly freezeStatics: boolean;
+  private frozenList: Array<{ object: Object3D; matrixAutoUpdate: boolean }> = [];
   private spriteBatchList: SpriteBatch[] = [];
   private slots = new Map<Mesh, Slot>();
   private originalsByBatch = new Map<BatchedMesh | InstancedMesh, Mesh[]>();
@@ -226,6 +235,7 @@ export class World {
     this.bakeOptions = options.bake === true ? {} : options.bake ? options.bake : null;
     this.spriteMode = options.sprites ?? 'batch';
     this.spriteThreshold = options.spriteThreshold ?? 4;
+    this.freezeStatics = options.freeze ?? true;
   }
 
   /** The camera of the outermost render in the current or last frame (tracked once compiled with `reuse-main`). */
@@ -247,6 +257,11 @@ export class World {
   }
 
   /** One mesh per baked group (empty unless `bake` is on). */
+  /** Objects `compile()` froze beyond the hidden originals (unbatched statics and all-static ancestors). */
+  get frozenObjects(): readonly Object3D[] {
+    return this.frozenList.map((f) => f.object);
+  }
+
   /** One mesh per batched sprite group (`forge:sprites:<programHash>:<n>`). */
   get spriteBatches(): readonly Mesh[] {
     return this.spriteBatchList.map((b) => b.mesh);
@@ -356,6 +371,17 @@ export class World {
     }
     for (const state of this.hidden) this.hideOriginal(state);
 
+    // Freeze what never moves: unbatched statics and all-static ancestors stop recomposing matrices every frame.
+    if (this.freezeStatics) {
+      const hiddenSet = new Set<Object3D>(this.hidden.map((h) => h.mesh));
+      const syncedSet = new Set<Object3D>(this.hidden.filter((h) => h.synced).map((h) => h.mesh));
+      for (const object of freezableObjects(this.scene, { hidden: hiddenSet, synced: syncedSet, animated: animatedRoots(this.scene, this.animations) })) {
+        object.updateMatrix();
+        this.frozenList.push({ object, matrixAutoUpdate: object.matrixAutoUpdate });
+        object.matrixAutoUpdate = false;
+      }
+    }
+
     const skipped: CompileReport['skipped'] = [...spriteSkips];
     for (const c of classifications) {
       if (result.slots.has(c.object)) continue;
@@ -373,7 +399,7 @@ export class World {
     this.compiled = true;
     return {
       before,
-      after: { batches: this.batches.length, instanced: this.instanced.length, baked: this.baked.length, spriteBatches: this.spriteBatchList.length, meshes: classifications.length - result.slots.size },
+      after: { batches: this.batches.length, instanced: this.instanced.length, baked: this.baked.length, spriteBatches: this.spriteBatchList.length, frozen: this.frozenList.length, meshes: classifications.length - result.slots.size },
       bake: this.bakeOptions ? this.bakeSummary() : null,
       groups: result.groups,
       skipped,
@@ -578,6 +604,8 @@ export class World {
       batch.dispose();
     }
     this.spriteBatchList = [];
+    for (const f of this.frozenList.reverse()) f.object.matrixAutoUpdate = f.matrixAutoUpdate;
+    this.frozenList = [];
     for (const swap of this.materialSwaps) swap.mesh.material = swap.material;
     const restore = [...this.hidden].sort((a, b) => a.index - b.index);
     for (const state of restore) {
