@@ -8,6 +8,9 @@ export default defineConfig({
   root: 'bench-app',
   base: './',
   publicDir: 'public',
+  // Its own pre-bundle cache: the test harness server (vite.config.ts) runs alongside in Playwright, and two servers
+  // sharing node_modules/.vite invalidate each other's dependency URLs mid-run.
+  cacheDir: fileURLToPath(new URL('./node_modules/.vite-bench', import.meta.url)),
   server: { port: 5180, strictPort: true, fs: { allow: [fileURLToPath(new URL('.', import.meta.url))] } },
   build: { outDir: '../dist/bench-app', emptyOutDir: true, target: 'es2022', chunkSizeWarningLimit: 4000 },
   resolve: {
