@@ -39,3 +39,5 @@ export { ParticleBudget, type ParticleBudgetOptions, type ParticleBudgetReport, 
 export { ResolutionScaler, type ResolutionScalerOptions, type ScalerRenderer } from './overdraw/ResolutionScaler.js';
 export { bakeGeometries, type BakeEntry, type BakeOptions, type BakeReport, type BakeResult, type BuriedOptions } from './compiler/bake.js';
 export { createLoader, decoderPaths, disposeLoader, type CreateLoaderOptions } from './load/createLoader.js';
+export { ResourceTracker, type ReleaseReport, type ResourceTrackerOptions, type TrackerStats } from './memory/ResourceTracker.js';
+export { collectResources, emptyResourceSets, unreferencedResources, type ResourceSets } from './memory/resources.js';

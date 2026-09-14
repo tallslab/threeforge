@@ -387,4 +387,18 @@ describe('DrawCallLedger snapshot, report and budget', () => {
     renderer.render(scene, camera);
     expect(ledger.frame().js.skipped).toBe(0);
   });
+
+  it("reports the attached streamer's chunks in the memory section", () => {
+    const { renderer, ledger, scene, camera } = attached();
+    renderer.render(scene, camera);
+    expect(ledger.frame().memory.chunks).toEqual({ total: 0, resident: 0 });
+    ledger.attachStreamer({ stats: () => ({ chunks: 64, resident: 20, loads: 0, unloads: 0 }) });
+    ledger.rescan();
+    renderer.render(scene, camera);
+    expect(ledger.frame().memory.chunks).toEqual({ total: 64, resident: 20 });
+    ledger.attachStreamer(null);
+    ledger.rescan();
+    renderer.render(scene, camera);
+    expect(ledger.frame().memory.chunks).toEqual({ total: 0, resident: 0 });
+  });
 });

@@ -40,5 +40,9 @@ describe('memory estimate', () => {
     expect(m.geometries).toEqual({ count: 1, bytes: geometryBytes(geometry) });
     expect(m.renderTargets).toEqual({ count: 2, bytes: 1024 * 1024 * 4 + 800 * 600 * 8 });
     expect(m.estimated).toBe(true);
+    expect(m.unreferenced).toEqual({ geometries: 0, textures: 0 });
+    expect(m.chunks).toEqual({ total: 0, resident: 0 });
+    // The renderer holds 3 geometries and 5 textures; the scene reaches 1 and 1, and 2 textures are its render targets.
+    expect(estimateMemory(scene, { textures: 5, geometries: 3 }, [800, 600]).unreferenced).toEqual({ geometries: 2, textures: 2 });
   });
 });

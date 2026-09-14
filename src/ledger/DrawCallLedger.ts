@@ -89,6 +89,7 @@ export class DrawCallLedger {
   private lastScene: Object3D | null = null;
   private graphStats: { objects: number; autoUpdatedMatrices: number; hiddenOriginals: number; at: number } = { objects: 0, autoUpdatedMatrices: 0, hiddenOriginals: 0, at: -1 };
   private scheduler: { skippedRecently(): number } | null = null;
+  private streamer: { stats(): { chunks: number; resident: number } } | null = null;
   private memoryStats: MemorySnapshot = emptySections().memory;
   private hintContext: HintContext = {};
   private overdraw: OverdrawResult | null = null;
@@ -194,6 +195,10 @@ export class DrawCallLedger {
     this.graphStats = { objects: objects - 1, autoUpdatedMatrices: auto - 1, hiddenOriginals: hidden, at: this.framesSeen };
     const memory = this.renderer?.info.memory;
     this.memoryStats = estimateMemory(scene, { textures: memory?.textures ?? 0, geometries: memory?.geometries ?? 0 }, this.environment.viewport);
+    if (this.streamer) {
+      const s = this.streamer.stats();
+      this.memoryStats = { ...this.memoryStats, chunks: { total: s.chunks, resident: s.resident } };
+    }
     this.last = { ...this.last, js: { ...this.last.js, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals }, memory: this.memoryStats };
     this.last = { ...this.last, hints: hintsFor(this.last, this.budgets(), this.hintContext) };
   }
@@ -201,6 +206,11 @@ export class DrawCallLedger {
   /** A RenderScheduler whose skipped ticks the js section reports; null detaches. */
   attachScheduler(scheduler: { skippedRecently(): number } | null): void {
     this.scheduler = scheduler;
+  }
+
+  /** A Streamer whose chunk residency the memory section reports; null detaches. */
+  attachStreamer(streamer: { stats(): { chunks: number; resident: number } } | null): void {
+    this.streamer = streamer;
   }
 
   /** The budgets hints are judged against: the environment's tier plus constructor overrides. */

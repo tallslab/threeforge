@@ -78,6 +78,8 @@ describe('explain', () => {
     f.skinning.submissions = 1e9;
     f.js.objects = 1e9;
     f.js.hiddenOriginals = 1e9;
+    f.memory.geometries.bytes = 1e12;
+    f.memory.unreferenced = { geometries: 1e9, textures: 1e9 };
     f.lighting.shadowTexels = 1e9;
     f.memory.textures.bytes = 1e12;
     const codes = hintsFor(f, budgetsFor('phone-low'), { staticAutoUpdated: ['a'], pointShadowLights: ['l'], transmissive: ['g'] }).map((h) => h.code);

@@ -1,5 +1,6 @@
 import { ByteType, FloatType, HalfFloatType, IntType, ShortType, UnsignedByteType, UnsignedIntType, UnsignedShortType, type BufferGeometry, type Object3D, type Texture } from 'three';
 import type { MemorySnapshot } from './snapshot.js';
+import { collectResources } from '../memory/resources.js';
 
 const BYTES_PER_CHANNEL: Record<number, number> = {
   [UnsignedByteType]: 1,
@@ -35,29 +36,16 @@ export function geometryBytes(geometry: BufferGeometry): number {
  * shadow maps of shadow-casting lights, and the renderer's half-float frame-buffer target for the viewport.
  */
 export function estimateMemory(scene: Object3D, info: { textures: number; geometries: number }, viewport: [number, number]): MemorySnapshot {
-  const textures = new Set<Texture>();
-  const geometries = new Set<BufferGeometry>();
+  const { textures, geometries } = collectResources(scene);
   let rtCount = 0;
   let rtBytes = 0;
   scene.traverse((o) => {
-    const mesh = o as { geometry?: BufferGeometry; material?: unknown };
-    if (mesh.geometry) geometries.add(mesh.geometry);
-    const materials = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
-    for (const material of materials) {
-      for (const value of Object.values(material as Record<string, unknown>)) {
-        if ((value as Texture | null)?.isTexture) textures.add(value as Texture);
-      }
-    }
     const light = o as Object3D & { isLight?: boolean; isPointLight?: boolean; castShadow: boolean; shadow?: { mapSize: { x: number; y: number } } };
     if (light.isLight && light.castShadow && light.shadow) {
       rtCount++;
       rtBytes += light.shadow.mapSize.x * light.shadow.mapSize.y * 4 * (light.isPointLight ? 6 : 1);
     }
   });
-  for (const key of ['background', 'environment'] as const) {
-    const value = (scene as unknown as Record<string, unknown>)[key];
-    if ((value as Texture | null)?.isTexture) textures.add(value as Texture);
-  }
   let textureTotal = 0;
   for (const t of textures) textureTotal += textureBytes(t);
   let geometryTotal = 0;
@@ -70,6 +58,9 @@ export function estimateMemory(scene: Object3D, info: { textures: number; geomet
     textures: { count: Math.max(info.textures, textures.size), bytes: textureTotal },
     geometries: { count: Math.max(info.geometries, geometries.size), bytes: geometryTotal },
     renderTargets: { count: rtCount, bytes: rtBytes },
+    // Render-target textures (shadow maps, the frame buffer) count in info.memory.textures without being in the scene.
+    unreferenced: { geometries: Math.max(0, info.geometries - geometries.size), textures: Math.max(0, info.textures - textures.size - rtCount) },
+    chunks: { total: 0, resident: 0 },
     estimated: true,
   };
 }

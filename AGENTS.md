@@ -89,6 +89,8 @@ estimate, and `hints`. Read `after` when present, otherwise `before`.
 | `shadow-texels` | lighting | warn | Apply new ShadowBudget({ tier }).apply(scene) so the largest maps halve until the tier budget holds (point shadows off on phones, off: [tiers] for none), freeze static shadow maps with ShadowBudget.freeze(light), and let DayNight re-render the sun shadow only when the sun moved. |
 | `transmission` | overdraw | info | Keep transmission for a few hero objects, set forceSinglePass when the object is not double sided, and fake distant glass with opacity. |
 | `texture-bytes` | memory | warn | Compress textures to KTX2 (toktx or gltf-transform), cap sizes per tier, share atlases, and drop mipmaps only for UI textures. |
+| `geometry-bytes` | memory | warn | Compress with threeforge optimize --compress meshopt (or Draco), generate LODs (prepareLods), compile with chunkSize and stream chunks with a Streamer. |
+| `unreferenced-resources` | memory | warn | Track loaded subtrees with a ResourceTracker and release() them when removed; dispose textures and geometries you replace; let a Streamer unload chunks. |
 | `js-objects` | js | warn | Compile with World so statics batch, pass originals: "detach" so hidden originals leave the graph, flatten empty groups, and keep helper objects out of the rendered scene. |
 | `detach-originals` | js | info | Construct World with originals: "detach": the originals leave the graph (and both per-frame walks) and decompile() puts them back at their old index. |
 | `static-auto-update` | js | info | After placing a static object set matrixAutoUpdate = false (and matrixWorldAutoUpdate = false on whole static subtrees); update matrices manually when something does move. |

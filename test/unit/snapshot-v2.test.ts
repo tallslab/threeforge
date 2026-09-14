@@ -11,7 +11,7 @@ describe('snapshot v2', () => {
     expect(f.skinning).toEqual({ submissions: 0, vertices: 0, bones: 0, skeletons: 0, maxBones: 0, morphTargets: 0, vatInstances: 0, vatVertices: 0 });
     expect(f.lighting).toEqual({ lights: { directional: 0, point: 0, spot: 0, hemisphere: 0, ambient: 0, other: 0 }, shadowLights: 0, shadowPasses: 0, shadowCasters: 0, shadowTexels: 0, shadowSubmissions: 0 });
     expect(f.js).toEqual({ renderMs: 0, frameMs: 0, objects: 0, autoUpdatedMatrices: 0, hiddenOriginals: 0, skipped: 0 });
-    expect(f.memory).toEqual({ textures: { count: 0, bytes: 0 }, geometries: { count: 0, bytes: 0 }, renderTargets: { count: 0, bytes: 0 }, estimated: true });
+    expect(f.memory).toEqual({ textures: { count: 0, bytes: 0 }, geometries: { count: 0, bytes: 0 }, renderTargets: { count: 0, bytes: 0 }, unreferenced: { geometries: 0, textures: 0 }, chunks: { total: 0, resident: 0 }, estimated: true });
     expect(f.hints).toEqual([]);
   });
 
