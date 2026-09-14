@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0 — 2026-09-14
+
+- `bakeAnimationTexture`: every clip of a skinned prototype baked to one float texture of bone matrices (multiple skeletons side by side), transform and pose restored.
+- `AnimatedInstances`: crowds as one instanced draw per part with a per-instance clip, time offset and speed, animated on the GPU from the texture; instance matrices in one `InstancedInterleavedBuffer`.
+- Ledger: reason `vat-instanced`, `skinning.vatInstances` / `vatVertices`; budget `bones`; hints `bones-over-budget`, `skinned-crowd`. Crowd benchmark optimized with animated instances (baselines promoted: 401 → 17 submissions, skinned vertices 271 k → 0). `docs/skinning.md`.
+
 ## 0.6.0 — 2026-09-14
 
 - `DayNight`: sun, gradient sky dome, hemisphere light, fog and background from the hour of day; the shadow map re-renders only when the sun moved `everyDegrees`.

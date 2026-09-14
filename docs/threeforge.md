@@ -129,7 +129,7 @@ passes:    [{ id, submissions, gpuDraws }]
 byReason:  { reason: { submissions, gpuDraws, top: [first 5 names] } }
 programs:  { programHash: { type, description, submissions } }
 overdraw:  opaque, transparent (fragments per pixel, measured), transparentSubmissions, measured
-skinning:  submissions, vertices, bones, skeletons, maxBones, morphTargets
+skinning:  submissions, vertices, bones, skeletons, maxBones, morphTargets, vatInstances, vatVertices
 lighting:  lights { directional, point, spot, hemisphere, ambient, other }, shadowLights, shadowPasses,
            shadowCasters, shadowTexels, shadowSubmissions
 js:        renderMs, frameMs, objects, autoUpdatedMatrices
@@ -144,7 +144,8 @@ items?:    per-submission records with ledger.frame({ items: true })
   the red channel: fragments per pixel. three copies `alphaTest` and `alphaMap` onto override materials, so cutouts
   count only their visible texels. Attribution is paused during the measurement. Call it on demand.
 - **skinning** sums the main pass's skinned submissions: vertices, bones per unique skeleton (indexed per frame, no
-  uuids in the snapshot), the largest bone count, morph targets.
+  uuids in the snapshot), the largest bone count, morph targets; `vatInstances` and `vatVertices` count the
+  characters drawn as animated instances (`kind: 'vat'`, reason `vat-instanced`), which need no CPU bones.
 - **lighting** scans the main scene's visible lights; `shadowTexels` = Σ `mapSize.x · mapSize.y · faces` with 6
   faces for point lights (a cube target); casters are the unique objects in `shadow:*` passes.
 - **js**: `renderMs` is the outermost `render()` duration, `frameMs` the median interval between the last 60 outermost
@@ -180,7 +181,7 @@ Other methods: `ledger.report()` (text), `ledger.budget({ maxSubmissions })` →
 Hint codes (`hintsFor`, remedies in `npx threeforge explain --all`): `over-budget-submissions`,
 `over-budget-triangles`, `untagged`, `unique-materials`, `unsupported-material`, `programs`, `transparent-overdraw`,
 `skinned-vertices`, `point-light-shadow`, `shadow-texels`, `transmission`, `texture-bytes`, `static-auto-update`,
-`particles-over-budget`, `sprites-unbatched`, `js-objects`, `detach-originals`.
+`particles-over-budget`, `sprites-unbatched`, `js-objects`, `detach-originals`, `bones-over-budget`, `skinned-crowd`.
 
 ### Overlay
 
@@ -373,6 +374,27 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
 - **Bench**: `shadowPassesPerFrame` (mean over the measured frames) is gated; the optimized day/night and boss
   fight apply `ShadowBudget` for the detected tier.
 
+### Skinning: `bakeAnimationTexture`, `AnimatedInstances`
+
+- **`bakeAnimationTexture(prototype, clips, { fps })`** (`src/skinning/bakeAnimationTexture.ts`): plays every clip
+  on the prototype at the origin (`LoopOnce`, clamped, so the last row is the end pose) and copies every distinct
+  skeleton's `boneMatrices` into one RGBA float `DataTexture`: a row per frame, four texels per bone, skeletons
+  after each other (`parts[i].boneOffset`); `clips[i]` = `{ name, start, frames, duration }`, `parts[i]` =
+  `{ mesh, matrix, boneOffset }`. The prototype's transform and pose are restored.
+- **`AnimatedInstances({ animation, count, material? })`** (`src/skinning/AnimatedInstances.ts`): one `Mesh` per
+  part over an `InstancedBufferGeometry` sharing the part's buffers, `MeshStandardNodeMaterial` with a TSL
+  `positionNode` that fetches the instance's four bone matrices for its current row (`clipStart + floor(mod((time
+  × speed + offset) × fps, frames))`), applies `bindMatrixInverse × Σ bone × weight × bindMatrix` and the instance
+  matrix, and assigns `normalLocal`. The instance matrices live in one `InstancedInterleavedBuffer` (four separate
+  attributes would exceed WebGPU's eight vertex buffers; a plain `InterleavedBuffer` is read per vertex, because
+  both backends take the per-instance step from `isInstancedInterleavedBuffer`). `setMatrixAt` folds the part's
+  offset in, `setClipAt(i, clip, { offset, speed })`, `setTime(seconds)`, `addTo`, `dispose`. Meshes are
+  `forge:vat:<part>` with `userData.forge = { kind: 'vat', instances }` (untagged: a tag overwrites the marker).
+- **Ledger**: reason `vat-instanced`, `skinning.vatInstances` / `vatVertices`, budget `bones`, hints
+  `bones-over-budget` and `skinned-crowd` (50 skinned draws). Authoring notes: `docs/skinning.md`.
+- **Bench**: the optimized crowd bakes each of its eight prototypes and replaces its 25 characters with one
+  `AnimatedInstances`: 401 → 17 submissions, 271 k skinned vertices → 0.
+
 ## 8. Bake: one mesh per finished group
 
 `new World(scene, { bake: true | options })` replaces the `BatchedMesh` of each finished static group with one
@@ -479,7 +501,7 @@ budgets the scene stresses):
 |---|---|---|
 | `village` | 300 props from 40 shapes, 40 materials, 10 dynamics, 2 skinned | static batching, registry |
 | `forest` | terrain, 5 000 trees of 3 species, 2 000 grass patches | instancing, LOD, culling |
-| `crowd` | 200 skinned Kenney mini characters, all animating | skinning budget (VAT next) |
+| `crowd` | 200 skinned Kenney mini characters, all animating | skinning budget, animated instances |
 | `bossfight` | arena, 12 fighters, 16 blocky characters, 30 VFX systems, shadowed lights | overdraw, transparency |
 | `lake` | reflective water, 2 000 rain sprites, fog, wet ground | fill rate, weather |
 | `daynight` | the village under a sun cycle with a 2048² shadow map | lighting, shadows |
@@ -492,7 +514,7 @@ draws, triangles, programs, overdraw, skinned vertices, shadow casters and texel
 `bench/baselines/<backend>.json` by 10 % or more; timing is recorded and gated only with `FORGE_GPU=native` (CI
 runners render on SwiftShader). `pnpm bench:baseline` promotes results and rewrites `docs/bench.md` and the README
 table. Current baselines: village 303 → 28, forest 5 706 → 13, bossfight 2 780 → 424, daynight 605 → 55,
-zen 10 879 → 125, rpg 4 → 1; crowd and lake wait for the skinning and overdraw modules.
+zen 10 879 → 125, rpg 4 → 1, crowd 401 → 17, lake 3 548 → 7.
 
 ### Device bench page
 
@@ -518,7 +540,8 @@ gated.
 ## 12. Development, tests, CI, release
 
 - `pnpm dev` opens the harness (`test/app`, `window.__forge`) with query parameters: `scene=naive|field|character|
-  gltf&asset=<name>|biome|arena|empty` or a bench scene with `variant=naive|optimized`, `backend`, `compile=1`,
+  gltf&asset=<name>|biome|arena|empty|vat` (the animated-instances twin of `asset`; `vatClip`, `vatTime`) or a
+  bench scene with `variant=naive|optimized`, `backend`, `compile=1`,
   `overlay=1&budget=30`, `animate=1`, `dynamics=batch-sync`, `lod=1`, `chunk=40`, `culling=linear`, `threshold=N`,
   `occlusion=1`, `wall=1`, `shadows=0`, `freeze=1`, `materials=keep`, `nested=per-pass`, `bake=1|buried`, `env=0`,
   `bloom=1`, `assemble=1`, `fighters`, `blocky`, `vfx=0`, `t`, `density`, `count`, `tier`.
@@ -557,9 +580,9 @@ gated.
 
 ## 14. Limits and roadmap
 
-Skinned meshes are measured but not yet instanced (baked animation textures, SP4); overdraw modules shipped in
-0.4.0, per-frame JS (freezing, `markDirty`, `RenderScheduler`) in 0.5.0 and lighting (`DayNight`, `ShadowBudget`,
-lightmap path) in 0.6.0 (section 7); soft-particle materials are documented, not built (`docs/vfx.md`); cascaded
+Overdraw modules shipped in 0.4.0, per-frame JS (freezing, `markDirty`, `RenderScheduler`) in 0.5.0, lighting
+(`DayNight`, `ShadowBudget`, lightmap path) in 0.6.0 and skinning (`bakeAnimationTexture`, `AnimatedInstances`)
+in 0.7.0 (section 7); animated instances play one clip per instance without blending or root motion; soft-particle materials are documented, not built (`docs/vfx.md`); cascaded
 shadow maps (three's `CSMShadowNode`) are not wired yet; per-frame JS (`RenderScheduler`, static-subtree matrix
 freezing) is SP6; memory and streaming (`ResourceTracker`, loader pipeline, chunk `Streamer`) is SP7;
 `threeforge optimize` shipped in 0.3.0 (section 10) and the device bench page with GitHub-native results is in
