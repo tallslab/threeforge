@@ -67,6 +67,8 @@ export function compact(r: DeviceResult): DeviceResult {
       renderTargetBytes: Math.round(m.renderTargetBytes),
       particles: Math.round(m.particles),
       fillMegapixels: round(m.fillMegapixels, 2),
+      objects: Math.round(m.objects),
+      autoUpdatedMatrices: Math.round(m.autoUpdatedMatrices),
     });
     scenes[id] = { naive: c(block.naive), optimized: c(block.optimized) };
   }
@@ -79,7 +81,7 @@ export interface WireResult extends Omit<DeviceResult, 'scenes'> {
   scenes: Record<SceneId, { naive: number[]; optimized: number[] }>;
 }
 
-export const METRIC_KEYS: Array<keyof BenchMetrics> = ['sceneSubmissions', 'gpuDraws', 'triangles', 'programs', 'overdrawOpaque', 'overdrawTransparent', 'skinnedVertices', 'shadowCasters', 'shadowTexels', 'textureBytes', 'geometryBytes', 'renderTargetBytes', 'particles', 'fillMegapixels', 'renderMs', 'frameMs', 'unattributed'];
+export const METRIC_KEYS: Array<keyof BenchMetrics> = ['sceneSubmissions', 'gpuDraws', 'triangles', 'programs', 'overdrawOpaque', 'overdrawTransparent', 'skinnedVertices', 'shadowCasters', 'shadowTexels', 'textureBytes', 'geometryBytes', 'renderTargetBytes', 'particles', 'fillMegapixels', 'objects', 'autoUpdatedMatrices', 'renderMs', 'frameMs', 'unattributed'];
 
 export function toWire(r: DeviceResult): WireResult {
   const c = compact(r);

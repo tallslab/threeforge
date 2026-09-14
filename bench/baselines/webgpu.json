@@ -25,8 +25,10 @@
         "renderTargetBytes": 3840000,
         "particles": 0,
         "fillMegapixels": 0.393,
-        "renderMs": 2.9000000059604645,
-        "frameMs": 16.599999994039536,
+        "objects": 310,
+        "autoUpdatedMatrices": 310,
+        "renderMs": 3,
+        "frameMs": 16.600000023841858,
         "unattributed": 0
       },
       "optimized": {
@@ -44,8 +46,10 @@
         "renderTargetBytes": 3840000,
         "particles": 0,
         "fillMegapixels": 0.356,
-        "renderMs": 1.5,
-        "frameMs": 16.599999994039536,
+        "objects": 325,
+        "autoUpdatedMatrices": 33,
+        "renderMs": 2.100000023841858,
+        "frameMs": 16.600000023841858,
         "unattributed": 0
       }
     },
@@ -65,8 +69,10 @@
         "renderTargetBytes": 3840000,
         "particles": 0,
         "fillMegapixels": 0.862,
-        "renderMs": 31.599999994039536,
-        "frameMs": 32.10000002384186,
+        "objects": 7004,
+        "autoUpdatedMatrices": 7004,
+        "renderMs": 31,
+        "frameMs": 31.599999994039536,
         "unattributed": 0
       },
       "optimized": {
@@ -84,7 +90,9 @@
         "renderTargetBytes": 3840000,
         "particles": 0,
         "fillMegapixels": 0.61,
-        "renderMs": 2.399999976158142,
+        "objects": 7016,
+        "autoUpdatedMatrices": 15,
+        "renderMs": 2.9000000059604645,
         "frameMs": 16.69999998807907,
         "unattributed": 0
       }
@@ -105,8 +113,10 @@
         "renderTargetBytes": 3840000,
         "particles": 0,
         "fillMegapixels": 0.424,
-        "renderMs": 4.399999976158142,
-        "frameMs": 16.69999998807907,
+        "objects": 2203,
+        "autoUpdatedMatrices": 2203,
+        "renderMs": 4.5999999940395355,
+        "frameMs": 16.600000023841858,
         "unattributed": 0
       },
       "optimized": {
@@ -124,8 +134,10 @@
         "renderTargetBytes": 3840000,
         "particles": 0,
         "fillMegapixels": 0.424,
-        "renderMs": 4.5,
-        "frameMs": 16.600000023841858,
+        "objects": 2203,
+        "autoUpdatedMatrices": 2202,
+        "renderMs": 4.600000023841858,
+        "frameMs": 16.69999998807907,
         "unattributed": 0
       }
     },
@@ -145,8 +157,10 @@
         "renderTargetBytes": 18520064,
         "particles": 7556,
         "fillMegapixels": 1.141,
-        "renderMs": 22.100000023841858,
-        "frameMs": 22.900000005960464,
+        "objects": 1497,
+        "autoUpdatedMatrices": 1497,
+        "renderMs": 21.5,
+        "frameMs": 22.200000017881393,
         "unattributed": 0
       },
       "optimized": {
@@ -164,8 +178,10 @@
         "renderTargetBytes": 18520064,
         "particles": 7556,
         "fillMegapixels": 1.136,
-        "renderMs": 8.199999988079071,
-        "frameMs": 16.599999994039536,
+        "objects": 1528,
+        "autoUpdatedMatrices": 440,
+        "renderMs": 8.200000017881393,
+        "frameMs": 16.69999998807907,
         "unattributed": 0
       }
     },
@@ -185,8 +201,10 @@
         "renderTargetBytes": 3840000,
         "particles": 1793,
         "fillMegapixels": 0.89,
-        "renderMs": 22.80000001192093,
-        "frameMs": 23.299999982118607,
+        "objects": 2046,
+        "autoUpdatedMatrices": 2046,
+        "renderMs": 23.299999982118607,
+        "frameMs": 23.799999982118607,
         "unattributed": 0
       },
       "optimized": {
@@ -204,8 +222,10 @@
         "renderTargetBytes": 3840000,
         "particles": 1793,
         "fillMegapixels": 0.821,
-        "renderMs": 2.5,
-        "frameMs": 16.69999998807907,
+        "objects": 2048,
+        "autoUpdatedMatrices": 2006,
+        "renderMs": 3.0999999940395355,
+        "frameMs": 16.599999994039536,
         "unattributed": 0
       }
     },
@@ -225,7 +245,9 @@
         "renderTargetBytes": 20617216,
         "particles": 0,
         "fillMegapixels": 0.389,
-        "renderMs": 4.5,
+        "objects": 310,
+        "autoUpdatedMatrices": 310,
+        "renderMs": 4.800000011920929,
         "frameMs": 16.69999998807907,
         "unattributed": 0
       },
@@ -244,8 +266,10 @@
         "renderTargetBytes": 20617216,
         "particles": 0,
         "fillMegapixels": 0.352,
-        "renderMs": 1.7000000178813934,
-        "frameMs": 16.599999994039536,
+        "objects": 325,
+        "autoUpdatedMatrices": 33,
+        "renderMs": 2.300000011920929,
+        "frameMs": 16.80000001192093,
         "unattributed": 0
       }
     },
@@ -265,8 +289,10 @@
         "renderTargetBytes": 3840000,
         "particles": 0,
         "fillMegapixels": 1.168,
-        "renderMs": 74.2000000178814,
-        "frameMs": 75.2000000178814,
+        "objects": 50003,
+        "autoUpdatedMatrices": 50003,
+        "renderMs": 74.09999999403954,
+        "frameMs": 74.80000001192093,
         "unattributed": 0
       },
       "optimized": {
@@ -284,8 +310,10 @@
         "renderTargetBytes": 3840000,
         "particles": 0,
         "fillMegapixels": 1.121,
-        "renderMs": 18,
-        "frameMs": 18.19999998807907,
+        "objects": 50387,
+        "autoUpdatedMatrices": 386,
+        "renderMs": 16.200000017881393,
+        "frameMs": 16.5,
         "unattributed": 0
       }
     },
@@ -305,7 +333,9 @@
         "renderTargetBytes": 2880000,
         "particles": 0,
         "fillMegapixels": 0.185,
-        "renderMs": 0.800000011920929,
+        "objects": 10,
+        "autoUpdatedMatrices": 10,
+        "renderMs": 1,
         "frameMs": 16.69999998807907,
         "unattributed": 0
       },
@@ -324,8 +354,10 @@
         "renderTargetBytes": 2880000,
         "particles": 0,
         "fillMegapixels": 0.185,
-        "renderMs": 0.7000000178813934,
-        "frameMs": 16.700000017881393,
+        "objects": 6,
+        "autoUpdatedMatrices": 6,
+        "renderMs": 0.800000011920929,
+        "frameMs": 16.599999994039536,
         "unattributed": 0
       }
     }

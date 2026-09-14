@@ -67,6 +67,7 @@ npx threeforge inspect http://localhost:5173 --compile --json
 | `src/compiler` | `classify` (rules), `batchStatics` (batches, instancing, bake), `bake` (geometry bake), `culling` (BVH, hooks), `instancing` (compacted InstancedMesh), `geometryCompat`, `World` (compile/decompile/resolve/warmup) |
 | `src/lod` | meshoptimizer LOD generation |
 | `src/overdraw` | `ParticleBudget` (particle caps per tier) and `ResolutionScaler` (dynamic drawing-buffer scale) |
+| `src/scheduler` | `RenderScheduler` (render on change) |
 | `src/character` | the character assembler (gear merged onto one skeleton, one atlas) |
 | `src/overlay` | text formatting of a snapshot and the DOM overlay |
 | `src/agent` | `exposeToAgents` (the `window.__threeforge` hook) |
@@ -146,7 +147,8 @@ items?:    per-submission records with ledger.frame({ items: true })
 - **lighting** scans the main scene's visible lights; `shadowTexels` = Σ `mapSize.x · mapSize.y · faces` with 6
   faces for point lights (a cube target); casters are the unique objects in `shadow:*` passes.
 - **js**: `renderMs` is the outermost `render()` duration, `frameMs` the median interval between the last 60 outermost
-  renders, `objects` and `autoUpdatedMatrices` come from a traversal repeated at most every 60 frames
+  renders, `objects`, `autoUpdatedMatrices` and `hiddenOriginals` (batched originals parked on layer 31) come from a
+  traversal repeated at most every 60 frames; `skipped` is the ticks a `RenderScheduler` skipped among its last 60
   (`ledger.rescan()` forces it).
 - **memory** estimates bytes: textures `w · h · 4 · bytesPerChannel · (mipmaps ? 4/3 : 1) · (cube ? 6 : 1)`, compressed
   textures Σ mip bytes, geometries Σ attribute and index bytes, render targets from shadow maps and the renderer's
@@ -172,11 +174,12 @@ Other methods: `ledger.report()` (text), `ledger.budget({ maxSubmissions })` →
 | texture bytes | 512 MB | 192 MB | 96 MB |
 | frame ms | 16.6 | 16.6 | 33 |
 | particles per frame | 60 k | 15 k | 5 k |
+| objects walked per frame | 20 k | 5 k | 2 k |
 
 Hint codes (`hintsFor`, remedies in `npx threeforge explain --all`): `over-budget-submissions`,
 `over-budget-triangles`, `untagged`, `unique-materials`, `unsupported-material`, `programs`, `transparent-overdraw`,
 `skinned-vertices`, `point-light-shadow`, `shadow-texels`, `transmission`, `texture-bytes`, `static-auto-update`,
-`particles-over-budget`, `sprites-unbatched`.
+`particles-over-budget`, `sprites-unbatched`, `js-objects`, `detach-originals`.
 
 ### Overlay
 
@@ -225,7 +228,9 @@ provide), `dynamic-geometry` (`DynamicDrawUsage` / `StreamDrawUsage` attributes)
 5. Attach BVH culling to every batch (`culling: 'bvh'`), with LOD ranges when `lod` is set.
 6. Install matrix sync for batch-synced dynamics and occlusion proxies when enabled.
 7. Hide the originals: moved to layer 31 with `matrixAutoUpdate = false` (`originals: 'hide'`), or removed from the
-   graph (`originals: 'detach'`); parent indices are recorded so `decompile()` restores the exact order.
+   graph (`originals: 'detach'`); parent indices are recorded so `decompile()` restores the exact order. Then freeze
+   (`freeze: true`): unbatched static meshes and every ancestor whose whole subtree is static get
+   `matrixAutoUpdate = false` too (`after.frozen`).
 8. Annotate everything left alone (excluded rule, `unique-material`, `dynamic`) and swap canonical materials onto
    remaining meshes (`materials: 'canonical'`; `'keep'` leaves each mesh's own instance).
 9. Return the `CompileReport`: `before`, `after { batches, instanced, baked, meshes }`, `bake` summary, `groups[]`
@@ -251,6 +256,7 @@ provide), `dynamic-geometry` (`DynamicDrawUsage` / `StreamDrawUsage` attributes)
 | `bake` | off | `true` or `BakeOptions`: baked mesh per finished group (section 8) |
 | `sprites` | `'batch'` | sprites sharing a material become one instanced billboard draw synced each frame; `'keep'` leaves them |
 | `spriteThreshold` | 4 | sprites a material needs before its group is batched |
+| `freeze` | true | `matrixAutoUpdate = false` on unbatched statics and all-static ancestors; move them with `markDirty` |
 
 ### Culling, instancing, chunks, LOD, occlusion
 
@@ -319,6 +325,35 @@ three compiles wrong that way (transparent double-sided and transmissive ones; s
   `env.dpr`. `set(scale)`, `dispose()`. Overdraw per pixel is unchanged; `overdraw.pixels` shrinks.
 - **Ledger**: `overdraw.particles`, `overdraw.pixels`; hints `particles-over-budget`, `sprites-unbatched`; bench
   metrics `particles` and `fillMegapixels` (fragments per pixel × pixels). Conventions for effects: `docs/vfx.md`.
+
+### Per-frame JS: freezing, `markDirty`, `RenderScheduler`
+
+What three pays in JavaScript every frame (r186): `render()` walks every descendant in `updateMatrixWorld()`
+(the recursion is unconditional; an object with `matrixAutoUpdate` recomposes its local matrix and forces its
+subtree's world matrices) and again in the render-list build (`visible` objects, hidden originals included).
+Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects from the graph (`originals:
+'detach'`) cuts the walks.
+
+- **Freezing** (`src/compiler/freeze.ts`, `freezableObjects`): at compile, unbatched static-tagged meshes and the
+  topmost ancestors whose subtree is entirely static (hidden unsynced originals, static meshes, plain containers;
+  nothing dynamic-tagged, animated, lit, skinned, bone or sprite inside) get `matrixAutoUpdate = false` after one
+  last `updateMatrix()`. `decompile()` restores the flags. The village drops from 310 to 33 recomposed matrices per
+  frame with identical pixels.
+- **`world.markDirty(object)`** moves a frozen static on demand: recomposes every local matrix under `object`,
+  recomputes the world matrices, pushes each batched original in the subtree into its batch (`BatchedMesh`
+  matrix and BVH leaf, `InstancedMesh` through its culling handle, a baked group by rebaking once; sprite
+  batches follow on their own) and returns the number of instances updated. `world.onDirty(listener)` reports
+  `markDirty`, `setVisible`, `compile` and `decompile` (a `RenderScheduler` subscribes to it).
+- **`RenderScheduler`** (`src/scheduler/RenderScheduler.ts`): `new RenderScheduler({ renderer, scene, camera,
+  ledger?, world?, mixers?, watch?, keepAliveMs?, onRender? })`, `start()` drives `renderer.setAnimationLoop`,
+  `tick(time)` renders only when `invalidate()` was called, the camera's world or projection matrix changed, a
+  watched object moved, a mixer has running actions (mixers are updated every tick), the drawing buffer was
+  resized, or `keepAliveMs` elapsed; otherwise three does nothing for that tick. Baselines are re-captured after
+  each render (three recomputes the camera's projection on its first WebGPU frame). `stats`, `lastReason`,
+  `skippedRecently()` (what `js.skipped` reports through `ledger.attachScheduler`), `stop()`, `dispose()`.
+- **Ledger**: `js.hiddenOriginals`, `js.skipped`; budget `objects`; hints `js-objects` (over budget) and
+  `detach-originals` (1 000 or more hidden originals: `originals: 'detach'`); bench metrics `objects` and
+  `autoUpdatedMatrices`.
 
 ## 8. Bake: one mesh per finished group
 
@@ -504,8 +539,8 @@ gated.
 ## 14. Limits and roadmap
 
 Skinned meshes are measured but not yet instanced (baked animation textures, SP4); overdraw modules shipped in
-0.4.0 (section 7: sprite batching, `ParticleBudget`, `ResolutionScaler`); soft-particle materials are documented,
-not built (`docs/vfx.md`); lighting helpers (`DayNight`, `ShadowBudget`) are SP5; per-frame JS (`RenderScheduler`, static-subtree matrix
+0.4.0 and per-frame JS (freezing, `markDirty`, `RenderScheduler`) in 0.5.0 (section 7); soft-particle materials are
+documented, not built (`docs/vfx.md`); lighting helpers (`DayNight`, `ShadowBudget`) are SP5; per-frame JS (`RenderScheduler`, static-subtree matrix
 freezing) is SP6; memory and streaming (`ResourceTracker`, loader pipeline, chunk `Streamer`) is SP7;
 `threeforge optimize` shipped in 0.3.0 (section 10) and the device bench page with GitHub-native results is in
 section 11. Specs live in `docs/superpowers/specs`, plans in

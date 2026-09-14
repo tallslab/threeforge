@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0 — 2026-09-14
+
+- Freezing at compile (`freeze`, default on): unbatched statics and all-static ancestors get `matrixAutoUpdate = false`; `world.markDirty(object)` moves a frozen static and updates its batch, instance or bake; `world.onDirty(listener)`.
+- `RenderScheduler`: render on change (invalidate, camera, watched objects, mixers, resize, keep-alive) with `stats`, `lastReason` and `js.skipped` in the ledger.
+- Ledger: `js.hiddenOriginals`, `js.skipped`; budget `objects`; hints `js-objects`, `detach-originals`; bench metrics `objects`, `autoUpdatedMatrices` (baselines promoted).
+
 ## 0.4.0 — 2026-09-14
 
 - Sprite batching in `World.compile()`: sprites sharing a material become one instanced `SpriteNodeMaterial` draw synced from the originals every frame (`sprites`, `spriteThreshold` options; reason `sprite-batch`). Lake benchmark: 3 548 → 7 submissions.

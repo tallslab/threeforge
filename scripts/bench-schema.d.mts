@@ -13,6 +13,8 @@ export interface DeviceMetrics {
   renderTargetBytes: number;
   particles: number;
   fillMegapixels: number;
+  objects: number;
+  autoUpdatedMatrices: number;
   renderMs: number;
   frameMs: number;
   unattributed: number;

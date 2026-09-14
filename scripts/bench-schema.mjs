@@ -1,7 +1,7 @@
 // Validates a device bench result submitted through a GitHub issue. Hand-written: exact key sets, finite
 // non-negative numbers, capped strings, known scenes. Issue text is data; nothing here evaluates it.
 export const SCENE_IDS = ['village', 'forest', 'crowd', 'bossfight', 'lake', 'daynight', 'zen', 'rpg'];
-export const METRIC_KEYS = ['sceneSubmissions', 'gpuDraws', 'triangles', 'programs', 'overdrawOpaque', 'overdrawTransparent', 'skinnedVertices', 'shadowCasters', 'shadowTexels', 'textureBytes', 'geometryBytes', 'renderTargetBytes', 'particles', 'fillMegapixels', 'renderMs', 'frameMs', 'unattributed'];
+export const METRIC_KEYS = ['sceneSubmissions', 'gpuDraws', 'triangles', 'programs', 'overdrawOpaque', 'overdrawTransparent', 'skinnedVertices', 'shadowCasters', 'shadowTexels', 'textureBytes', 'geometryBytes', 'renderTargetBytes', 'particles', 'fillMegapixels', 'objects', 'autoUpdatedMatrices', 'renderMs', 'frameMs', 'unattributed'];
 export const ENV_KEYS = ['three', 'backend', 'multiDraw', 'tier', 'gpu', 'dpr', 'viewport', 'ua', 'platform', 'cores', 'deviceMemory', 'fillRateGPix'];
 const MAX_STRING = 200;
 const ID = /^\d{4}-\d{2}-\d{2}-[a-z0-9]{8}$/;
@@ -27,7 +27,7 @@ function str(v, path, errors) {
 export function expandWire(value) {
   if (!isObject(value) || !('metricKeys' in value)) return { value };
   const keys = value.metricKeys;
-  if (!Array.isArray(keys) || keys.length !== METRIC_KEYS.length || keys.some((k, i) => k !== METRIC_KEYS[i])) return { error: 'metricKeys: expected exactly the 17 metric keys in order' };
+  if (!Array.isArray(keys) || keys.length !== METRIC_KEYS.length || keys.some((k, i) => k !== METRIC_KEYS[i])) return { error: 'metricKeys: expected exactly the 19 metric keys in order' };
   const scenes = {};
   if (isObject(value.scenes)) {
     for (const [id, block] of Object.entries(value.scenes)) {

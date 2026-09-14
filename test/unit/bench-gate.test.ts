@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compare, DETERMINISTIC, TIMING } from '../../scripts/bench-gate.mjs';
 
-const metrics = (over: Record<string, number> = {}) => ({ sceneSubmissions: 100, gpuDraws: 100, triangles: 1000, programs: 5, overdrawOpaque: 1, overdrawTransparent: 0.5, skinnedVertices: 0, shadowCasters: 0, shadowTexels: 0, textureBytes: 1000, geometryBytes: 1000, renderTargetBytes: 0, particles: 100, fillMegapixels: 0.5, renderMs: 2, frameMs: 16, unattributed: 0, ...over });
+const metrics = (over: Record<string, number> = {}) => ({ sceneSubmissions: 100, gpuDraws: 100, triangles: 1000, programs: 5, overdrawOpaque: 1, overdrawTransparent: 0.5, skinnedVertices: 0, shadowCasters: 0, shadowTexels: 0, textureBytes: 1000, geometryBytes: 1000, renderTargetBytes: 0, particles: 100, fillMegapixels: 0.5, objects: 500, autoUpdatedMatrices: 20, renderMs: 2, frameMs: 16, unattributed: 0, ...over });
 const file = (naive: Record<string, number> = {}, optimized: Record<string, number> = {}) => ({ schemaVersion: 1, env: {}, scenes: { village: { naive: metrics(naive), optimized: metrics(optimized) } } as Record<string, { naive: ReturnType<typeof metrics>; optimized: ReturnType<typeof metrics> }> });
 
 describe('bench gate', () => {
@@ -35,7 +35,14 @@ describe('bench gate', () => {
 
   it('exports the metric lists', () => {
     expect(DETERMINISTIC).toContain('overdrawTransparent');
-    expect(DETERMINISTIC).toEqual(expect.arrayContaining(['particles', 'fillMegapixels']));
+    expect(DETERMINISTIC).toEqual(expect.arrayContaining(['particles', 'fillMegapixels', 'objects', 'autoUpdatedMatrices']));
     expect(TIMING).toEqual(['renderMs', 'frameMs']);
+  });
+
+  it('fails when a variant is missing from the results, not only a whole scene', () => {
+    const result = file();
+    delete (result.scenes.village as Record<string, unknown>).naive;
+    const { failures } = compare(file(), result, { gateTiming: false, tolerance: 0.1 });
+    expect(failures).toEqual([expect.stringContaining('village naive: missing from results')]);
   });
 });

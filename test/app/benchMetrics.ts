@@ -25,6 +25,10 @@ export interface BenchMetrics {
   particles: number;
   /** (opaque + transparent fragments per pixel) × drawing-buffer pixels, in millions: the fill cost per frame. */
   fillMegapixels: number;
+  /** Objects three walks every frame. */
+  objects: number;
+  /** Objects whose matrices three recomposes every frame (freezing lowers it). */
+  autoUpdatedMatrices: number;
   renderMs: number;
   frameMs: number;
   unattributed: number;
@@ -47,6 +51,8 @@ export function metricsOf(f: FrameSnapshot, renderMs: number, frameMs: number): 
     renderTargetBytes: f.memory.renderTargets.bytes,
     particles: f.overdraw.particles,
     fillMegapixels: Number((((f.overdraw.opaque + f.overdraw.transparent) * f.overdraw.pixels) / 1e6).toFixed(3)),
+    objects: f.js.objects,
+    autoUpdatedMatrices: f.js.autoUpdatedMatrices,
     renderMs,
     frameMs,
     unattributed: f.totals.unattributed,
