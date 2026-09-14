@@ -20,7 +20,9 @@ prints JSON with \`--json\`.
 npm i -D threeforge playwright && npx playwright install chromium
 \`\`\`
 
-Playwright is only needed for \`analyze\`, \`inspect\` and \`mcp\`; the library itself has no such dependency.
+Playwright is only needed for \`analyze\`, \`inspect\`, \`optimize\` (its verification) and \`mcp\`; the library itself has no
+such dependency. \`optimize\` works out of the box (glTF-Transform is a dependency); texture compression needs
+\`npm i -D sharp\` and a Draco-compressed input needs \`npm i -D draco3dgltf\`.
 
 ## Commands
 
@@ -28,9 +30,10 @@ Playwright is only needed for \`analyze\`, \`inspect\` and \`mcp\`; the library 
 |---|---|
 | \`npx threeforge analyze <file.glb\\|.gltf> [--backend webgl2\\|webgpu] [--tier auto\\|desktop\\|phone-mid\\|phone-low] [--budget N] [--frames 30] [--no-compile] [--bake] [--bake-buried] [--views N] [--json]\` | Renders the asset headlessly, measures every cost category, compiles (batches, or bakes with \`--bake\`) it, measures again, checks pixel parity from the default framing plus \`--views\` orbit views, returns hints and a verdict. |
 | \`npx threeforge inspect <url> [--frames 30] [--compile] [--budget N] [--json]\` | Drives your running app (dev server) through \`window.__threeforge\`; same document without asset facts and parity. |
+| \`npx threeforge optimize <file.glb\\|.gltf> [--out out.glb] [--preset safe\\|balanced\\|aggressive] [--no-<step>\\|--<step>] [--simplify 0.5] [--compress meshopt] [--textures webp\\|avif] [--texture-size N] [--no-verify] [--parity 0.5] [--views 2] [--json]\` | Rewrites the asset with glTF-Transform and writes \`<name>.forge.glb\`. \`safe\` (default) never changes a pixel: dedup, palette, weld, resample, prune. \`balanced\` adds quantize and WebP textures (2048 px); \`aggressive\` adds simplify to 50 % and 1024 px textures. Renders the original and the result, compares pixels, compiles both, and lists what the file needs at load time (\`requires\`). |
 | \`npx threeforge explain <hint-code> \\| --all [--json]\` | What a hint means, what to change, which API. |
-| \`npx threeforge schema [snapshot\\|analyze\\|inspect\\|all]\` | JSON Schemas (draft 2020-12) of everything the commands print. |
-| \`npx threeforge mcp\` | Stdio MCP server with tools \`analyze_asset\`, \`inspect_app\`, \`explain_hint\` (needs \`npm i -D @modelcontextprotocol/sdk zod\`). |
+| \`npx threeforge schema [snapshot\\|analyze\\|inspect\\|optimize\\|all]\` | JSON Schemas (draft 2020-12) of everything the commands print. |
+| \`npx threeforge mcp\` | Stdio MCP server with tools \`analyze_asset\`, \`inspect_app\`, \`optimize_asset\`, \`explain_hint\` (needs \`npm i -D @modelcontextprotocol/sdk zod\`). |
 
 Exit codes: \`0\` pass · \`1\` verdict failed (over budget, an error-severity hint, or pixel parity lost) · \`2\` usage or
 input error · \`3\` environment (Playwright or Chromium missing; the message has the install command) · \`4\` the page
@@ -92,6 +95,18 @@ welded counts). If a view changed, retry without \`--bake-buried\`, or exclude m
 \`mesh.userData.forgeBake = false\` in the app. In code: \`new World(scene, { bake: true | { removeBuried, tolerance } })\`,
 \`world.bakeDebug()\` returns the removed faces as meshes to render and screenshot.
 
+## Optimize assets at build time
+
+\`npx threeforge optimize scene.glb --json\` → \`scene.forge.glb\`. Read \`steps\` (what each step changed), \`requires\`
+(loader code to add, e.g. \`loader.setMeshoptDecoder(MeshoptDecoder)\` after \`--compress meshopt\`), \`verify.parity\`
+(original vs optimized render, per view) and \`verify.delta\` (bytes, materials, submissions naive and compiled, load ms).
+Steps in order: dedup, instance, palette, flatten, join, weld, simplify, resample, prune, textures, quantize, meshopt;
+\`--no-<step>\` removes one, \`--<step>\` adds one. \`--instance\`, \`--join\` and \`--compress meshopt\` are never defaults: the
+first two change the node graph your code may address by name, the third needs a decoder. The verdict fails when the
+pixels moved past \`--parity\`, when a clip, skin or morph target was lost, or when the optimized file fails \`--budget\`;
+size and count deltas are reported, not judged. If parity fails, go back to \`--preset safe\` or raise \`--parity\` only
+after looking at the views. The output never uses Draco. Not covered: atlasing textured materials, KTX2 encoding.
+
 ## Budgets per device tier
 
 Tiers are detected from the GPU and device (override with \`--tier\`). Defaults: scene submissions 400 / 150 / 80,
@@ -107,7 +122,7 @@ command \`npx\` and args \`["threeforge", "mcp"]\`.
 ## Programmatic use
 
 \`\`\`ts
-import { analyzeAsset, inspectApp, explain } from 'threeforge/cli';
+import { analyzeAsset, inspectApp, optimizeAsset, explain } from 'threeforge/cli';
 const doc = await analyzeAsset({ file: 'scene.glb', backend: 'webgpu', tier: 'auto', budget: null, frames: 30, compile: true, timeout: 60000, headed: false });
 \`\`\`
 
@@ -134,13 +149,13 @@ writeFileSync(
 > Frame-budget compiler and diagnostics for three.js games. Batches naive scenes at load time, measures draw calls, overdraw, skinning, lighting, JS and memory in one ledger, explains what to fix. CLI and MCP server for AI agents.
 
 - Quick start for agents: AGENTS.md (also printed by \`npx threeforge\`)
-- Commands: analyze <file>, inspect <url>, explain <hint>, schema, mcp — all with --json
+- Commands: analyze <file>, inspect <url>, optimize <file>, explain <hint>, schema, mcp — all with --json
 - JSON Schemas: \`npx threeforge schema\`
 - Hint remedies: \`npx threeforge explain --all --json\`
 - Complete reference (every module, option, mechanism): docs/threeforge.md
 - Library API: README.md
 - Benchmark suite and baselines: docs/bench.md
-- Design: docs/superpowers/specs/2026-09-13-frame-budget-design.md, docs/superpowers/specs/2026-09-13-agent-cli-design.md
+- Design: docs/superpowers/specs/2026-09-13-frame-budget-design.md, docs/superpowers/specs/2026-09-13-agent-cli-design.md, docs/superpowers/specs/2026-09-14-optimize-command-design.md
 `,
 );
 console.log(`AGENTS.md, docs/agents.md, llms.txt written for ${VERSION} with ${Object.keys(REMEDIES).length} hint codes`);

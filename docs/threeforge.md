@@ -69,7 +69,7 @@ npx threeforge inspect http://localhost:5173 --compile --json
 | `src/character` | the character assembler (gear merged onto one skeleton, one atlas) |
 | `src/overlay` | text formatting of a snapshot and the DOM overlay |
 | `src/agent` | `exposeToAgents` (the `window.__threeforge` hook) |
-| `src/cli` | the `threeforge` CLI, the MCP server, JSON schemas, hint remedies (node only, optional peers loaded lazily) |
+| `src/cli` | the `threeforge` CLI (`analyze`, `inspect`, `optimize`, `explain`, `schema`, `mcp`), the MCP server, JSON schemas, hint remedies, the glTF-Transform pipeline (node only, optional peers loaded lazily) |
 | `cli-app` | the harness page shipped inside the package for `threeforge analyze` |
 | `test/app` | the development harness (`pnpm dev`) with every test scene and benchmark scene |
 | `test/scenes`, `test/app/scenes` | deterministic scenes (naive, field, forest, character) and the eight benchmark scenes |
@@ -334,15 +334,52 @@ swaps change data, not draw calls.
     measures and screenshots again, computes pixel parity per view, and prints one JSON document.
   - `inspect <url> [--frames 30] [--compile] [--budget N] [--json]`: drives the agent's own dev server through the
     hook; same document without asset facts and parity.
+  - `optimize <file.glb|.gltf> [--out out.glb] [--preset safe|balanced|aggressive] [--no-<step>|--<step>] [--simplify 0.5]
+    [--compress meshopt] [--textures webp|avif] [--texture-size N] [--texture-quality 85] [--no-verify] [--parity 0.5]
+    [--views 2] [--budget N] [--json]`: the build-time pipeline, see below.
   - `explain <code> | --all`: `{ code, category, severity, meaning, fix, api, docs }` per hint code.
-  - `schema [snapshot|analyze|inspect|all]`: JSON Schema (draft 2020-12) of everything printed.
-  - `mcp`: stdio Model Context Protocol server with `analyze_asset`, `inspect_app`, `explain_hint`.
+  - `schema [snapshot|analyze|inspect|optimize|all]`: JSON Schema (draft 2020-12) of everything printed.
+  - `mcp`: stdio Model Context Protocol server with `analyze_asset`, `inspect_app`, `optimize_asset`, `explain_hint`.
 - **The document**: `{ schemaVersion: 1, tool, version, command, input, env, asset, before, after, compile, parity,
   hints, verdict, timings }`. `verdict.pass` is false over the budget, with an error-severity hint, or when parity is
   lost. Exit codes: 0 pass, 1 verdict failed, 2 usage/input, 3 environment (install command in the message),
   4 page error/timeout. `--json` prints JSON on stdout and the human summary on stderr.
-- **Programmatic**: `import { analyzeAsset, inspectApp, explain } from 'threeforge/cli'`.
+- **Programmatic**: `import { analyzeAsset, inspectApp, optimizeAsset, explain } from 'threeforge/cli'`.
 - Playwright, `@modelcontextprotocol/sdk` and `zod` are optional peers imported lazily; game code never pays for them.
+
+### Build-time optimize (`threeforge optimize`)
+
+`src/cli/pipeline.ts` (pure), `src/cli/transform.ts` (glTF-Transform), `src/cli/optimize.ts` (the command).
+
+- **Steps**, in the order glTF-Transform recommends: `dedup` (identical accessors, meshes, materials, textures become
+  one), `instance` (repeated meshes → `EXT_mesh_gpu_instancing`), `palette` (materials that differ only by factors
+  become one material sampling a nearest-filtered palette texture; textured materials are left alone), `flatten`,
+  `join` (meshes sharing a material merge; implies flatten), `weld` (exact duplicate vertices), `simplify`
+  (meshoptimizer, ratio and error), `resample` (redundant animation keyframes), `prune` (unused properties),
+  `textures` (sharp: WebP or AVIF, longest side, quality), `quantize` (`KHR_mesh_quantization`), `meshopt`
+  (`EXT_meshopt_compression`, replaces quantize because it quantizes itself).
+- **Presets**: `safe` = dedup, palette, weld, resample, prune (nothing an eye can see changes; the Fox and the
+  Buggy e2e assert 0 % pixel difference). `balanced` = safe + quantize + textures webp 2048 px. `aggressive` =
+  balanced + simplify 0.5 + textures 1024 px. `--<step>` / `--no-<step>` override a preset; `--simplify`,
+  `--textures`, `--compress meshopt` enable their step with the given value. `--instance`, `--join` and
+  `--compress meshopt` are never in a preset: the first two change the node graph game code may address by name,
+  the third needs `loader.setMeshoptDecoder`. A preset's texture step without `sharp` installed is skipped with a
+  note; an explicit `--textures` without it is an environment error (exit 3), as is a Draco input without
+  `draco3dgltf`. The output never uses Draco.
+- **Report**: `stats.before/after` (bytes, nodes, meshes, primitives, materials, textures, texture bytes, accessors,
+  vertices, triangles, animations, skins, morph targets, extensions), one `steps[]` entry per step with the counts
+  before and after and the time, `requires[]` (each extension of the output with the loader piece it needs and the
+  line of code, `code: null` when `GLTFLoader` handles it alone), and `verify` when on (default): the original and
+  the optimized file go through `analyze` with the same framing, frames and views; `verify.parity` compares the two
+  naive renders view by view, `verify.original` / `verify.optimized` are the full analyze documents, `verify.delta`
+  is after minus before for bytes, materials, vertices, triangles, naive and compiled scene submissions, load time
+  and estimated GPU memory.
+- **Verdict**: fails on parity over `--parity` (default 0.5 %), a lost animation, skin or morph target (checked in
+  the glTF document and, when verified, in what the harness loaded), `--budget` exceeded by the optimized file's
+  compiled submissions, an error-severity hint on the optimized file, or a page error. Deltas are never judged: a
+  palette texture can grow a file that then draws in one call.
+- **Limits**: no atlasing across materials that differ by textures (the biome case still needs one batch per
+  texture set), no KTX2 encoding (needs `toktx`), no `MSFT_lod` chains, no Draco output.
 
 ## 11. Benchmark suite and regression gate
 
@@ -408,8 +445,8 @@ Skinned meshes are measured but not yet instanced (baked animation textures, SP4
 and their overdraw measured but not yet budgeted or scaled (SP3: `ResolutionScaler`, `ParticleBudget`, transparency
 hints); lighting helpers (`DayNight`, `ShadowBudget`) are SP5; per-frame JS (`RenderScheduler`, static-subtree matrix
 freezing) is SP6; memory and streaming (`ResourceTracker`, loader pipeline, chunk `Streamer`) is SP7;
-`threeforge optimize model.glb` (glTF-Transform build-time pipeline) follows the agent CLI; the device bench page with
-GitHub-native result submission follows the release. Specs live in `docs/superpowers/specs`, plans in
+`threeforge optimize` shipped in 0.3.0 (section 10); the device bench page with GitHub-native result submission
+follows. Specs live in `docs/superpowers/specs`, plans in
 `docs/superpowers/plans`.
 
 ## 15. Glossary

@@ -44,7 +44,7 @@ jobs:
           path: test/assets/files
           key: assets-${{ hashFiles('scripts/fetch-kits.mjs', 'scripts/fetch-assets.mjs', 'test/assets/manifest.json') }}
       - run: FORGE_KITS_ONLY=1 pnpm assets:kits
-      - run: pnpm assets Fox
+      - run: pnpm assets Fox,Buggy
       - run: pnpm build
       - run: pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "assets|bench "
       - run: node scripts/bench-run.mjs ${{ matrix.backend }}

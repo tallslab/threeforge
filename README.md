@@ -29,6 +29,7 @@ every breach shows up as a hint in the overlay and the JSON report.
 npm i -D threeforge playwright && npx playwright install chromium
 npx threeforge analyze scene.glb --backend webgpu --tier phone-mid --json   # measure, compile, verdict, hints
 npx threeforge inspect http://localhost:5173 --compile --json              # your running app, via exposeToAgents()
+npx threeforge optimize scene.glb --json                                    # build-time glTF pipeline, verified by pixels
 npx threeforge explain point-light-shadow --json                            # what a hint means and how to fix it
 npx threeforge schema                                                       # JSON Schemas of everything above
 npx threeforge mcp                                                          # the same operations as MCP tools
@@ -37,6 +38,28 @@ npx threeforge mcp                                                          # th
 `npx threeforge` with no arguments prints [AGENTS.md](AGENTS.md): commands, the JSON document, exit codes, the
 hint table and the one-line app integration. Every command prints JSON with `--json` and uses exit codes an agent
 can branch on.
+
+### Optimize assets at build time
+
+`threeforge optimize scene.glb` rewrites the file with [glTF-Transform](https://gltf-transform.dev) and writes
+`scene.forge.glb`. Three presets: `safe` (default; dedup, palette, weld, resample, prune: never changes a pixel),
+`balanced` (adds quantize and WebP textures at 2048 px), `aggressive` (adds simplify to 50 % and 1024 px textures).
+Any step can be added or removed (`--quantize`, `--no-palette`, `--simplify 0.3`, `--compress meshopt`, `--textures avif`,
+`--instance`, `--join`). The command then renders the original and the result through the same harness, compares
+pixels view by view, compiles both with threeforge, and reports:
+
+```json
+{
+  "steps": [{ "name": "dedup", "applied": true, "before": { "materials": 148, "meshes": 109 }, "after": { "materials": 10, "meshes": 63 } }],
+  "requires": [{ "extension": "EXT_meshopt_compression", "needs": "MeshoptDecoder", "code": "loader.setMeshoptDecoder(MeshoptDecoder);" }],
+  "verify": { "parity": { "diffPct": 0, "threshold": 0.5, "pass": true }, "delta": { "bytes": -2103500, "materials": -147, "sceneSubmissions": { "naive": -173, "compiled": 0 } } },
+  "verdict": { "pass": true }
+}
+```
+
+The verdict fails when pixels moved past `--parity`, when a clip, skin or morph target was lost, or when the
+optimized file fails `--budget`. Texture compression needs `npm i -D sharp`; reading a Draco input needs
+`npm i -D draco3dgltf`. The output never uses Draco.
 
 Draw-call numbers so far: the naive test scene (500 props, 40 material recipes, a new material per prop) goes from
 **503 to 28** scene submissions with pixel-identical output (**18** with `dynamics: 'batch-sync'`); the 20k-instance

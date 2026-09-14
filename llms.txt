@@ -3,10 +3,10 @@
 > Frame-budget compiler and diagnostics for three.js games. Batches naive scenes at load time, measures draw calls, overdraw, skinning, lighting, JS and memory in one ledger, explains what to fix. CLI and MCP server for AI agents.
 
 - Quick start for agents: AGENTS.md (also printed by `npx threeforge`)
-- Commands: analyze <file>, inspect <url>, explain <hint>, schema, mcp — all with --json
+- Commands: analyze <file>, inspect <url>, optimize <file>, explain <hint>, schema, mcp — all with --json
 - JSON Schemas: `npx threeforge schema`
 - Hint remedies: `npx threeforge explain --all --json`
 - Complete reference (every module, option, mechanism): docs/threeforge.md
 - Library API: README.md
 - Benchmark suite and baselines: docs/bench.md
-- Design: docs/superpowers/specs/2026-09-13-frame-budget-design.md, docs/superpowers/specs/2026-09-13-agent-cli-design.md
+- Design: docs/superpowers/specs/2026-09-13-frame-budget-design.md, docs/superpowers/specs/2026-09-13-agent-cli-design.md, docs/superpowers/specs/2026-09-14-optimize-command-design.md

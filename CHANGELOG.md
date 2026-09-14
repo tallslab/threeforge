@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0 — 2026-09-14
+
+- `threeforge optimize <file>`: glTF-Transform build-time pipeline with three presets (`safe` never changes a pixel; `balanced` adds quantize and WebP textures; `aggressive` adds simplify), per-step reports, load-time requirements (`requires`), verification by rendering the original and the optimized file through the harness and compiling both, and a verdict that fails on lost pixels, clips, skins or morph targets. `optimize_asset` on the MCP server, `schema optimize`, `optimizeAsset` in `threeforge/cli`.
+- `@gltf-transform/{core,functions,extensions}` are dependencies; `sharp` (texture compression) and `draco3dgltf` (Draco inputs) are optional peers.
+
 ## 0.2.0 — 2026-09-13
 
 - Ledger v2: six cost sections (draw calls, measured overdraw, skinning, lighting, js, memory), device tiers, budgets and hints.

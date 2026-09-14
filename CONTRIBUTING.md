@@ -13,7 +13,8 @@ Read `docs/threeforge.md` (the complete reference: every module, option and mech
 4. Run `pnpm budget` after every change that touches rendering and put the resulting `sceneSubmissions` number in the commit message.
 5. Never assert on `renderer.info.render.calls` (cumulative since app start) or raw `drawCalls` (backend dependent: N per BatchedMesh on WebGPU). Assert on `ledger.frame().totals.sceneSubmissions`.
 6. The bake (`src/compiler/bake.ts`) must never change a pixel: a wrong deletion is visible, a missed one is invisible. New removal rules need a parity e2e on both backends (`test/e2e/bake.spec.ts`) and a counted entry in the report.
-7. Run `pnpm bench` before merging anything that touches rendering. Baselines (`bench/baselines/*.json`) change only through `pnpm bench:baseline`, and the commit must say why the numbers moved. A measured snapshot must come from `frameAsync()`: shadow maps re-render once per animation-frame tick.
+7. `threeforge optimize`'s `safe` preset must stay pixel-identical on the Fox and the Buggy e2e (`test/e2e/cli.spec.ts`); lossy steps are flags or the `balanced`/`aggressive` presets, never defaults. A new step needs a counted entry in `steps[]` and, if it adds an extension, a `requires` entry.
+8. Run `pnpm bench` before merging anything that touches rendering. Baselines (`bench/baselines/*.json`) change only through `pnpm bench:baseline`, and the commit must say why the numbers moved. A measured snapshot must come from `frameAsync()`: shadow maps re-render once per animation-frame tick.
 
 ## Commands
 
@@ -23,7 +24,7 @@ Read `docs/threeforge.md` (the complete reference: every module, option and mech
 - `pnpm spike` — runs three's experimental `SceneOptimizer` on the naive scene for a baseline number.
 - `pnpm assets` then `pnpm assets:report` — downloads public glTF test content (gitignored) and compiles every model with pixel parity; `FORGE_ASSETS=Fox,Duck` limits the run. Read `docs/assets-report.md` before touching batching rules. The biome and arena specs are the integration stress tests; use `frameAsync()` in the harness when a measurement must include shadow passes.
 - `pnpm bench [webgl2|webgpu]` — the benchmark suite (eight scenes in `test/app/scenes`, naive and optimized variants): writes `bench/results/local.<backend>.json` and fails when any deterministic cost metric regresses by 10 % against `bench/baselines`. `pnpm bench:baseline` promotes results; `pnpm bench:table` rewrites `docs/bench.md` and the README table.
-- `pnpm build` — library (tsc) plus the shipped harness page (`dist/cli-app`); `node dist/cli/index.js …` is the agent CLI (`npx threeforge` after install): `analyze <file>`, `inspect <url>`, `explain <code>`, `schema`, `mcp`. Regenerate `AGENTS.md` with `node scripts/agents-md.mjs` after touching the hint table; a unit test checks it.
+- `pnpm build` — library (tsc) plus the shipped harness page (`dist/cli-app`); `node dist/cli/index.js …` is the agent CLI (`npx threeforge` after install): `analyze <file>`, `inspect <url>`, `optimize <file>` (glTF-Transform pipeline, `src/cli/{pipeline,transform,optimize}.ts`), `explain <code>`, `schema`, `mcp`. Regenerate `AGENTS.md` with `node scripts/agents-md.mjs` after touching the hint table; a unit test checks it.
 - `pnpm typecheck`.
 - `pnpm dev` — opens the test app. Query params: `scene=naive|field|character|gltf&asset=<name>|biome|arena|empty` or a bench scene `scene=village|forest|crowd|bossfight|lake|daynight|zen|rpg&variant=naive|optimized`, `backend=webgl2|webgpu`, `compile=1`, `overlay=1&budget=30`, `animate=1`, `dynamics=batch-sync`, `lod=1`, `chunk=40`, `occlusion=1`, `wall=1`, `shadows=1`, `count=20000`.
 
