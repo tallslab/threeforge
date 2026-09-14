@@ -6,20 +6,20 @@ import { analyzeAsset } from './analyze.js';
 import { parseArgs, UsageError, COMMANDS, type Command } from './args.js';
 import { EnvironmentError } from './browser.js';
 import { explain, REMEDIES } from './explain.js';
-import { summarize } from './format.js';
+import { summarize, summarizeOptimize } from './format.js';
 import { inspectApp } from './inspect.js';
 import { PageError } from './measure.js';
-import { ANALYZE_SCHEMA, INSPECT_SCHEMA, SNAPSHOT_SCHEMA } from './schema.js';
-import type { AgentDocument } from './types.js';
+import { ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA, SNAPSHOT_SCHEMA } from './schema.js';
 import { exitCodeOf } from './verdict.js';
 
 const FALLBACK_HELP = `threeforge ${VERSION} — frame-budget compiler and diagnostics for three.js games
 
   threeforge analyze <file.glb|.gltf> [--backend webgl2|webgpu] [--tier auto|desktop|phone-mid|phone-low] [--budget N] [--frames 30] [--no-compile] [--json]
   threeforge inspect <url> [--frames 30] [--compile] [--budget N] [--json]     drives a page that called exposeToAgents()
+  threeforge optimize <file.glb|.gltf> [--out out.glb] [--preset safe|balanced|aggressive] [--no-<step>|--<step>] [--simplify 0.5] [--compress meshopt] [--textures webp|avif] [--texture-size N] [--no-verify] [--parity 0.5] [--views 2] [--json]
   threeforge explain <hint-code> | --all [--json]                             what a hint means and how to fix it
-  threeforge schema [snapshot|analyze|inspect|all] [--json]                    JSON Schemas of what the commands print
-  threeforge mcp                                                              stdio MCP server (analyze_asset, inspect_app, explain_hint)
+  threeforge schema [snapshot|analyze|inspect|optimize|all] [--json]           JSON Schemas of what the commands print
+  threeforge mcp                                                              stdio MCP server (analyze_asset, inspect_app, optimize_asset, explain_hint)
 
 Exit codes: 0 pass · 1 verdict failed · 2 usage · 3 environment (install: npm i -D playwright && npx playwright install chromium) · 4 page error
 Commands: ${COMMANDS.join(', ')}`;
@@ -32,8 +32,7 @@ function helpText(): string {
   }
 }
 
-function printDocument(doc: AgentDocument, json: boolean): void {
-  const summary = summarize(doc);
+function printDocument(doc: unknown, summary: string, json: boolean): void {
   if (json) {
     process.stdout.write(JSON.stringify(doc, null, 2) + '\n');
     process.stderr.write(summary + '\n');
@@ -50,12 +49,18 @@ async function run(command: Command): Promise<number> {
       return 0;
     case 'analyze': {
       const doc = await analyzeAsset(command.input, log);
-      printDocument(doc, command.json);
+      printDocument(doc, summarize(doc), command.json);
       return exitCodeOf(doc.verdict);
     }
     case 'inspect': {
       const doc = await inspectApp(command.input, log);
-      printDocument(doc, command.json);
+      printDocument(doc, summarize(doc), command.json);
+      return exitCodeOf(doc.verdict);
+    }
+    case 'optimize': {
+      const { optimizeAsset } = await import('./optimize.js');
+      const doc = await optimizeAsset(command.input, log);
+      printDocument(doc, summarizeOptimize(doc), command.json);
       return exitCodeOf(doc.verdict);
     }
     case 'explain': {
@@ -69,7 +74,7 @@ async function run(command: Command): Promise<number> {
       return 0;
     }
     case 'schema': {
-      const all = { snapshot: SNAPSHOT_SCHEMA, analyze: ANALYZE_SCHEMA, inspect: INSPECT_SCHEMA };
+      const all = { snapshot: SNAPSHOT_SCHEMA, analyze: ANALYZE_SCHEMA, inspect: INSPECT_SCHEMA, optimize: OPTIMIZE_SCHEMA };
       const out = command.which === 'all' ? all : all[command.which];
       process.stdout.write(JSON.stringify(out, null, 2) + '\n');
       return 0;

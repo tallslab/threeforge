@@ -1,10 +1,16 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, test } from './fixtures.js';
 
 /** The built CLI, as an agent would run it: `node dist/cli/index.js …` (npx threeforge … after install). */
 const bin = 'dist/cli/index.js';
 const run = (args: string[]) => spawnSync('node', [bin, ...args], { encoding: 'utf8', timeout: 300_000, env: { ...process.env } });
+const asset = (name: string): string => {
+  const index = JSON.parse(readFileSync('test/assets/files/index.json', 'utf8')) as Array<{ name: string; entry: string }>;
+  return `test/assets/files/${index.find((a) => a.name === name)!.entry}`;
+};
 const sample = (): string => {
   const index = JSON.parse(readFileSync('test/assets/files/index.json', 'utf8')) as Array<{ name: string; entry: string }>;
   return `test/assets/files/${index.find((a) => a.name === 'Fox')!.entry}`;
@@ -96,4 +102,85 @@ test('analyze --bake --views keeps parity on a multi-part static asset and repor
   expect(doc.parity.pass, JSON.stringify(doc.parity)).toBe(true);
   expect(doc.after.totals.unattributed).toBe(0);
   expect(r.stderr).toContain('bake:');
+});
+
+test('optimize keeps the Fox pixel-identical, keeps its skin and clips, and shrinks the file', async ({ forge }) => {
+  test.setTimeout(600_000);
+  const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
+  try {
+    const out = join(dir, 'fox.glb');
+    const r = run(['optimize', asset('Fox'), '--out', out, '--backend', forge.backend, '--frames', '5', '--json']);
+    expect(r.status, r.stderr).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc).toMatchObject({ schemaVersion: 1, tool: 'threeforge', command: 'optimize', input: { preset: 'safe' } });
+    expect(doc.steps.map((s: { name: string }) => s.name)).toEqual(['dedup', 'palette', 'weld', 'resample', 'prune']);
+    expect(statSync(out).size).toBe(doc.output.bytes);
+    expect(doc.output.bytes).toBeLessThan(doc.stats.before.bytes * 0.7);
+    expect(doc.stats.after.vertices).toBeLessThan(doc.stats.before.vertices);
+    expect(doc.stats.after).toMatchObject({ skins: 1, animations: 3 });
+    expect(doc.requires).toEqual([]);
+    expect(doc.verify.parity.pass).toBe(true);
+    expect(doc.verify.parity.views).toHaveLength(3);
+    expect(doc.verify.optimized.asset).toMatchObject({ skinned: doc.verify.original.asset.skinned, animations: doc.verify.original.asset.animations });
+    expect(doc.verify.original.before.totals.unattributed).toBe(0);
+    expect(doc.verify.optimized.after.totals.unattributed).toBe(0);
+    expect(doc.verdict.pass).toBe(true);
+    expect(r.stderr).toContain('PASS');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('optimize collapses the Buggy to one material and still compiles to one submission', async ({ forge }) => {
+  test.setTimeout(600_000);
+  const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
+  try {
+    const r = run(['optimize', asset('Buggy'), '--out', join(dir, 'buggy.glb'), '--backend', forge.backend, '--frames', '3', '--views', '1', '--json']);
+    expect(r.status, r.stderr).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.stats.before.materials).toBe(148);
+    expect(doc.stats.after.materials).toBe(1);
+    expect(doc.stats.after.textures).toBe(1);
+    expect(doc.verify.delta.materials).toBeLessThan(0);
+    expect(doc.verify.optimized.after.totals.sceneSubmissions).toBeLessThanOrEqual(doc.verify.original.after.totals.sceneSubmissions);
+    expect(doc.verify.parity.pass).toBe(true);
+    expect(doc.verdict.pass).toBe(true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('optimize --preset aggressive --compress meshopt lowers triangles, needs the decoder, and loads through the harness', async ({ forge }) => {
+  test.setTimeout(600_000);
+  const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
+  try {
+    const r = run(['optimize', asset('Fox'), '--out', join(dir, 'fox.glb'), '--preset', 'aggressive', '--compress', 'meshopt', '--parity', '5', '--backend', forge.backend, '--frames', '3', '--json']);
+    expect(r.status, r.stderr).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.steps.map((s: { name: string }) => s.name)).toEqual(['dedup', 'palette', 'weld', 'simplify', 'resample', 'prune', 'textures', 'meshopt']);
+    expect(doc.stats.after.triangles).toBeLessThan(doc.stats.before.triangles);
+    expect(doc.stats.after.extensions).toContain('EXT_meshopt_compression');
+    expect(doc.requires.find((q: { extension: string }) => q.extension === 'EXT_meshopt_compression').code).toContain('setMeshoptDecoder');
+    expect(doc.verify.optimized.asset.skinned).toBe(1);
+    expect(doc.verify.parity.diffPct).toBeLessThan(5);
+    expect(doc.verdict.pass).toBe(true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('optimize --no-verify runs without a browser, and a missing file is a usage error', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
+  try {
+    const r = run(['optimize', asset('Fox'), '--out', join(dir, 'fox.glb'), '--no-verify', '--json']);
+    expect(r.status, r.stderr).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.verify).toBeNull();
+    expect(doc.verdict.pass).toBe(true);
+    expect(r.stderr).toContain('not verified');
+    expect(run(['optimize', 'nope.glb', '--json']).status).toBe(2);
+    expect(run(['optimize', asset('Fox'), '--out', asset('Fox'), '--no-verify']).status).toBe(2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -51,8 +51,14 @@ async function waitReady(page: PlaywrightPage, timeout: number): Promise<AssetFa
   return facts.asset;
 }
 
-/** `threeforge analyze <file>`: render, measure, compile, measure again, compare pixels, judge. */
-export async function analyzeAsset(input: AnalyzeInput, log: (line: string) => void = () => {}): Promise<AgentDocument> {
+export interface AnalysisWithShots {
+  doc: AgentDocument;
+  /** PNGs of the naive render: `default` plus `orbit-<i>` for each extra view (empty unless requested or compiled). */
+  shots: Array<{ view: string; png: Buffer }>;
+}
+
+/** `analyzeAsset` plus the screenshots it took before compiling, so `optimize` can compare two files. */
+export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: string) => void = () => {}, wantShots = false): Promise<AnalysisWithShots> {
   const started = Date.now();
   const file = resolve(input.file);
   if (!existsSync(file) || !statSync(file).isFile()) throw new UsageError(`file not found: ${input.file}`);
@@ -71,11 +77,11 @@ export async function analyzeAsset(input: AnalyzeInput, log: (line: string) => v
     const asset = await waitReady(page, input.timeout);
     log(`loaded: ${asset.meshes} meshes, ${asset.triangles} triangles; measuring ${input.frames} frames`);
     const before = await measureViaHook(page, input.frames);
+    const shotsBefore = input.compile || wantShots ? await captureViews(page, input.views) : [];
     let after: AgentDocument['after'] = null;
     let compile: CompileReport | null = null;
     let parity: Parity | null = null;
     if (input.compile) {
-      const shotsBefore = await captureViews(page, input.views);
       compile = await page.evaluate<CompileReport>(`window.__threeforge.compile()`);
       log(`compiled: ${compile.after.batches} batches, ${compile.after.instanced} instanced, ${compile.after.baked} baked, ${compile.skipped.length} skipped; measuring again`);
       if (compile.bake) log(`bake: ${compile.bake.inputTriangles} -> ${compile.bake.triangles} triangles (${compile.bake.contactFaces} seam, ${compile.bake.duplicateFaces} duplicate, ${compile.bake.buriedFaces} buried faces removed, ${compile.bake.weldedVertices} vertices welded)`);
@@ -90,7 +96,7 @@ export async function analyzeAsset(input: AnalyzeInput, log: (line: string) => v
     if (pageErrors.length) log(`page errors: ${pageErrors.join(' | ')}`);
     const hints = (after ?? before.snapshot).hints;
     const verdict = verdictOf(after, before.snapshot, input.budget, parity);
-    return {
+    const doc: AgentDocument = {
       schemaVersion: 1,
       tool: 'threeforge',
       version: VERSION,
@@ -106,8 +112,14 @@ export async function analyzeAsset(input: AnalyzeInput, log: (line: string) => v
       verdict,
       timings: { totalMs: Date.now() - started },
     };
+    return { doc, shots: shotsBefore };
   } finally {
     await browser.close();
     await server.close();
   }
+}
+
+/** `threeforge analyze <file>`: render, measure, compile, measure again, compare pixels, judge. */
+export async function analyzeAsset(input: AnalyzeInput, log: (line: string) => void = () => {}): Promise<AgentDocument> {
+  return (await analyzeAssetWithShots(input, log)).doc;
 }

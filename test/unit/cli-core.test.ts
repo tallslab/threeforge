@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { parseArgs, UsageError } from '../../src/cli/args.js';
 import { explain, REMEDIES } from '../../src/cli/explain.js';
-import { summarize } from '../../src/cli/format.js';
-import { ANALYZE_SCHEMA, INSPECT_SCHEMA, SNAPSHOT_SCHEMA } from '../../src/cli/schema.js';
-import type { AgentDocument, AnalyzeInput } from '../../src/cli/types.js';
+import { summarize, summarizeOptimize } from '../../src/cli/format.js';
+import { ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA, SNAPSHOT_SCHEMA } from '../../src/cli/schema.js';
+import type { AgentDocument, AnalyzeInput, OptimizeDocument, OptimizeInput } from '../../src/cli/types.js';
 import { exitCodeOf, verdictOf } from '../../src/cli/verdict.js';
 import { budgetsFor } from '../../src/ledger/budgets.js';
 import { hintsFor } from '../../src/ledger/hints.js';
@@ -105,5 +105,68 @@ describe('summarize', () => {
     expect(text).toContain('draw calls');
     expect(text).toContain('! shadow-texels');
     expect(text).toContain('parity 0.01%');
+  });
+});
+
+describe('parseArgs optimize', () => {
+  it('parses defaults, presets, step toggles and the lossy flags', () => {
+    expect(parseArgs(['optimize', 'a.glb'])).toEqual({ name: 'optimize', json: false, input: { file: 'a.glb', out: null, preset: 'safe', steps: {}, simplify: null, simplifyError: 0.001, compress: 'none', textures: null, textureSize: null, textureQuality: 85, verify: true, parity: 0.5, views: 2, backend: 'webgl2', tier: 'auto', budget: null, frames: 30, compile: true, timeout: 60000, headed: false } });
+    expect(parseArgs(['optimize', 'a.glb', '--out', 'b.glb', '--preset', 'aggressive', '--no-palette', '--quantize', '--join', '--json'])).toMatchObject({ json: true, input: { out: 'b.glb', preset: 'aggressive', steps: { palette: false, quantize: true, join: true } } });
+    expect(parseArgs(['optimize', 'a.glb', '--simplify', '0.3', '--simplify-error', '0.01', '--compress', 'meshopt', '--textures', 'avif', '--texture-size', '512', '--texture-quality', '70'])).toMatchObject({ input: { simplify: 0.3, simplifyError: 0.01, compress: 'meshopt', textures: 'avif', textureSize: 512, textureQuality: 70 } });
+    expect(parseArgs(['optimize', 'a.glb', '--simplify', '--textures'])).toMatchObject({ input: { simplify: 0.5, textures: 'webp' } });
+    expect(parseArgs(['optimize', 'a.glb', '--no-simplify', '--textures', 'none'])).toMatchObject({ input: { steps: { simplify: false }, textures: 'none' } });
+    expect(parseArgs(['optimize', 'a.glb', '--no-verify', '--parity', '2', '--views', '0', '--budget', '10', '--frames', '5', '--no-compile'])).toMatchObject({ input: { verify: false, parity: 2, views: 0, budget: 10, frames: 5, compile: false } });
+  });
+
+  it('rejects bad optimize input', () => {
+    expect(() => parseArgs(['optimize'])).toThrow(UsageError);
+    expect(() => parseArgs(['optimize', 'a.glb', '--preset', 'max'])).toThrow(/preset/);
+    expect(() => parseArgs(['optimize', 'a.glb', '--simplify', '1.5'])).toThrow(/simplify/);
+    expect(() => parseArgs(['optimize', 'a.glb', '--simplify', '0'])).toThrow(/simplify/);
+    expect(() => parseArgs(['optimize', 'a.glb', '--compress', 'draco'])).toThrow(/compress/);
+    expect(() => parseArgs(['optimize', 'a.glb', '--textures', 'jpg'])).toThrow(/textures/);
+    expect(() => parseArgs(['optimize', 'a.glb', '--out'])).toThrow(/out/);
+    expect(parseArgs(['schema', 'optimize'])).toEqual({ name: 'schema', which: 'optimize', json: false });
+  });
+});
+
+describe('optimize schema and summary', () => {
+  const counts = { nodes: 1, meshes: 1, primitives: 1, materials: 1, textures: 0, accessors: 2, vertices: 4, triangles: 2 };
+  const stats = { ...counts, bytes: 100, textureBytes: 0, animations: 0, skins: 0, morphTargets: 0, extensions: [] as string[] };
+  const parsed = parseArgs(['optimize', 'a.glb', '--compress', 'meshopt']);
+  const input: OptimizeInput = parsed.name === 'optimize' ? parsed.input : (undefined as never);
+  const doc: OptimizeDocument = {
+    schemaVersion: 1,
+    tool: 'threeforge',
+    version: '0.3.0',
+    command: 'optimize',
+    input,
+    output: { file: 'a.forge.glb', bytes: 60 },
+    stats: { before: { ...stats, materials: 6 }, after: { ...stats, bytes: 60, extensions: ['EXT_meshopt_compression'] } },
+    steps: [
+      { name: 'dedup', applied: true, ms: 1, note: null, before: { ...counts, materials: 6 }, after: counts },
+      { name: 'textures', applied: false, ms: 0, note: 'skipped: texture compression needs sharp (npm i -D sharp)', before: counts, after: counts },
+    ],
+    requires: [{ extension: 'EXT_meshopt_compression', needs: 'MeshoptDecoder', code: 'loader.setMeshoptDecoder(MeshoptDecoder);' }],
+    verify: null,
+    verdict: { pass: true, budget: null, errors: [], reasons: [] },
+    timings: { transformMs: 3, verifyMs: 0, totalMs: 4 },
+  };
+
+  it('declares every document key', () => {
+    const props = OPTIMIZE_SCHEMA.properties as Record<string, unknown>;
+    for (const key of Object.keys(doc)) expect(props[key], key).toBeDefined();
+    expect(OPTIMIZE_SCHEMA.required).toEqual(Object.keys(props).sort());
+  });
+
+  it('summarises the verdict, the deltas, each step, the requirements and skipped notes', () => {
+    const text = summarizeOptimize(doc);
+    expect(text).toContain('PASS');
+    expect(text).toContain('100 B → 60 B');
+    expect(text).toContain('materials 6 → 1');
+    expect(text).toContain('dedup: materials 6 → 1');
+    expect(text).toContain('textures: skipped');
+    expect(text).toContain('setMeshoptDecoder');
+    expect(text).toContain('not verified');
   });
 });

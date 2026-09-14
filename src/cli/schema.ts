@@ -70,3 +70,53 @@ function document(command: 'analyze' | 'inspect', input: Schema, assetSchema: Sc
 
 export const ANALYZE_SCHEMA = document('analyze', obj({ file: string, backend: { enum: ['webgl2', 'webgpu'] }, tier: { enum: ['auto', 'desktop', 'phone-mid', 'phone-low'] }, budget: nullable(number), frames: integer, compile: boolean, bake: { enum: ['off', 'on', 'buried'] }, views: integer, timeout: number, headed: boolean }), asset, nullable(parity));
 export const INSPECT_SCHEMA = document('inspect', runInput({ url: string }), { type: 'null' }, { type: 'null' });
+
+const counts = obj({ nodes: integer, meshes: integer, primitives: integer, materials: integer, textures: integer, accessors: integer, vertices: integer, triangles: integer });
+const assetStats = obj({ nodes: integer, meshes: integer, primitives: integer, materials: integer, textures: integer, accessors: integer, vertices: integer, triangles: integer, bytes: integer, textureBytes: integer, animations: integer, skins: integer, morphTargets: integer, extensions: arr(string) });
+const stepName = { enum: ['dedup', 'instance', 'palette', 'flatten', 'join', 'weld', 'simplify', 'resample', 'prune', 'textures', 'quantize', 'meshopt'] };
+const optimizeInput = obj({
+  file: string,
+  out: nullable(string),
+  preset: { enum: ['safe', 'balanced', 'aggressive'] },
+  steps: map(boolean),
+  simplify: nullable(number),
+  simplifyError: number,
+  compress: { enum: ['none', 'meshopt'] },
+  textures: nullable({ enum: ['none', 'webp', 'avif'] }),
+  textureSize: nullable(integer),
+  textureQuality: number,
+  verify: boolean,
+  parity: number,
+  views: integer,
+  backend: { enum: ['webgl2', 'webgpu'] },
+  tier: { enum: ['auto', 'desktop', 'phone-mid', 'phone-low'] },
+  budget: nullable(number),
+  frames: integer,
+  compile: boolean,
+  timeout: number,
+  headed: boolean,
+});
+const optimizeProperties: Record<string, Schema> = {
+  schemaVersion: { const: 1 },
+  tool: { const: 'threeforge' },
+  version: string,
+  command: { const: 'optimize' },
+  input: optimizeInput,
+  output: obj({ file: string, bytes: integer }),
+  stats: obj({ before: assetStats, after: assetStats }),
+  steps: arr(obj({ name: stepName, applied: boolean, ms: number, note: nullable(string), before: counts, after: counts })),
+  requires: arr(obj({ extension: string, needs: string, code: nullable(string) })),
+  verify: nullable(obj({ backend: { enum: ['webgl2', 'webgpu'] }, parity, original: { $ref: ANALYZE_SCHEMA.$id }, optimized: { $ref: ANALYZE_SCHEMA.$id }, delta: obj({ bytes: integer, materials: integer, vertices: integer, triangles: integer, sceneSubmissions: obj({ naive: integer, compiled: nullable(integer) }), loadMs: number, memoryBytes: integer }) })),
+  verdict,
+  timings: obj({ transformMs: number, verifyMs: number, totalMs: number }),
+};
+/** `threeforge schema optimize`: the document `optimize` prints. */
+export const OPTIMIZE_SCHEMA = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  $id: 'https://threeforge.dev/schema/optimize-v1.json',
+  title: 'threeforge optimize document v1',
+  type: 'object',
+  properties: optimizeProperties,
+  required: Object.keys(optimizeProperties).sort(),
+  additionalProperties: false,
+};

@@ -1,21 +1,23 @@
-import type { AnalyzeInput, Backend, BakeChoice, InspectInput, TierChoice } from './types.js';
+import { PRESETS, STEP_NAMES } from './pipeline.js';
+import type { AnalyzeInput, Backend, BakeChoice, InspectInput, OptimizeInput, Preset, StepName, TextureFormat, TierChoice } from './types.js';
 
 export class UsageError extends Error {}
 
-export type SchemaChoice = 'snapshot' | 'analyze' | 'inspect' | 'all';
+export type SchemaChoice = 'snapshot' | 'analyze' | 'inspect' | 'optimize' | 'all';
 
 export type Command =
   | { name: 'help' }
   | { name: 'analyze'; input: AnalyzeInput; json: boolean }
   | { name: 'inspect'; input: InspectInput; json: boolean }
+  | { name: 'optimize'; input: OptimizeInput; json: boolean }
   | { name: 'explain'; code: string | null; all: boolean; json: boolean }
   | { name: 'schema'; which: SchemaChoice; json: boolean }
   | { name: 'mcp' };
 
 const BACKENDS: Backend[] = ['webgl2', 'webgpu'];
 const TIERS: TierChoice[] = ['auto', 'desktop', 'phone-mid', 'phone-low'];
-const SCHEMAS: SchemaChoice[] = ['snapshot', 'analyze', 'inspect', 'all'];
-export const COMMANDS = ['analyze', 'inspect', 'explain', 'schema', 'mcp'] as const;
+const SCHEMAS: SchemaChoice[] = ['snapshot', 'analyze', 'inspect', 'optimize', 'all'];
+export const COMMANDS = ['analyze', 'inspect', 'optimize', 'explain', 'schema', 'mcp'] as const;
 
 interface Flags {
   positional: string[];
@@ -92,6 +94,42 @@ export function parseArgs(argv: string[]): Command {
       const url = rest[0];
       if (!url) throw new UsageError('inspect needs a url: threeforge inspect http://localhost:5173');
       return { name: 'inspect', json, input: { url, ...runInput(values) } };
+    }
+    case 'optimize': {
+      const file = rest[0];
+      if (!file) throw new UsageError('optimize needs a file: threeforge optimize scene.glb');
+      const outRaw = values.get('out');
+      if (outRaw === true) throw new UsageError('--out expects a path');
+      const steps: Partial<Record<StepName, boolean>> = {};
+      for (const name of STEP_NAMES) {
+        if (values.has(`no-${name}`)) steps[name] = false;
+        else if (values.has(name) && name !== 'simplify' && name !== 'textures') steps[name] = true;
+      }
+      const simplifyRaw = values.get('simplify');
+      const simplify = simplifyRaw === undefined ? null : simplifyRaw === true ? 0.5 : Number(simplifyRaw);
+      if (simplify !== null && !(simplify > 0 && simplify <= 1)) throw new UsageError('--simplify expects a ratio in (0, 1]');
+      const texturesRaw = values.get('textures');
+      const textures: TextureFormat | 'none' | null = texturesRaw === undefined ? null : texturesRaw === true ? 'webp' : choice(values, 'textures', ['none', 'webp', 'avif'] as const, 'webp');
+      return {
+        name: 'optimize',
+        json,
+        input: {
+          file,
+          out: outRaw ?? null,
+          preset: choice(values, 'preset', PRESETS, 'safe' as Preset),
+          steps,
+          simplify,
+          simplifyError: number(values, 'simplify-error', 0.001),
+          compress: choice(values, 'compress', ['none', 'meshopt'] as const, 'none'),
+          textures,
+          textureSize: values.has('texture-size') ? Math.round(number(values, 'texture-size', 2048)) : null,
+          textureQuality: number(values, 'texture-quality', 85),
+          verify: !values.has('no-verify'),
+          parity: number(values, 'parity', 0.5),
+          views: Math.max(0, Math.round(number(values, 'views', 2))),
+          ...runInput(values),
+        },
+      };
     }
     case 'explain': {
       const all = values.has('all');
