@@ -153,7 +153,8 @@ What to do with effects so this stays cheap: [docs/vfx.md](docs/vfx.md).
 
 `new World(scene, { bake: true })` turns each finished static group into one world-space mesh instead of a
 `BatchedMesh`: seams between touching modules (coplanar faces with the same outline and opposite winding, between
-different closed, manifold, outward, opaque, front-side modules; any other such pair is kept and counted) and
+different closed, manifold, outward, opaque, front-side modules that cast no shadow; any other such pair is kept and
+counted) and
 duplicated faces are removed, and vertices are welded only where position, normal, uv and colour agree, so
 shading never changes. Originals stay editable: hiding a module (`world.setVisible`) rebakes its group,
 `resolve()` maps a hit face back to its module, `decompile()` restores everything.
@@ -163,8 +164,8 @@ inspectable:
 
 - `bake: { removeBuried: true }` (off by default) also drops faces with solid geometry right in front of them:
   every sampled ray from the face must be blocked within `distance` (default 0.1 units along the normal), so
-  room interiors and open backsides survive; only faces of opaque, front-side modules are removed, and back-side
-  faces block no ray.
+  room interiors and open backsides survive; only faces of opaque, front-side modules that cast no shadow are
+  removed, and only the back side of an opaque front-side or double-sided face blocks a ray.
 - `mesh.userData.forgeBake = false` passes a module through untouched.
 - The compile report's `bake` block counts seams, coincident faces kept (`keptCoincidentFaces`), duplicates, buried
   faces and welded vertices per run, and

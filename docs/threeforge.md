@@ -619,8 +619,13 @@ is carried and compared by the weld):
    count only when the module's material reads them (`BakeEntry.vertexColors`; with a tint the material becomes a
    `vertexColors` clone, and a rebake keeps the flag recorded at bake time).
 2. **Contact seams**: triangles are grouped by plane, split into the two facing sides and merged into islands along
-   shared edges; an island whose boundary edges equal an island's on the other side is a coincident, opposite-winding
-   pair, whatever the triangulation. Both islands go as a seam between touching solids only when all four hold:
+   shared edges. An island is paired only when it covers its region exactly once: every edge (by position) is used at
+   most twice inside it (an edge used three times drops out of the outline, so regions of different size could share
+   one), and no two of its triangles overlap by more than `tolerance` in the plane (a doubled area could otherwise hide
+   behind a matching outline). Its outline is then the set of edges used once, and two such islands with the same
+   outline cover the same region, whatever their triangulations. An island whose outline equals an island's on the
+   other side is a coincident, opposite-winding pair. Both islands go as a seam between touching solids only when all
+   five hold:
    1. the two islands come from disjoint sets of modules (entries);
    2. every module involved is a closed, manifold, outward shell: every edge (by position) is used exactly once in
       each direction, and every connected component encloses a positive signed volume (computed once per module in
@@ -629,26 +634,41 @@ is carried and compared by the weld):
    3. every module involved draws front faces only (`BakeEntry.side` is `FrontSide`, set by `bakeEntriesOf`): a
       `BackSide` material draws exactly the faces a seam hides (from inside a modular room the shared wall is the
       nearest drawn surface), and a `DoubleSide` one draws both;
-   4. every module involved is opaque and draws its faces where the geometry puts them (`BakeEntry.opaque`, set by
-      `bakeEntriesOf`): not transparent; normal or no blending; no `alphaTest`, `alphaHash`, `alphaToCoverage`,
-      `transmission`, `maskNode`, `alphaTestNode` or custom fragment stage (`ShaderMaterial`, `fragmentNode`); no
-      vertex change (`displacementMap`, `positionNode`, `vertexNode`, `geometryNode`) or `depthNode`; no material
-      `clippingPlanes`; `depthFunc` is `LessEqualDepth`; depth write and depth test on; no `wireframe` or
-      `stencilWrite`. Renderer-level clipping (`renderer.clippingPlanes`) is outside what the bake can see.
+   4. no module involved casts shadows (`BakeEntry.castShadow` is `false`, copied from each original; three's default):
+      non-VSM shadow maps draw a front-side material's back faces (`WebGLShadowMap.js`, the shadow override in
+      `renderers/common/Renderer.js`), so a seam face is the nearest caster for the neighbouring module's face turned
+      away from the light, which a toon ramp still lights at 0.7 × light × shadow. A shadow-casting static keeps its
+      seam faces;
+   5. every module involved is opaque, by an allowlist of three's default material hooks (`BakeEntry.opaque`, set by
+      `bakeEntriesOf`): not transparent; normal or no blending; no `alphaTest`, `alphaHash`, `alphaToCoverage` or
+      `transmission`; not a `ShaderMaterial`; every node slot empty (every `*Node` property, such as `colorNode`,
+      `opacityNode`, `outputNode`, `positionNode` or `fragmentNode`, and any other own property holding a node, is
+      null, because `Discard()` can sit in any of them: node-material statics authored with custom nodes keep all their
+      faces); `onBeforeCompile` and `customProgramCacheKey` are three's own (`Material`'s, or `NodeMaterial`'s for a
+      node material); `defines` holds only three's material defines (`STANDARD`, `PHYSICAL`, `TOON`, `MATCAP`); no
+      `displacementMap`, material `clippingPlanes` or `polygonOffset`; `depthFunc` is `LessEqualDepth`; depth write and
+      depth test on; no `wireframe` or `stencilWrite`. Renderer-level clipping (`renderer.clippingPlanes`) is outside
+      what the bake can see. A rebake keeps the decision made at bake time and requires the current material to pass
+      too, because a tinted group's vertex-colour clone loses what `copy()` does not carry (`MeshStandardMaterial`
+      resets `defines`; an instance `onBeforeCompile` is not copied).
 
    Every other coincident, opposite pair stays and is counted in `keptCoincidentFaces` (only faces the bake does not
    remove otherwise, so a kept face that is later buried is not counted): back-to-back sign cards, a floor lying on a
-   ceiling, a pair inside one module, a back-side, double-sided or translucent pair, a face against a flat slab, an
-   open box, an inside-out box, a shell joined to another part by a shared edge. Partial overlaps stay too.
-3. **Duplicates**: the exact same triangle twice (same points, same winding: a module placed twice) keeps one. Two
-   islands on the same side of a plane never share an outline (shared outline edges fuse them into one island), and a
-   region covered twice with different triangulations fuses into one island with no outline at all: it is skipped and
-   stays doubled, an invisible cost.
+   ceiling, a pair inside one module, a back-side, double-sided, translucent or shadow-casting pair, a face against a
+   flat slab, an open box, an inside-out box, a shell joined to another part by a shared edge, an island whose triangles
+   overlap. Islands with an edge used three or more times are not paired at all, and partial overlaps stay too.
+3. **Duplicates**: the exact same triangle twice (same points, same winding: a module placed twice) keeps one, and only
+   between modules whose faces may be removed (opaque, front-side, casting no shadow). Two islands on the same side of a
+   plane never share an outline (shared outline edges fuse them into one island), and a region covered twice with
+   different triangulations fuses into one island with no outline at all: it is skipped and stays doubled, an
+   invisible cost.
 4. **Buried faces** (opt-in `removeBuried`): 24 rays over the front hemisphere from each face, cast against a BVH of
-   the group's opaque faces of front-side or double-sided modules (three-mesh-bvh); the face is buried only if every
-   ray is blocked within `distance` measured along the face normal (default 0.1 units): solid right in front of it.
-   Only faces of opaque, front-side modules are removed; room interiors and open backsides survive; back-side faces
-   never block a ray (a back-side shell draws its far wall behind whatever is inside it).
+   the group's opaque faces of front-side or double-sided modules (three-mesh-bvh), counting only hits on a triangle's
+   back side: a viewer beyond the hit, looking back along the ray, then sees that triangle drawn (a front-side card
+   facing the face shows such a viewer its culled back, so it blocks nothing). The face is buried only if every ray is
+   blocked within `distance` measured along the face normal (default 0.1 units): solid right in front of it. Only faces
+   of opaque, front-side modules that cast no shadow are removed; room interiors and open backsides survive; back-side
+   faces never block a ray (a back-side shell draws its far wall behind whatever is inside it).
 5. **Weld**: vertices merge only when position (`tolerance`, default 1e-4), normal and tangent xyz (`normalAngle`,
    default 0.5°), tangent `w` (exact), uv (exact) and colour (`colorTolerance`, default 1/255) agree, so shading
    never changes.
@@ -657,7 +677,8 @@ is carried and compared by the weld):
 entry without `opaque` counts as not opaque, so it gets no seam and no buried-face removal (a missed deletion is
 invisible, a wrong one is visible); an entry without `vertexColors` keeps multiplying its geometry's colour attribute
 by the tint, as before; an entry without `side` counts as not front-side, so it loses no faces either
-(`doubleSided: true` has the same effect).
+(`doubleSided: true` has the same effect); an entry without `castShadow: false` counts as a shadow caster and loses no
+faces.
 
 Control and inspection: `mesh.userData.forgeBake = false` passes a module through untouched; the compile report's
 `bake` block counts seams, coincident faces the seam guard kept and the bake left in place (`keptCoincidentFaces`),
@@ -668,7 +689,9 @@ returns a copy of the removed faces as red unlit meshes, a snapshot the caller o
 groups and batch-synced dynamics are never baked. The CLI's `analyze --bake --views N` bakes and checks pixel parity
 from N+1 camera angles. Verified: the village bake is pixel-identical; a 6×3 modular wall loses exactly its 27
 seams, also under a mirrored scene; back-to-back sign cards and a floor lying on a ceiling keep both faces, seen from
-both sides; touching back-side rooms keep their shared wall, seen from inside and from outside; a mirrored, normal-mapped mesh baked by `bakeGeometries` keeps its tangents and its pixels; a block 5 cm
+both sides; touching back-side rooms keep their shared wall, seen from inside and from outside; touching toon boxes
+that cast shadows keep their seam, lit along it with shadows on; a mirrored, normal-mapped mesh baked by
+`bakeGeometries` keeps its tangents and its pixels; a block 5 cm
 inside a solid goes only with `removeBuried`; the 2CylinderEngine assembly stays identical over four views on both
 backends.
 
@@ -896,6 +919,6 @@ section 11. Specs live in `docs/superpowers/specs`, plans in
 - **program**: a compiled shader variant, as counted by `renderer.info.memory.programs`.
 - **tier**: `desktop`, `phone-mid`, `phone-low`; drives budgets and hints.
 - **seam**: two coincident faces with opposite winding between touching solid modules (different, closed and
-  manifold, outward, opaque and front-side); removed by the bake. Any other coincident, opposite pair is kept and counted
+  manifold, outward, opaque, front-side and casting no shadow); removed by the bake. Any other coincident, opposite pair is kept and counted
   (`keptCoincidentFaces`).
 - **buried face**: a face with solid geometry right in front of it in every direction; removed only on request.
