@@ -164,7 +164,9 @@ lighting:  lights { directional, point, spot, hemisphere, ambient, other }, shad
            shadowCasters, shadowTexels, shadowSubmissions
 js:        renderMs, ledgerMs, frameMs, objects, autoUpdatedMatrices, hiddenOriginals, skipped
 memory:    textures { count, bytes }, geometries { count, bytes }, renderTargets { count, bytes },
-           unreferenced { geometries, textures }, chunks { total, resident }, estimated: true
+           unreferenced { geometries, textures }, chunks { total, resident },
+           measured { textures { count, bytes }, geometries { count, bytes }, renderTargets { count }, bytes } | null,
+           estimated: true
 hints:     [{ category, severity, code, message, objects }]
 items?:    per-submission records with ledger.frame({ items: true })
 ```
@@ -191,7 +193,8 @@ items?:    per-submission records with ledger.frame({ items: true })
   render-to-texture hook) keeps its own override material. Every scene and renderer setting it changes is restored before the read-backs are awaited, so frames
   rendered meanwhile are unaffected; attribution pauses for the two count renders only, which never become part of a
   frame (not even when measured from a render hook). The target and count materials are kept per renderer until
-  `ledger.detach()` or `disposeOverdraw(renderer)`. Call it on demand.
+  `ledger.detach()` or `disposeOverdraw(renderer)`; `overdrawTargetOf(renderer)` returns the target, which the
+  memory section allows. Call it on demand.
 - **skinning** sums the main pass's skinned submissions: vertices, bones per unique skeleton (indexed per frame, no
   uuids in the snapshot), the largest bone count, morph targets; `vatInstances` and `vatVertices` count the
   characters drawn as animated instances (`kind: 'vat'`, reason `vat-instanced`), which need no CPU bones.
@@ -211,12 +214,27 @@ items?:    per-submission records with ledger.frame({ items: true })
   between the last 60 outermost renders, `objects`, `autoUpdatedMatrices` and `hiddenOriginals` (batched originals
   parked on layer 31) come from a traversal repeated at most every 60 frames; `skipped` is the ticks a
   `RenderScheduler` skipped among its last 60 (`ledger.rescan()` forces it).
-- **memory** estimates bytes: textures `w · h · 4 · bytesPerChannel · (mipmaps ? 4/3 : 1) · (cube ? 6 : 1)`, compressed
-  textures Σ mip bytes, geometries Σ attribute and index bytes, render targets from shadow maps and the renderer's
-  half-float frame-buffer target. `ledger.measureMemory()` recounts now.
+- **memory** estimates bytes. A texture follows three r186's `Info._getTextureMemorySize`: `w · h · depth · texel
+  bytes`, with channels from the format, bytes per channel from the type and packed types whole, depth 6 for a cube and
+  the layers of a 3D or array texture, ×1.333 with generated mipmaps. It follows what three allocates where that
+  function does not: a compressed texture is the sum of its mip data (a compressed cube's six faces too; three counts 1
+  byte), the size is the one `Textures.getSize` allocates (a cube's first face, a video's frame; three's `Info` reads 1
+  for a cube's image array), and explicit mipmaps are the levels three uploads (every level in a 2D texture's
+  `mipmaps`, the base plus the levels in a cube's). Geometries are Σ attribute and index bytes, render targets the
+  shadow maps of casting lights and the renderer's half-float frame-buffer target for the viewport.
+  `ledger.measureMemory()` recounts now.
+- **memory.measured** is three's own `renderer.info.memory` when the estimate was made: `textures` (count and
+  `texturesSize`), `geometries` (count and `attributesSize + indexAttributesSize`), `renderTargets` (count) and `bytes`
+  (`total`). It counts everything three allocated, render-target, shadow-map and internal textures included, and a
+  compressed texture as 1 byte; null for a renderer without these counters.
 - **memory.unreferenced** counts the geometries and textures the renderer still holds (`info.memory` counts) that the
-  scene no longer reaches, minus what three allocates for itself (one geometry, two frame-buffer textures, two per
-  shadow map); reachable includes BatchedMesh and skeleton textures and `material.userData.forgeTextures`. Recounted
+  scene no longer reaches, minus what three allocates for itself, whatever the viewport: one geometry, the frame-buffer
+  target's colour and depth, the textures of every shadow map three has built (a colour and a depth texture, read off
+  each casting light's `shadow.map`; a casting light whose map three never built, with shadow maps disabled or never
+  lit, holds none), and the overdraw count target once `measureOverdraw()` has run. Not allowed: a VSM map's two blur
+  targets, which three keeps on its shadow node (2 textures per non-point VSM light), and three's 16 × 16 `DFG_LUT`,
+  which it creates once a Standard or Physical material is lit and keeps private (1 texture on any such scene);
+  reachable includes BatchedMesh and skeleton textures and `material.userData.forgeTextures`. Recounted
   with the graph statistics; `measureMemory()` recounts now. **memory.chunks** is the attached Streamer's residency,
   read live.
 - **hints** are recomputed every frame from the snapshot and the budgets of the environment's tier.
@@ -818,7 +836,7 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
   disposes the geometries and textures no resident chunk shares, including a BatchedMesh's matrix, indirect and
   colour textures (never `BatchedMesh.dispose()`, which nulls them); load re-adds them and three re-uploads. `assign`,
   `userData.forgeStream = false`, `stats()`, `onChange`, `dispose()`. `ledger.attachStreamer(streamer)`.
-- **Ledger**: `memory.unreferenced`, `memory.chunks`; budget `geometryBytes` (256 / 96 / 48 MB); hints
+- **Ledger**: `memory.unreferenced`, `memory.chunks`, `memory.measured`; budget `geometryBytes` (256 / 96 / 48 MB); hints
   `geometry-bytes` and `unreferenced-resources` (eight or more). Authoring notes: `docs/memory.md`.
 - **Bench**: zen's ground is 64 tiles with a 512² texture each (85 MB) under fog to 600 m; the optimized variant
   streams them: 32 of 64 chunks resident at the start camera, pixel-identical to naive.

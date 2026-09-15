@@ -11,11 +11,11 @@ export {
 export { computeMaterialKeys, hashKey, type MaterialKeys } from './registry/materialKey.js';
 export { DrawCallLedger, type DrawCallLedgerOptions, type LedgerRenderer } from './ledger/DrawCallLedger.js';
 export type { Flag, Reason, SubmissionKind } from './ledger/reasons.js';
-export type { BudgetOffender, BudgetResult, FrameEnv, FrameSnapshot, FrameTotals, Hint, HintCategory, JsSnapshot, LightingSnapshot, MemorySnapshot, OverdrawSnapshot, PassSnapshot, ProgramSnapshot, ReasonSnapshot, SkinningSnapshot, SubmissionRecord, Tier } from './ledger/snapshot.js';
+export type { BudgetOffender, BudgetResult, FrameEnv, FrameSnapshot, FrameTotals, Hint, HintCategory, JsSnapshot, LightingSnapshot, MeasuredMemory, MemorySnapshot, OverdrawSnapshot, PassSnapshot, ProgramSnapshot, ReasonSnapshot, SkinningSnapshot, SubmissionRecord, Tier } from './ledger/snapshot.js';
 export { BUDGETS, budgetsFor, detectTier, tierInputFromNavigator, type Budgets, type TierInput, type TierNavigator } from './ledger/budgets.js';
 export { hintsFor, type HintContext } from './ledger/hints.js';
-export { disposeOverdraw, measureOverdraw, type OverdrawOptions, type OverdrawRenderer, type OverdrawResult } from './ledger/overdraw.js';
-export { estimateMemory, geometryBytes, textureBytes } from './ledger/memory.js';
+export { disposeOverdraw, measureOverdraw, overdrawTargetOf, type OverdrawOptions, type OverdrawRenderer, type OverdrawResult } from './ledger/overdraw.js';
+export { estimateMemory, geometryBytes, textureBytes, type AllowedRenderTarget, type MemoryEstimateOptions, type RendererMemoryInfo } from './ledger/memory.js';
 export { lightingOf, scanLights, skinningOf, type LightInfo, type ShadowWork } from './ledger/sections.js';
 export { classify, exclusionRule, animatedRoots, type Classification, type ClassifyOptions, type MeshKind } from './compiler/classify.js';
 export { attributeSignature, ensureIndexed, isBatchCompatible } from './compiler/geometryCompat.js';

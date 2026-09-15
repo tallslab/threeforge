@@ -6,11 +6,13 @@ resident. Three modules act on it: `createLoader`, `ResourceTracker`, `Streamer`
 
 ## What a resource costs
 
-A texture costs `width × height × bytes per texel`, ×4/3 with mipmaps, ×6 for a cube; a compressed (KTX2) texture
+A texture costs `width × height × bytes per texel` (channels from its format, bytes per channel from its type: an
+R8 texture is a quarter of RGBA8), ×1.333 with generated mipmaps, ×6 for a cube, × the layers of a 3D or array texture; a compressed (KTX2) texture
 costs the sum of its mip levels, typically a quarter to an eighth of the uncompressed size. A geometry costs its
 attribute and index buffers. three r186 keeps a GPU copy of every geometry and texture it has rendered until
-`dispose()` is called, and `renderer.info.memory` counts them (its byte fields are never updated, so threeforge
-keeps its own estimates, labelled `estimated: true`). Budgets per tier: textures 512 / 192 / 96 MB, geometry
+`dispose()` is called, and `renderer.info.memory` counts them with byte sizes of its own
+(a compressed texture counts 1 byte), which the ledger reports as `memory.measured` beside its estimates
+(`estimated: true`). Budgets per tier: textures 512 / 192 / 96 MB, geometry
 256 / 96 / 48 MB (desktop / phone-mid / phone-low).
 
 ## createLoader and `threeforge decoders`
@@ -47,7 +49,9 @@ the geometries and textures the renderer holds that nothing in the scene reaches
 
 The ledger reports that count as `memory.unreferenced` and warns with `unreferenced-resources` at eight or more.
 The count is renderer counts minus reachable resources minus what three allocates for itself (one geometry, two
-frame-buffer textures, two textures per shadow map, measured on both backends). Reachable includes material
+frame-buffer textures, two textures per shadow map three has built, and the overdraw count target once the ledger
+has measured overdraw; measured on both backends). A lit Standard or Physical material makes three create a private
+16 × 16 lookup texture (`DFG_LUT`) that nothing in the scene reaches, so such a scene reads one unreferenced texture. Reachable includes material
 textures, a BatchedMesh's matrix, indirect and colour textures, a skeleton's bone texture, the scene background and
 environment, and textures a node material lists in `material.userData.forgeTextures` (AnimatedInstances lists its
 animation texture; do the same for your own TSL materials). three uploads a texture only when it renders, so a

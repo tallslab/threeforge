@@ -7,7 +7,7 @@ import { budgetsFor, type Budgets } from './budgets.js';
 import { Vector2 } from 'three';
 import { hintsFor, type HintContext } from './hints.js';
 import { estimateMemory } from './memory.js';
-import { disposeOverdraw, measureOverdraw, type OverdrawRenderer, type OverdrawResult } from './overdraw.js';
+import { disposeOverdraw, measureOverdraw, overdrawTargetOf, type OverdrawRenderer, type OverdrawResult } from './overdraw.js';
 import { formatCostRows, formatHints } from '../overlay/index.js';
 import { FORGE_TAG_KEY } from '../tags.js';
 import { lightInfoOf, type LightInfo } from './sections.js';
@@ -17,7 +17,7 @@ import { buildFrame, emptyFrame, emptySections, type BudgetResult, type FrameEnv
 export interface LedgerRenderer {
   render(scene: Scene, camera: Camera): unknown;
   renderObject(...args: unknown[]): unknown;
-  info: { render: { drawCalls: number; triangles: number }; memory: { programs: number; textures?: number; geometries?: number } };
+  info: { render: { drawCalls: number; triangles: number }; memory: { programs: number; textures?: number; geometries?: number; texturesSize?: number; attributesSize?: number; indexAttributesSize?: number; renderTargets?: number; total?: number } };
   backend?: unknown;
   getRenderTarget?(): { name?: string; texture?: { name?: string } } | null;
   /** Drawing-buffer size in pixels; `overdraw.pixels` stays 0 without it. */
@@ -269,7 +269,9 @@ export class DrawCallLedger {
     // The scene object itself is not part of the count.
     this.graphStats = { objects: objects - 1, autoUpdatedMatrices: auto - 1, hiddenOriginals: hidden, at: this.framesSeen };
     const memory = this.renderer?.info.memory;
-    this.memoryStats = estimateMemory(scene, { textures: memory?.textures ?? 0, geometries: memory?.geometries ?? 0 }, this.environment.viewport);
+    const info = { textures: memory?.textures ?? 0, geometries: memory?.geometries ?? 0, texturesSize: memory?.texturesSize, attributesSize: memory?.attributesSize, indexAttributesSize: memory?.indexAttributesSize, renderTargets: memory?.renderTargets, total: memory?.total };
+    // The overdraw count target is the renderer's own, held while nothing in the scene reaches it.
+    this.memoryStats = estimateMemory(scene, info, this.environment.viewport, { renderTargets: [this.renderer ? overdrawTargetOf(this.renderer) : null] });
     this.last = { ...this.last, js: { ...this.last.js, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals }, memory: this.memoryNow() };
     this.last = { ...this.last, hints: hintsFor(this.last, this.budgets(), { ...this.hintContext, items: this.lastItems }) };
   }

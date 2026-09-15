@@ -142,7 +142,25 @@ export interface MemorySnapshot {
   unreferenced: { geometries: number; textures: number };
   /** Chunks an attached Streamer manages and how many are resident (0/0 without one). */
   chunks: { total: number; resident: number };
+  /**
+   * three's own `renderer.info.memory` when the estimate was made: everything three allocated, render-target, shadow-map
+   * and internal textures included. Null for a renderer that keeps no byte sizes (none attached, or not three's common
+   * Renderer).
+   */
+  measured: MeasuredMemory | null;
   estimated: true;
+}
+
+/** `renderer.info.memory` as three r186 counts it. */
+export interface MeasuredMemory {
+  /** `textures` and `texturesSize` (Info._getTextureMemorySize: a compressed texture counts 1 byte). */
+  textures: { count: number; bytes: number };
+  /** `geometries`, and `attributesSize + indexAttributesSize`: the vertex and index buffers three uploaded. */
+  geometries: { count: number; bytes: number };
+  /** `renderTargets`. */
+  renderTargets: { count: number };
+  /** `total`: textures, every attribute buffer, uniform and read-back buffers, and program source lengths. */
+  bytes: number;
 }
 
 export type HintCategory = 'drawCalls' | 'overdraw' | 'skinning' | 'lighting' | 'js' | 'memory';
@@ -189,7 +207,7 @@ export function emptySections(): FrameSections {
     skinning: { submissions: 0, vertices: 0, bones: 0, skeletons: 0, maxBones: 0, morphTargets: 0, vatInstances: 0, vatVertices: 0 },
     lighting: { lights: { directional: 0, point: 0, spot: 0, hemisphere: 0, ambient: 0, other: 0 }, shadowLights: 0, shadowPasses: 0, shadowCasters: 0, shadowTexels: 0, shadowSubmissions: 0 },
     js: { renderMs: 0, ledgerMs: 0, frameMs: 0, objects: 0, autoUpdatedMatrices: 0, hiddenOriginals: 0, skipped: 0 },
-    memory: { textures: { count: 0, bytes: 0 }, geometries: { count: 0, bytes: 0 }, renderTargets: { count: 0, bytes: 0 }, unreferenced: { geometries: 0, textures: 0 }, chunks: { total: 0, resident: 0 }, estimated: true },
+    memory: { textures: { count: 0, bytes: 0 }, geometries: { count: 0, bytes: 0 }, renderTargets: { count: 0, bytes: 0 }, unreferenced: { geometries: 0, textures: 0 }, chunks: { total: 0, resident: 0 }, measured: null, estimated: true },
     hints: [],
   };
 }

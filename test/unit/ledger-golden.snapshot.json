@@ -58,7 +58,7 @@
     "memory": {
       "textures": {
         "count": 2,
-        "bytes": 320
+        "bytes": 272
       },
       "geometries": {
         "count": 7,
@@ -76,6 +76,7 @@
         "total": 0,
         "resident": 0
       },
+      "measured": null,
       "estimated": true
     },
     "hints": [
@@ -351,7 +352,7 @@
     "memory": {
       "textures": {
         "count": 2,
-        "bytes": 320
+        "bytes": 272
       },
       "geometries": {
         "count": 7,
@@ -369,6 +370,7 @@
         "total": 0,
         "resident": 0
       },
+      "measured": null,
       "estimated": true
     },
     "hints": [
@@ -644,7 +646,7 @@
     "memory": {
       "textures": {
         "count": 2,
-        "bytes": 320
+        "bytes": 272
       },
       "geometries": {
         "count": 7,
@@ -662,6 +664,7 @@
         "total": 0,
         "resident": 0
       },
+      "measured": null,
       "estimated": true
     },
     "hints": [

@@ -191,6 +191,15 @@ export function disposeOverdraw(renderer: object): void {
   state.sprite.dispose();
 }
 
+/**
+ * The count target `measureOverdraw` keeps for this renderer: null before the first measurement and after
+ * `disposeOverdraw(renderer)`. The renderer holds its texture while nothing in the scene reaches it, so the ledger's
+ * memory estimate allows it.
+ */
+export function overdrawTargetOf(renderer: object): RenderTarget | null {
+  return states.get(renderer)?.target ?? null;
+}
+
 function stateOf(renderer: OverdrawRenderer): CountState {
   let state = states.get(renderer);
   if (!state) {

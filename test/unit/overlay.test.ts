@@ -54,7 +54,7 @@ describe('formatOverlay v3', () => {
     f.skinning = { submissions: 2, vertices: 6400, bones: 44, skeletons: 1, maxBones: 44, morphTargets: 0, vatInstances: 0, vatVertices: 0 };
     f.lighting = { lights: { directional: 1, point: 0, spot: 0, hemisphere: 1, ambient: 0, other: 0 }, shadowLights: 1, shadowPasses: 1, shadowCasters: 20, shadowTexels: 1_048_576, shadowSubmissions: 20 };
     f.js = { renderMs: 2.4, ledgerMs: 0.3, frameMs: 16.7, objects: 512, autoUpdatedMatrices: 12, hiddenOriginals: 0, skipped: 0 };
-    f.memory = { textures: { count: 8, bytes: 20 * 1024 * 1024 }, geometries: { count: 30, bytes: 3 * 1024 * 1024 }, renderTargets: { count: 2, bytes: 5 * 1024 * 1024 }, unreferenced: { geometries: 0, textures: 0 }, chunks: { total: 0, resident: 0 }, estimated: true };
+    f.memory = { textures: { count: 8, bytes: 20 * 1024 * 1024 }, geometries: { count: 30, bytes: 3 * 1024 * 1024 }, renderTargets: { count: 2, bytes: 5 * 1024 * 1024 }, unreferenced: { geometries: 0, textures: 0 }, chunks: { total: 0, resident: 0 }, measured: null, estimated: true };
     f.hints = [{ category: 'lighting', severity: 'warn', code: 'shadow-texels', message: 'too many shadow texels', objects: [] }, { category: 'js', severity: 'info', code: 'static-auto-update', message: '3 static objects auto-update', objects: ['a'] }];
     const lines = formatOverlay(f, 30);
     expect(lines[0]).toBe('threeforge webgpu phone-mid  27 / 30 submissions  PASS');
