@@ -441,8 +441,15 @@ batch) stays built from them. Three ways to react to it:
 - `dependentsOf(material)` counts how many other registered materials currently resolve to `material` as their
   canonical (a live scan of `records`, never cached) — the check `forget()`'s doc comment above calls for.
 
-Neither `invalidate` nor `forget` is wired into disposal yet — `World.decompile()` and `ResourceTracker` start
-calling `forget()` (checking `dependentsOf()` first) in a later phase.
+`World.decompile()` and `ResourceTracker.release()` both call `forget()` for the materials they release, so the
+registry's records stop keeping a material nothing references alive: the clones a compile created (batches,
+instanced groups, a baked group's tints, the occlusion proxies and the sprite batches) and, in the tracker, a
+registered material no other owner still holds. Both forget the materials merged into a canonical before the
+canonical itself, and both keep a canonical another registered material still resolves to — the tracker leaves it
+registered, and `decompile()` leaves it registered *and* undisposed, since every mesh drawn with that duplicate
+still renders through this exact object. Such a canonical is not revisited when its last dependent is released
+later; releasing it is then the app's own call (`dependentsOf`). The tracker still never disposes a material the
+registry knows.
 
 ## 6. Tags and classification
 
@@ -558,7 +565,11 @@ a threeforge transparent batch shares the main pass with another transparent sub
 - **BVH culling** (`attachBvhCulling`): a `bvh.js` tree of instance boxes replaces `BatchedMesh`'s linear
   per-instance test. The hook mirrors three's own `onBeforeRender` (fills `_multiDrawStarts/Counts`, the indirect
   texture) and is prepended with `prependRenderHook`, never overwriting the object's hook; hooks are marked with
-  `FORGE_HOOK`. The handle offers `move(id)`, `insert(id)`, `remove(id)`, `detach()`.
+  `FORGE_HOOK`. The handle offers `move(id)`, `insert(id)`, `remove(id)`, `detach()` and reports its `margin`: 0 for
+  a batch of statics, and for one carrying batch-synced movers the largest extent a mover has in the scene's space,
+  so a mover's leaf is left where it is while its new box still fits inside the enlarged one instead of being
+  refitted on every sync. A margin never changes what is drawn: a BVH candidate still has to pass three's own
+  bounding-sphere test, so a wider box only offers more candidates.
 - **Instancing** (`createCulledInstancedMesh`): master matrices and colours are kept aside; every frame the visible
   instances are compacted to the front of `instanceMatrix`/`instanceColor` and `count` is set, so culled instances
   cost nothing. LOD levels are separate InstancedMeshes chosen by distance. Handle: `setMatrixAt` (a master matrix, in
@@ -568,7 +579,9 @@ a threeforge transparent batch shares the main pass with another transparent sub
   culling), per-cell shadow casting and a natural unit for streaming.
 - **LOD** (`generateLods(geometry, { ratios, error, lockBorder })`, `prepareLods(root, options)`, `lodsOf`): meshoptimizer
   `simplify` (with `simplifySloppy` fallback), welding non-indexed meshes first; levels are extra geometry ranges in
-  the batch or extra InstancedMeshes, picked by `levelFor(distance, distances)`.
+  the batch or extra InstancedMeshes, picked by `levelFor(distance, distances)`. `disposeLods(geometry)` disposes the
+  levels attached to a geometry and removes them, returning how many: the same levels outlive any one compile and are
+  shared by every mesh holding that geometry, so threeforge never disposes them itself — `decompile()` first.
 - **Nested passes** (shadow maps, reflections, portals): three renders them from inside another render, a shadow map
   from the first `receiveShadow` object's draw. Every material of a batch reads one index texture; on WebGPU its
   upload lands at once while a pass is submitted only when it ends, and on WebGL that receiving batch draws right
