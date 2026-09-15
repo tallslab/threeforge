@@ -284,7 +284,10 @@ slot set: the batch replaces position and scale nodes and draws object-dependent
    receiveShadow (+ chunk cell)**. Per group: geometry repeated at least `instanceThreshold` times in an opaque group
    becomes a compacted `InstancedMesh` per geometry; the rest becomes one `BatchedMesh` (or, with `bake`, one baked
    `Mesh`); a group of one mesh stays a mesh with the canonical material (`unique-material`). Batches use the
-   canonical material itself when every instance is white, else a white clone with per-instance colour.
+   canonical material itself when every instance is white, else a white clone with per-instance colour. The clone
+   (`cloneMaterial`, also used for a baked group's vertex-colour material) gets back what three's `clone()` drops:
+   every function assigned to the instance (`onBeforeCompile`, `customProgramCacheKey`, `onBeforeRender`, a node
+   material's `setup*` …), a copy of custom `defines`, and `alphaTest` (lost on the `NodeMaterial.copy` path).
    Non-indexed geometries get an index on a clone (`ensureIndexed`); indices promote to Uint32 as needed.
    Instance matrices, instanced masters and baked vertices are written in the scene's space (see scene space below).
 5. Attach BVH culling to every batch (`culling: 'bvh'`), with LOD ranges when `lod` is set.
@@ -643,9 +646,15 @@ is carried and compared by the weld):
       non-VSM shadow maps draw a front-side material's back faces (`WebGLShadowMap.js`, the shadow override in
       `renderers/common/Renderer.js`), so a seam face is the nearest caster for the neighbouring module's face turned
       away from the light, which a toon ramp still lights at 0.7 × light × shadow. A shadow-casting static keeps its
-      seam faces;
+      seam faces. A rebake (hiding or showing a module) counts a module as casting when its original or the baked mesh
+      casts; faces removed at compile stay removed, so to change what the bake removes after changing `castShadow` on
+      the originals or on the baked mesh, `decompile()` and `compile()` again;
    5. every module involved is opaque, by an allowlist of three's default material hooks (`BakeEntry.opaque`, set by
-      `bakeEntriesOf`): not transparent; normal or no blending; no `alphaTest`, `alphaHash`, `alphaToCoverage` or
+      `bakeEntriesOf`): exactly one of three r186's 35 material classes (`isBuiltInMaterial`: the 18 of
+      `src/materials/Materials.js` and the 17 of `src/materials/nodes/NodeMaterials.js`; a subclass fails, since an
+      overridden method such as a node material's `setup*` builds the shader and can discard); no function assigned to
+      the instance (`hasOwnFunctions`: no instance `onBeforeRender`, `setup`, `setupOutput` …); not transparent; normal
+      or no blending; no `alphaTest`, `alphaHash`, `alphaToCoverage` or
       `transmission`; not a `ShaderMaterial`; every node slot empty (every `*Node` property, such as `colorNode`,
       `opacityNode`, `outputNode`, `positionNode` or `fragmentNode`, and any other own property holding a node, is
       null, because `Discard()` can sit in any of them: node-material statics authored with custom nodes keep all their
@@ -653,9 +662,8 @@ is carried and compared by the weld):
       node material); `defines` holds only three's material defines (`STANDARD`, `PHYSICAL`, `TOON`, `MATCAP`); no
       `displacementMap`, material `clippingPlanes` or `polygonOffset`; `depthFunc` is `LessEqualDepth`; depth write and
       depth test on; no `wireframe` or `stencilWrite`. Renderer-level clipping (`renderer.clippingPlanes`) is outside
-      what the bake can see. A rebake keeps the decision made at bake time and requires the current material to pass
-      too, because a tinted group's vertex-colour clone loses what `copy()` does not carry (`MeshStandardMaterial`
-      resets `defines`; an instance `onBeforeCompile` is not copied).
+      what the bake can see. A rebake keeps the decision made at bake time and requires the current material (for a
+      tinted group, its vertex-colour clone) to pass too, so a rebake never removes more than the bake allowed.
 
    Every other coincident, opposite pair stays and is counted in `keptCoincidentFaces` (only faces the bake does not
    remove otherwise, so a kept face that is later buried is not counted): back-to-back sign cards, a floor lying on a
@@ -670,7 +678,8 @@ is carried and compared by the weld):
 4. **Buried faces** (opt-in `removeBuried`): 24 rays over the front hemisphere from each face, cast against a BVH of
    the group's opaque faces of front-side or double-sided modules (three-mesh-bvh), counting only hits on a triangle's
    back side: a viewer beyond the hit, looking back along the ray, then sees that triangle drawn (a front-side card
-   facing the face shows such a viewer its culled back, so it blocks nothing). The face is buried only if every ray is
+   facing the face shows such a viewer its culled back, so it blocks nothing; a face pressed against a neighbouring
+   solid's front face is buried only when that solid's far side is within `distance`). The face is buried only if every ray is
    blocked within `distance` measured along the face normal (default 0.1 units): solid right in front of it. Only faces
    of opaque, front-side modules that cast no shadow are removed; room interiors and open backsides survive; back-side
    faces never block a ray (a back-side shell draws its far wall behind whatever is inside it).

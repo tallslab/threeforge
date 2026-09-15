@@ -165,7 +165,8 @@ inspectable:
 - `bake: { removeBuried: true }` (off by default) also drops faces with solid geometry right in front of them:
   every sampled ray from the face must be blocked within `distance` (default 0.1 units along the normal), so
   room interiors and open backsides survive; only faces of opaque, front-side modules that cast no shadow are
-  removed, and only the back side of an opaque front-side or double-sided face blocks a ray.
+  removed, and only the back side of an opaque front-side or double-sided face blocks a ray (a face pressed against
+  a neighbouring solid's front face is buried only when that solid's far side is within `distance`).
 - `mesh.userData.forgeBake = false` passes a module through untouched.
 - The compile report's `bake` block counts seams, coincident faces kept (`keptCoincidentFaces`), duplicates, buried
   faces and welded vertices per run, and
