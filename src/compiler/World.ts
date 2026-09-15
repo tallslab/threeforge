@@ -10,6 +10,7 @@ import { freezableObjects } from './freeze.js';
 import { buildSpriteBatch, type SpriteBatch } from './spriteBatch.js';
 import { groupSprites } from './sprites.js';
 import { attachBvhCulling, prependAfterRenderHook, prependRenderHook, type CullingHandle, type NestedPassPolicy } from './culling.js';
+import { PassTracker } from './passTracker.js';
 
 /** Hidden originals live on this layer: invisible to default cameras and default raycasters, matrices still valid. */
 export const FORGE_HIDDEN_LAYER = 31;
@@ -45,8 +46,13 @@ export interface WorldOptions {
   /** Clips that will drive this scene (e.g. `gltf.animations`), or `{ root, clips }` per animated character. */
   animations?: AnimationSource[];
   /**
-   * Culling for nested render passes (reflections, portals). `auto` (default) is `reuse-main` on the WebGPU
-   * backend, where a second instance-list change per frame is not picked up by the main pass, and `per-pass` on WebGL.
+   * Culling of batches in render passes nested in another render of the scene (shadow maps, reflections, portals).
+   * A batch an enclosing pass has already culled keeps that pass's index rows as a stable prefix under either policy:
+   * the nested pass zeroes the rows its camera does not need and appends the ones it lacks (see `attachBvhCulling`).
+   * The policy decides a batch no enclosing pass has culled yet: `per-pass` culls it for the nested camera,
+   * `reuse-main` keeps the rows of its last outermost-render cull and appends. Compacted instanced meshes still draw
+   * the main camera's list in nested passes under `reuse-main`. `auto` (default) is `reuse-main` on the WebGPU
+   * backend and `per-pass` on WebGL.
    */
   nestedPasses?: NestedPassPolicy | 'auto';
   /** `canonical` (default): meshes left unbatched get the registry's canonical material; `keep`: materials are left alone. */
@@ -208,8 +214,8 @@ export class World {
   private readonly animations: AnimationSource[];
   private readonly nestedPassesOption: NestedPassPolicy | 'auto';
   private readonly materialsMode: 'canonical' | 'keep';
-  private _mainCamera: Camera | null = null;
-  private renderDepth = 0;
+  /** Follows render nesting through the scene hooks: the main camera, and which passes are open (culling). */
+  private readonly passes = new PassTracker();
   private sceneHookRestores: (() => void)[] = [];
   private occluders: OcclusionEntry[] = [];
   private occlusionRestores: (() => void)[] = [];
@@ -255,9 +261,9 @@ export class World {
     this.freezeStatics = options.freeze ?? true;
   }
 
-  /** The camera of the outermost render in the current or last frame (tracked once compiled with `reuse-main`). */
+  /** The camera of the outermost render in the current or last frame (tracked through the scene hooks once compiled). */
   get mainCamera(): Camera | null {
-    return this._mainCamera;
+    return this.passes.mainCamera;
   }
 
   get instancedMeshes(): readonly InstancedMesh[] {
@@ -325,21 +331,11 @@ export class World {
     const coordinateSystem = options.coordinateSystem ?? WebGLCoordinateSystem;
     const nestedPasses: NestedPassPolicy =
       this.nestedPassesOption === 'auto' ? (coordinateSystem === WebGPUCoordinateSystem ? 'reuse-main' : 'per-pass') : this.nestedPassesOption;
-    const mainCamera = (): Camera | null => this._mainCamera;
-    // Scene hooks bracket every render() call; depth 0 is the outermost render and its camera is the main camera.
-    // `reuse-main` culls batches for it only; sprite batches always sync for it only (see below), so the hooks
-    // are installed whenever either needs them.
-    if (nestedPasses === 'reuse-main' || this.spriteMode === 'batch') {
-      this.sceneHookRestores.push(
-        prependRenderHook(this.scene, (_renderer, _scene, camera) => {
-          if (this.renderDepth === 0) this._mainCamera = camera;
-          this.renderDepth++;
-        }),
-        prependAfterRenderHook(this.scene, () => {
-          this.renderDepth = Math.max(0, this.renderDepth - 1);
-        }),
-      );
-    }
+    const mainCamera = (): Camera | null => this.passes.mainCamera;
+    // The scene hooks bracket every render() call, nested ones included: the tracker gives the batch culling the
+    // depth of the current pass and which passes are still open, the main camera to instanced meshes and sprite
+    // batches (which sync for it only, see below).
+    this.sceneHookRestores.push(this.passes.install(this.scene));
     const classifications = classify(this.scene, { policy: this.policy, animations: this.animations });
     const before = {
       meshes: classifications.length,
@@ -369,7 +365,7 @@ export class World {
       for (const batch of this.batches) {
         const geometryIds = result.lodGeometryIds.get(batch);
         const lod = this.lod && geometryIds ? { distances: this.lod.distances, geometryIds } : undefined;
-        this.cullingHandles.set(batch, attachBvhCulling(batch, coordinateSystem, { nestedPasses, mainCamera, ...(lod ? { lod } : {}) }));
+        this.cullingHandles.set(batch, attachBvhCulling(batch, coordinateSystem, { nestedPasses, passes: this.passes, ...(lod ? { lod } : {}) }));
       }
     }
     for (const [mesh, rule] of syncRule) if (rule === null && result.slots.has(mesh)) this.syncedSet.add(mesh);
@@ -394,7 +390,7 @@ export class World {
       // One sync per frame, for the main camera: three uploads the node-bound instance attributes once per frame,
       // so a second fill for a nested pass (a reflection) would be what the main pass draws. Nested passes draw the
       // main camera's list instead, on both backends.
-      const sync = (camera: Camera): boolean => this._mainCamera === null || camera === this._mainCamera;
+      const sync = (camera: Camera): boolean => this.passes.mainCamera === null || camera === this.passes.mainCamera;
       grouped.groups.forEach((group, i) => {
         const batch = buildSpriteBatch(group, i, { sync, root: this.scene });
         this.scene.add(batch.mesh);
@@ -653,8 +649,7 @@ export class World {
     if (!this.compiled) return;
     for (const restore of this.sceneHookRestores.reverse()) restore();
     this.sceneHookRestores = [];
-    this._mainCamera = null;
-    this.renderDepth = 0;
+    this.passes.reset();
     for (const restore of this.occlusionRestores) restore();
     this.occlusionRestores = [];
     for (const { proxy, targets } of this.occluders) {
