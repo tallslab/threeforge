@@ -107,8 +107,10 @@ Keys are computed at registration; a material mutated later is not re-keyed.
   targets' `visible` for the next frame. It does so in the outermost render only: nested passes never change it.
   Query results resolve asynchronously, two renders late at best, so a reveal can pop. A query cannot see its target
   from inside the box or past a near plane that cuts the box, so for such a render the proxy's `onBeforeRender` turns
-  its `occlusionTest` off (no query, so no late answer) and the hook shows the targets. Batches holding batch-synced
-  movers get no proxy. Works on both backends (WebGL `ANY_SAMPLES_PASSED`, WebGPU query sets). Cost: one
+  its `occlusionTest` off (no query, so no late answer) and the hook shows the targets. `warmup()` issues no query
+  either: its 1×1 scissor would make every query count nothing. Batches holding batch-synced movers get no proxy
+  (`report.occlusion.skippedSynced` counts them). One outermost camera per frame is assumed. Works on both backends
+  (WebGL `ANY_SAMPLES_PASSED`, WebGPU query sets). Cost: one
   cheap submission per target, reported as `occlusion-proxy`; it pays when targets are heavy, so pair it with a
   `chunkSize` that keeps chunks large. Measured: naive scene chunked at 40 units with a wall over half the field,
   60 batch submissions become 28. Per-instance occlusion is not possible; level meshes share one proxy.

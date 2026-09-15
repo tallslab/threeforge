@@ -295,7 +295,7 @@ and `custom-hook`.
    remaining meshes (`materials: 'canonical'`; `'keep'` leaves each mesh's own instance).
 9. Return the `CompileReport`: `before`, `after { batches, instanced, baked, meshes }`, `bake` summary, `groups[]`
    (kind, chunk, lods, program and variant hashes, instances, geometries, transparency, shadow flags, bake report),
-   `skipped[]` with rules, registry stats, culling mode, `synced`, `lod`, `occlusion`, `nestedPasses`.
+   `skipped[]` with rules, registry stats, culling mode, `synced`, `lod`, `occlusion` (`{ proxies, skippedSynced }`), `nestedPasses`.
 
 ### Options
 
@@ -393,12 +393,25 @@ a threeforge transparent batch shares the main pass with another transparent sub
   bounding box; `markDirty` fits it again (its centre moved, its corners rewritten in place) whenever it recomputes
   those bounds.
   - **Backends and latency.** Both backends run the queries (WebGL2 `ANY_SAMPLES_PASSED`, WebGPU occlusion query
-    sets), and both answer late. three reads a render's results back after the next render of the same render context
-    ends, then publishes them asynchronously: WebGPU through `mapAsync`, WebGL by polling `QUERY_RESULT_AVAILABLE`
-    every animation frame. So `isOccluded()` answers for a render at least two renders back, with no upper bound, and
-    a new answer replaces the old one only after a render that issued queries.
+    sets), and both answer late, per render context.
+    - **When three reads back.** At the end of a render whose list counted a query, three reads back the results of
+      the previous such render. That includes a render whose only counted proxy was at the camera and issued none.
+    - **When it publishes.** WebGL checks `QUERY_RESULT_AVAILABLE` synchronously at `finishRender`: it publishes at
+      once when the results are ready, and polls by `requestAnimationFrame` only when they are not. WebGPU publishes
+      after `mapAsync` resolves.
+    - **What follows.** `isOccluded()` answers for a render at least two renders back, with no upper bound. A render
+      whose list counts no query publishes nothing.
   - **Only the outermost render decides.** The proxy hooks act only in the outermost render of the scene
     (`PassTracker` depth 1). A shadow map, a reflection or a portal that draws a proxy never shows or hides a target.
+    - **Rendered without its own hooks.** The scene can be drawn without its hooks, as a child of another root passed
+      to `render()` (depth 0). Its proxies then issue no query and show their targets. Their `occlusionTest` comes
+      back in a microtask, once that `render()` call has returned.
+  - **One outermost camera per frame.** Occlusion assumes the scene has one outermost render per frame. A second one
+    with another camera also sets the shared `target.visible` from its own answers. Examples: a rear-view mirror or a
+    minimap into its own `RenderTarget`, or split screen. Drawn to the same target, it also shares the render context,
+    so the answers mix. Targets visible to the main camera can flicker.
+  - **Warm-up.** `world.warmup()` issues no occlusion query, in either mode. Its frame is scissored to one pixel, so
+    every query would count no samples and, once published, hide visible targets.
   - **Camera at the box.** A query cannot see the target when the camera is inside the box, because every face is
     back-facing. It also misses when the near plane cuts into the box, because a front face in front of the near
     plane is clipped. So in the outermost render the proxy issues no query (its `occlusionTest` is off until that
@@ -407,10 +420,12 @@ a threeforge transparent batch shares the main pass with another transparent sub
     - the bounding box of the near-plane rectangle meets the box (a wide field of view, an orthographic near plane).
 
     With no query issued, no late answer can hide the target after the camera leaves.
-  - **Batch-synced movers.** A batch or instanced group that holds a `dynamics: 'batch-sync'` mover gets no proxy.
-    A mover can leave the compile-time box, and while the target is hidden three never calls the target's render hook,
-    where the sync runs, so nothing could grow the box in time. `report.occlusion.proxies` counts the proxies
-    installed.
+  - **Batch-synced movers.** A batch or instanced group that holds a `dynamics: 'batch-sync'` mover gets no proxy
+    (these targets skip whole-object frustum culling instead).
+    - **Why.** A mover can leave the compile-time box. While the target is hidden, three never calls the target's
+      render hook, where the sync runs, so nothing could grow the box in time.
+    - **Report fields.** `report.occlusion.proxies` counts the proxies installed. `report.occlusion.skippedSynced`
+      counts the batches and instanced groups skipped for synced movers, which is the cost of this rule.
   - **Mirrored scenes need nothing.** three flips a mesh's front face when its world matrix mirrors, and the proxy's
     vertices mirror with it, so the `FrontSide` proxy still rasterises the faces toward the eye.
 
@@ -429,7 +444,8 @@ restores layers, matrices, materials and parent order, and allows `compile()` ag
 renders one real frame under a 1×1 scissor: the only way in three r186 to get exactly the pipelines the first frame
 uses. `async` runs `renderer.compileAsync()` (yields between objects) and then disposes and rebuilds the materials
 three compiles wrong that way (transparent double-sided and transmissive ones; see section 13). Result:
-`{ mode, textures, repaired }`.
+`{ mode, textures, repaired }`. Neither mode issues occlusion queries: under the 1×1 scissor every proxy would report
+occluded (see Occlusion).
 
 ### Overdraw modules: sprite batching, ParticleBudget, ResolutionScaler
 
