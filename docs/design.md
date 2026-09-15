@@ -104,8 +104,11 @@ Keys are computed at registration; a material mutated later is not re-keyed.
   (`renderOrder 1`) with colour and depth writes off and `occlusionTest` on. The proxy's own `onAfterRender`
   hook asks `renderer.isOccluded(proxy)`, which must run inside `renderObject()` while the main render context is
   current (the scene-level hook fires after three restores the outer context and sees nothing), and toggles the
-  targets' `visible` for the next frame. Query results resolve asynchronously, so there is at least one frame of
-  latency and a reveal can pop. Works on both backends (WebGL `ANY_SAMPLES_PASSED`, WebGPU query sets). Cost: one
+  targets' `visible` for the next frame. It does so in the outermost render only: nested passes never change it.
+  Query results resolve asynchronously, two renders late at best, so a reveal can pop. A query cannot see its target
+  from inside the box or past a near plane that cuts the box, so for such a render the proxy's `onBeforeRender` turns
+  its `occlusionTest` off (no query, so no late answer) and the hook shows the targets. Batches holding batch-synced
+  movers get no proxy. Works on both backends (WebGL `ANY_SAMPLES_PASSED`, WebGPU query sets). Cost: one
   cheap submission per target, reported as `occlusion-proxy`; it pays when targets are heavy, so pair it with a
   `chunkSize` that keeps chunks large. Measured: naive scene chunked at 40 units with a wall over half the field,
   60 batch submissions become 28. Per-instance occlusion is not possible; level meshes share one proxy.
