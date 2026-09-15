@@ -309,4 +309,97 @@ describe('World.markDirty with originals: "detach"', () => {
     const expectedInstanced = expectedDetachedWorld(nestedInstanced[1]!, group);
     drawnInstanced!.elements.forEach((e, i) => expect(e).toBeCloseTo(expectedInstanced.elements[i]!, 3));
   });
+
+  it('keeps a detached original’s composed world matrix through an unforced updateMatrixWorld(), so a detached child composed from it lands right', () => {
+    const scene = new Scene();
+    scene.position.set(10, -3, 4);
+    scene.scale.set(2, 1, 3);
+    // App-frozen statics (matrixAutoUpdate off), each holding a static child: both levels are batched and detached.
+    const parents = [0, 1].map((i) => {
+      const m = tag.static(new Mesh(box, solid(0x223344)));
+      m.name = `parent-${i}`;
+      m.position.set(i * 4, 0, 0);
+      m.matrixAutoUpdate = false;
+      m.updateMatrix();
+      scene.add(m);
+      return m;
+    });
+    const children = parents.map((p, i) => {
+      const c = tag.static(new Mesh(cylinder, solid(0x556677)));
+      c.name = `child-${i}`;
+      c.position.set(0, 2, 0);
+      p.add(c);
+      return c;
+    });
+    scene.updateMatrixWorld(true);
+    const world = new World(scene, { originals: 'detach' });
+    world.compile();
+    const parent = parents[0]!;
+    const child = children[0]!;
+    expect([parent.parent, child.parent]).toEqual([null, null]);
+
+    parent.position.x += 5;
+    world.markDirty(parent);
+    const expectedParent = new Matrix4().multiplyMatrices(scene.matrixWorld, parent.matrix);
+    parent.updateMatrixWorld(); // unforced, on the parentless original
+    parent.matrixWorld.elements.forEach((e, i) => expect(e, `parent matrixWorld[${i}]`).toBeCloseTo(expectedParent.elements[i]!, 5));
+
+    child.position.z += 1;
+    world.markDirty(child); // composed from the detached parent's matrixWorld
+    scene.updateMatrixWorld();
+    const slot = world.slotOf(child)!;
+    const batch = slot.batch as BatchedMesh;
+    const row = new Matrix4();
+    batch.getMatrixAt(slot.instanceId, row);
+    const drawn = new Matrix4().multiplyMatrices(batch.matrixWorld, row);
+    child.updateMatrix();
+    const expected = new Matrix4().multiplyMatrices(expectedParent, child.matrix);
+    drawn.elements.forEach((e, i) => expect(e, `child drawn[${i}]`).toBeCloseTo(expected.elements[i]!, 4));
+  });
+
+  it('rebakes a detached, nested, baked original at its former scene-relative place, after markDirty on the module and on its former parent', () => {
+    const scene = new Scene();
+    scene.position.set(10, -3, 4);
+    scene.scale.set(2, 1, 3);
+    const group = new Group();
+    group.position.set(1, 2, -1);
+    group.rotation.y = 0.4;
+    scene.add(group);
+    const modules = [0, 1, 2].map((i) => {
+      const m = tag.static(new Mesh(box, solid(0x808080)));
+      m.name = `module-${i}`;
+      m.position.x = i;
+      group.add(m);
+      return m;
+    });
+    scene.updateMatrixWorld(true);
+    const world = new World(scene, { originals: 'detach', bake: true });
+    world.compile();
+    const baked = world.bakedMeshes[0]!;
+    expect(modules[0]!.parent).toBeNull();
+
+    const expectPlaced = (label: string): void => {
+      scene.updateMatrixWorld();
+      const index = baked.geometry.index!;
+      const position = baked.geometry.getAttribute('position');
+      const drawn = new Box3();
+      const v = new Vector3();
+      for (let t = 0; t < index.count / 3; t++) {
+        if (world.resolve({ object: baked, faceIndex: t } as never) !== modules[0]) continue;
+        for (let k = 0; k < 3; k++) drawn.expandByPoint(v.fromBufferAttribute(position, index.getX(t * 3 + k)).applyMatrix4(baked.matrixWorld));
+      }
+      modules[0]!.updateMatrix();
+      const expected = new Box3().setFromBufferAttribute(box.getAttribute('position') as never).applyMatrix4(new Matrix4().multiplyMatrices(group.matrixWorld, modules[0]!.matrix));
+      expect(drawn.isEmpty(), `${label}: module 0 has faces in the bake`).toBe(false);
+      for (const corner of ['min', 'max'] as const) {
+        for (const axis of ['x', 'y', 'z'] as const) expect(drawn[corner][axis], `${label}: ${corner}.${axis}`).toBeCloseTo(expected[corner][axis], 4);
+      }
+    };
+    modules[0]!.position.y += 2;
+    expect(world.markDirty(modules[0]!)).toBe(1);
+    expectPlaced('markDirty on the module');
+    group.position.x += 3;
+    expect(world.markDirty(group)).toBe(3);
+    expectPlaced('markDirty on the former parent');
+  });
 });

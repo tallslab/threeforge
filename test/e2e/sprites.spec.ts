@@ -66,3 +66,59 @@ test('the bossfight: health bars and hit markers become two batches among the ef
   expect(r.unattributed).toBe(0);
   expect(r.particles).toBeGreaterThan(7000);
 });
+
+for (const mirrored of [false, true] as const) {
+  test(`sprites with an alphaMap compile at parity in ${mirrored ? 'a mirrored' : 'an unmirrored'} scene: the batch material takes every field of the sprites' material`, async ({ forge }) => {
+    test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+    await forge.open('empty');
+    await forge.page.evaluate((mirror) => {
+      const f = window.__forge;
+      const T = f.three;
+      // A 4x4 checker alpha map: the alpha-tested material cuts half of each quad away, the blended one fades it.
+      const data = new Uint8Array(4 * 4 * 4);
+      for (let y = 0; y < 4; y++) {
+        for (let x = 0; x < 4; x++) {
+          const v = (x + y) % 2 === 0 ? 255 : 40;
+          data.set([v, v, v, 255], (y * 4 + x) * 4);
+        }
+      }
+      const alphaMap = new T.DataTexture(data, 4, 4);
+      alphaMap.magFilter = T.NearestFilter;
+      alphaMap.minFilter = T.NearestFilter;
+      alphaMap.needsUpdate = true;
+      const materials = [
+        new T.SpriteMaterial({ color: 0xff6040, alphaMap, alphaTest: 0.5, transparent: false }),
+        new T.SpriteMaterial({ color: 0x40a0ff, alphaMap, transparent: true, depthWrite: false }),
+      ];
+      for (let x = 0; x < 8; x++) {
+        for (let z = 0; z < 6; z++) {
+          const sprite = new T.Sprite(materials[(x + z) % 2]!);
+          sprite.name = `sprite-${x}-${z}`;
+          sprite.position.set((x - 3.5) * 14, 6, (z - 2.5) * 14);
+          sprite.scale.set(8, 5, 1);
+          f.scene.add(sprite);
+        }
+      }
+      if (mirror) f.scene.scale.x = -1;
+      f.scene.updateMatrixWorld(true);
+    }, mirrored);
+    await settle(forge.page);
+    const before = await forge.page.screenshot({ type: 'png' });
+    const r = await forge.page.evaluate(async () => {
+      const f = window.__forge;
+      const report = f.compile();
+      await f.world.warmup(f.renderer, f.camera);
+      for (let i = 0; i < 3; i++) await f.frameAsync();
+      const frame = await f.frameAsync();
+      return { spriteBatches: report.after.spriteBatches, drawn: frame.byReason['sprite-batch']?.submissions ?? 0, sprites: frame.byReason.sprite?.submissions ?? 0, unattributed: frame.totals.unattributed };
+    });
+    const after = await forge.page.screenshot({ type: 'png' });
+    const diff = pixelDiff(before, after, { threshold: 4 });
+    console.log(`alphaMap sprite grid mirrored=${mirrored} pixel diff ${(diff * 100).toFixed(4)}%`);
+    expect(r.spriteBatches).toBe(2);
+    expect(r.drawn).toBe(2);
+    expect(r.sprites).toBe(0);
+    expect(r.unattributed).toBe(0);
+    expect(diff).toBeLessThan(0.0005);
+  });
+}

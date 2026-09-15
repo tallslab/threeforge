@@ -215,6 +215,27 @@ describe('World with bake', () => {
     expect(boxes.every((b) => b.layers.mask === 1)).toBe(true);
   });
 
+  it("bakeDebug() returns geometry of its own: a rebake and decompile dispose the group's removed faces, never the debug copy", () => {
+    const { scene, boxes } = wall(3);
+    const world = new World(scene, { bake: true });
+    world.compile();
+    const disposed: string[] = [];
+    const debugMesh = (label: string): Mesh => {
+      const mesh = world.bakeDebug().children[0] as Mesh;
+      mesh.geometry.addEventListener('dispose', () => disposed.push(label));
+      return mesh;
+    };
+    const beforeRebake = debugMesh('before rebake');
+    expect(beforeRebake.geometry.index!.count / 3).toBe(8); // two seams
+    world.setVisible(boxes[2]!, false); // rebake: the group's removed faces are replaced and disposed
+    const afterRebake = debugMesh('after rebake');
+    expect(afterRebake.geometry.index!.count / 3).toBe(4);
+    world.decompile(); // disposes the group's removed faces again
+    expect(disposed).toEqual([]);
+    expect(beforeRebake.geometry.index!.count / 3, 'the first copy still holds what it showed').toBe(8);
+    expect(beforeRebake.geometry.getAttribute('position').count).toBeGreaterThan(0);
+  });
+
   it('keeps batch-synced dynamics in a BatchedMesh, never in a bake', () => {
     const { scene, boxes } = wall(3);
     tag.dynamic(boxes[2]!);

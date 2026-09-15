@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `world.decompile()` disposes a batch or instanced material only when the World created it (a white clone for per-instance colour); a registered material the compiler shared because every instance was white was disposed too.
+- New `world.dispose()`: decompiles when compiled (listeners hear `decompile`), removes the occlusion proxies and scene hooks, and drops every `onDirty` listener; a second call does nothing, and `compile`, `markDirty`, `setVisible`, `onDirty` and `warmup` then throw `World is disposed`.
+- `world.bakeDebug()` returns copies of the removed faces; its meshes shared the group's geometry, which a rebake or `decompile()` disposed.
+- Sprite batch materials take every field of the sprites' material through `material.copy()`, plus `alphaTest` by hand; the hand-written copy dropped `alphaMap`, `alphaHash`, `alphaToCoverage`, `vertexColors`, `depthFunc`, stencil, clipping planes, polygon offset, `colorWrite`, `blendColor`/alpha blend factors, `name` and `userData`.
+- Sprite batches built from a node material carry its node slots (colour, opacity, rotation and the rest); its position, scale and vertex nodes are replaced by the batch's own instance placement.
+- `world.warmup({ mode: 'frame' })` issued occlusion queries from proxies a depth-0 render parked earlier in the same task (their queued re-enable ran while `renderAsync` awaited `init()`); it now resumes them first and suspends them with the rest.
+- `world.markDirty()` on a detached original clears `matrixWorldNeedsUpdate` after composing its world matrix, so an unforced `updateMatrixWorld()` on it (with `matrixAutoUpdate` off) keeps that matrix.
+
 - `MaterialRegistry`'s colour key (`colorKey`, and every other `Color`-valued property folded into `variantKey`,
   such as `emissive`, `sheenColor` or the base `Material.blendColor`) is now keyed by exact linear floats
   (`color.r/g/b`) instead of 8-bit sRGB hex: two colours under 1/255 apart, and two HDR colours (a channel > 1)

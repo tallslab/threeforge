@@ -278,7 +278,13 @@ export class World {
    */
   private detachedByParent = new Map<Object3D, Set<Object3D>>();
   private materialSwaps: { mesh: Mesh; material: Material }[] = [];
+  /**
+   * Batch and instanced materials the compiler created (white clones for per-instance colour); `decompile` disposes only
+   * these. A material shared from the registry is the app's and stays usable.
+   */
+  private ownedMaterials = new Set<Material>();
   private compiled = false;
+  private disposed = false;
 
   constructor(scene: Scene, options: WorldOptions = {}) {
     this.scene = scene;
@@ -355,12 +361,16 @@ export class World {
     return this.baked.map((b) => b.mesh);
   }
 
-  /** The faces every bake removed, one unlit red double-sided mesh per group, for inspection. Not added to the scene. */
+  /**
+   * The faces every bake removed, one unlit red double-sided mesh per group, for inspection. Not added to the scene. A
+   * snapshot: each mesh holds a copy of the removed faces as of this call, which a later rebake or `decompile()` does not
+   * touch. The returned group is the caller's: dispose its geometries and materials when done.
+   */
   bakeDebug(): Group {
     const group = new Group();
     group.name = 'forge:bake-debug';
     this.baked.forEach((b, i) => {
-      const mesh = new Mesh(b.removed, new MeshBasicMaterial({ color: 0xff2040, side: DoubleSide, depthTest: false, transparent: true, opacity: 0.85 }));
+      const mesh = new Mesh(b.removed.clone(), new MeshBasicMaterial({ color: 0xff2040, side: DoubleSide, depthTest: false, transparent: true, opacity: 0.85 }));
       mesh.name = `forge:bake-removed:${i}`;
       mesh.renderOrder = 1000;
       group.add(mesh);
@@ -369,6 +379,7 @@ export class World {
   }
 
   compile(options: CompileOptions = {}): CompileReport {
+    this.assertLive();
     if (this.compiled) throw new Error('World is already compiled; call decompile() first.');
     const coordinateSystem = options.coordinateSystem ?? WebGLCoordinateSystem;
     const nestedPasses: NestedPassPolicy = this.nestedPassesOption === 'auto' ? 'per-pass' : this.nestedPassesOption;
@@ -401,6 +412,13 @@ export class World {
     this.baked = result.baked;
     this.slots = result.slots;
     this.originalsByBatch = result.originals;
+    // A batch draws with its group's canonical when every instance is white (the app's registered material, or an
+    // unsupported one the registry kept as is), else with a white clone made here: only the clone is the World's to dispose.
+    for (const target of [...result.batches, ...result.instanced]) {
+      const material = target.material as Material;
+      const shared = (result.originals.get(target) ?? []).some((o) => o.material === material || this.registry.canonicalOf(o.material as Material) === material);
+      if (!shared) this.ownedMaterials.add(material);
+    }
     if (this.cullingMode === 'bvh') {
       for (const batch of this.batches) {
         const geometryIds = result.lodGeometryIds.get(batch);
@@ -604,6 +622,7 @@ export class World {
   /** Show or hide an original mesh, wherever it ended up. A baked module rebakes its group. */
   /** Listen for graph changes that need a new frame (`markDirty`, `setVisible`, `compile`, `decompile`); returns the disposer. */
   onDirty(listener: (event: DirtyEvent) => void): () => void {
+    this.assertLive();
     this.dirtyListeners.add(listener);
     return () => {
       this.dirtyListeners.delete(listener);
@@ -629,6 +648,7 @@ export class World {
    * reaches its detached descendants too, even though they are no longer its children.
    */
   markDirty(object: Object3D): number {
+    this.assertLive();
     let updated = 0;
     const rebakes = new Set<BakedGroup>();
     const batches = new Set<BatchedMesh>();
@@ -662,6 +682,9 @@ export class World {
     const rebuildDetached = (node: Object3D, parentWorld: Matrix4): void => {
       node.updateMatrix();
       node.matrixWorld.multiplyMatrices(parentWorld, node.matrix);
+      // updateMatrix() left the flag set: an unforced updateMatrixWorld() on the parentless node would copy `matrix` over
+      // what was just composed (Object3D.updateMatrixWorld). A node with matrixAutoUpdate on recomposes and sets it again.
+      node.matrixWorldNeedsUpdate = false;
       visitSlot(node);
       const nested = this.detachedByParent.get(node);
       if (nested) for (const child of nested) rebuildDetached(child, node.matrixWorld);
@@ -699,6 +722,7 @@ export class World {
   }
 
   setVisible(original: Mesh, visible: boolean): void {
+    this.assertLive();
     this.emitDirty({ kind: 'setVisible', object: original });
     const slot = this.slots.get(original);
     if (!slot) {
@@ -774,6 +798,11 @@ export class World {
    * transmissive materials (see `WarmupResult.repaired`), so `mode: 'async'` runs it and then repairs those.
    */
   async warmup(renderer: WarmupRenderer, camera: Camera, options: WarmupOptions = {}): Promise<WarmupResult> {
+    this.assertLive();
+    // A proxy parked by a depth-0 render earlier in this task waits for its queued re-enable, which `renderAsync` would let
+    // run (it awaits `init()` before rendering) after the suspension list below was built without it. Resume now, so
+    // the list holds every proxy; the queued call then finds nothing parked.
+    this.resumeParkedProxies();
     const textures = new Set<Texture>();
     const materials = new Set<Material>();
     this.scene.traverse((o) => {
@@ -851,15 +880,16 @@ export class World {
     for (const batch of this.batches) {
       this.cullingHandles.get(batch)?.detach();
       batch.removeFromParent();
-      (batch.material as Material).dispose();
+      if (this.ownedMaterials.has(batch.material as Material)) (batch.material as Material).dispose();
       batch.dispose();
     }
     for (const mesh of this.instanced) {
       (mesh as CulledInstancedMesh).forgeCulling?.detach();
       mesh.removeFromParent();
-      (mesh.material as Material).dispose();
+      if (this.ownedMaterials.has(mesh.material as Material)) (mesh.material as Material).dispose();
       mesh.dispose();
     }
+    this.ownedMaterials = new Set();
     for (const b of this.baked) {
       b.mesh.removeFromParent();
       b.mesh.geometry.dispose();
@@ -897,6 +927,24 @@ export class World {
     this.materialSwaps = [];
     this.compiled = false;
     this.emitDirty({ kind: 'decompile' });
+  }
+
+  /**
+   * Tears the World down for good. Decompiles first when compiled (listeners still hear `decompile`): that uninstalls the
+   * pass tracker's scene hooks, removes and disposes the occlusion proxies (a re-enable a depth-0 render queued finds no
+   * proxy) and disposes what the World created, never a material the app registered. Then every `onDirty` listener is
+   * dropped. The registry and the ledger stay the app's. Calling `dispose()` again, or `decompile()`, does nothing;
+   * `compile`, `markDirty`, `setVisible`, `onDirty` and `warmup` throw.
+   */
+  dispose(): void {
+    if (this.disposed) return;
+    this.decompile();
+    this.dirtyListeners.clear();
+    this.disposed = true;
+  }
+
+  private assertLive(): void {
+    if (this.disposed) throw new Error('World is disposed; create a new World to compile the scene again.');
   }
 
   slotOf(mesh: Mesh): Slot | undefined {

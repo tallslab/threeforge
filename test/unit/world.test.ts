@@ -27,6 +27,7 @@ import {
   FrontSide,
   Matrix3,
   type Camera,
+  type Material,
   type InstancedBufferGeometry,
   type Side,
 } from 'three';
@@ -839,5 +840,95 @@ describe('World materials option', () => {
     new World(scene, { materials: 'keep' }).compile();
     expect(b.material).toBe(materialB);
     expect(a.material).not.toBe(b.material);
+  });
+});
+
+const OWN = (object: object, key: string): boolean => Object.prototype.hasOwnProperty.call(object, key);
+
+describe('World material ownership', () => {
+  /** Counts the `dispose` events three's `Material.dispose()` dispatches, per material. */
+  function disposeCounts(materials: Material[]): Map<Material, number> {
+    const counts = new Map<Material, number>();
+    for (const material of materials) {
+      counts.set(material, 0);
+      material.addEventListener('dispose', () => counts.set(material, counts.get(material)! + 1));
+    }
+    return counts;
+  }
+
+  it('never disposes a registered material the compiler shared with a batch or an instanced group (decompile, dispose); it disposes the clones it made', () => {
+    const registry = new MaterialRegistry();
+    // App code registers its materials. Every instance white: the batch and the instanced group draw with these very objects.
+    const sharedBatch = registry.register(solid(0xffffff, { roughness: 0.3 }));
+    const sharedInstanced = registry.register(solid(0xffffff, { roughness: 0.5 }));
+    const scene = new Scene();
+    const add = (material: Material, geometry: BoxGeometry | DodecahedronGeometry | CylinderGeometry, n: number, z: number): Mesh[] =>
+      Array.from({ length: n }, (_, i) => {
+        const mesh = tag.static(new Mesh(geometry, material));
+        mesh.position.set(i * 2, 0, z);
+        scene.add(mesh);
+        return mesh;
+      });
+    const batchOriginals = add(sharedBatch, box, 2, 0);
+    const instancedOriginals = add(sharedInstanced, dodeca, 4, 4);
+    // Tinted groups: a white clone carries the per-instance colours, owned by the World.
+    const cylinder = new CylinderGeometry(0.4, 0.4, 1, 8);
+    add(registry.register(solid(0xff0000, { roughness: 0.9 })), cylinder, 1, 8);
+    add(registry.register(solid(0x00ff00, { roughness: 0.9 })), cylinder, 1, 10);
+    for (const color of [0x0000ff, 0xffff00]) add(registry.register(solid(color, { roughness: 0.1 })), box, 2, color === 0x0000ff ? 12 : 14);
+    const world = new World(scene, { registry, instanceThreshold: 4 });
+    world.compile();
+    const drawn = [...world.batchedMeshes, ...world.instancedMeshes].map((m) => m.material as Material);
+    expect(world.batchedMeshes.map((b) => b.material)).toContain(sharedBatch);
+    expect(world.instancedMeshes.map((m) => m.material)).toContain(sharedInstanced);
+    const clones = drawn.filter((m) => m !== sharedBatch && m !== sharedInstanced);
+    expect(clones, 'one batch clone and one instanced clone').toHaveLength(2);
+    const counts = disposeCounts([sharedBatch, sharedInstanced, ...clones]);
+
+    world.decompile();
+    expect([counts.get(sharedBatch), counts.get(sharedInstanced)], 'shared materials disposed on decompile').toEqual([0, 0]);
+    expect(clones.map((m) => counts.get(m)! > 0), 'clones disposed on decompile').toEqual([true, true]);
+    expect(batchOriginals.every((m) => m.material === sharedBatch) && instancedOriginals.every((m) => m.material === sharedInstanced)).toBe(true);
+
+    // Still usable: the next compile shares them again, and dispose() leaves them alone too.
+    world.compile();
+    expect(world.batchedMeshes.map((b) => b.material)).toContain(sharedBatch);
+    expect(world.instancedMeshes.map((m) => m.material)).toContain(sharedInstanced);
+    world.dispose();
+    expect([counts.get(sharedBatch), counts.get(sharedInstanced)], 'shared materials disposed on dispose').toEqual([0, 0]);
+  });
+});
+
+describe('World.dispose', () => {
+  it('decompiles first (listeners hear it), clears the dirty listeners, uninstalls the pass tracker hooks, and is safe to call twice', () => {
+    const { scene } = mixedScene();
+    const world = new World(scene);
+    const events: string[] = [];
+    const off = world.onDirty((e) => events.push(e.kind));
+    world.compile();
+    expect(OWN(scene, 'onBeforeRender') && OWN(scene, 'onAfterRender'), 'pass tracker hooks installed').toBe(true);
+    world.dispose();
+    expect(events).toEqual(['compile', 'decompile']);
+    expect(batchesIn(scene)).toHaveLength(0);
+    expect(meshesIn(scene)).toHaveLength(9);
+    expect(OWN(scene, 'onBeforeRender') || OWN(scene, 'onAfterRender'), 'pass tracker hooks removed').toBe(false);
+    expect((world as unknown as { dirtyListeners: Set<unknown> }).dirtyListeners.size).toBe(0);
+    expect(world.mainCamera).toBeNull();
+    world.dispose();
+    world.decompile();
+    off();
+    expect(events).toEqual(['compile', 'decompile']);
+  });
+
+  it('throws a clear error on compile, markDirty, setVisible, onDirty and warmup after dispose', async () => {
+    const { scene, statics } = mixedScene();
+    const world = new World(scene);
+    world.dispose(); // never compiled: nothing to decompile
+    expect(() => world.compile()).toThrow('World is disposed');
+    expect(() => world.markDirty(statics[0]!)).toThrow('World is disposed');
+    expect(() => world.setVisible(statics[0]!, false)).toThrow('World is disposed');
+    expect(() => world.onDirty(() => {})).toThrow('World is disposed');
+    await expect(world.warmup(new FakeRenderer() as never, new PerspectiveCamera())).rejects.toThrow('World is disposed');
+    expect(statics[0]!.visible).toBe(true);
   });
 });

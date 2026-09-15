@@ -50,26 +50,18 @@ export function buildSpriteBatch(group: SpriteGroup, index: number, options: Spr
   scales.setUsage(DynamicDrawUsage);
 
   const source = group.material;
+  // three r186's NodeMaterial.copy takes every enumerable field the batch material also has (Material's, SpriteMaterial's
+  // such as alphaMap, and a node material's node slots), cloning clipping planes. It skips `_alphaTest` and reads setters
+  // only from SpriteNodeMaterial's own prototype, so Material's `alphaTest` accessor is copied by hand. The instances are
+  // then placed by the batch's own position and scale nodes: a source node material's position, scale and vertex nodes
+  // (the last replaces the whole vertex stage) cannot place every instance, so they are not carried. `fitSide()` below
+  // re-fits the side the copy took from the source.
   const material = new SpriteNodeMaterial();
-  material.map = source.map;
-  material.color.copy(source.color);
-  material.opacity = source.opacity;
-  material.transparent = source.transparent;
-  material.blending = source.blending;
-  material.blendSrc = source.blendSrc;
-  material.blendDst = source.blendDst;
-  material.blendEquation = source.blendEquation;
-  material.premultipliedAlpha = source.premultipliedAlpha;
-  material.depthWrite = source.depthWrite;
-  material.depthTest = source.depthTest;
+  material.copy(source as unknown as SpriteNodeMaterial);
   material.alphaTest = source.alphaTest;
-  material.fog = source.fog;
-  material.rotation = source.rotation;
-  material.sizeAttenuation = source.sizeAttenuation;
-  material.toneMapped = source.toneMapped;
-  material.side = source.side;
   material.positionNode = instancedDynamicBufferAttribute(centers, 'vec3');
   material.scaleNode = instancedDynamicBufferAttribute(scales, 'vec2');
+  material.vertexNode = null;
 
   const mesh = new Mesh(geometry, material);
   mesh.name = `forge:sprites:${group.programHash}:${index}`;

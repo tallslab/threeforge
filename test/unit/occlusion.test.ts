@@ -310,6 +310,62 @@ describe('World occlusion with queries as three runs them', () => {
     expect(left.visible, 'hidden again by its own renders').toBe(false);
   });
 
+  it('frame-mode warmup issues no query from a proxy parked by a depth-0 render in the same task: renderAsync yields before its render, which would let the queued re-enable run first', async () => {
+    const scene = twoChunkScene();
+    const world = new World(scene, { chunkSize: 50, occlusion: true });
+    world.compile();
+    scene.updateMatrixWorld();
+    const batches = leftAndRight(scene);
+    const renderer = new QueryRenderer();
+    // warmup's 1x1 scissor discards every fragment: a query issued under it counts no samples.
+    renderer.wall = () => renderer.getScissorTest();
+    const camera = lookFrom(new PerspectiveCamera(60, 2, 0.1, 500), [50, 10, 120], [50, 0, 0]);
+    const root = new Scene();
+    root.add(scene);
+    root.updateMatrixWorld();
+    renderer.render(root, camera); // depth 0: both proxies park and one re-enable is queued
+    root.remove(scene);
+    expect(proxiesIn(scene).map((p) => p.occlusionTest), 'parked by the depth-0 render').toEqual([false, false]);
+    await world.warmup(renderer, camera, { mode: 'frame' }); // same task as the park
+    const outcome = [`${renderer.queries.length} queries in warmup`];
+    for (let frame = 0; frame < 6; frame++) {
+      renderer.render(scene, camera);
+      batches.forEach((batch, i) => {
+        if (!batch.visible) outcome.push(`batch ${i} hidden after frame ${frame}`);
+      });
+    }
+    expect(outcome).toEqual(['0 queries in warmup']);
+    expect(proxiesIn(scene).every((p) => p.occlusionTest), 'proxies on after warmup').toBe(true);
+  });
+
+  it('decompile and dispose leave no proxy, parked query or queued re-enable behind', async () => {
+    for (const teardown of ['decompile', 'dispose'] as const) {
+      const scene = twoChunkScene();
+      const world = new World(scene, { chunkSize: 50, occlusion: true });
+      world.compile();
+      scene.updateMatrixWorld();
+      const proxies = proxiesIn(scene);
+      const renderer = new QueryRenderer();
+      const camera = lookFrom(new PerspectiveCamera(60, 2, 0.1, 500), [50, 10, 120], [50, 0, 0]);
+      const root = new Scene();
+      root.add(scene);
+      renderer.render(root, camera); // parks both proxies and queues their re-enable
+      root.remove(scene);
+      expect(proxies.map((p) => p.occlusionTest), `${teardown}: parked`).toEqual([false, false]);
+      const disposed: Mesh[] = [];
+      for (const proxy of proxies) (proxy.material as Material).addEventListener('dispose', () => disposed.push(proxy));
+      world[teardown]();
+      expect(proxiesIn(scene), `${teardown}: proxies left in the scene`).toHaveLength(0);
+      expect(disposed, `${teardown}: proxy materials disposed`).toHaveLength(2);
+      await Promise.resolve();
+      expect(proxies.map((p) => p.occlusionTest), `${teardown}: the queued re-enable found no proxy`).toEqual([false, false]);
+      const before = renderer.queries.length;
+      renderer.render(scene, camera);
+      expect(renderer.queries.length - before, `${teardown}: queries after teardown`).toBe(0);
+      expect(Object.prototype.hasOwnProperty.call(scene, 'onBeforeRender'), `${teardown}: scene hook left`).toBe(false);
+    }
+  });
+
   it('gives no proxy to a batch holding a batch-synced mover, so a mover that leaves the box stays visible, also when the scene moves', () => {
     const scene = twoChunkScene();
     const mover = tag.dynamic(new Mesh(box, solid(0x336699)));
