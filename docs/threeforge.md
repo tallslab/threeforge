@@ -165,13 +165,18 @@ items?:    per-submission records with ledger.frame({ items: true })
   transparent lists, reads each render back and averages the red channel: fragments per pixel. The count material (a
   `MeshBasicNodeMaterial` with a constant `outputNode`, One/One blending, no depth test or write, one pass) adds exactly
   1 per fragment, so material, vertex, instance and batch colours do not change the count and a batched scene measures
-  like its naive original. A render-object function draws each object with its own material's `side`, `map`, `opacity`
-  and `alphaHash`, and three's override copies `alphaTest`, `alphaMap` and `positionNode`: closed meshes count their
-  front faces, cutouts count their kept texels, animated instances count their animated pose. Not counted: the
+  like its naive original. A render-object function draws each object with its own material's `side`, `map`, `opacity`,
+  `alphaHash`, `opacityNode`, `alphaTestNode` and `maskNode`, and three's override copies `alphaTest`, `alphaMap` and
+  `positionNode`: closed meshes count their front faces, cutouts count their kept texels, animated instances count their
+  animated pose. Sprite materials (a `Sprite`, a World sprite batch) are drawn with a `SpriteNodeMaterial` count material
+  carrying their `rotation`, `sizeAttenuation`, `scaleNode` and `rotationNode`, so they count their billboards. Not
+  carried into the count: `colorNode` alpha, vertex-colour alpha, and vertices a material builds in its class or
+  `vertexNode` (a `PointsNodeMaterial` on a non-`Points` object, Line2-style materials), which count what the count
+  material rasterises from the geometry and `positionNode`. Not counted: the
   background (the target clears to 0), materials with `allowOverride = false` or `colorWrite = false`, and occlusion
   proxies. Every scene and renderer setting it changes is restored before the read-backs are awaited, so frames
   rendered meanwhile are unaffected; attribution pauses for the two count renders only, which never become part of a
-  frame (not even when measured from a render hook). The target and material are kept per renderer until
+  frame (not even when measured from a render hook). The target and count materials are kept per renderer until
   `ledger.detach()` or `disposeOverdraw(renderer)`. Call it on demand.
 - **skinning** sums the main pass's skinned submissions: vertices, bones per unique skeleton (indexed per frame, no
   uuids in the snapshot), the largest bone count, morph targets; `vatInstances` and `vatVertices` count the

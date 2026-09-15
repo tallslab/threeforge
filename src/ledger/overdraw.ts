@@ -1,6 +1,6 @@
 import { AddEquation, Color, CustomBlending, DataUtils, HalfFloatType, OneFactor, RenderTarget, Vector2, type Camera, type Material, type Object3D, type Scene, type Texture } from 'three';
 import { vec4 } from 'three/tsl';
-import { MeshBasicNodeMaterial } from 'three/webgpu';
+import { MeshBasicNodeMaterial, SpriteNodeMaterial, type Node } from 'three/webgpu';
 
 /** Renderer.setRenderObjectFunction's callback: the arguments of Renderer.renderObject. */
 type RenderObjectFunction = (
@@ -55,9 +55,28 @@ export interface OverdrawResult {
 /** What one renderer measures with. */
 interface CountState {
   target: RenderTarget | null;
+  /** The scene's override material during the count renders. */
   material: MeshBasicNodeMaterial;
+  /** Swapped in for each draw of a sprite material, whose quad SpriteNodeMaterial.setupPositionView places. */
+  sprite: SpriteNodeMaterial;
   renderObject: RenderObjectFunction;
 }
+
+/** The fields of a drawn material the count reads; a field a material does not have counts as unset. */
+type SourceMaterial = Material & {
+  map?: Texture | null;
+  opacityNode?: Node | null;
+  alphaTestNode?: Node | null;
+  maskNode?: Node | null;
+  isSpriteMaterial?: boolean;
+  isSpriteNodeMaterial?: boolean;
+  isPointsMaterial?: boolean;
+  isPointsNodeMaterial?: boolean;
+  rotation?: number;
+  sizeAttenuation?: boolean;
+  scaleNode?: Node | null;
+  rotationNode?: Node | null;
+};
 
 const states = new WeakMap<object, CountState>();
 const _size = new Vector2();
@@ -70,15 +89,20 @@ const _black = new Color(0, 0, 0);
  * - **What a fragment adds:** exactly 1. The count material's `outputNode` is a constant, which replaces the diffuse
  *   result (NodeMaterial.setup), so material, map, vertex, instance and batch colours cannot scale the count; blending
  *   is One/One with no depth test or write, in one pass.
- * - **Which fragments:** each object is drawn with its own material's `side`, `map`, `opacity` and `alphaHash`, and
- *   three's override copies `alphaTest`, `alphaMap` and `positionNode`. Closed meshes count their front faces, cutouts
- *   count their kept texels, and a position node (AnimatedInstances) counts the animated pose.
+ * - **Which fragments:** each object is drawn with its own material's `side`, `map`, `opacity`, `alphaHash`,
+ *   `opacityNode`, `alphaTestNode` and `maskNode`, and three's override copies `alphaTest`, `alphaMap` and `positionNode`.
+ *   Closed meshes count their front faces, cutouts count their kept texels, and a position node (AnimatedInstances)
+ *   counts the animated pose. Sprite materials (a `Sprite`, a World sprite batch) are drawn with a `SpriteNodeMaterial`
+ *   count material carrying their `rotation`, `sizeAttenuation`, `scaleNode` and `rotationNode`: they count their billboards.
+ * - **Not carried:** `colorNode` alpha, vertex-colour alpha, and vertices a material builds in its class or `vertexNode`
+ *   (a `PointsNodeMaterial` on a non-`Points` object, Line2-style materials): those count what the count material
+ *   rasterises from the geometry and `positionNode`.
  * - **Not counted:** the background (colour, texture or node: the target clears to 0), materials with
  *   `allowOverride = false` (they would draw themselves), and materials that write no colour (`colorWrite = false`,
  *   World's occlusion proxies).
  * - **State:** both counts render and every scene and renderer setting is restored synchronously, before the returned
  *   promise first awaits (the read-backs). An app render during the wait sees the app's own state.
- * - **Lifetime:** the target and the count material are kept per renderer; `disposeOverdraw(renderer)` releases them.
+ * - **Lifetime:** the target and the count materials are kept per renderer; `disposeOverdraw(renderer)` releases them.
  *
  * Costs two low-resolution renders: call it on demand, not every frame.
  */
@@ -147,37 +171,40 @@ export async function measureOverdraw(renderer: OverdrawRenderer, scene: Scene, 
     renderer.autoClearColor = saved.autoClearColor;
     renderer.opaque = saved.opaque;
     renderer.transparent = saved.transparent;
-    // No texture stays referenced between measurements: `map` is set here, and three's override copies `alphaMap` without restoring it.
-    state.material.map = null;
-    state.material.alphaMap = null;
+    // No texture stays referenced between measurements: `map` is set per draw, and three's override copies `alphaMap` without restoring it.
+    for (const count of [state.material, state.sprite]) {
+      count.map = null;
+      count.alphaMap = null;
+    }
   }
   const [opaque, transparent] = await Promise.all(reads);
   return { opaque: averageRed(opaque!, width, height), transparent: averageRed(transparent!, width, height) };
 }
 
-/** Releases the count target and material `measureOverdraw` keeps for this renderer. `DrawCallLedger.detach()` calls it. */
+/** Releases the count target and materials `measureOverdraw` keeps for this renderer. `DrawCallLedger.detach()` calls it. */
 export function disposeOverdraw(renderer: object): void {
   const state = states.get(renderer);
   if (!state) return;
   states.delete(renderer);
   state.target?.dispose();
   state.material.dispose();
+  state.sprite.dispose();
 }
 
 function stateOf(renderer: OverdrawRenderer): CountState {
   let state = states.get(renderer);
   if (!state) {
-    const material = countMaterial();
-    state = { target: null, material, renderObject: countObject(renderer, material) };
+    const material = countMaterial(new MeshBasicNodeMaterial(), 'forge:overdraw-count');
+    const sprite = countMaterial(new SpriteNodeMaterial(), 'forge:overdraw-count-sprite');
+    state = { target: null, material, sprite, renderObject: countObject(renderer, material, sprite) };
     states.set(renderer, state);
   }
   return state;
 }
 
-function countMaterial(): MeshBasicNodeMaterial {
-  const material = new MeshBasicNodeMaterial();
-  material.name = 'forge:overdraw-count';
-  // setupDiffuseColor still runs (and discards on alphaTest and alphaHash); this constant replaces what it computed.
+function countMaterial<T extends MeshBasicNodeMaterial | SpriteNodeMaterial>(material: T, name: string): T {
+  material.name = name;
+  // setupDiffuseColor still runs (and discards on alphaTest, alphaHash and maskNode); this constant replaces what it computed.
   material.outputNode = vec4(1, 0, 0, 1);
   material.blending = CustomBlending;
   material.blendSrc = OneFactor;
@@ -193,17 +220,49 @@ function countMaterial(): MeshBasicNodeMaterial {
   return material;
 }
 
-/** The render-object function of the count renders: skip what adds no colour to a real frame, then draw with the count material. */
-function countObject(renderer: OverdrawRenderer, material: MeshBasicNodeMaterial): RenderObjectFunction {
-  return (object, scene, camera, geometry, source, group, lightsNode, clippingContext = null, passId = null) => {
-    if (source.allowOverride !== true || source.colorWrite === false) return;
+/** The render-object function of the count renders: skip what adds no colour to a real frame, then draw with a count material. */
+function countObject(renderer: OverdrawRenderer, meshCount: MeshBasicNodeMaterial, spriteCount: SpriteNodeMaterial): RenderObjectFunction {
+  return (object, scene, camera, geometry, material, group, lightsNode, clippingContext = null, passId = null) => {
+    if (material.allowOverride !== true || material.colorWrite === false) return;
     if ((object.userData.forge as { kind?: string } | undefined)?.kind === 'occlusion-proxy') return;
+    const source = material as SourceMaterial;
+    // A sprite material places its quad in SpriteNodeMaterial.setupPositionView: a camera-facing billboard scaled by
+    // `scaleNode`. With the mesh count material a Sprite's quad lies unrotated in its own plane, and a sprite batch's
+    // instances collapse onto their centres (its positionNode, which three copies). PointsNodeMaterial extends
+    // SpriteNodeMaterial, but on a Points object it draws points (PointsNodeMaterial.setupVertex), as the mesh count does.
+    // Points flags are read first: NodeMaterial.setDefaultValues copies the classic defaults' flags, so every
+    // SpriteNodeMaterial, a PointsNodeMaterial included, also carries `isSpriteMaterial`.
+    const points = source.isPointsNodeMaterial === true || source.isPointsMaterial === true;
+    const sprite = !points && (source.isSpriteMaterial === true || source.isSpriteNodeMaterial === true);
+    const count = sprite ? spriteCount : meshCount;
     // Read off the material three hands over, which may differ from a canonical one (a sprite batch's swapped side).
-    material.map = (source as Material & { map?: Texture | null }).map ?? null;
-    material.opacity = source.opacity;
-    material.alphaHash = source.alphaHash;
-    material.side = source.side;
-    return renderer.renderObject(object, scene, camera, geometry, source, group, lightsNode, clippingContext, passId);
+    count.map = source.map ?? null;
+    count.opacity = source.opacity;
+    count.alphaHash = source.alphaHash;
+    count.side = source.side;
+    // Node slots key the render object's program (NodeMaterial.customProgramCacheKey), as three's own positionNode copy does.
+    count.opacityNode = source.opacityNode ?? null;
+    count.alphaTestNode = source.alphaTestNode ?? null;
+    count.maskNode = source.maskNode ?? null;
+    const override = scene.overrideMaterial;
+    if (sprite) {
+      spriteCount.rotation = source.rotation ?? 0;
+      spriteCount.sizeAttenuation = source.sizeAttenuation ?? true;
+      spriteCount.scaleNode = source.scaleNode ?? null;
+      spriteCount.rotationNode = source.rotationNode ?? null;
+      // Renderer.renderObject reads scene.overrideMaterial on each call, and writes its restores back to it.
+      scene.overrideMaterial = spriteCount;
+    }
+    try {
+      return renderer.renderObject(object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId);
+    } finally {
+      scene.overrideMaterial = override;
+      count.opacityNode = null;
+      count.alphaTestNode = null;
+      count.maskNode = null;
+      spriteCount.scaleNode = null;
+      spriteCount.rotationNode = null;
+    }
   };
 }
 

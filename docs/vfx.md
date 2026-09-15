@@ -4,7 +4,10 @@ Overdraw is fill rate: every transparent fragment costs the same whether it is a
 health bar. The ledger measures it (`overdraw.opaque` and `overdraw.transparent` fragments per pixel,
 `overdraw.particles` drawn per frame, `overdraw.pixels` in the drawing buffer) and three modules act on it.
 The measured fragments ignore colour (a black or tinted effect counts like a white one), count only the texels a
-cutout keeps (`alphaTest` with a `map` or `alphaMap`), and never include the background.
+cutout keeps (`alphaTest` with a `map` or `alphaMap`, or an `opacityNode`, `alphaTestNode` or `maskNode`), count sprites
+and sprite batches as the billboards they draw, and never include the background. Not carried into the count:
+`colorNode` alpha, vertex-colour alpha, and effects whose material builds its own vertices (a `vertexNode`, a
+`PointsNodeMaterial` on an instanced mesh, Line2), which count their plain geometry instead.
 These conventions keep effects cheap enough for the phone tiers without changing how they look on desktop.
 
 ## What the ledger counts as a particle

@@ -249,3 +249,73 @@ test('occlusion proxies and batch colours leave the count alone: the compiled sc
   expect(r.compiled.opaque).toBeCloseTo(r.naive.opaque, 2);
   expect(r.compiled.transparent).toBeCloseTo(r.naive.transparent, 2);
 });
+
+test('sprites count their billboards from a tilted view, and the compiled sprite batch counts the same: 16 sprites a quarter of the view wide read 0.25', async ({ forge }) => {
+  await forge.open('empty');
+  const r = await forge.page.evaluate(async () => {
+    const f = window.__forge;
+    const T = f.three;
+    // Orthographic and tilted over the field: every billboard faces the camera, so a sprite scaled to a quarter of the
+    // 2 x 2 view covers 16 x 12 texels of the 128 x 96 target wherever it lands, 1/64 of it.
+    const ortho = new T.OrthographicCamera(-1, 1, 1, -1, 0.1, 20);
+    ortho.position.set(4, 5, 6);
+    ortho.lookAt(0, 0, 0);
+    ortho.updateMatrixWorld();
+    // The harness perspective camera, tilted too: no closed-form coverage, but naive and compiled must agree.
+    f.camera.position.set(1.5, 2, 2.5);
+    f.camera.lookAt(0, 0, 0);
+    f.camera.updateMatrixWorld();
+    const material = new T.SpriteMaterial({ color: 0x406080, transparent: true, depthWrite: false });
+    for (let x = 0; x < 4; x++) {
+      for (let z = 0; z < 4; z++) {
+        const sprite = new T.Sprite(material);
+        sprite.name = `sprite-${x}-${z}`;
+        sprite.position.set((x - 1.5) * 0.3, 0, (z - 1.5) * 0.3);
+        sprite.scale.set(0.25, 0.25, 1);
+        f.scene.add(sprite);
+      }
+    }
+    f.scene.updateMatrixWorld(true);
+    const naive = { ortho: await f.measureOverdraw(ortho), perspective: await f.measureOverdraw(f.camera) };
+    const report = f.compile();
+    await f.frameAsync();
+    const frame = f.frame();
+    const compiled = { ortho: await f.measureOverdraw(ortho), perspective: await f.measureOverdraw(f.camera) };
+    return { naive, compiled, spriteBatches: report.after.spriteBatches, batchSubmissions: frame.byReason['sprite-batch']?.submissions ?? 0, sprites: frame.byReason.sprite?.submissions ?? 0 };
+  });
+  expect(r.spriteBatches).toBe(1);
+  expect([r.batchSubmissions, r.sprites]).toEqual([1, 0]);
+  expect(r.naive.ortho.transparent).toBeCloseTo(0.25, 2);
+  expect(r.compiled.ortho.transparent).toBeCloseTo(r.naive.ortho.transparent, 2);
+  expect(r.naive.perspective.transparent).toBeGreaterThan(0.01);
+  expect(r.compiled.perspective.transparent).toBeCloseTo(r.naive.perspective.transparent, 2);
+  for (const measured of [r.naive.ortho, r.naive.perspective, r.compiled.ortho, r.compiled.perspective]) expect(measured.opaque).toBeCloseTo(0, 2);
+});
+
+test('node alpha counts too: a maskNode cutout and an opacityNode + alphaTestNode cutout each read 0.5', async ({ forge }) => {
+  await forge.open('empty');
+  const r = await forge.page.evaluate(async () => {
+    const f = window.__forge;
+    const T = f.three;
+    const W = f.webgpu;
+    const { uv, step, float } = W.TSL;
+    const cam = new T.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+    cam.position.z = 5;
+    cam.updateMatrixWorld();
+    const plane = new T.PlaneGeometry(2, 2);
+    // Both keep the right half of the quad: uv.x at the 128 texel centres is never exactly 0.5.
+    const masked = new W.MeshBasicNodeMaterial();
+    masked.maskNode = uv().x.greaterThan(0.5);
+    const faded = new W.MeshBasicNodeMaterial({ transparent: true });
+    faded.opacityNode = step(0.5, uv().x);
+    faded.alphaTestNode = float(0.5);
+    const opaque = new T.Mesh(plane, masked);
+    const transparent = new T.Mesh(plane, faded);
+    transparent.position.z = 1;
+    for (const m of [opaque, transparent]) m.frustumCulled = false;
+    f.scene.add(opaque, transparent);
+    return f.measureOverdraw(cam);
+  });
+  expect(r.opaque).toBeCloseTo(0.5, 2);
+  expect(r.transparent).toBeCloseTo(0.5, 2);
+});

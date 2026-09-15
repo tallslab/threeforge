@@ -428,7 +428,8 @@ export class FakeRenderer {
 
     const renderList = (items: RenderItem[], passId: string | null) => {
       for (const { object, geometry, material, group } of items) {
-        if (renderObjectFunction) renderObjectFunction(object, sceneRef, camera, geometry, material, group, lightsNode, null, passId);
+        // Renderer._renderObjects calls it as a renderer method (`this._currentRenderObjectFunction( ... )`).
+        if (renderObjectFunction) renderObjectFunction.call(this, object, sceneRef, camera, geometry, material, group, lightsNode, null, passId);
         else this.renderObject(object, sceneRef, camera, geometry, material, group, lightsNode, null, passId);
       }
     };
