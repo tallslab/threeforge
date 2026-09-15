@@ -135,6 +135,19 @@ describe('summarize', () => {
     expect(text).toContain('! shadow-texels');
     expect(text).toContain('parity 0.01%');
   });
+
+  it('prints the bake line with the coincident faces the seam guard kept', () => {
+    const before = emptyFrame(env);
+    const after = emptyFrame(env);
+    const input: AnalyzeInput = { file: 'a.glb', backend: 'webgl2', tier: 'auto', budget: null, frames: 30, compile: true, bake: 'on', views: 0, timeout: 60000, headed: false };
+    const compile = {
+      after: { batches: 0, instanced: 0, baked: 1, spriteBatches: 0, frozen: 0, meshes: 0 },
+      skipped: [],
+      bake: { groups: 1, inputTriangles: 48, triangles: 36, contactFaces: 12, keptCoincidentFaces: 4, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 10, excludedEntries: 0 },
+    } as unknown as AgentDocument['compile'];
+    const doc: AgentDocument = { schemaVersion: 1, tool: 'threeforge', version: '0.2.0', command: 'analyze', input, env, asset: null, before, after, compile, parity: null, hints: [], verdict: verdictOf(after, before, null, null), timings: { totalMs: 10 } };
+    expect(summarize(doc)).toContain('bake: 1 groups · 48 → 36 tris · seams 12 · kept coincident 4 · duplicates 0 · buried 0 · welded 10');
+  });
 });
 
 describe('parseArgs optimize', () => {

@@ -108,6 +108,8 @@ export interface BakeSummary {
   inputTriangles: number;
   triangles: number;
   contactFaces: number;
+  /** Faces of coincident, opposite-winding pairs the seam rule kept: not provably a seam between two touching solids. */
+  keptCoincidentFaces: number;
   duplicateFaces: number;
   buriedFaces: number;
   weldedVertices: number;
@@ -875,11 +877,12 @@ export class World {
   }
 
   private bakeSummary(): BakeSummary {
-    const sum: BakeSummary = { groups: this.baked.length, inputTriangles: 0, triangles: 0, contactFaces: 0, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 0, excludedEntries: 0 };
+    const sum: BakeSummary = { groups: this.baked.length, inputTriangles: 0, triangles: 0, contactFaces: 0, keptCoincidentFaces: 0, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 0, excludedEntries: 0 };
     for (const { report } of this.baked) {
       sum.inputTriangles += report.inputTriangles;
       sum.triangles += report.triangles;
       sum.contactFaces += report.contactFaces;
+      sum.keptCoincidentFaces += report.keptCoincidentFaces;
       sum.duplicateFaces += report.duplicateFaces;
       sum.buriedFaces += report.buriedFaces;
       sum.weldedVertices += report.weldedVertices;

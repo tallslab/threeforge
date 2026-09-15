@@ -1,4 +1,4 @@
-import { BatchedMesh, Color, DoubleSide, Matrix4, Mesh, WebGLCoordinateSystem, type BufferGeometry, type CoordinateSystem, type InstancedMesh, type Material, type Scene } from 'three';
+import { BatchedMesh, Color, DoubleSide, Matrix4, Mesh, NoBlending, NormalBlending, WebGLCoordinateSystem, type BufferGeometry, type CoordinateSystem, type InstancedMesh, type Material, type Scene } from 'three';
 import { bakeGeometries, type BakeEntry, type BakeOptions, type BakeReport } from './bake.js';
 import { createCulledInstancedMesh } from './instancing.js';
 import type { NestedPassPolicy } from './culling.js';
@@ -29,6 +29,11 @@ export interface BakedGroup {
   removed: BufferGeometry;
   /** The space the modules are baked in: the scene's, which the baked mesh is a child of. */
   space: SceneSpace;
+  /**
+   * The original material's `vertexColors` at bake time. The baked mesh's material may be a clone with vertex colours
+   * forced on (for the tints), so a rebake passes this to `bakeEntriesOf` instead of reading that clone.
+   */
+  vertexColors: boolean;
 }
 
 export interface BatchOptions {
@@ -315,11 +320,39 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
 }
 
 /**
- * Bake entries for a group's modules: matrices in `space` (world matrices without one, or while its root has no
- * transform), instance tints, per-module opt-out, material sidedness.
+ * Whether a material hides whatever lies behind its faces, so the bake may remove faces nothing can see: nothing
+ * blends (not transparent; normal or no blending), no fragment is discarded (`alphaTest`, `alphaHash`,
+ * `alphaToCoverage`, a node material's `maskNode` or `alphaTestNode`, or a custom fragment stage: `ShaderMaterial`,
+ * `fragmentNode`), no transmission, and depth write and depth test are on. Anything else counts as not opaque, which
+ * only keeps faces.
  */
-export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Material, space?: SceneSpace): BakeEntry[] {
+function isOpaque(material: Material): boolean {
+  const m = material as Material & { transmission?: number; maskNode?: unknown; alphaTestNode?: unknown; fragmentNode?: unknown; isShaderMaterial?: boolean };
+  return (
+    !m.transparent &&
+    (m.blending === NormalBlending || m.blending === NoBlending) &&
+    !(m.alphaTest > 0) &&
+    !m.alphaHash &&
+    !m.alphaToCoverage &&
+    !((m.transmission ?? 0) > 0) &&
+    (m.maskNode ?? null) === null &&
+    (m.alphaTestNode ?? null) === null &&
+    (m.fragmentNode ?? null) === null &&
+    m.isShaderMaterial !== true &&
+    m.depthWrite &&
+    m.depthTest
+  );
+}
+
+/**
+ * Bake entries for a group's modules: matrices in `space` (world matrices without one, or while its root has no
+ * transform), instance tints, per-module opt-out, and from the material its sidedness, opacity (`isOpaque`) and
+ * `vertexColors`. A rebake passes the `vertexColors` recorded at bake time, because the baked mesh's material may be a
+ * clone with vertex colours forced on.
+ */
+export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Material, space?: SceneSpace, vertexColors: boolean = material.vertexColors): BakeEntry[] {
   const local = space !== undefined && !space.update();
+  const opaque = isOpaque(material);
   return meshes
     .filter((m) => !hidden.has(m))
     .map((m) => ({
@@ -328,12 +361,15 @@ export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Mater
       color: (m.material as Material & { color?: Color }).color ?? null,
       bake: m.userData.forgeBake !== false,
       doubleSided: material.side === DoubleSide,
+      opaque,
+      vertexColors,
     }));
 }
 
 function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, name: string, space: SceneSpace): BakedGroup {
   const canonical = group.canonical;
-  const entries = bakeEntriesOf(group.meshes, new Set(), canonical, space);
+  const vertexColors = canonical.vertexColors;
+  const entries = bakeEntriesOf(group.meshes, new Set(), canonical, space, vertexColors);
   const result = bakeGeometries(entries, options);
   // Instance tints become vertex colours: the material then needs vertexColors and a white base colour.
   let material: Material = canonical;
@@ -352,7 +388,7 @@ function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, 
   mesh.castShadow = group.castShadow;
   mesh.receiveShadow = group.receiveShadow;
   mesh.matrixAutoUpdate = false;
-  const baked: BakedGroup = { mesh, entries: group.meshes, hidden: new Set(), options, ownsMaterial, report: result.report, triangleOrigins: result.triangleOrigins, removed: result.removed, space };
+  const baked: BakedGroup = { mesh, entries: group.meshes, hidden: new Set(), options, ownsMaterial, report: result.report, triangleOrigins: result.triangleOrigins, removed: result.removed, space, vertexColors };
   mesh.userData.forge = { kind: 'bake', report: result.report, triangleOrigins: result.triangleOrigins };
   return baked;
 }
@@ -361,7 +397,7 @@ function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, 
 export function rebake(group: BakedGroup): void {
   const material = group.mesh.material as Material;
   const entriesVisible = group.entries.filter((m) => !group.hidden.has(m));
-  const entries = bakeEntriesOf(entriesVisible, new Set(), material, group.space);
+  const entries = bakeEntriesOf(entriesVisible, new Set(), material, group.space, group.vertexColors);
   const result = bakeGeometries(entries, group.options);
   group.mesh.geometry.dispose();
   group.removed.dispose();

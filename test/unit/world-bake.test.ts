@@ -1,16 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { BoxGeometry, Mesh, MeshStandardMaterial, Scene, type Intersection } from 'three';
+import { AdditiveBlending, BoxGeometry, BufferAttribute, DoubleSide, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, Scene, ShaderMaterial, type BufferGeometry, type Intersection, type Material } from 'three';
 import { World } from '../../src/compiler/World.js';
+import { bakeEntriesOf } from '../../src/compiler/batchStatics.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { tag } from '../../src/tags.js';
 import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
 
-/** A row of touching unit boxes sharing one material: every pair has a seam of two contact faces. */
-function wall(count: number, material = new MeshStandardMaterial({ color: 0x808080 })): { scene: Scene; boxes: Mesh[] } {
+/** A row of touching unit boxes sharing one material (or one per box): every pair has a seam of two contact faces. */
+function wall(
+  count: number,
+  material: Material | ((i: number) => Material) = new MeshStandardMaterial({ color: 0x808080 }),
+  geometry: () => BufferGeometry = () => new BoxGeometry(1, 1, 1),
+): { scene: Scene; boxes: Mesh[] } {
   const scene = new Scene();
   const boxes: Mesh[] = [];
   for (let i = 0; i < count; i++) {
-    const box = new Mesh(new BoxGeometry(1, 1, 1), material);
+    const box = new Mesh(geometry(), typeof material === 'function' ? material(i) : material);
     box.name = `box-${i}`;
     box.position.x = i;
     tag.static(box);
@@ -29,10 +34,94 @@ describe('World with bake', () => {
     expect(report.after.batches).toBe(0);
     expect(report.after.baked).toBe(1);
     expect(report.groups[0]!.kind).toBe('baked');
-    expect(report.bake).toEqual(expect.objectContaining({ groups: 1, contactFaces: 12, duplicateFaces: 0, buriedFaces: 0, inputTriangles: 48, triangles: 36 }));
+    expect(report.bake).toEqual(expect.objectContaining({ groups: 1, contactFaces: 12, keptCoincidentFaces: 0, duplicateFaces: 0, buriedFaces: 0, inputTriangles: 48, triangles: 36 }));
+    expect(report.groups[0]!.bake).toEqual(expect.objectContaining({ contactFaces: 12, keptCoincidentFaces: 0 }));
     expect(world.bakedMeshes.length).toBe(1);
     expect(world.bakedMeshes[0]!.geometry.index!.count / 3).toBe(36);
     expect(world.bakedMeshes[0]!.name).toMatch(/^forge:bake:/);
+  });
+
+  it('keeps and counts the seams of a wall whose material is not opaque or is double-sided', () => {
+    const cases: Array<[string, Material]> = [
+      ['transparent', new MeshStandardMaterial({ transparent: true, opacity: 0.5 })],
+      ['alphaTest', new MeshStandardMaterial({ alphaTest: 0.5 })],
+      ['alphaHash', new MeshStandardMaterial({ alphaHash: true })],
+      ['depthWrite off', new MeshStandardMaterial({ depthWrite: false })],
+      ['additive blending', new MeshStandardMaterial({ blending: AdditiveBlending })],
+      ['double-sided', new MeshStandardMaterial({ side: DoubleSide })],
+    ];
+    for (const [label, material] of cases) {
+      const { scene } = wall(4, material);
+      const report = new World(scene, { bake: true }).compile();
+      expect(report.after.baked, label).toBe(1);
+      expect(report.bake, label).toEqual(expect.objectContaining({ contactFaces: 0, keptCoincidentFaces: 12, inputTriangles: 48, triangles: 48 }));
+    }
+  });
+
+  it('bakes a wall under a mirrored scene with its seams removed: the modules are outward shells in scene space', () => {
+    const { scene } = wall(4);
+    scene.scale.x = -1;
+    scene.updateMatrixWorld(true);
+    const report = new World(scene, { bake: true }).compile();
+    expect(report.after.baked).toBe(1);
+    expect(report.bake).toEqual(expect.objectContaining({ contactFaces: 12, keptCoincidentFaces: 0, triangles: 36 }));
+  });
+
+  it('bakeEntriesOf takes opacity, sidedness and vertex colours from the material', () => {
+    const mesh = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+    const entry = (material: Material, vertexColors?: boolean) => bakeEntriesOf([mesh], new Set(), material, undefined, vertexColors)[0]!;
+    expect(entry(new MeshStandardMaterial())).toMatchObject({ opaque: true, doubleSided: false, vertexColors: false });
+    expect(entry(new MeshStandardMaterial({ side: DoubleSide }))).toMatchObject({ opaque: true, doubleSided: true });
+    expect(entry(new MeshStandardMaterial({ vertexColors: true })).vertexColors).toBe(true);
+    // A rebake passes the flag recorded at bake time: the baked material may be a clone with vertex colours forced on.
+    expect(entry(new MeshStandardMaterial({ vertexColors: true }), false).vertexColors).toBe(false);
+    const notOpaque: Array<[string, Material]> = [
+      ['transparent', new MeshStandardMaterial({ transparent: true })],
+      ['alphaTest', new MeshStandardMaterial({ alphaTest: 0.1 })],
+      ['alphaHash', new MeshStandardMaterial({ alphaHash: true })],
+      ['alphaToCoverage', new MeshStandardMaterial({ alphaToCoverage: true })],
+      ['transmission', new MeshPhysicalMaterial({ transmission: 1 })],
+      ['depthWrite off', new MeshStandardMaterial({ depthWrite: false })],
+      ['depthTest off', new MeshStandardMaterial({ depthTest: false })],
+      ['additive blending', new MeshStandardMaterial({ blending: AdditiveBlending })],
+      ['maskNode', Object.assign(new MeshStandardMaterial(), { maskNode: {} })],
+      ['alphaTestNode', Object.assign(new MeshStandardMaterial(), { alphaTestNode: {} })],
+      ['fragmentNode', Object.assign(new MeshStandardMaterial(), { fragmentNode: {} })],
+      ['ShaderMaterial', new ShaderMaterial()],
+    ];
+    for (const [label, material] of notOpaque) expect(entry(material).opaque, label).toBe(false);
+  });
+
+  it('colours tinted modules by their tint alone when the material ignores vertex colours, also after a rebake', () => {
+    const tints = [0xff0000, 0x00ff00, 0x0000ff];
+    const gray = (): BufferGeometry => {
+      const g = new BoxGeometry(1, 1, 1);
+      g.setAttribute('color', new BufferAttribute(new Float32Array(g.attributes.position!.count * 3).fill(0.5), 3));
+      return g;
+    };
+    const { scene, boxes } = wall(3, (i) => new MeshStandardMaterial({ color: tints[i]! }), gray);
+    const world = new World(scene, { bake: true });
+    world.compile();
+    const baked = world.bakedMeshes[0]!;
+    const check = (label: string): void => {
+      expect((baked.material as MeshStandardMaterial).vertexColors, label).toBe(true);
+      const color = baked.geometry.getAttribute('color');
+      for (let i = 0; i < color.count; i++) expect(Math.max(color.getX(i), color.getY(i), color.getZ(i)), `${label}: vertex ${i}`).toBeCloseTo(1);
+    };
+    check('compile');
+    world.setVisible(boxes[1]!, false);
+    check('rebake');
+  });
+
+  it('carries tangents into the baked mesh', () => {
+    const { scene } = wall(3, undefined, () => {
+      const g = new BoxGeometry(1, 1, 1);
+      g.computeTangents();
+      return g;
+    });
+    const world = new World(scene, { bake: true });
+    world.compile();
+    expect(world.bakedMeshes[0]!.geometry.getAttribute('tangent')?.itemSize).toBe(4);
   });
 
   it('keeps meshes opted out with userData.forgeBake = false untouched inside the bake', () => {

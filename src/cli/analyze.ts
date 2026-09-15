@@ -2,7 +2,7 @@ import { existsSync, statSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pngjs from 'pngjs';
-import type { CompileReport } from '../compiler/World.js';
+import type { BakeSummary, CompileReport } from '../compiler/World.js';
 import { VERSION } from '../version.js';
 import { launchBrowser, type PlaywrightPage } from './browser.js';
 import { PageError, UsageError } from './errors.js';
@@ -45,6 +45,11 @@ async function captureViews(page: PlaywrightPage, views: number, timeout: number
   }
   if (views > 0) await evaluateWithin(page, 'restoring the default view', timeout, `(async () => { window.__threeforgeCli.setView(-1, ${views}); await window.__threeforge.frameAsync(); })()`);
   return shots;
+}
+
+/** The progress line of a compile that baked: faces each rule removed, coincident faces the seam guard kept, vertices welded. */
+export function bakeProgressLine(bake: BakeSummary): string {
+  return `bake: ${bake.inputTriangles} -> ${bake.triangles} triangles (${bake.contactFaces} seam, ${bake.duplicateFaces} duplicate, ${bake.buriedFaces} buried faces removed; ${bake.keptCoincidentFaces} coincident faces kept; ${bake.weldedVertices} vertices welded)`;
 }
 
 async function waitReady(page: PlaywrightPage, timeout: number): Promise<AssetFacts> {
@@ -94,7 +99,7 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
     if (input.compile) {
       compile = await evaluateWithin<CompileReport>(page, 'compiling', input.timeout, `window.__threeforge.compile()`);
       log(`compiled: ${compile.after.batches} batches, ${compile.after.instanced} instanced, ${compile.after.baked} baked, ${compile.skipped.length} skipped; measuring again`);
-      if (compile.bake) log(`bake: ${compile.bake.inputTriangles} -> ${compile.bake.triangles} triangles (${compile.bake.contactFaces} seam, ${compile.bake.duplicateFaces} duplicate, ${compile.bake.buriedFaces} buried faces removed, ${compile.bake.weldedVertices} vertices welded)`);
+      if (compile.bake) log(bakeProgressLine(compile.bake));
       await evaluateWithin(page, 'rendering 3 frames after compile', input.timeout, `(async () => { for (let i = 0; i < 3; i++) await window.__threeforge.frameAsync(); })()`);
       after = (await measureViaHook(page, input.frames, input.timeout)).snapshot;
       const shotsAfter = await captureViews(page, input.views, input.timeout);

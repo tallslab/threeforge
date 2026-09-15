@@ -1,7 +1,7 @@
 import { AmbientLight, AnimationMixer, BatchedMesh, Box3, BoxGeometry, Color, DirectionalLight, Frustum, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Sphere, Vector3, type AnimationClip, type Object3D, type OrthographicCamera } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import * as THREE from 'three';
-import { AnimatedInstances, DrawCallLedger, MaterialRegistry, ParticleBudget, RenderScheduler, ResolutionScaler, ResourceTracker, ShadowBudget, World, bakeAnimationTexture, assembleCharacter, collectResources, createLoader, detectTier, disposeLoader, exposeToAgents, prepareLods, tag, unreferencedResources, type Streamer, type AssembledCharacter, type CompileReport, type FrameSnapshot, type ParticleBudgetReport, type ShadowBudgetReport, type Tier } from 'threeforge';
+import { AnimatedInstances, DrawCallLedger, MaterialRegistry, ParticleBudget, RenderScheduler, ResolutionScaler, ResourceTracker, ShadowBudget, World, bakeAnimationTexture, bakeGeometries, assembleCharacter, collectResources, createLoader, detectTier, disposeLoader, exposeToAgents, prepareLods, tag, unreferencedResources, type Streamer, type AssembledCharacter, type CompileReport, type FrameSnapshot, type ParticleBudgetReport, type ShadowBudgetReport, type Tier } from 'threeforge';
 import { createOverlay } from 'threeforge/overlay';
 import { BENCH_SCENES, type BenchScene } from './scenes/index.js';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
@@ -64,6 +64,8 @@ export interface MemoryHarness {
 export interface ForgeHarness {
   /** The three namespace, for in-page probes from Playwright. */
   three: typeof THREE;
+  /** The bake's direct API (no World), for in-page parity probes. */
+  bakeGeometries: typeof bakeGeometries;
   ready: boolean;
   error?: string;
   backend: BackendName;
@@ -650,7 +652,7 @@ try {
     });
   }
 
-  window.__forge = { three: THREE, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, particleReport, scaler, scheduler, shadowReport, refreshShadow, vat: vatInstances, streamer: bench?.streamer, memory, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
+  window.__forge = { three: THREE, bakeGeometries, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, particleReport, scaler, scheduler, shadowReport, refreshShadow, vat: vatInstances, streamer: bench?.streamer, memory, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
 } catch (error) {
   window.__forge = { ready: false, error: error instanceof Error ? error.stack ?? error.message : String(error) } as ForgeHarness;
   throw error;
