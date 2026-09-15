@@ -9,14 +9,18 @@ import {
   MeshPhysicalMaterial,
   MeshStandardMaterial,
   Object3D,
+  Plane,
   RGBAFormat,
   Scene,
   ShaderMaterial,
   Sprite,
   SpriteMaterial,
   SRGBColorSpace,
+  Vector3,
   type Material,
 } from 'three';
+import * as THREE from 'three';
+import * as WEBGPU from 'three/webgpu';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 import * as materialKeyModule from '../../src/registry/materialKey.js';
@@ -446,23 +450,34 @@ function makeHookedClass(tint: number) {
     }
   };
 }
+function makeCacheKeyClass(tint: number) {
+  return class CacheKeyMaterial extends MeshStandardMaterial {
+    override customProgramCacheKey(): string {
+      void tint;
+      return 'tinted';
+    }
+  };
+}
 
 interface CodeCase {
   /** A new function or class per call, same source text, different captured value. */
   code: (tint: number) => unknown;
   /** A material running `code`, otherwise a fresh default material. */
   make: (code: unknown) => Material;
+  /** The key the code joins: `program` when three builds the shader from it, `variant` when it runs per draw. */
+  level: 'program' | 'variant';
 }
 const CODE_CASES: Array<[string, CodeCase]> = [
-  ['an instance setupOutput on a MeshStandardNodeMaterial', { code: makeSetupOutput, make: (code) => Object.assign(new MeshStandardNodeMaterial(), { setupOutput: code as ReturnType<typeof makeSetupOutput> }) }],
-  ['an instance onBeforeCompile closure on a MeshStandardMaterial', { code: makeOnBeforeCompile, make: (code) => Object.assign(new MeshStandardMaterial(), { onBeforeCompile: code as ReturnType<typeof makeOnBeforeCompile> }) }],
-  ['an instance customProgramCacheKey on a MeshStandardMaterial', { code: makeCustomProgramCacheKey, make: (code) => Object.assign(new MeshStandardMaterial(), { customProgramCacheKey: code as ReturnType<typeof makeCustomProgramCacheKey> }) }],
-  ['an instance onBeforeRender on a MeshStandardMaterial', { code: makeOnBeforeRender, make: (code) => Object.assign(new MeshStandardMaterial(), { onBeforeRender: code as ReturnType<typeof makeOnBeforeRender> }) }],
-  ['an onBeforeCompile declared on a subclass prototype (a class factory)', { code: makeHookedClass, make: (code) => new (code as ReturnType<typeof makeHookedClass>)() }],
+  ['an instance setupOutput on a MeshStandardNodeMaterial', { level: 'program', code: makeSetupOutput, make: (code) => Object.assign(new MeshStandardNodeMaterial(), { setupOutput: code as ReturnType<typeof makeSetupOutput> }) }],
+  ['an instance onBeforeCompile closure on a MeshStandardMaterial', { level: 'program', code: makeOnBeforeCompile, make: (code) => Object.assign(new MeshStandardMaterial(), { onBeforeCompile: code as ReturnType<typeof makeOnBeforeCompile> }) }],
+  ['an instance customProgramCacheKey on a MeshStandardMaterial', { level: 'program', code: makeCustomProgramCacheKey, make: (code) => Object.assign(new MeshStandardMaterial(), { customProgramCacheKey: code as ReturnType<typeof makeCustomProgramCacheKey> }) }],
+  ['an instance onBeforeRender on a MeshStandardMaterial', { level: 'variant', code: makeOnBeforeRender, make: (code) => Object.assign(new MeshStandardMaterial(), { onBeforeRender: code as ReturnType<typeof makeOnBeforeRender> }) }],
+  ['an onBeforeCompile declared on a subclass prototype (a class factory)', { level: 'program', code: makeHookedClass, make: (code) => new (code as ReturnType<typeof makeHookedClass>)() }],
+  ['a customProgramCacheKey declared on a subclass prototype (a class factory)', { level: 'program', code: makeCacheKeyClass, make: (code) => new (code as ReturnType<typeof makeCacheKeyClass>)() }],
 ];
 
 describe('material keys include material code by identity, not by source text', () => {
-  it.each(CODE_CASES)('%s: different function objects with identical source text do not merge', (_name, { code, make }) => {
+  it.each(CODE_CASES)('%s: different function objects with identical source text do not merge', (_name, { code, make, level }) => {
     const first = code(1);
     const second = code(2);
     expect(String(second)).toBe(String(first)); // toString() cannot tell them apart
@@ -471,9 +486,31 @@ describe('material keys include material code by identity, not by source text', 
     const b = make(second);
     expect(registry.register(a)).toBe(a);
     expect(registry.register(b)).not.toBe(a);
-    // Material code changes the generated program: it joins the program key, so the variant key differs too.
-    expect(registry.describe(b).programHash).not.toBe(registry.describe(a).programHash);
-    expect(registry.describe(b).outcome).toBe('shader-variant');
+    if (level === 'program') {
+      // Code three builds the shader from joins the program key, so the variant key differs too.
+      expect(registry.describe(b).programHash).not.toBe(registry.describe(a).programHash);
+      expect(registry.describe(b).outcome).toBe('shader-variant');
+    } else {
+      // A material's `onBeforeRender` runs per draw (WebGLRenderer) or never (WebGPU's renderer calls only the
+      // object's): the same program, another variant.
+      expect(registry.describe(b).programHash).toBe(registry.describe(a).programHash);
+      expect(registry.describe(b).variantHash).not.toBe(registry.describe(a).variantHash);
+      expect(registry.describe(b).outcome).toBe('uniform-variant');
+    }
+  });
+
+  it('invalidate() after replacing an instance function re-keys the material', () => {
+    const first = makeSetupOutput(1);
+    const second = makeSetupOutput(2);
+    const registry = new MaterialRegistry();
+    const a = Object.assign(new MeshStandardNodeMaterial(), { setupOutput: first });
+    expect(registry.register(a)).toBe(a);
+    const before = registry.describe(a).programHash;
+    a.setupOutput = second;
+    registry.invalidate(a);
+    expect(registry.describe(a).programHash).not.toBe(before);
+    expect(registry.register(Object.assign(new MeshStandardNodeMaterial(), { setupOutput: second }))).toBe(a);
+    expect(registry.register(Object.assign(new MeshStandardNodeMaterial(), { setupOutput: first }))).not.toBe(a);
   });
 
   it.each(CODE_CASES)('%s: materials sharing the same function object still merge', (_name, { code, make }) => {
@@ -500,10 +537,11 @@ describe('material keys include material code by identity, not by source text', 
     const scene = new Scene();
     const geometry = new BoxGeometry(1, 1, 1);
     const tints = [0xff0000, 0x00ff00, 0x0000ff];
-    tints.forEach((color, i) => {
+    const meshes = tints.map((color, i) => {
       const mesh = tag.static(new Mesh(geometry, Object.assign(new MeshStandardNodeMaterial({ color }), { setupOutput: i === 2 ? other : shared })));
       mesh.position.x = i * 2;
       scene.add(mesh);
+      return mesh;
     });
     scene.updateMatrixWorld(true);
     const world = new World(scene);
@@ -512,6 +550,10 @@ describe('material keys include material code by identity, not by source text', 
     expect(report.groups.map((g) => g.instances)).toEqual([2]);
     expect((world.batchedMeshes[0]!.material as MeshStandardNodeMaterial).setupOutput).toBe(shared);
     expect(report.registry.programs).toBe(2);
+    // The third mesh draws with `other`: its material (the registry's canonical, under the default `unbatched: 'canonical'`) runs it.
+    const third = meshes[2]!.material as MeshStandardNodeMaterial;
+    expect(third.setupOutput).toBe(other);
+    expect((world.registry.canonicalOf(third) as MeshStandardNodeMaterial).setupOutput).toBe(other);
   });
 });
 
@@ -588,5 +630,153 @@ describe('material keys for user-added own properties', () => {
     drawn.addEventListener('dispose', () => {});
     expect(registry.register(drawn)).toBe(drawn);
     expect(registry.register(new MeshStandardMaterial())).toBe(drawn);
+  });
+});
+
+/*
+ * Fix round 1: subclasses, array properties and BigInt (Task 23b).
+ */
+class GlowMaterial extends MeshStandardNodeMaterial {
+  override setupOutput(...args: Parameters<MeshStandardNodeMaterial['setupOutput']>): ReturnType<MeshStandardNodeMaterial['setupOutput']> {
+    return super.setupOutput(...args);
+  }
+}
+class PulseMaterial extends MeshStandardNodeMaterial {
+  override setupOutput(...args: Parameters<MeshStandardNodeMaterial['setupOutput']>): ReturnType<MeshStandardNodeMaterial['setupOutput']> {
+    const output = super.setupOutput(...args);
+    return output;
+  }
+}
+let blinks = 0;
+class BlinkMaterial extends MeshStandardMaterial {
+  override onBeforeRender(): void {
+    blinks++;
+  }
+}
+
+describe('material keys include a subclass by identity', () => {
+  it('a node subclass overriding setupOutput does not merge with its base class', () => {
+    const registry = new MaterialRegistry();
+    const base = new MeshStandardNodeMaterial();
+    const glow = new GlowMaterial();
+    expect(glow.type).toBe(base.type); // `type` is inherited: it cannot tell them apart
+    expect(registry.register(base)).toBe(base);
+    expect(registry.register(glow)).not.toBe(base);
+  });
+
+  it('two node subclasses overriding setupOutput differently do not merge with each other', () => {
+    const registry = new MaterialRegistry();
+    const glow = new GlowMaterial();
+    const pulse = new PulseMaterial();
+    expect(registry.register(glow)).toBe(glow);
+    expect(registry.register(pulse)).not.toBe(glow);
+  });
+
+  it('a classic subclass overriding onBeforeRender does not merge with its base class', () => {
+    const registry = new MaterialRegistry();
+    const base = new MeshStandardMaterial();
+    const blink = new BlinkMaterial();
+    expect(blink.type).toBe(base.type); // `type` is inherited, and the instances hold the same own properties
+    expect(blinks).toBe(0);
+    expect(registry.register(base)).toBe(base);
+    expect(registry.register(blink)).not.toBe(base);
+  });
+
+  it('two instances of the same subclass still merge', () => {
+    const registry = new MaterialRegistry();
+    const a = new GlowMaterial();
+    const b = new GlowMaterial();
+    expect(registry.register(a)).toBe(a);
+    expect(registry.register(b)).toBe(a);
+  });
+
+  it("three's own material classes add no identity to their keys", () => {
+    for (const namespace of [THREE, WEBGPU] as unknown as Array<Record<string, unknown>>) {
+      for (const [name, value] of Object.entries(namespace)) {
+        if (typeof value !== 'function' || !name.endsWith('Material')) continue;
+        let material: Material;
+        try {
+          material = new (value as new () => Material)();
+        } catch {
+          continue;
+        }
+        if (material.isMaterial !== true) continue;
+        expect(materialKeyModule.computeMaterialKeys(material).programKey, name).not.toContain('#');
+      }
+    }
+  });
+});
+
+describe('material keys for array properties', () => {
+  it('two materials with one clipping plane each, but different planes, do not merge', () => {
+    const registry = new MaterialRegistry();
+    const a = new MeshStandardMaterial({ clippingPlanes: [new Plane(new Vector3(1, 0, 0), 0)] });
+    const b = new MeshStandardMaterial({ clippingPlanes: [new Plane(new Vector3(0, 1, 0), 2)] });
+    expect(registry.register(a)).toBe(a);
+    expect(registry.register(b)).not.toBe(a);
+    // The plane count changes the shader; the plane values are uniforms.
+    expect(registry.describe(b).programHash).toBe(registry.describe(a).programHash);
+    expect(registry.describe(b).variantHash).not.toBe(registry.describe(a).variantHash);
+  });
+
+  it('two materials with identical clipping planes (different Plane objects) still merge', () => {
+    const registry = new MaterialRegistry();
+    const a = new MeshStandardMaterial({ clippingPlanes: [new Plane(new Vector3(1, 0, 0), 0.5)] });
+    const b = new MeshStandardMaterial({ clippingPlanes: [new Plane(new Vector3(1, 0, 0), 0.5)] });
+    expect(registry.register(a)).toBe(a);
+    expect(registry.register(b)).toBe(a);
+  });
+
+  it('a different number of clipping planes is a different program', () => {
+    const registry = new MaterialRegistry();
+    const plane = new Plane(new Vector3(1, 0, 0), 0);
+    const one = registry.register(new MeshStandardMaterial({ clippingPlanes: [plane] }));
+    const two = registry.register(new MeshStandardMaterial({ clippingPlanes: [plane, plane] }));
+    expect(registry.describe(two).programHash).not.toBe(registry.describe(one).programHash);
+  });
+
+  it("own arrays ['warm'] and ['cold'] do not merge", () => {
+    const registry = new MaterialRegistry();
+    const a = Object.assign(new MeshStandardMaterial(), { modes: ['warm'] });
+    const b = Object.assign(new MeshStandardMaterial(), { modes: ['cold'] });
+    expect(registry.register(a)).toBe(a);
+    expect(registry.register(b)).not.toBe(a);
+  });
+
+  it('equal own arrays (different array objects) still merge', () => {
+    const registry = new MaterialRegistry();
+    const a = Object.assign(new MeshStandardMaterial(), { modes: ['warm', { on: true }] });
+    const b = Object.assign(new MeshStandardMaterial(), { modes: ['warm', { on: true }] });
+    expect(registry.register(a)).toBe(a);
+    expect(registry.register(b)).toBe(a);
+  });
+
+  it('own arrays of different function objects do not merge', () => {
+    const registry = new MaterialRegistry();
+    const a = Object.assign(new MeshStandardMaterial(), { hooks: [makeOnBeforeRender(1)] });
+    const b = Object.assign(new MeshStandardMaterial(), { hooks: [makeOnBeforeRender(2)] });
+    expect(registry.register(a)).toBe(a);
+    expect(registry.register(b)).not.toBe(a);
+  });
+});
+
+describe('material keys for BigInt values', () => {
+  it('a BigInt inside an own property registers without throwing and keys by value', () => {
+    const registry = new MaterialRegistry();
+    const a = Object.assign(new MeshStandardMaterial(), { extra: { id: 1n } });
+    const b = Object.assign(new MeshStandardMaterial(), { extra: { id: 2n } });
+    const c = Object.assign(new MeshStandardMaterial(), { extra: { id: 1n } });
+    expect(() => registry.register(a)).not.toThrow();
+    expect(registry.register(b)).not.toBe(a);
+    expect(registry.register(c)).toBe(a);
+  });
+
+  it('a BigInt own property keys by value', () => {
+    const registry = new MaterialRegistry();
+    const a = Object.assign(new MeshStandardMaterial(), { serial: 1n });
+    const b = Object.assign(new MeshStandardMaterial(), { serial: 2n });
+    expect(registry.register(a)).toBe(a);
+    expect(registry.register(b)).not.toBe(a);
+    expect(registry.register(Object.assign(new MeshStandardMaterial(), { serial: 1n }))).toBe(a);
   });
 });

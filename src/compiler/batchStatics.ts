@@ -3,59 +3,25 @@ import {
   Color,
   DoubleSide,
   LessEqualDepth,
-  LineBasicMaterial,
-  LineDashedMaterial,
   Material,
   Matrix4,
   Mesh,
-  MeshBasicMaterial,
-  MeshDepthMaterial,
-  MeshDistanceMaterial,
-  MeshLambertMaterial,
-  MeshMatcapMaterial,
-  MeshNormalMaterial,
-  MeshPhongMaterial,
-  MeshPhysicalMaterial,
-  MeshStandardMaterial,
-  MeshToonMaterial,
   NoBlending,
   NormalBlending,
-  PointsMaterial,
-  RawShaderMaterial,
-  ShaderMaterial,
-  ShadowMaterial,
-  SpriteMaterial,
   WebGLCoordinateSystem,
   type BufferGeometry,
   type CoordinateSystem,
   type InstancedMesh,
   type Scene,
 } from 'three';
-import {
-  Line2NodeMaterial,
-  LineBasicNodeMaterial,
-  LineDashedNodeMaterial,
-  MeshBasicNodeMaterial,
-  MeshLambertNodeMaterial,
-  MeshMatcapNodeMaterial,
-  MeshNormalNodeMaterial,
-  MeshPhongNodeMaterial,
-  MeshPhysicalNodeMaterial,
-  MeshSSSNodeMaterial,
-  MeshStandardNodeMaterial,
-  MeshToonNodeMaterial,
-  NodeMaterial,
-  PointsNodeMaterial,
-  ShadowNodeMaterial,
-  SpriteNodeMaterial,
-  VolumeNodeMaterial,
-} from 'three/webgpu';
+import { NodeMaterial } from 'three/webgpu';
 import { bakeGeometries, type BakeEntry, type BakeOptions, type BakeReport } from './bake.js';
 import { createCulledInstancedMesh } from './instancing.js';
 import type { NestedPassPolicy } from './culling.js';
 import type { PassTracker } from './passTracker.js';
 import { lodsOf } from '../lod/generateLods.js';
 import type { MaterialRegistry } from '../registry/MaterialRegistry.js';
+import { isBuiltInMaterial } from '../registry/builtInMaterials.js';
 import { attributeSignature, ensureIndexed } from './geometryCompat.js';
 import { SceneSpace } from './space.js';
 
@@ -376,58 +342,7 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
   return result;
 }
 
-/**
- * three r186's own material classes: the 18 classic ones of `src/materials/Materials.js` and the 17 node ones of
- * `src/materials/nodes/NodeMaterials.js`.
- */
-const BUILT_IN_MATERIAL_PROTOTYPES: ReadonlySet<object> = new Set<object>(
-  [
-    LineBasicMaterial,
-    LineDashedMaterial,
-    Material,
-    MeshBasicMaterial,
-    MeshDepthMaterial,
-    MeshDistanceMaterial,
-    MeshLambertMaterial,
-    MeshMatcapMaterial,
-    MeshNormalMaterial,
-    MeshPhongMaterial,
-    MeshPhysicalMaterial,
-    MeshStandardMaterial,
-    MeshToonMaterial,
-    PointsMaterial,
-    RawShaderMaterial,
-    ShaderMaterial,
-    ShadowMaterial,
-    SpriteMaterial,
-    Line2NodeMaterial,
-    LineBasicNodeMaterial,
-    LineDashedNodeMaterial,
-    MeshBasicNodeMaterial,
-    MeshLambertNodeMaterial,
-    MeshMatcapNodeMaterial,
-    MeshNormalNodeMaterial,
-    MeshPhongNodeMaterial,
-    MeshPhysicalNodeMaterial,
-    MeshSSSNodeMaterial,
-    MeshStandardNodeMaterial,
-    MeshToonNodeMaterial,
-    NodeMaterial,
-    PointsNodeMaterial,
-    ShadowNodeMaterial,
-    SpriteNodeMaterial,
-    VolumeNodeMaterial,
-  ].map((type) => type.prototype as object),
-);
-
-/**
- * Whether a material is exactly an instance of one of three r186's own material classes: its prototype is that class's
- * prototype (`BUILT_IN_MATERIAL_PROTOTYPES`). A subclass fails, because an overridden method (a node material's
- * `setup*`, which builds the shader and can hold `Discard()`, or any other) is code the compiler cannot inspect.
- */
-export function isBuiltInMaterial(material: Material): boolean {
-  return BUILT_IN_MATERIAL_PROTOTYPES.has(Object.getPrototypeOf(material) as object);
-}
+export { isBuiltInMaterial };
 
 /**
  * Whether code is assigned to the material instance: any own property holding a function (an instance

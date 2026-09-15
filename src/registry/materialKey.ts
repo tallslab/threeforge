@@ -1,25 +1,26 @@
-import { Material, type Color, type Texture } from 'three';
-import { NodeMaterial } from 'three/webgpu';
+import type { Color, Material, Plane, Texture } from 'three';
+import { isBuiltInMaterial } from './builtInMaterials.js';
 
 /**
  * Three keys describe a material:
  * - programKey: everything that changes the generated shader or pipeline state (mirrors what
  *   three's RenderObject.getMaterialCacheKey() looks at). Same programKey = same GPU program. Material code joins it
- *   by identity, never by source text: every own function-valued property (an instance `setup*`, `onBeforeRender`,
- *   `onBeforeCompile`, `customProgramCacheKey` …) and an `onBeforeCompile` or `customProgramCacheKey` that is not
- *   three's default (one a subclass declares), so two closures with the same text but different captured state
- *   never share a key.
- * - variantKey: programKey + uniform values + texture identity/transform/sampler + (`visible=0` when
- *   `material.visible` is false). Same variantKey = drawable in one BatchedMesh (colour excluded, it is
- *   per-instance in BatchedMesh).
+ *   by identity, never by source text: the class, when it is not one of three's own (`isBuiltInMaterial`: a subclass
+ *   inherits its base's `type` and can override any method), and every own function-valued property except
+ *   `onBeforeRender` (an instance `setup*`, `onBeforeCompile`, `customProgramCacheKey` …), so two closures with the same
+ *   text but different captured state never share a key. Also the number of clipping planes.
+ * - variantKey: programKey + uniform values + texture identity/transform/sampler + clipping plane values + an instance
+ *   `onBeforeRender` by identity + (`visible=0` when `material.visible` is false). Same variantKey = drawable in one
+ *   BatchedMesh (colour excluded, it is per-instance in BatchedMesh).
  * - colorKey: the `color` property alone, as an exact linear-float encoding (not 8-bit sRGB hex): two colours
  *   less than 1/255 apart stay distinct, and an HDR value (a channel > 1) stays distinct from another HDR value
  *   that would otherwise clamp to the same hex. Used for registry/canonical identity and for grouping (e.g.
  *   sprite batching) — never for display.
  * - colorHex: `color.getHexString()`, the 8-bit sRGB hex. Display only; never used for identity or grouping.
  *
- * A user-added own property holding plain data (object literals, arrays, primitives) is keyed by value; a function
- * or any other object inside it (a Texture, an Object3D, a class instance) is keyed by identity and never walked.
+ * A user-added own property holding plain data (object literals, arrays, strings, numbers, booleans, BigInts) is keyed
+ * by value; a function or any other object inside it (a Texture, an Object3D, a class instance) is keyed by identity
+ * and never walked.
  */
 export interface MaterialKeys {
   programKey: string;
@@ -66,10 +67,10 @@ export function hashKey(key: string): string {
 }
 
 /**
- * One number per function or non-plain object, written `#n` in a key. Held weakly, so keying never keeps a material's
- * code or data alive, and never reused while the process runs: the same object always gets the same number, a
- * different object never does. The numbers follow the order objects are first keyed, so a hash that includes one
- * is stable within a run, not across runs.
+ * One number per function, class prototype or non-plain object, written `#n` in a key. Held weakly, so keying never
+ * keeps a material's code or data alive, and never reused while the process runs: the same object always gets the same
+ * number, a different object never does. The numbers follow the order objects are first keyed, so a hash that includes
+ * one is stable within a run, not across runs.
  */
 const identities = new WeakMap<object, number>();
 let nextIdentity = 1;
@@ -83,10 +84,6 @@ function identityOf(value: object): number {
   return id;
 }
 
-function hasOwn(object: object, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(object, key);
-}
-
 function textureKind(texture: Texture): string {
   const t = texture as Texture & { isCubeTexture?: boolean; isDataArrayTexture?: boolean; isData3DTexture?: boolean; isVideoTexture?: boolean };
   if (t.isCubeTexture) return 'cube';
@@ -97,16 +94,17 @@ function textureKind(texture: Texture): string {
 }
 
 /**
- * Plain data by value: primitives as JSON, arrays in order, object literals (and `Object.create(null)` objects) with
- * sorted keys. Everything else by identity, `#n`, without walking it: a function, or an object whose prototype is not
- * `Object.prototype`, `Array.prototype` or null (a Texture, an Object3D and its scene graph, a class instance, a typed
- * array). Cycle-safe: an object or array already on the path from the root is written `^d`, a reference to its
- * ancestor at depth d, so a value that contains itself keys by its shape. A shared (non-cyclic) reference is walked
- * each time it is reached, so two values with the same data match however they share it. `#` and `^` cannot start a
- * JSON value, so neither marker collides with plain data.
+ * Plain data by value: primitives as JSON, a BigInt as `<digits>n`, arrays in order, object literals (and
+ * `Object.create(null)` objects) with sorted keys. Everything else by identity, `#n`, without walking it: a function,
+ * or an object whose prototype is not `Object.prototype`, `Array.prototype` or null (a Texture, an Object3D and its
+ * scene graph, a class instance, a typed array). Cycle-safe: an object or array already on the path from the root is
+ * written `^d`, a reference to its ancestor at depth d, so a value that contains itself keys by its shape. A shared
+ * (non-cyclic) reference is walked each time it is reached, so two values with the same data match however they share
+ * it. `#`, `^` and a trailing `n` cannot form a JSON value, so no marker collides with plain data.
  */
 function stableJson(value: unknown, path: object[] = []): string {
   if (typeof value === 'function') return `#${identityOf(value)}`;
+  if (typeof value === 'bigint') return `${value}n`;
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   const prototype = Object.getPrototypeOf(value) as unknown;
   if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return `#${identityOf(value)}`;
@@ -150,27 +148,26 @@ export function computeMaterialKeys(material: Material): MaterialKeys {
 
   // Material code, by identity (`identityOf`), never by `toString()`: closures with the same source text can capture
   // different state, and three's classic default `customProgramCacheKey()` above is `onBeforeCompile.toString()`.
-  // Code joins the program key because three builds the program from it: WebGLPrograms keys `customProgramCacheKey()`
-  // and WebGLRenderer runs `onBeforeCompile` on the shader source, NodeMaterial.setup calls the `setup*` functions to
-  // build the node graph, and RenderObject.getMaterialCacheKey reads every own property, functions included (as
-  // `String(value)`).
-  // So every own function-valued property counts (an instance `setup*`, `onBeforeRender`, `onBeforeCompile`,
-  // `customProgramCacheKey` …), and so does an `onBeforeCompile` or `customProgramCacheKey` that is not three's default
-  // (`Material`'s, or `NodeMaterial`'s cache key): one a subclass declares. Other prototype functions, the class code
-  // (`setup*` on a node material class), add nothing; the `type` above already names the class.
+  // - The class, when it is not one of three's own (`isBuiltInMaterial`), joins the program key. A subclass inherits
+  //   its base's `type` (NodeMaterial's `type` getter returns the constructor's static `type`, NodeMaterial.js:36-51;
+  //   classic materials set `type` in the base constructor) and can override any method: `setup*`, `onBeforeCompile`,
+  //   `customProgramCacheKey`, `onBeforeRender`. The registry cannot tell which, so a class is its own program. three's
+  //   own classes carry only three's code and add nothing.
+  // - Every own function-valued property joins the program key (an instance `setup*`, `onBeforeCompile`,
+  //   `customProgramCacheKey` …): three builds the program from them. WebGLPrograms keys `customProgramCacheKey()` and
+  //   WebGLRenderer runs `onBeforeCompile` on the shader source, NodeMaterial.setup calls the `setup*` functions to
+  //   build the node graph, and RenderObject.getMaterialCacheKey reads every own property, functions included (as
+  //   `String(value)`).
+  // - Except an own `onBeforeRender`, which joins the variant key: it is not program code on either backend.
+  //   WebGLRenderer calls a material's `onBeforeRender` per draw (WebGLRenderer.js:2163) and WebGPU's renderer calls
+  //   only the object's (Renderer.js:3721). Materials differing only there share a program, never a batch or a
+  //   canonical.
+  const prototype = Object.getPrototypeOf(material) as object | null;
+  if (prototype !== null && !isBuiltInMaterial(material)) program.push(`class=#${identityOf(prototype)}`);
   for (const name of Object.getOwnPropertyNames(m).sort()) {
     const value = m[name];
-    if (typeof value === 'function') program.push(`${name}=#${identityOf(value)}`);
-  }
-  if (!hasOwn(m, 'onBeforeCompile') && typeof material.onBeforeCompile === 'function' && material.onBeforeCompile !== Material.prototype.onBeforeCompile) {
-    program.push(`onBeforeCompile=#${identityOf(material.onBeforeCompile)}`);
-  }
-  const cacheKeyFunction = material.customProgramCacheKey;
-  if (
-    !hasOwn(m, 'customProgramCacheKey') && typeof cacheKeyFunction === 'function'
-    && cacheKeyFunction !== Material.prototype.customProgramCacheKey && cacheKeyFunction !== NodeMaterial.prototype.customProgramCacheKey
-  ) {
-    program.push(`customProgramCacheKey=#${identityOf(cacheKeyFunction)}`);
+    if (typeof value !== 'function') continue;
+    (name === 'onBeforeRender' ? variant : program).push(`${name}=#${identityOf(value)}`);
   }
 
   const alphaTest = typeof m.alphaTest === 'number' ? (m.alphaTest as number) : 0;
@@ -218,6 +215,11 @@ export function computeMaterialKeys(material: Material): MaterialKeys {
       program.push(`${key}=${value}`);
       continue;
     }
+    if (typeof value === 'bigint') {
+      // A user-added property: three's materials hold none.
+      program.push(`${key}=${value}n`);
+      continue;
+    }
     if (typeof value !== 'object') continue;
 
     const obj = value as Record<string, unknown>;
@@ -256,8 +258,16 @@ export function computeMaterialKeys(material: Material): MaterialKeys {
       continue;
     }
     if (Array.isArray(value)) {
-      if (value.every((v) => typeof v === 'number')) variant.push(`${key}=${value.map(num).join(',')}`);
-      else program.push(`${key}=len${value.length}`);
+      if (value.every((v) => typeof v === 'number')) {
+        variant.push(`${key}=${value.map(num).join(',')}`);
+      } else if (value.every((v) => (v as { isPlane?: boolean } | null)?.isPlane === true)) {
+        // Clipping planes (`clippingPlanes`): their number changes the shader, their values are uniforms.
+        program.push(`${key}=len${value.length}`);
+        variant.push(`${key}=${(value as Plane[]).map((p) => `${num(p.normal.x)},${num(p.normal.y)},${num(p.normal.z)},${num(p.constant)}`).join(';')}`);
+      } else {
+        // Any other array: plain data by value, functions and class instances in it by identity (`stableJson`).
+        program.push(`${key}=${stableJson(value)}`);
+      }
       continue;
     }
     // Plain objects such as `defines` by value; a user-added property holding a class instance (an Object3D, a Map)

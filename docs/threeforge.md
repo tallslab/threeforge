@@ -62,7 +62,7 @@ npx threeforge inspect http://localhost:5173 --json
 | Directory | Responsibility |
 |---|---|
 | `src/tags.ts` | `tag.static(obj)`, `tag.dynamic(obj)`, `tag.of(obj)`; stored in `userData.forge` |
-| `src/registry` | `MaterialRegistry`: material keys (program, variant, colour) and canonical sharing |
+| `src/registry` | `MaterialRegistry`: material keys (program, variant, colour) and canonical sharing; three's own material classes (`isBuiltInMaterial`) |
 | `src/ledger` | `DrawCallLedger`, the v2 snapshot, reasons, expected GPU draws, sections (skinning, lighting), memory estimate, measured overdraw, budgets and tiers, hints |
 | `src/compiler` | `classify` (rules), `batchStatics` (batches, instancing, bake), `bake` (geometry bake), `culling` (BVH, hooks), `instancing` (compacted InstancedMesh), `geometryCompat`, `World` (compile/decompile/resolve/warmup) |
 | `src/lod` | meshoptimizer LOD generation |
@@ -162,6 +162,10 @@ items?:    per-submission records with ledger.frame({ items: true })
   with the graph statistics; `measureMemory()` recounts now. **memory.chunks** is the attached Streamer's residency,
   read live.
 - **hints** are recomputed every frame from the snapshot and the budgets of the environment's tier.
+- **programHash / variantHash** (the `programs` keys, and each item's hashes) come from the material registry
+  (section 5). A hash for a material with instance code, a class that is not one of three's own, or identity-keyed
+  data (a function or class instance in a user-added property) is stable within a run only: identity numbers follow
+  the order materials are first keyed. A `variantHash` with a texture also differs between runs (texture `uuid`s).
 
 Other methods: `ledger.report()` (text), `ledger.budget({ maxSubmissions })` → `{ pass, actual, max, offenders }`,
 `ledger.setEnvironment({ tier, gpu, dpr, viewport })`, `ledger.budgets()`.
@@ -201,8 +205,9 @@ reasons by count and the hints. `formatOverlay`, `formatCostRows` and `formatHin
 `register(material)` returns the canonical material for its key without mutating the input. Three keys are computed
 (`computeMaterialKeys`): **programKey** mirrors three's `RenderObject.getMaterialCacheKey()` (type, custom program
 cache key, which texture slots are set with their mapping/channel/colour space, booleans, enums, feature gates such as
-transmission or clearcoat as on/off, defines, node cache keys); **variantKey** adds every non-colour uniform, the
-texture identities and transforms, and `visible=0` when `material.visible` is false (so a hidden material never
+transmission or clearcoat as on/off, defines, node cache keys, the number of clipping planes, material code as below);
+**variantKey** adds every non-colour uniform, the texture identities and transforms, clipping plane values, an instance
+`onBeforeRender` as below, and `visible=0` when `material.visible` is false (so a hidden material never
 merges with an otherwise-identical visible one; `visible` never affects programKey); **colorKey** is the `color`
 property, keyed by **exact linear floats** (`color.r/g/b`, three's working colour space), not 8-bit sRGB hex — two
 colours under 1/255 apart stay distinct, and an HDR value (a channel > 1) stays distinct from another HDR value that
@@ -211,28 +216,44 @@ would otherwise clamp to the same hex. Every other `Color`-valued property (`emi
 (`color.getHexString()`, 8-bit sRGB), which exists for display only — logs, the CLI, the overlay — and must never be
 used for identity or grouping; sprite batching (section 13) groups by the exact `colorKey`, not `colorHex`, for the
 same reason. Outcomes: `new`, `merged` (same variant and colour), `color-variant` (batchable through per-instance
-colour), `uniform-variant`, `shader-variant`, `unsupported` (`ShaderMaterial` / `RawShaderMaterial` do not render on
-`WebGPURenderer`), `unregistered`. `describe(material)` gives the hashes, `colorHex`/`colorKey` and outcome;
+colour), `uniform-variant` (the same programKey, another variantKey: uniform values, texture identities, clipping plane
+values, `visible`, or an instance `onBeforeRender`), `shader-variant` (another programKey), `unsupported`
+(`ShaderMaterial` / `RawShaderMaterial` do not render on `WebGPURenderer`), `unregistered`. `describe(material)` gives
+the hashes, `colorHex`/`colorKey` and outcome;
 `canonicalOf`, `keys`, and `stats()` (`registered, canonical, merged, unsupported, programs, byProgram[]`).
 `programs` is checked against `renderer.info.memory.programs` in the tests: shader variants counted by the registry
-are real programs.
+are real programs. The count can exceed the programs three compiles when materials run different function objects or
+classes whose code compiles to the same shader (closures from one factory with the same source text, or a subclass
+that overrides nothing the shader reads): three compiles one program for those, the registry counts one per function
+or class.
 
-**Materials with different code never merge, even when the source text matches.** Every own function-valued property
-(an instance `setup*`, `onBeforeRender`, `onBeforeCompile`, `customProgramCacheKey` …) and an `onBeforeCompile` or
-`customProgramCacheKey` that is not three's default (one a subclass declares) joins programKey **by identity**: a
-number per function object from a `WeakMap`, never `toString()`. Two closures from one factory, with the same text but
-different captured values, get different keys; materials sharing the same function object still merge. Other
-prototype functions (a node material class's own `setup*`) add nothing. Code joins programKey rather than only
-variantKey because three builds the program from it (WebGL keys `customProgramCacheKey()` and runs `onBeforeCompile`
-on the shader source, `NodeMaterial` calls `setup*` to build the node graph), so such materials report as
-`shader-variant`s; the compiler groups statics by variantKey, which contains programKey, and `register()` merges by
-variantKey plus colour, so a batch or a canonical never draws one material's code for another. A user-added own
-property (`material.extra = {…}`, data a hook reads through `this`) is keyed by value when it holds plain data (object
-literals, arrays, primitives; a value that contains itself is keyed by its shape, never overflowing the stack), and by
-identity for anything else inside it — a function, a `Texture`, an `Object3D`, any class instance — which is never
-walked. `userData` stays out of the key except `forgeKey` (which still overrides everything, code included), and so
-does EventDispatcher's `_listeners` (the `dispose` listener a renderer adds to every material it draws). Identity numbers
-follow the order objects are first keyed, so a hash that includes code is stable within a run, not across runs.
+**Materials with different code never merge, even when the source text matches.** Material code joins the keys **by
+identity** (a number per object from a `WeakMap`, never `toString()`), so two closures from one factory, with the same
+text but different captured values, get different keys, while materials sharing the same function object or class
+still merge:
+
+- **The class**, in programKey, when the material is not exactly an instance of one of three's own classes
+  (`isBuiltInMaterial`, `src/registry/builtInMaterials.ts`). A subclass inherits its base's `type` and can override
+  any method (`setup*`, `onBeforeCompile`, `customProgramCacheKey`, `onBeforeRender`); the registry cannot tell which,
+  so each subclass is its own program. three's own classes add nothing.
+- **Every own function-valued property except `onBeforeRender`**, in programKey (an instance `setup*`,
+  `onBeforeCompile`, `customProgramCacheKey` …). three builds the program from them (WebGL keys
+  `customProgramCacheKey()` and runs `onBeforeCompile` on the shader source; `NodeMaterial` calls `setup*` to build the
+  node graph), so such materials report as `shader-variant`s.
+- **An own `onBeforeRender`**, in variantKey. It is not program code on either backend: WebGLRenderer calls a
+  material's `onBeforeRender` once per draw, and WebGPU's renderer never calls it (only the object's). Such materials
+  report as `uniform-variant`s: one program, but never one batch or canonical.
+
+The compiler groups statics by variantKey, which contains programKey, and `register()` merges by variantKey plus
+colour, so a batch or a canonical never draws one material's code for another. A user-added own property
+(`material.extra = {…}`, data a hook reads through `this`) is keyed by value when it holds plain data (object
+literals, arrays, strings, numbers, booleans, BigInts; a value that contains itself is keyed by its shape, never
+overflowing the stack), and by identity for anything else inside it — a function, a `Texture`, an `Object3D`, any class
+instance — which is never walked. An array of planes (`clippingPlanes`) keys its length in programKey and each plane's
+normal and constant in variantKey; any other non-numeric array is keyed like the plain data above. `userData` stays
+out of the key except `forgeKey` (which still overrides everything, code included), and so does EventDispatcher's
+`_listeners` (the `dispose` listener a renderer adds to every material it draws). Identity numbers follow the order
+objects are first keyed, so a hash that includes one is stable within a run, not across runs (section 4).
 
 **A material is immutable once registered.** `register()` and `describe()` compute a material's keys once and cache
 them (together with their `programHash`/`variantHash`, so `describe()` never re-hashes on repeated calls); nothing
