@@ -138,6 +138,45 @@ describe('World with bake', () => {
     expect(report, 'after the rebake').toEqual(expect.objectContaining({ contactFaces: 0, keptCoincidentFaces: 4 }));
   });
 
+  it('a rebake keeps the seams of shadow casters: originals that stop casting while the baked mesh still casts lose nothing', () => {
+    const { scene, boxes } = wall(4);
+    for (const box of boxes) box.castShadow = true;
+    const world = new World(scene, { bake: true });
+    expect(world.compile().bake, 'compile').toEqual(expect.objectContaining({ contactFaces: 0, keptCoincidentFaces: 12 }));
+    const baked = world.bakedMeshes[0]!;
+    const reportNow = () => (baked.userData.forge as { report: BakeReport }).report;
+    for (const box of boxes) box.castShadow = false;
+    world.setVisible(boxes[3]!, false);
+    expect(baked.castShadow, 'the baked mesh still casts').toBe(true);
+    expect(reportNow(), 'rebake while the baked mesh casts').toEqual(expect.objectContaining({ contactFaces: 0, keptCoincidentFaces: 8 }));
+    // Once neither the originals nor the baked mesh cast, a rebake may remove the seams.
+    baked.castShadow = false;
+    world.setVisible(boxes[3]!, true);
+    expect(reportNow(), 'rebake when nothing casts').toEqual(expect.objectContaining({ contactFaces: 12, keptCoincidentFaces: 0 }));
+  });
+
+  /** A subclass of `Base` whose own prototype overrides `method` (calling the original), as an app might write it. */
+  function subclassOverriding<T extends new (...args: never[]) => Material>(Base: T, method: string): new () => Material {
+    const Sub = class extends (Base as unknown as new () => Material) {};
+    const original = (Base.prototype as unknown as Record<string, ((...args: unknown[]) => unknown) | undefined>)[method];
+    Object.defineProperty(Sub.prototype, method, { value: function (this: unknown, ...args: unknown[]) { return original?.apply(this, args); }, writable: true, configurable: true });
+    return Sub;
+  }
+  /** An instance property calling `Base.prototype[method]`: behaves the same, but is code on the instance. */
+  const callThrough = (Base: { prototype: object }, method: string) =>
+    function (this: unknown, ...args: unknown[]) { return (Base.prototype as Record<string, (...a: unknown[]) => unknown>)[method]!.apply(this, args); };
+
+  it.each([
+    ['a MeshStandardNodeMaterial subclass overriding setupDiffuseColor', () => new (subclassOverriding(MeshStandardNodeMaterial, 'setupDiffuseColor'))()],
+    ['instance setup and setupOutput on a MeshStandardNodeMaterial', () => Object.assign(new MeshStandardNodeMaterial(), { setup: callThrough(MeshStandardNodeMaterial, 'setup'), setupOutput: callThrough(MeshStandardNodeMaterial, 'setupOutput') })],
+    ['an instance onBeforeRender on a MeshStandardMaterial', () => Object.assign(new MeshStandardMaterial(), { onBeforeRender: () => {} })],
+    ['a MeshStandardMaterial subclass overriding a method', () => new (subclassOverriding(MeshStandardMaterial, 'onBeforeRender'))()],
+  ] as Array<[string, () => Material]>)("keeps seams and buried faces for %s (only three's own material types, no own functions)", (_label, material) => {
+    const report = bakeSealed(material());
+    expect(report.after.baked).toBe(1);
+    expect(report.bake).toEqual(expect.objectContaining({ contactFaces: 0, keptCoincidentFaces: 4, buriedFaces: 0 }));
+  });
+
   it('does not pair outlines shortened by an edge used three times: the top of a longer box beside a doubled box stays covered', () => {
     // The reviewer's probe: above y = 0 a unit box at x in [0,1], one at [1,2] and a copy of it turned about y; below,
     // a unit box at [0,1], a 2x1x1 box at [1,3] and a 1x1x2 box turned about y into the same place.

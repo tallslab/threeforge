@@ -682,7 +682,9 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
           // meets its back side (three-mesh-bvh's BackSide test culls triangles facing the ray origin). A front-side card
           // facing the face shows that viewer its culled back, so it hides nothing.
           const hit = bvh.raycastFirst(ray, BackSide);
-          // Depth along the face normal, so a wall parallel to the face at gap g blocks at g from every angle.
+          // Depth along the face normal: a parallel wall at gap g that faces away from the face (the ray meets its back
+          // side) blocks at g from every angle; one facing the face blocks nothing, so a face pressed against a
+          // neighbouring solid's front face is buried only when that solid's far side is within `distance`.
           if (!hit || hit.distance * z > buried.distance) return false;
         }
         return true;

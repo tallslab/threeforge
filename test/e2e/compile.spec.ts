@@ -1,4 +1,16 @@
 import { expect, test } from './fixtures.js';
+import { pixelDiff, settle } from './pixels.js';
+
+/** Records a measurement on the test (visible in the JSON and HTML reports) instead of printing it. */
+function note(description: string): void {
+  test.info().annotations.push({ type: 'materials', description });
+}
+
+/** A tinted group compiled with default options (a BatchedMesh) and with `bake: true` (a baked mesh). */
+const TINTED_MODES = [
+  ['default options', {}],
+  ['bake: true', { bake: '1' }],
+] as const;
 
 test('world.compile() takes the naive scene from 503 to 28 submissions with identical pixels', async ({ forge }) => {
   await forge.open('naive');
@@ -78,4 +90,115 @@ test("dynamics: 'batch-sync' folds the 10 movers into their batches: 28 -> 18 su
   expect(result.byReason.dynamic).toBeUndefined();
   expect(result.same).toBe(true);
   if (forge.pixelChecks) await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
+});
+
+test('tinted node-material statics keep an instance setupOutput and alphaTest when a group clone carries the tints', async ({ forge }) => {
+  test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+  for (const [mode, query] of TINTED_MODES) {
+    await forge.open('empty', { ...query });
+    await forge.page.evaluate(() => {
+      const f = window.__forge;
+      const T = f.three;
+      const W = f.webgpu;
+      // Alpha in stripes that alphaTest cuts out, and an instance setupOutput that darkens the colour: NodeMaterial.copy()
+      // carries neither (alphaTest is an accessor on Material.prototype; instance functions are not on a fresh instance).
+      const size = 32;
+      const data = new Uint8Array(size * size * 4);
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const o = (y * size + x) * 4;
+          data[o] = data[o + 1] = data[o + 2] = 255;
+          data[o + 3] = Math.floor(y / 4) % 2 === 0 ? 255 : 0;
+        }
+      }
+      const map = new T.DataTexture(data, size, size);
+      map.needsUpdate = true;
+      const setupOutput = function (this: unknown, builder: unknown, output: unknown) {
+        const out = output as { rgb: { mul(value: number): unknown }; a: unknown };
+        const darker = W.TSL.vec4(out.rgb.mul(0.35) as never, out.a as never);
+        return (W.NodeMaterial.prototype.setupOutput as (...args: unknown[]) => unknown).call(this, builder, darker);
+      };
+      const geometry = new T.BoxGeometry(1.4, 1.4, 1.4);
+      [0xd04040, 0x40b060, 0x4060d0, 0xd0b040].forEach((color, i) => {
+        const material = Object.assign(new W.MeshStandardNodeMaterial({ color, map, roughness: 0.8 }), { setupOutput });
+        material.alphaTest = 0.5;
+        const mesh = new T.Mesh(geometry, material);
+        mesh.position.set(i * 2 - 3, 0.7, 0);
+        mesh.rotation.y = 0.5;
+        (mesh.userData as { forge?: string }).forge = 'static';
+        f.scene.add(mesh);
+      });
+      const sun = new T.DirectionalLight(0xffffff, 2);
+      sun.position.set(3, 6, 5);
+      f.scene.add(new T.AmbientLight(0xffffff, 0.8), sun);
+      f.scene.updateMatrixWorld(true);
+      f.camera.position.set(0, 3, 8);
+      f.camera.lookAt(0, 0.7, 0);
+      f.camera.updateMatrixWorld();
+    });
+    await settle(forge.page, 5);
+    const before = await forge.page.screenshot({ type: 'png' });
+    const r = await forge.page.evaluate(async () => {
+      const f = window.__forge;
+      const report = f.compile();
+      for (let i = 0; i < 3; i++) await f.frameAsync();
+      return { after: report.after };
+    });
+    await settle(forge.page, 2);
+    const after = await forge.page.screenshot({ type: 'png' });
+    const diff = pixelDiff(before, after, { threshold: 4 });
+    note(`[${forge.backend}] tinted node materials, ${mode}: ${r.after.batches} batches, ${r.after.baked} baked, pixel diff ${(diff * 100).toFixed(4)}%`);
+    expect(r.after.batches + r.after.baked, `${mode}: the tinted group is compiled`).toBe(1);
+    expect(diff, mode).toBeLessThan(0.0005);
+  }
+});
+
+test('tinted classic statics keep a custom onBeforeCompile and define when a group clone carries the tints (drawn by WebGLRenderer, which runs them)', async ({ forge }) => {
+  // three r186 runs material onBeforeCompile and defines only in renderers/WebGLRenderer.js; the harness's WebGPURenderer
+  // (both backends) ignores them, so this cell draws the same scene with a classic WebGLRenderer inside the page.
+  for (const [mode, query] of TINTED_MODES) {
+    await forge.open('empty', { ...query });
+    const r = await forge.page.evaluate(() => {
+      const f = window.__forge;
+      const T = f.three;
+      const onBeforeCompile = (shader: { fragmentShader: string }): void => {
+        shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>', '#include <dithering_fragment>\n#ifdef MY_DEFINE\n\tgl_FragColor.rgb = vec3( 1.0 ) - gl_FragColor.rgb;\n#endif');
+      };
+      const geometry = new T.BoxGeometry(1.4, 1.4, 1.4);
+      [0xd04040, 0x40b060, 0x4060d0, 0xd0b040].forEach((color, i) => {
+        const material = Object.assign(new T.MeshStandardMaterial({ color, roughness: 0.8 }), { onBeforeCompile, defines: { STANDARD: '', MY_DEFINE: '' } });
+        const mesh = new T.Mesh(geometry, material);
+        mesh.position.set(i * 2 - 3, 0.7, 0);
+        mesh.rotation.y = 0.5;
+        (mesh.userData as { forge?: string }).forge = 'static';
+        f.scene.add(mesh);
+      });
+      const sun = new T.DirectionalLight(0xffffff, 2);
+      sun.position.set(3, 6, 5);
+      f.scene.add(new T.AmbientLight(0xffffff, 0.8), sun);
+      const gl = new T.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true });
+      gl.setPixelRatio(1);
+      gl.setSize(400, 300, false);
+      const camera = new T.PerspectiveCamera(50, 4 / 3, 0.5, 50);
+      camera.position.set(0, 3, 8);
+      camera.lookAt(0, 0.7, 0);
+      camera.updateMatrixWorld();
+      const shot = (): string => {
+        f.scene.updateMatrixWorld(true);
+        gl.render(f.scene, camera);
+        return gl.domElement.toDataURL('image/png');
+      };
+      const before = shot();
+      const report = f.compile();
+      shot();
+      const after = shot();
+      gl.dispose();
+      return { before, after, compiled: report.after };
+    });
+    const png = (dataUrl: string): Buffer => Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');
+    const diff = pixelDiff(png(r.before), png(r.after), { threshold: 4 });
+    note(`[${forge.backend}] tinted classic materials with onBeforeCompile and MY_DEFINE (WebGLRenderer), ${mode}: ${r.compiled.batches} batches, ${r.compiled.baked} baked, pixel diff ${(diff * 100).toFixed(4)}%`);
+    expect(r.compiled.batches + r.compiled.baked, `${mode}: the tinted group is compiled`).toBe(1);
+    expect(diff, mode).toBeLessThan(0.0005);
+  }
 });

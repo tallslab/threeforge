@@ -1,5 +1,55 @@
-import { BatchedMesh, Color, DoubleSide, LessEqualDepth, Material, Matrix4, Mesh, NoBlending, NormalBlending, WebGLCoordinateSystem, type BufferGeometry, type CoordinateSystem, type InstancedMesh, type Scene } from 'three';
-import { NodeMaterial } from 'three/webgpu';
+import {
+  BatchedMesh,
+  Color,
+  DoubleSide,
+  LessEqualDepth,
+  LineBasicMaterial,
+  LineDashedMaterial,
+  Material,
+  Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  MeshDepthMaterial,
+  MeshDistanceMaterial,
+  MeshLambertMaterial,
+  MeshMatcapMaterial,
+  MeshNormalMaterial,
+  MeshPhongMaterial,
+  MeshPhysicalMaterial,
+  MeshStandardMaterial,
+  MeshToonMaterial,
+  NoBlending,
+  NormalBlending,
+  PointsMaterial,
+  RawShaderMaterial,
+  ShaderMaterial,
+  ShadowMaterial,
+  SpriteMaterial,
+  WebGLCoordinateSystem,
+  type BufferGeometry,
+  type CoordinateSystem,
+  type InstancedMesh,
+  type Scene,
+} from 'three';
+import {
+  Line2NodeMaterial,
+  LineBasicNodeMaterial,
+  LineDashedNodeMaterial,
+  MeshBasicNodeMaterial,
+  MeshLambertNodeMaterial,
+  MeshMatcapNodeMaterial,
+  MeshNormalNodeMaterial,
+  MeshPhongNodeMaterial,
+  MeshPhysicalNodeMaterial,
+  MeshSSSNodeMaterial,
+  MeshStandardNodeMaterial,
+  MeshToonNodeMaterial,
+  NodeMaterial,
+  PointsNodeMaterial,
+  ShadowNodeMaterial,
+  SpriteNodeMaterial,
+  VolumeNodeMaterial,
+} from 'three/webgpu';
 import { bakeGeometries, type BakeEntry, type BakeOptions, type BakeReport } from './bake.js';
 import { createCulledInstancedMesh } from './instancing.js';
 import type { NestedPassPolicy } from './culling.js';
@@ -36,9 +86,9 @@ export interface BakedGroup {
    */
   vertexColors: boolean;
   /**
-   * Whether the original material passed the bake's opacity allowlist at bake time. A tinted group's clone loses what
-   * `copy()` does not carry (`MeshStandardMaterial.copy()` resets `defines`; an instance `onBeforeCompile` or
-   * `customProgramCacheKey` is not copied), so a rebake requires this as well as the current material passing.
+   * Whether the original material passed the bake's opacity allowlist at bake time. A rebake requires this as well as
+   * the current material passing, so a material changed after compile, or a clone that does not match its source,
+   * never lets a rebake remove more than the bake did.
    */
   opaque: boolean;
 }
@@ -156,7 +206,7 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
     const shareCanonical = group.meshes.every((m) => isWhite(m.material as Material));
     const batchMaterial = (): { material: Material; perInstanceColor: boolean } => {
       if (shareCanonical) return { material: group.canonical, perInstanceColor: false };
-      const material = group.canonical.clone();
+      const material = cloneMaterial(group.canonical);
       if (canonicalHasColor) (material as Material & { color: Color }).color.copy(_white);
       return { material, perInstanceColor: canonicalHasColor };
     };
@@ -326,6 +376,105 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
   return result;
 }
 
+/**
+ * three r186's own material classes: the 18 classic ones of `src/materials/Materials.js` and the 17 node ones of
+ * `src/materials/nodes/NodeMaterials.js`.
+ */
+const BUILT_IN_MATERIAL_PROTOTYPES: ReadonlySet<object> = new Set<object>(
+  [
+    LineBasicMaterial,
+    LineDashedMaterial,
+    Material,
+    MeshBasicMaterial,
+    MeshDepthMaterial,
+    MeshDistanceMaterial,
+    MeshLambertMaterial,
+    MeshMatcapMaterial,
+    MeshNormalMaterial,
+    MeshPhongMaterial,
+    MeshPhysicalMaterial,
+    MeshStandardMaterial,
+    MeshToonMaterial,
+    PointsMaterial,
+    RawShaderMaterial,
+    ShaderMaterial,
+    ShadowMaterial,
+    SpriteMaterial,
+    Line2NodeMaterial,
+    LineBasicNodeMaterial,
+    LineDashedNodeMaterial,
+    MeshBasicNodeMaterial,
+    MeshLambertNodeMaterial,
+    MeshMatcapNodeMaterial,
+    MeshNormalNodeMaterial,
+    MeshPhongNodeMaterial,
+    MeshPhysicalNodeMaterial,
+    MeshSSSNodeMaterial,
+    MeshStandardNodeMaterial,
+    MeshToonNodeMaterial,
+    NodeMaterial,
+    PointsNodeMaterial,
+    ShadowNodeMaterial,
+    SpriteNodeMaterial,
+    VolumeNodeMaterial,
+  ].map((type) => type.prototype as object),
+);
+
+/**
+ * Whether a material is exactly an instance of one of three r186's own material classes: its prototype is that class's
+ * prototype (`BUILT_IN_MATERIAL_PROTOTYPES`). A subclass fails, because an overridden method (a node material's
+ * `setup*`, which builds the shader and can hold `Discard()`, or any other) is code the compiler cannot inspect.
+ */
+export function isBuiltInMaterial(material: Material): boolean {
+  return BUILT_IN_MATERIAL_PROTOTYPES.has(Object.getPrototypeOf(material) as object);
+}
+
+/**
+ * Whether code is assigned to the material instance: any own property holding a function (an instance
+ * `onBeforeCompile`, `customProgramCacheKey`, `onBeforeRender`, `setup`, `setupOutput` …). A fresh three material has
+ * none.
+ */
+export function hasOwnFunctions(material: Material): boolean {
+  const record = material as unknown as Record<string, unknown>;
+  return Object.getOwnPropertyNames(material).some((key) => typeof record[key] === 'function');
+}
+
+/**
+ * `material.clone()` plus what `clone()` (`new constructor().copy(source)`) does not carry and still changes how the
+ * material draws, so a tinted group's clone renders like its source:
+ * - `Material.copy` (`Material.js:1119-1199`) copies a fixed list of fields, and the subclass `copy` methods set
+ *   `defines` back to the class default (`MeshStandardMaterial.js:412`, `MeshPhysicalMaterial.js:552`,
+ *   `MeshMatcapMaterial.js:235`, `MeshToonMaterial`): an instance `onBeforeCompile`, `customProgramCacheKey`,
+ *   `onBeforeRender` or any other own function, and custom `defines`, are lost;
+ * - `NodeMaterial.copy` (`NodeMaterial.js:1321-1376`) copies the setters of the concrete class prototype and the
+ *   properties a fresh instance already has: `alphaTest` (an accessor on `Material.prototype`, backed by `_alphaTest`)
+ *   and every instance function (`setup`, `setupOutput` …) are lost.
+ *
+ * Restored on the copy: every own function-valued property (the same function, as the source's meshes share it), a copy
+ * of `defines`, and every accessor on the prototype chain whose primitive value the copy lost (`alphaTest`). The
+ * registry's material keys and grouping do not change.
+ */
+export function cloneMaterial<T extends Material>(source: T): T {
+  const copy = source.clone() as T;
+  const from = source as unknown as Record<string, unknown>;
+  const to = copy as unknown as Record<string, unknown>;
+  for (const key of Object.getOwnPropertyNames(source)) {
+    if (typeof from[key] === 'function') to[key] = from[key];
+  }
+  if (Object.prototype.hasOwnProperty.call(source, 'defines')) {
+    const defines = from.defines;
+    to.defines = defines !== null && typeof defines === 'object' ? { ...(defines as Record<string, unknown>) } : defines;
+  }
+  for (let proto = Object.getPrototypeOf(source) as object | null; proto && proto !== Object.prototype; proto = Object.getPrototypeOf(proto) as object | null) {
+    for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(proto))) {
+      if (!descriptor.get || !descriptor.set || key === 'type') continue;
+      const value = from[key];
+      if ((typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') && to[key] !== value) to[key] = value;
+    }
+  }
+  return copy;
+}
+
 /** The `defines` three's own mesh materials set: `MeshStandardMaterial`, `MeshPhysicalMaterial`, `MeshToonMaterial`, `MeshMatcapMaterial`. */
 const MATERIAL_DEFINES = new Set(['STANDARD', 'PHYSICAL', 'TOON', 'MATCAP']);
 
@@ -351,6 +500,9 @@ function hasNoNodes(material: Material): boolean {
 /**
  * Whether the bake may treat a material as opaque: an allowlist of three's default material hooks, so a hook this code
  * does not know about keeps faces instead of deleting them. The material must:
+ * - be three's own code: exactly one of three's material classes (`isBuiltInMaterial`: no subclass, whose overridden
+ *   methods such as a node material's `setup*` can discard) with no function assigned to the instance
+ *   (`hasOwnFunctions`: no instance `onBeforeRender`, `setup`, `setupOutput` …);
  * - not blend: not transparent, normal or no blending, no transmission;
  * - discard nothing: no `alphaTest`, `alphaHash` or `alphaToCoverage`, not a `ShaderMaterial`, no node in any slot
  *   (`hasNoNodes`), no material `clippingPlanes`, no `stencilWrite` (the stencil test);
@@ -363,6 +515,7 @@ function hasNoNodes(material: Material): boolean {
  */
 function isOpaque(material: Material): boolean {
   const m = material as Material & { transmission?: number; displacementMap?: unknown; wireframe?: boolean; isShaderMaterial?: boolean; isNodeMaterial?: boolean; defines?: Record<string, unknown> | null };
+  if (!isBuiltInMaterial(m) || hasOwnFunctions(m)) return false;
   if (m.transparent || !(m.blending === NormalBlending || m.blending === NoBlending) || (m.transmission ?? 0) > 0) return false;
   if (m.alphaTest > 0 || m.alphaHash || m.alphaToCoverage || m.isShaderMaterial === true || !hasNoNodes(m)) return false;
   if ((m.clippingPlanes?.length ?? 0) > 0 || m.stencilWrite) return false;
@@ -378,10 +531,12 @@ function isOpaque(material: Material): boolean {
  * Bake entries for a group's modules: matrices in `space` (world matrices without one, or while its root has no
  * transform), instance tints, per-module opt-out and shadow casting, and from the material its sidedness, opacity
  * (`isOpaque`) and `vertexColors`. A rebake passes the `vertexColors` and opacity recorded at bake time, because the
- * baked mesh's material may be a clone with vertex colours forced on and without the original's `defines` or instance
- * hooks: an entry is opaque only when `opaqueAtBake` holds and the given material passes too.
+ * baked mesh's material may be a clone with vertex colours forced on: an entry is opaque only when `opaqueAtBake` holds
+ * and the given material passes too. A module counts as casting shadows when its original casts or `alsoCasts` holds:
+ * a rebake passes the baked mesh's `castShadow`, which is what the shadow pass draws by (the hidden originals draw
+ * nothing), so originals that stop casting after compile never let a rebake remove seams from a mesh that still casts.
  */
-export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Material, space?: SceneSpace, vertexColors: boolean = material.vertexColors, opaqueAtBake = true): BakeEntry[] {
+export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Material, space?: SceneSpace, vertexColors: boolean = material.vertexColors, opaqueAtBake = true, alsoCasts = false): BakeEntry[] {
   const local = space !== undefined && !space.update();
   const opaque = opaqueAtBake && isOpaque(material);
   return meshes
@@ -393,7 +548,7 @@ export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Mater
       bake: m.userData.forgeBake !== false,
       doubleSided: material.side === DoubleSide,
       side: material.side,
-      castShadow: m.castShadow,
+      castShadow: m.castShadow || alsoCasts,
       opaque,
       vertexColors,
     }));
@@ -403,13 +558,13 @@ function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, 
   const canonical = group.canonical;
   const vertexColors = canonical.vertexColors;
   const opaque = isOpaque(canonical);
-  const entries = bakeEntriesOf(group.meshes, new Set(), canonical, space, vertexColors, opaque);
+  const entries = bakeEntriesOf(group.meshes, new Set(), canonical, space, vertexColors, opaque, group.castShadow);
   const result = bakeGeometries(entries, options);
   // Instance tints become vertex colours: the material then needs vertexColors and a white base colour.
   let material: Material = canonical;
   let ownsMaterial = false;
   if (result.hasColor && !shareCanonical) {
-    material = canonical.clone();
+    material = cloneMaterial(canonical);
     (material as Material & { vertexColors: boolean }).vertexColors = true;
     const color = (material as Material & { color?: Color }).color;
     if (color) color.copy(_white);
@@ -431,7 +586,7 @@ function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, 
 export function rebake(group: BakedGroup): void {
   const material = group.mesh.material as Material;
   const entriesVisible = group.entries.filter((m) => !group.hidden.has(m));
-  const entries = bakeEntriesOf(entriesVisible, new Set(), material, group.space, group.vertexColors, group.opaque);
+  const entries = bakeEntriesOf(entriesVisible, new Set(), material, group.space, group.vertexColors, group.opaque, group.mesh.castShadow);
   const result = bakeGeometries(entries, group.options);
   group.mesh.geometry.dispose();
   group.removed.dispose();
