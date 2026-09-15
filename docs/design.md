@@ -54,8 +54,9 @@ Keys are computed at registration; a material mutated later is not re-keyed.
 
 1. `classify()` updates world matrices and decides per mesh: skinned, morph, shader-material, dynamic tag
    (own or ancestor), exclusion rules (invisible, an invisible ancestor, an invisible material, multi-material,
-   layers, renderOrder, a render-ordered ancestor Group, an enabled ClippingGroup ancestor, own onBeforeRender,
-   drawRange, frustumCulled off, negative determinant), static tag, or `auto` policy, else `untagged`.
+   layers, renderOrder, the nearest ancestor Group's non-zero renderOrder, an enabled ClippingGroup ancestor at any
+   depth, own onBeforeRender, drawRange, frustumCulled off, negative determinant), static tag, or `auto` policy,
+   else `untagged`.
 2. Statics are grouped by `(variantKey, attribute signature, castShadow, receiveShadow)`. Non-indexed geometries
    get a sequential index on a clone (`ensureIndexed`), originals untouched. Groups of one stay plain meshes.
 3. Each group becomes a `BatchedMesh` at the scene root: buffers sized from unique geometries, world matrix and

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BoxGeometry, Group, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, MeshStandardMaterial, Scene, ShaderMaterial, SkinnedMesh } from 'three';
+import { BoxGeometry, Group, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, MeshStandardMaterial, Object3D, Scene, ShaderMaterial, SkinnedMesh } from 'three';
 import { ClippingGroup } from 'three/webgpu';
 import { classify, exclusionRule } from '../../src/compiler/classify.js';
 import { tag } from '../../src/tags.js';
@@ -145,6 +145,56 @@ describe('classify', () => {
 
     clipper.enabled = false;
     expect(classify(scene)[0]).toMatchObject({ kind: 'static' });
+  });
+
+  // three's Renderer._projectObject reassigns `groupOrder = object.renderOrder` at every isGroup object on the way
+  // down, so only the nearest Group ancestor's value ever reaches the mesh — a closer Group with renderOrder 0
+  // resets it, whatever an outer Group says.
+  it("group-render-order looks only at the nearest Group ancestor: a closer Group's 0 resets a farther Group's non-zero value", () => {
+    const scene = new Scene();
+    const outer = new Group();
+    outer.renderOrder = 5;
+    const inner = new Group();
+    inner.renderOrder = 0;
+    const child = tag.static(new Mesh(box, mat()));
+    inner.add(child);
+    outer.add(inner);
+    scene.add(outer);
+    expect(classify(scene)[0]).toMatchObject({ kind: 'static', rule: 'tag:static' });
+  });
+
+  it('group-render-order fires from the nearest Group even when a farther Group is 0', () => {
+    const scene = new Scene();
+    const outer = new Group();
+    outer.renderOrder = 0;
+    const inner = new Group();
+    inner.renderOrder = 5;
+    const child = tag.static(new Mesh(box, mat()));
+    inner.add(child);
+    outer.add(inner);
+    scene.add(outer);
+    expect(classify(scene)[0]).toMatchObject({ kind: 'excluded', rule: 'group-render-order' });
+  });
+
+  it('a non-Group Object3D ancestor never sets groupOrder: three only reads renderOrder off isGroup objects', () => {
+    const scene = new Scene();
+    const group = new Group();
+    group.renderOrder = 0;
+    const plain = new Object3D();
+    plain.renderOrder = 5;
+    const child = tag.static(new Mesh(box, mat()));
+    plain.add(child);
+    group.add(plain);
+    scene.add(group);
+    expect(classify(scene)[0]).toMatchObject({ kind: 'static', rule: 'tag:static' });
+  });
+
+  it('excludes every mesh when the Scene root itself is invisible', () => {
+    const scene = new Scene();
+    scene.visible = false;
+    const child = tag.static(new Mesh(box, mat()));
+    scene.add(child);
+    expect(classify(scene)[0]).toMatchObject({ kind: 'excluded', rule: 'invisible-ancestor' });
   });
 
   it('skips the ancestor-scoped rules when exclusionRule is called without a root: there is no boundary to walk to', () => {

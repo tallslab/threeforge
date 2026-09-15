@@ -25,18 +25,29 @@ const OWN = Object.prototype.hasOwnProperty;
 type AncestorLike = Object3D & { isGroup?: boolean; isClippingGroup?: boolean; enabled?: boolean };
 
 /**
- * The first ancestor-scoped exclusion rule between `object` (exclusive) and `root` (inclusive), or null. Three sets
- * `groupOrder = object.renderOrder` while walking an `isGroup` ancestor, so a non-zero value there changes the
- * effective order of everything inside it, which a batch's single `renderOrder` cannot reproduce (`group-render-order`).
- * An enabled `isClippingGroup` ancestor applies extra clipping planes to its descendants that a batch's one shared
- * clipping context cannot reproduce per-instance (`clipping-group`). Shared by `exclusionRule` and `spriteRule` so
- * there is one ancestor walker, not one per rule.
+ * The first ancestor-scoped exclusion rule between `object` (exclusive) and `root` (inclusive), or null.
+ *
+ * `group-render-order`: three's `Renderer._projectObject` reassigns `groupOrder = object.renderOrder` at every
+ * `isGroup` object on the way down (a plain, non-accumulating overwrite), so only the *nearest* Group ancestor's
+ * `renderOrder` ever reaches the mesh — a closer Group with `renderOrder` 0 resets whatever a farther Group set, and
+ * a non-Group `Object3D` in between is never read for this at all (three only assigns `groupOrder` inside the
+ * `isGroup` branch). So this only looks at the first `isGroup` ancestor found, whatever its value, and stops there.
+ *
+ * `clipping-group`: an enabled `isClippingGroup` ancestor builds its `ClippingContext` from its *parent* context
+ * (`getGroupContext` does `new ClippingContext(this)`), so clipping planes chain down through every enabled
+ * `ClippingGroup` in the chain, not just the nearest — this keeps checking every ancestor up to `root`.
+ *
+ * Shared by `exclusionRule` and `spriteRule` so there is one ancestor walker, not one per rule.
  */
 export function ancestorExclusionRule(object: Object3D, root: Object3D): string | null {
   let current: Object3D | null = object.parent;
+  let nearestGroupSeen = false;
   while (current) {
     const node = current as AncestorLike;
-    if (node.isGroup && node.renderOrder !== 0) return 'group-render-order';
+    if (!nearestGroupSeen && node.isGroup) {
+      nearestGroupSeen = true;
+      if (node.renderOrder !== 0) return 'group-render-order';
+    }
     if (node.isClippingGroup && node.enabled) return 'clipping-group';
     if (current === root) break;
     current = current.parent;

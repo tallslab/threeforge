@@ -220,9 +220,12 @@ counted by the registry are real programs.
 visibility is `invisible` above), `already-instanced`, `material-invisible` (`material.visible === false`),
 `transmission` (three scales volume thickness by the object matrix, which a batch cannot provide), `dynamic-geometry`
 (`DynamicDrawUsage` / `StreamDrawUsage` attributes), `multi-material`, `layers`, `render-order`, `group-render-order`
-(an `isGroup` ancestor with `renderOrder !== 0`: three uses a group's `renderOrder` for everything inside it),
-`clipping-group` (an enabled `isClippingGroup` ancestor — WebGPU-only per three's docs, but the shared `Renderer.js`
-`_projectObject` that reads it backs both the WebGL2 and WebGPU backends here), `custom-hook` (own
+(the *nearest* `isGroup` ancestor has `renderOrder !== 0`: three's `Renderer._projectObject` reassigns
+`groupOrder = object.renderOrder` at every `isGroup` object on the way down — a plain overwrite, not accumulated —
+so only the closest Group's value reaches the mesh; a farther Group's `renderOrder` and any non-Group `Object3D`'s
+`renderOrder` in between are never read for this), `clipping-group` (an enabled `isClippingGroup` ancestor at *any*
+depth — clipping contexts chain, `getGroupContext` builds each one from its parent — WebGPU-only per three's docs,
+but the shared `Renderer.js` `_projectObject` that reads it backs both the WebGL2 and WebGPU backends here), `custom-hook` (own
 `onBeforeRender`/`onAfterRender`), `draw-range`, `frustum-culled-off`, `mirrored` (negative determinant). Every
 excluded mesh shows up in the ledger as `excluded:<rule>`. `root` is optional; without it the three ancestor-scoped
 rules (`invisible-ancestor`, `group-render-order`, `clipping-group`) are skipped, since there is no boundary to walk

@@ -5,10 +5,12 @@
 - `classify`'s `exclusionRule(mesh, root?)` gains four rules the classifier previously missed: `invisible-ancestor`
   (an ancestor up to `root` with `visible = false` — a static mesh under a hidden Group no longer gets batched and
   drawn), `material-invisible` (`material.visible === false`, distinct from the mesh's own `visible`),
-  `group-render-order` (an `isGroup` ancestor with a non-zero `renderOrder`, which three uses for everything inside
-  it) and `clipping-group` (an enabled `isClippingGroup` ancestor). `spriteRule(sprite, root?)` gains the last
-  three. Both functions' new `root` parameter is optional; without it the ancestor-scoped rules are skipped, which
-  is unchanged behaviour for existing callers.
+  `group-render-order` (the *nearest* `isGroup` ancestor has a non-zero `renderOrder`; three reassigns `groupOrder`
+  at every Group on the way down, so a closer Group's `renderOrder` — 0 included — always wins over a farther one,
+  and a non-Group `Object3D` in between is never read for this) and `clipping-group` (an enabled `isClippingGroup`
+  ancestor at any depth — clipping contexts chain, so a farther enabled `ClippingGroup` still applies).
+  `spriteRule(sprite, root?)` gains the last three. Both functions' new `root` parameter is optional; without it the
+  ancestor-scoped rules are skipped, which is unchanged behaviour for existing callers.
 - `nestedPasses: 'auto'` (the `World` default) now resolves to `'per-pass'` on both backends; it was `'reuse-main'` on WebGPU. `'reuse-main'` stays available as an explicit option, and the harness accepts `nested=reuse-main`.
 - Compacted `InstancedMesh`es draw the right instances in shadow maps on both backends: a shadow pass keeps the rows the enclosing pass drew and appends, once per frame, the instances every shadow-casting light reaches (directional and spot frusta, a point light's cube of half-size `distance || shadow.camera.far`); `count` and `visibleIds` are restored when the nested render ends. On three's shared instance vertex buffer (more than 1,024 instances on WebGPU's default limit) an outermost compaction marks only the rows it changed with `addUpdateRange`, and a nested pass that writes rows marks the whole matrix and colour buffers: a receiver's instance frame event syncs before its shadow render, whose own sync would otherwise replace the main pass's ranges before they upload. A nested pass that reaches a mesh before the main pass compacts it for the main camera first, and reflections draw the main camera's list, under either policy. Shadow passes previously drew the main list under `reuse-main` (casters outside the view missing) and rewrote the main pass's list under `per-pass`. On WebGPU, shadow-pass `gpuDraws` and `triangles` rise where casters lie outside the view.
 - `InstancingOptions.mainCamera` is replaced by `passes: PassTracker`; `createCulledInstancedMesh` without it compacts for every camera it is drawn with.

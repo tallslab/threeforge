@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Frustum, Group, Matrix4, PerspectiveCamera, Scene, Sprite, SpriteMaterial, Vector2, type Material } from 'three';
+import { Frustum, Group, Matrix4, Object3D, PerspectiveCamera, Scene, Sprite, SpriteMaterial, Vector2, type Material } from 'three';
 import { ClippingGroup } from 'three/webgpu';
 import { fillSpriteInstances, groupSprites, isVisibleInGraph, spriteRule } from '../../src/compiler/sprites.js';
 
@@ -71,6 +71,29 @@ describe('groupSprites', () => {
     expect(spriteRule(clipped, scene)).toBe('clipping-group');
     clipper.enabled = false;
     expect(spriteRule(clipped, scene)).toBeNull();
+  });
+
+  it('spriteRule looks only at the nearest Group ancestor for group-render-order, and ignores a non-Group renderOrder', () => {
+    const scene = new Scene();
+    const outer = new Group();
+    outer.renderOrder = 5;
+    const inner = new Group();
+    inner.renderOrder = 0;
+    const resetByInner = new Sprite(new SpriteMaterial());
+    inner.add(resetByInner);
+    outer.add(inner);
+    scene.add(outer);
+    expect(spriteRule(resetByInner, scene)).toBeNull();
+
+    const nearGroup = new Group();
+    nearGroup.renderOrder = 0;
+    const plain = new Object3D();
+    plain.renderOrder = 5;
+    const ignoresPlain = new Sprite(new SpriteMaterial());
+    plain.add(ignoresPlain);
+    nearGroup.add(plain);
+    scene.add(nearGroup);
+    expect(spriteRule(ignoresPlain, scene)).toBeNull();
   });
 });
 
