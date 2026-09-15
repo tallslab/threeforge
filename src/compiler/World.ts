@@ -12,6 +12,7 @@ import { groupSprites } from './sprites.js';
 import { attachBvhCulling, prependAfterRenderHook, prependRenderHook, type CullingHandle, type NestedPassPolicy } from './culling.js';
 import { PassTracker } from './passTracker.js';
 import { SceneSpace } from './space.js';
+import { cameraNearProxy } from './occlusionProxy.js';
 
 /** Hidden originals live on this layer: invisible to default cameras and default raycasters, matrices still valid. */
 export const FORGE_HIDDEN_LAYER = 31;
@@ -45,8 +46,11 @@ export interface WorldOptions {
   lod?: { distances: number[] };
   /**
    * Occlusion culling per batch / instanced group through three's occlusion queries: an invisible proxy box per
-   * target carries `occlusionTest`; a target whose proxy was fully occluded last frame is skipped this frame.
-   * Costs one cheap submission per target. Needs a renderer with `isOccluded()` (WebGPURenderer, either backend).
+   * target carries `occlusionTest`; a target whose proxy was reported fully occluded (two or more renders late) is
+   * skipped. Only the outermost render of the scene decides, and a proxy the camera is inside of, or whose box the near
+   * plane reaches into, issues no query and shows its target. A batch or instanced group holding batch-synced movers
+   * gets no proxy. Costs one cheap submission per target. Needs a renderer with `isOccluded()` (WebGPURenderer, either
+   * backend).
    */
   occlusion?: boolean;
   /** Clips that will drive this scene (e.g. `gltf.animations`), or `{ root, clips }` per animated character. */
@@ -467,11 +471,21 @@ export class World {
   }
 
   private installOcclusion(): void {
-    const groups: Object3D[][] = [...this.batches.map((b) => [b])];
+    // No proxy for a target holding batch-synced movers: a mover can leave the compile-time box, and while the proxy keeps
+    // the target hidden three never calls the target's onBeforeRender (`Renderer._projectObject` returns at
+    // `object.visible === false`), where the sync runs, so nothing could grow the box before the mover is on screen.
+    const synced = new Set<Object3D>();
+    for (const mesh of this.syncedSet) {
+      const slot = this.slots.get(mesh);
+      if (slot) synced.add(slot.batch);
+    }
+    const groups: Object3D[][] = this.batches.filter((b) => !synced.has(b)).map((b) => [b]);
     for (const mesh of this.instanced) {
       const levels = (mesh as CulledInstancedMesh).levels ?? [mesh];
-      if (levels[0] === mesh) groups.push(levels);
+      if (levels[0] === mesh && !levels.some((level) => synced.has(level))) groups.push(levels);
     }
+    const passes = this.passes;
+    const space = this.space;
     const size = new Vector3();
     const center = new Vector3();
     for (const targets of groups) {
@@ -495,14 +509,31 @@ export class World {
       proxy.userData.forge = { kind: 'occlusion-proxy' };
       this.scene.add(proxy);
       this.occluders.push({ proxy, targets });
-      // Ask inside the proxy's own after-render hook: that runs within renderObject(), while the main pass's
-      // render context is current, and returns the previously resolved query result (one frame of latency).
-      // The scene-level hook runs after three has already restored the outer context and would see nothing.
+      const resume = (): void => {
+        proxy.occlusionTest = true;
+      };
       this.occlusionRestores.push(
+        // Before the proxy's draw in the outermost render: when a query from this camera could miss a visible target (the
+        // eye inside the box, the near plane cutting into it: `cameraNearProxy`), issue none. three begins a query at the
+        // draw and ends it at the next draw or at the end of the render, reading `occlusionTest` both times
+        // (WebGPUBackend.draw / finishRender, WebGLBackend.draw / finishRender), so the flag stays off until the
+        // outermost render is over (PassTracker.atEnd runs in the scene's onAfterRender, after finishRender). The render
+        // list has already counted the proxy; its unused query slot is skipped when the results are read. A result set
+        // without the proxy never reports it occluded, so no late answer from this render can hide the targets.
+        prependRenderHook(proxy, (_renderer, _scene, camera) => {
+          if (passes.depth !== 1 || !proxy.occlusionTest || !cameraNearProxy(camera, proxy, space)) return;
+          proxy.occlusionTest = false;
+          passes.atEnd(resume);
+        }),
+        // Ask inside the proxy's own after-render hook: that runs within renderObject(), while the render context is
+        // current (the scene-level hook runs after three has restored the outer context and would see nothing), and
+        // returns the last result set published for that context, from a render at least two renders back. Only the
+        // outermost render decides: a nested pass (a reflection, a portal) reads its own context's results.
         prependAfterRenderHook(proxy, (renderer) => {
+          if (passes.depth !== 1) return;
           const query = (renderer as { isOccluded?: (object: Object3D) => boolean }).isOccluded;
           if (typeof query !== 'function') return;
-          const occluded = query.call(renderer, proxy) === true;
+          const occluded = proxy.occlusionTest && query.call(renderer, proxy) === true;
           for (const t of targets) t.visible = !occluded;
         }),
       );
