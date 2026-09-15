@@ -198,6 +198,8 @@
 - The buried-face pass removes only faces of opaque, front-side entries that cast no shadow (double-sided faces are no longer candidates), and counts only ray hits on the back side of an opaque front-side or double-sided face: a front-side card facing a face no longer buries it, and a face pressed against a neighbouring solid's front face is buried only when that solid's far side is within `distance`.
 - Duplicate detection no longer deletes a region covered twice with different triangulations when another such region lies on the same plane: both fused islands had an empty outline and the second was taken for a copy of the first. Such regions now stay doubled. Exact copies are removed only between entries whose faces may be removed.
 - The bake carries `tangent` when every entry has it (xyz turned by the entry's matrix and normalised, `w` unchanged even under a mirrored matrix, as three builds the bitangent as `cross(normalView, tangentView) * tangent.w`) and the weld compares it; tangents used to be dropped.
+- `AnimatedInstances` draws part `k` of every character at the character matrix × `animation.parts[k].matrix`, a `mat4` uniform of that part's material read every frame: `setMatrixAt` folded `parts[0].matrix` into the instance matrix all parts share, so a prototype whose parts sit at different offsets from its root drew every part at the first part's offset. Prototypes whose parts all sit at the root (the Kenney mini characters of the crowd bench) draw as before.
+- `AnimatedInstances.getMatrixAt(i)` returns the character matrix given to `setMatrixAt`; it returned that matrix × `animation.parts[0].matrix`.
 
 ## 0.8.0 — 2026-09-14
 

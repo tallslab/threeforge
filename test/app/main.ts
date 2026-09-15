@@ -98,7 +98,7 @@ export interface ForgeHarness {
   shadowReport?: ShadowBudgetReport;
   /** `?freeze-shadow=1` (naive scene with shadows): the naive sun's shadow is frozen; call this to re-render it once. */
   refreshShadow?(): void;
-  /** `scene=vat`: the animated-instances twin of the loaded character (`vatClip`, `vatTime` params). */
+  /** `scene=vat`: the animated-instances twin of the loaded character (`vatClip`, `vatTime`, `vatPartOffset` params). */
   vat?: AnimatedInstances;
   /** The optimized zen variant's chunk streamer (attached to the ledger). */
   streamer?: Streamer;
@@ -349,6 +349,19 @@ try {
     scene = new Scene();
     scene.background = new Color(0x202830);
     const clipName = params.get('vatClip') ?? 'idle';
+    // `vatPartOffset=x,y,z` moves every skinned part after the first off the character root by that much (the Kenney
+    // parts all sit at the root): a prototype whose parts sit at different offsets. Bound in attached mode, the skinned
+    // original draws the same wherever its parts sit; the twin has to draw each part at its own offset to match it.
+    const partOffset = params.get('vatPartOffset');
+    if (partOffset) {
+      const [x = 0, y = 0, z = 0] = partOffset.split(',').map(Number);
+      const parts: Object3D[] = [];
+      gltf.scene.traverse((o) => {
+        if ((o as SkinnedMesh).isSkinnedMesh) parts.push(o);
+      });
+      for (const part of parts.slice(1)) part.position.add(new Vector3(x, y, z));
+      gltf.scene.updateMatrixWorld(true);
+    }
     const original = SkeletonUtils.clone(gltf.scene) as Object3D;
     original.position.set(-1, 0, 0);
     scene.add(original);

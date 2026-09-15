@@ -29,7 +29,8 @@ type N = any;
  * Any number of characters built from one animated prototype as one instanced draw per part. Each instance picks a
  * clip, a time offset and a speed; a shared `time` uniform advances them all. The vertex stage fetches the four
  * bone matrices of the instance's current frame from the animation texture and skins the part exactly as three
- * does, then applies the instance matrix (the part's offset from the character root folded in).
+ * does, then applies the part's offset from the character root (`animation.parts[k].matrix`, a uniform of that part's
+ * material) and the instance's character matrix.
  */
 export class AnimatedInstances {
   readonly animation: AnimationTexture;
@@ -38,13 +39,14 @@ export class AnimatedInstances {
   /** Per-instance `[clipStart, clipFrames, timeOffset, speed]`. */
   readonly clipAttribute: InstancedBufferAttribute;
   /**
-   * Per-instance matrices, 16 floats each, as one interleaved buffer (four separate attributes would exceed WebGPU's
-   * eight vertex buffers). It must be the instanced kind: both backends derive the per-instance step from
-   * `isInstancedInterleavedBuffer`, and a plain `InterleavedBuffer` is read per vertex.
+   * Per-instance character matrices, 16 floats each, shared by every part (each part adds its own offset), as one
+   * interleaved buffer (four separate attributes would exceed WebGPU's eight vertex buffers). It must be the instanced
+   * kind: both backends derive the per-instance step from `isInstancedInterleavedBuffer`, and a plain
+   * `InterleavedBuffer` is read per vertex.
    */
   readonly matrixBuffer: InstancedInterleavedBuffer;
   private readonly timeUniform: { value: number };
-  private readonly parts: Array<{ geometry: InstancedBufferGeometry; material: MeshStandardNodeMaterial }> = [];
+  private readonly parts: Array<{ geometry: InstancedBufferGeometry; material: MeshStandardNodeMaterial; offset: { value: Matrix4 } }> = [];
   private seconds = 0;
 
   constructor(options: AnimatedInstancesOptions) {
@@ -91,6 +93,8 @@ export class AnimatedInstances {
       }
       const bind: N = uniform(part.mesh.bindMatrix);
       const bindInverse: N = uniform(part.mesh.bindMatrixInverse);
+      // The part's own offset from the character root: the parts share the instance matrices, so it cannot live there.
+      const offset: N = uniform(part.matrix);
       const skinIndex: N = attribute('skinIndex', 'uvec4');
       const skinWeight: N = attribute('skinWeight', 'vec4');
       // Frame of this instance: the clip's start row plus the wrapped frame counter.
@@ -105,8 +109,10 @@ export class AnimatedInstances {
         const skin: N = bindInverse
           .mul(bone(skinIndex.x).mul(skinWeight.x).add(bone(skinIndex.y).mul(skinWeight.y)).add(bone(skinIndex.z).mul(skinWeight.z)).add(bone(skinIndex.w).mul(skinWeight.w)))
           .mul(bind);
-        normalLocal.assign(mat3(instanceMatrix).mul(mat3(skin).mul(normalGeometry)));
-        return instanceMatrix.mul(skin.mul(vec4(positionGeometry, 1))).xyz;
+        // The character's matrix, then this part's offset from the character root.
+        const model: N = instanceMatrix.mul(offset);
+        normalLocal.assign(mat3(model).mul(mat3(skin).mul(normalGeometry)));
+        return model.mul(skin.mul(vec4(positionGeometry, 1))).xyz;
       })();
       // The animation texture is sampled through a node, invisible to material properties: list it for collectResources.
       material.userData.forgeTextures = [animation.texture];
@@ -116,7 +122,7 @@ export class AnimatedInstances {
       mesh.castShadow = part.mesh.castShadow;
       mesh.receiveShadow = part.mesh.receiveShadow;
       mesh.userData.forge = { kind: 'vat', instances: count };
-      this.parts.push({ geometry, material });
+      this.parts.push({ geometry, material, offset: offset as { value: Matrix4 } });
       return mesh;
     });
   }
@@ -125,16 +131,16 @@ export class AnimatedInstances {
     return this.seconds;
   }
 
-  /** Places instance `i`: the character's matrix; each part's offset from the root is folded in. */
+  /**
+   * Places instance `i` by the character's matrix. Every part reads it and applies its own offset from the root in
+   * its vertex stage, so part `k` draws at `matrix × animation.parts[k].matrix`.
+   */
   setMatrixAt(i: number, matrix: Matrix4): void {
-    // Parts share one matrix buffer; their offsets are applied per part in the shader-free way: the first part's
-    // offset is folded in here and the other parts store the same character matrix. Prototypes whose parts sit at
-    // different offsets get the offset per part through `partOffsets`.
-    _matrix.multiplyMatrices(matrix, this.animation.parts[0]!.matrix);
-    _matrix.toArray(this.matrixBuffer.array as Float32Array, i * 16);
+    matrix.toArray(this.matrixBuffer.array as Float32Array, i * 16);
     this.matrixBuffer.needsUpdate = true;
   }
 
+  /** The character matrix instance `i` was placed with (no part offset in it). */
   getMatrixAt(i: number, target: Matrix4): Matrix4 {
     return target.fromArray(this.matrixBuffer.array as Float32Array, i * 16);
   }

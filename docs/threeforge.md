@@ -822,11 +822,13 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
 - **`AnimatedInstances({ animation, count, material? })`** (`src/skinning/AnimatedInstances.ts`): one `Mesh` per
   part over an `InstancedBufferGeometry` sharing the part's buffers, `MeshStandardNodeMaterial` with a TSL
   `positionNode` that fetches the instance's four bone matrices for its current row (`clipStart + floor(mod((time
-  × speed + offset) × fps, frames))`), applies `bindMatrixInverse × Σ bone × weight × bindMatrix` and the instance
-  matrix, and assigns `normalLocal`. The instance matrices live in one `InstancedInterleavedBuffer` (four separate
-  attributes would exceed WebGPU's eight vertex buffers; a plain `InterleavedBuffer` is read per vertex, because
-  both backends take the per-instance step from `isInstancedInterleavedBuffer`). `setMatrixAt` folds the part's
-  offset in, `setClipAt(i, clip, { offset, speed })`, `setTime(seconds)`, `addTo`, `dispose`. Meshes are
+  × speed + offset) × fps, frames))`), applies `bindMatrixInverse × Σ bone × weight × bindMatrix`, then the part's
+  offset (`parts[i].matrix`, a `mat4` uniform of that part's material, read every frame) and the instance matrix, and
+  assigns `normalLocal`. The instance matrices, the characters' own, live in one `InstancedInterleavedBuffer` the parts
+  share (four separate attributes would exceed WebGPU's eight vertex buffers; a plain `InterleavedBuffer` is read per
+  vertex, because both backends take the per-instance step from `isInstancedInterleavedBuffer`). `setMatrixAt` stores
+  the character's matrix and `getMatrixAt` returns it, `setClipAt(i, clip, { offset, speed })`, `setTime(seconds)`,
+  `addTo`, `dispose`. Meshes are
   `forge:vat:<part>` with `userData.forge = { kind: 'vat', instances }` (untagged: a tag overwrites the marker).
 - **Ledger**: reason `vat-instanced`, `skinning.vatInstances` / `vatVertices`, budget `bones`, hints
   `bones-over-budget` and `skinned-crowd` (50 skinned draws). Authoring notes: `docs/skinning.md`.

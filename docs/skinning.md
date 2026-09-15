@@ -33,7 +33,7 @@ each other in the row (`parts[i].boneOffset`). Clips follow each other in rows; 
 ```ts
 import { AnimatedInstances } from 'threeforge';
 const crowd = new AnimatedInstances({ animation, count: 200 }).addTo(scene);
-crowd.setMatrixAt(i, matrix);                        // the character's transform; each part's offset is folded in
+crowd.setMatrixAt(i, matrix);                        // the character's transform (getMatrixAt returns it)
 crowd.setClipAt(i, 'walk', { offset: i * 0.13, speed: 1 });
 crowd.setTime(seconds);                              // one clock for every instance, each frame
 ```
@@ -41,8 +41,11 @@ crowd.setTime(seconds);                              // one clock for every inst
 One `Mesh` per part of the prototype over an `InstancedBufferGeometry` that shares the part's vertex buffers, with
 a `MeshStandardNodeMaterial` (colour, maps and flags copied from the part's material, or from `material`). Its
 vertex stage fetches the four bone matrices of the instance's current frame from the texture and applies three's
-skinning formula, then the instance matrix; the fragment stage is three's standard lighting. Per instance:
-`[clipStart, clipFrames, timeOffset, speed]` and a matrix, in one interleaved instanced buffer. The meshes are
+skinning formula, then the part's offset from the character root and the instance matrix; the fragment stage is
+three's standard lighting. Per instance: `[clipStart, clipFrames, timeOffset, speed]` and the character's matrix, in
+one interleaved instanced buffer the parts share (`getMatrixAt` returns that matrix). Per part: its offset,
+`animation.parts[k].matrix`, as a `mat4` uniform of that part's material, read every frame, so a prototype whose parts
+sit at different offsets from its root draws each part at the character matrix × its own matrix. The meshes are
 named `forge:vat:<part>` and carry `userData.forge = { kind: 'vat', instances }`, which the ledger reports as
 reason `vat-instanced` with `skinning.vatInstances` and `vatVertices`. Do not tag them: a tag would overwrite
 that marker. Skinned parts sharing a skeleton or not both work (each part reads its own bone range).
