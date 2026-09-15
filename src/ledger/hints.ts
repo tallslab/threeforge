@@ -40,9 +40,24 @@ export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): H
   if (f.skinning.vertices > b.skinnedVertices) push('skinning', 'warn', 'skinned-vertices', `${f.skinning.vertices} skinned vertices per frame, budget ${b.skinnedVertices}`);
   if (f.skinning.bones > b.bones) push('skinning', 'warn', 'bones-over-budget', `${f.skinning.bones} skeleton bones updated on the CPU every frame, budget ${b.bones} for this tier`);
   if (f.skinning.submissions >= 50) push('skinning', 'info', 'skinned-crowd', `${f.skinning.submissions} skinned draws: bake the clips to an animation texture and instance the characters (AnimatedInstances)`);
-  for (const name of ctx.pointShadowLights ?? []) push('lighting', 'warn', 'point-light-shadow', `point light '${name}' renders 6 shadow faces per frame; use a spot light or freeze its map`, [name]);
+  const shadowLights = ctx.pointShadowLights ?? [];
+  // One hint per code, not one per object: both this and transmissive scale with the scene (every visible
+  // shadow-casting point light, every transmissive mesh), and a large scene used to mean a large number of
+  // near-identical hints — and, before sanitizeDeep's array-cap fix, risked the (+N more) string marker landing
+  // in an array the JSON schema requires to be Hint objects. The message states the true count; objects holds
+  // only the first 5 names (capped as every other hint's objects already are, via push()).
+  if (shadowLights.length > 0) {
+    const n = shadowLights.length;
+    const message = n === 1 ? `1 point light renders 6 shadow faces per frame: use a spot light or freeze its map` : `${n} point lights render 6 shadow faces per frame: use spot lights or freeze their maps`;
+    push('lighting', 'warn', 'point-light-shadow', message, shadowLights.slice(0, 5));
+  }
   if (f.lighting.shadowTexels > b.shadowTexels) push('lighting', 'warn', 'shadow-texels', `${f.lighting.shadowTexels} shadow texels per frame, budget ${b.shadowTexels}`);
-  for (const name of ctx.transmissive ?? []) push('overdraw', 'info', 'transmission', `'${name}' uses transmission: it renders in two passes and copies the frame buffer`, [name]);
+  const transmissive = ctx.transmissive ?? [];
+  if (transmissive.length > 0) {
+    const n = transmissive.length;
+    const message = n === 1 ? `1 mesh uses transmission: it renders in two passes and copies the frame buffer` : `${n} meshes use transmission: they render in two passes and copy the frame buffer`;
+    push('overdraw', 'info', 'transmission', message, transmissive.slice(0, 5));
+  }
   if (f.memory.textures.bytes > b.textureBytes) push('memory', 'warn', 'texture-bytes', `${mb(f.memory.textures.bytes)} of textures, budget ${mb(b.textureBytes)}: compress to KTX2 or shrink`);
   if (f.memory.geometries.bytes > b.geometryBytes) push('memory', 'warn', 'geometry-bytes', `${mb(f.memory.geometries.bytes)} of geometry, budget ${mb(b.geometryBytes)}: compress (meshopt, Draco), LOD, or stream chunks`);
   const unreferenced = f.memory.unreferenced.geometries + f.memory.unreferenced.textures;

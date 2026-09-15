@@ -44,6 +44,46 @@ describe('hintsFor', () => {
     expect(hints.find((h) => h.code === 'untagged')).toEqual({ category: 'drawCalls', severity: 'warn', code: 'untagged', message: '7 untagged meshes: tag.static() or tag.dynamic() them', objects: ['crate', 'barrel'] });
   });
 
+  it('uses singular wording for exactly one point light or transmissive mesh', () => {
+    const f = emptyFrame(env);
+    const hints = hintsFor(f, budgetsFor('desktop'), { pointShadowLights: ['lamp'], transmissive: ['glass'] });
+    expect(hints.find((h) => h.code === 'point-light-shadow')).toEqual({ category: 'lighting', severity: 'warn', code: 'point-light-shadow', message: '1 point light renders 6 shadow faces per frame: use a spot light or freeze its map', objects: ['lamp'] });
+    expect(hints.find((h) => h.code === 'transmission')).toEqual({ category: 'overdraw', severity: 'info', code: 'transmission', message: '1 mesh uses transmission: it renders in two passes and copies the frame buffer', objects: ['glass'] });
+  });
+
+  it('collapses multiple point lights or transmissive meshes into ONE hint per code, not one per object (both scale with the scene)', () => {
+    const f = emptyFrame(env);
+    const lights = ['lamp-1', 'lamp-2', 'lamp-3'];
+    const meshes = ['glass-1', 'glass-2'];
+    const hints = hintsFor(f, budgetsFor('desktop'), { pointShadowLights: lights, transmissive: meshes });
+    const shadowHints = hints.filter((h) => h.code === 'point-light-shadow');
+    expect(shadowHints).toHaveLength(1);
+    expect(shadowHints[0]!.message).toBe('3 point lights render 6 shadow faces per frame: use spot lights or freeze their maps');
+    expect(shadowHints[0]!.objects).toEqual(lights);
+    const transmissionHints = hints.filter((h) => h.code === 'transmission');
+    expect(transmissionHints).toHaveLength(1);
+    expect(transmissionHints[0]!.message).toBe('2 meshes use transmission: they render in two passes and copy the frame buffer');
+    expect(transmissionHints[0]!.objects).toEqual(meshes);
+  });
+
+  it('caps the collapsed hint\'s objects at 5 names even with many more lights, while the message states the true count', () => {
+    const f = emptyFrame(env);
+    const lights = Array.from({ length: 20 }, (_, i) => `lamp-${i}`);
+    const hints = hintsFor(f, budgetsFor('desktop'), { pointShadowLights: lights });
+    const shadowHints = hints.filter((h) => h.code === 'point-light-shadow');
+    expect(shadowHints).toHaveLength(1);
+    expect(shadowHints[0]!.message).toContain('20 point lights');
+    expect(shadowHints[0]!.objects).toHaveLength(5);
+    expect(shadowHints[0]!.objects).toEqual(lights.slice(0, 5));
+  });
+
+  it('emits no point-light-shadow/transmission hint when the context lists are empty', () => {
+    const f = emptyFrame(env);
+    const hints = hintsFor(f, budgetsFor('desktop'), { pointShadowLights: [], transmissive: [] });
+    expect(hints.some((h) => h.code === 'point-light-shadow')).toBe(false);
+    expect(hints.some((h) => h.code === 'transmission')).toBe(false);
+  });
+
   it('is empty for a frame inside every budget', () => {
     expect(hintsFor(emptyFrame(env), budgetsFor('desktop'))).toEqual([]);
   });

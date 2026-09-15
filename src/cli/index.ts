@@ -3,13 +3,13 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { analyzeAsset } from './analyze.js';
 import { formatUsage, parseArgs, type Command } from './args.js';
-import { EnvironmentError, exitCodeFor, PageError, UsageError } from './errors.js';
+import { exitCodeFor, UsageError } from './errors.js';
 import { explain, REMEDIES } from './explain.js';
 import { printDocument, summarize, summarizeOptimize } from './format.js';
 import { inspectApp } from './inspect.js';
 import { armExitWatchdog } from './lifecycle.js';
 import { ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA, SNAPSHOT_SCHEMA } from './schema.js';
-import { cleanText } from './untrusted.js';
+import { cleanText, describeError } from './untrusted.js';
 import { exitCodeOf } from './verdict.js';
 
 function helpText(): string {
@@ -87,11 +87,9 @@ async function main(): Promise<void> {
   try {
     process.exitCode = await run(command);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (error instanceof UsageError) process.stderr.write(`${message}\n`);
-    else if (error instanceof EnvironmentError) process.stderr.write(`environment: ${message}\n`);
-    else if (error instanceof PageError) process.stderr.write(`page: ${message}\n`);
-    else process.stderr.write(`error: ${error instanceof Error ? (error.stack ?? message) : message}\n`);
+    // describeError cleans the message: a page-originated PageError can reach here through a rejected
+    // page.evaluate/waitForFunction (measure.ts), not only through a resolved value sanitizeDeep already covers.
+    process.stderr.write(`${describeError(error)}\n`);
     process.exitCode = exitCodeFor(error);
   }
   // mcp keeps serving on stdin after run() resolves; every other command is finished here and must not linger.
