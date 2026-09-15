@@ -289,7 +289,11 @@ slot set: the batch replaces position and scale nodes and draws object-dependent
    canonical material itself when every instance is white, else a white clone with per-instance colour. The clone
    (`cloneMaterial`, also used for a baked group's vertex-colour material) gets back what three's `clone()` drops:
    every function assigned to the instance (`onBeforeCompile`, `customProgramCacheKey`, `onBeforeRender`, a node
-   material's `setup*` …), a copy of custom `defines`, and `alphaTest` (lost on the `NodeMaterial.copy` path).
+   material's `setup*` …), a copy of custom `defines`, `alphaTest` (lost on the `NodeMaterial.copy` path), and, by
+   reference, every other own enumerable property the fresh copy lacks (data a hook reads through `this`), except
+   EventDispatcher's lazily created `_listeners`, where the renderers keep their `dispose` listeners. It shares the
+   source's `userData` object instead of taking three's JSON copy, so a uniform kept there and animated through the
+   source reaches the batch, and circular or BigInt `userData` does not throw.
    Non-indexed geometries get an index on a clone (`ensureIndexed`); indices promote to Uint32 as needed.
    Instance matrices, instanced masters and baked vertices are written in the scene's space (see scene space below).
 5. Attach BVH culling to every batch (`culling: 'bvh'`), with LOD ranges when `lod` is set.
@@ -650,9 +654,10 @@ is carried and compared by the weld):
       non-VSM shadow maps draw a front-side material's back faces (`WebGLShadowMap.js`, the shadow override in
       `renderers/common/Renderer.js`), so a seam face is the nearest caster for the neighbouring module's face turned
       away from the light, which a toon ramp still lights at 0.7 × light × shadow. A shadow-casting static keeps its
-      seam faces. A rebake (hiding or showing a module) counts a module as casting when its original or the baked mesh
-      casts; faces removed at compile stay removed, so to change what the bake removes after changing `castShadow` on
-      the originals or on the baked mesh, `decompile()` and `compile()` again;
+      seam faces. A rebake (hiding or showing a module) decides every removal again, counting a module as casting when
+      its original or the baked mesh casts: once neither casts, the next rebake may remove the seams, and turning
+      casting on for either after compile keeps the faces only after the next rebake or a `decompile()` and
+      `compile()` (until then the baked mesh casts without them);
    5. every module involved is opaque, by an allowlist of three's default material hooks (`BakeEntry.opaque`, set by
       `bakeEntriesOf`): exactly one of three r186's 35 material classes (`isBuiltInMaterial`: the 18 of
       `src/materials/Materials.js` and the 17 of `src/materials/nodes/NodeMaterials.js`; a subclass fails, since an
