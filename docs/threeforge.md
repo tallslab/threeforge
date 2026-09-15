@@ -267,8 +267,10 @@ scene's, never per instance). Every
 excluded mesh shows up in the ledger as `excluded:<rule>`. `root` is optional; without it the three ancestor-scoped
 rules (`invisible-ancestor`, `group-render-order`, `clipping-group`) are skipped, since there is no boundary to walk
 to. `spriteRule(sprite, root?)` shares the same ancestor walker (`ancestorExclusionRule`) for `group-render-order`
-and `clipping-group`, plus its own `material-invisible`, `multi-material`, `sprite-center`, `layers`, `render-order`
-and `custom-hook`.
+and `clipping-group`, plus its own `material-invisible`, `sprite-node-material` (a node material with any `*Node`
+slot set: the batch replaces position and scale nodes and draws object-dependent nodes against itself), `sprite-count`
+(`Sprite.count !== 1`: three draws `count` instances of such a sprite), `multi-material`, `sprite-center`, `layers`,
+`render-order` and `custom-hook`.
 
 ## 7. The scene compiler (`World`)
 
@@ -469,9 +471,10 @@ occluded (see Occlusion).
   `Sprite`, groups them by material keys (`variantHash` and colour), and for each group of at least
   `spriteThreshold` builds one `Mesh` over an `InstancedBufferGeometry` unit quad with a `SpriteNodeMaterial` that
   takes every field of the group's material through `material.copy()` (`alphaMap`, stencil, clipping planes and the
-  rest, and a node material's node slots). `alphaTest` is set by hand, because three r186's `NodeMaterial.copy` misses
-  Material's accessor. The batch's own `positionNode` and `scaleNode` read per-instance attributes, so a source node
-  material's position, scale and vertex nodes are not carried. Under a mirrored
+  rest), except `userData`, which the copy would JSON-serialise and which stays empty on the batch material.
+  `alphaTest` is set by hand, because three r186's `NodeMaterial.copy` misses Material's accessor. The batch's own
+  `positionNode` and `scaleNode` read per-instance attributes. A sprite whose node material sets any node slot is not
+  batched (`sprite-node-material`), nor is one whose `count` is not 1 (`sprite-count`). Under a mirrored
   scene the batch swaps `FrontSide` and `BackSide` (checked every render): three flips a mesh's front face under a
   negative world determinant, never a sprite's. The originals go
   to the hidden layer and keep auto-updating; a `FORGE_HOOK` render hook on the batch copies their world
@@ -482,8 +485,8 @@ occluded (see Occlusion).
   backends: three refreshes an object's attributes only on its first render object of a frame, so a second fill
   for a nested camera would be what the main pass draws (section 13). Reason
   `sprite-batch`, name `forge:sprites:<programHash>:<n>`, `after.spriteBatches` in the report; skipped sprites
-  carry `sprite-center`, `layers`, `render-order`, `material-invisible`, `group-render-order`, `clipping-group`,
-  `custom-hook` or `sprite-threshold`. `decompile()` restores.
+  carry `sprite-center`, `layers`, `render-order`, `material-invisible`, `sprite-node-material`, `sprite-count`,
+  `group-render-order`, `clipping-group`, `custom-hook` or `sprite-threshold`. `decompile()` restores.
 - **`ParticleBudget`** (`src/overdraw/ParticleBudget.ts`): `new ParticleBudget({ tier, particles?, pointSizeScale? })
   .apply(root)` counts every `Points` object (what its `drawRange` draws), every sprite batch (its instances) and
   every single sprite; over the tier's `particles` budget, points and batches shrink by one common ratio (points
@@ -530,10 +533,12 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
     freshly recomposed local matrix, instead of the parentless value `updateMatrixWorld` would give. `markDirty` on a
     former parent also reaches its detached descendants (recursively, for a detached original that itself has
     children), even though they are no longer its children in the graph.
-  - **The composed matrix and `updateMatrixWorld()`.** `markDirty` clears `matrixWorldNeedsUpdate` after composing, so
-    an unforced `updateMatrixWorld()` on a detached original with `matrixAutoUpdate` off keeps the composed matrix. With
-    `matrixAutoUpdate` on, three recomposes the local matrix and, with no parent, copies it into `matrixWorld`; call
-    `markDirty` on it again after such an update.
+  - **The composed matrix and later world-matrix updates.** `markDirty` clears `matrixWorldNeedsUpdate` after
+    composing, so an unforced `updateMatrixWorld()` on a detached original with `matrixAutoUpdate` off keeps the
+    composed matrix. With `matrixAutoUpdate` on (the default, also for detached originals), any call that recomputes its
+    world matrix overwrites the composed one with its local matrix, since it has no parent: `updateMatrixWorld`,
+    `updateWorldMatrix`, `getWorldPosition` and the other `getWorld*` calls, and `lookAt`. Call `markDirty` on it again
+    after such a call.
 - **`RenderScheduler`** (`src/scheduler/RenderScheduler.ts`): `new RenderScheduler({ renderer, scene, camera,
   ledger?, world?, mixers?, watch?, keepAliveMs?, onRender? })`, `start()` drives `renderer.setAnimationLoop`,
   `tick(time)` renders only when `invalidate()` was called, the camera's world or projection matrix changed, a
