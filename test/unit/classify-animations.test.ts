@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { AnimationClip, BoxGeometry, Group, InstancedMesh, Mesh, MeshStandardMaterial, NumberKeyframeTrack, Scene, VectorKeyframeTrack } from 'three';
+import { describe, expect, it, vi } from 'vitest';
+import { AnimationClip, BoxGeometry, Group, InstancedMesh, Mesh, MeshStandardMaterial, NumberKeyframeTrack, PropertyBinding, Scene, VectorKeyframeTrack } from 'three';
 import { classify } from '../../src/compiler/classify.js';
 import { World } from '../../src/compiler/World.js';
 import { tag } from '../../src/tags.js';
@@ -58,5 +58,28 @@ describe('classify and InstancedMesh', () => {
     scene.add(instanced);
     expect(classify(scene)[0]).toMatchObject({ kind: 'excluded', rule: 'already-instanced' });
     expect(classify(scene, { policy: 'auto' })[0]).toMatchObject({ kind: 'excluded', rule: 'already-instanced' });
+  });
+});
+
+describe('World resolves animation tracks once per compile', () => {
+  it('shares one animatedRoots between classify and the freeze pass', () => {
+    const scene = new Scene();
+    const still = tag.static(new Mesh(box, mat()));
+    still.name = 'still';
+    const moving = tag.static(new Mesh(box, mat()));
+    moving.name = 'moving';
+    const other = tag.static(new Mesh(box, mat()));
+    other.name = 'other';
+    scene.add(still, moving, other);
+    const clip = new AnimationClip('x', 1, [
+      new VectorKeyframeTrack('moving.position', [0, 1], [0, 0, 0, 1, 1, 1]),
+      new VectorKeyframeTrack('moving.scale', [0, 1], [1, 1, 1, 2, 2, 2]),
+    ]);
+    const findNode = vi.spyOn(PropertyBinding, 'findNode');
+    const report = new World(scene, { animations: [clip] }).compile();
+    const calls = findNode.mock.calls.length;
+    findNode.mockRestore();
+    expect(calls, 'one graph search per track, not one per track per pass').toBe(2);
+    expect(report.skipped).toContainEqual({ name: 'moving', rule: 'animated' });
   });
 });

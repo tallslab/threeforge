@@ -1005,3 +1005,51 @@ describe('World.dispose', () => {
     expect(statics[0]!.visible).toBe(true);
   });
 });
+
+describe('World and the material registry on decompile', () => {
+  /** Counts the `dispose` events three's `Material.dispose()` dispatches for one material. */
+  function disposes(material: Material): () => number {
+    let n = 0;
+    material.addEventListener('dispose', () => n++);
+    return () => n;
+  }
+
+  /** Three tinted statics of one variant: the batch draws with a white clone the World owns and disposes. */
+  function tintedBatch(registry: MaterialRegistry) {
+    const scene = new Scene();
+    [0xff0000, 0x00ff00, 0x0000ff].forEach((color, i) => {
+      const mesh = tag.static(new Mesh(box, registry.register(solid(color))));
+      mesh.position.set(i * 2, 0, 0);
+      scene.add(mesh);
+    });
+    const world = new World(scene, { registry });
+    world.compile();
+    return { world, clone: world.batchedMeshes[0]!.material as MeshStandardMaterial };
+  }
+
+  it('forgets a material it disposes, so the registry never hands out a disposed one', () => {
+    const registry = new MaterialRegistry();
+    const { world, clone } = tintedBatch(registry);
+    // The batch material is reachable through `world.batchedMeshes`, so app code can register it.
+    expect(registry.register(clone)).toBe(clone);
+    expect(registry.describe(clone).outcome).not.toBe('unregistered');
+    const count = disposes(clone);
+    world.decompile();
+    expect(count(), 'still disposed, as the World created it').toBe(1);
+    expect(registry.describe(clone).outcome, 'and forgotten first').toBe('unregistered');
+    expect(registry.canonicalOf(clone)).toBeUndefined();
+  });
+
+  it('keeps and never disposes a material a live registered material still merges into', () => {
+    const registry = new MaterialRegistry();
+    const { world, clone } = tintedBatch(registry);
+    expect(registry.register(clone)).toBe(clone);
+    const twin = clone.clone();
+    expect(registry.register(twin), 'an identical material merges into the clone').toBe(clone);
+    const count = disposes(clone);
+    world.decompile();
+    expect(count(), 'disposing it would break every mesh drawn with the twin').toBe(0);
+    expect(registry.canonicalOf(twin), 'which still resolves to it').toBe(clone);
+    expect(registry.describe(clone).outcome).not.toBe('unregistered');
+  });
+});

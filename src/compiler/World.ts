@@ -1,4 +1,4 @@
-import { BoxGeometry, DoubleSide, Group, Matrix4, Mesh, MeshBasicMaterial, Vector3, Vector4, WebGLCoordinateSystem, type BatchedMesh, type Box3, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Sprite, type Texture } from 'three';
+import { Box3, BoxGeometry, DoubleSide, Group, Matrix4, Mesh, MeshBasicMaterial, Vector3, Vector4, WebGLCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Sprite, type Texture } from 'three';
 import type { DrawCallLedger } from '../ledger/DrawCallLedger.js';
 import { displayName } from '../ledger/reasons.js';
 import { MaterialRegistry, type RegistryStats } from '../registry/MaterialRegistry.js';
@@ -20,6 +20,7 @@ export const FORGE_HIDDEN_LAYER = 31;
 const _local = new Matrix4();
 const _size = new Vector3();
 const _center = new Vector3();
+const _box = new Box3();
 
 export interface WorldOptions {
   registry?: MaterialRegistry;
@@ -389,7 +390,10 @@ export class World {
     // culling the depth of the current pass, which passes are still open and the main camera, which sprite batches
     // also sync for (see below).
     this.sceneHookRestores.push(this.passes.install(this.scene));
-    const classifications = classify(this.scene, { policy: this.policy, animations: this.animations });
+    // Resolved once for the whole compile: `classify` makes animated subtrees dynamic, and the freeze pass below
+    // keeps them and their ancestors auto-updating. Each track costs a `PropertyBinding.findNode` walk of the graph.
+    const animated = animatedRoots(this.scene, this.animations);
+    const classifications = classify(this.scene, { policy: this.policy, animated });
     const before = {
       meshes: classifications.length,
       materials: new Set(classifications.flatMap((c) => (Array.isArray(c.object.material) ? c.object.material : [c.object.material]))).size,
@@ -421,14 +425,27 @@ export class World {
       const shared = (result.originals.get(target) ?? []).some((o) => o.material === material || this.registry.canonicalOf(o.material as Material) === material);
       if (!shared) this.ownedMaterials.add(material);
     }
+    for (const [mesh, rule] of syncRule) if (rule === null && result.slots.has(mesh)) this.syncedSet.add(mesh);
     if (this.cullingMode === 'bvh') {
+      // Batch-synced movers are written into their batch before every cull, so each one refits its BVH leaf whenever
+      // it moves. Those batches get a margin of one mover's own size: bvh.js then leaves a leaf where it is while the
+      // new box still fits inside the enlarged one. It cannot change what is drawn — a BVH candidate still has to
+      // pass three's own bounding-sphere test (`attachBvhCulling`), so a wider box only offers more candidates.
+      const moversByBatch = new Map<BatchedMesh, Mesh[]>();
+      for (const mesh of this.syncedSet) {
+        const target = result.slots.get(mesh)?.batch as BatchedMesh | undefined;
+        if (!target?.isBatchedMesh) continue;
+        const movers = moversByBatch.get(target);
+        if (movers) movers.push(mesh);
+        else moversByBatch.set(target, [mesh]);
+      }
       for (const batch of this.batches) {
         const geometryIds = result.lodGeometryIds.get(batch);
         const lod = this.lod && geometryIds ? { distances: this.lod.distances, geometryIds } : undefined;
-        this.cullingHandles.set(batch, attachBvhCulling(batch, coordinateSystem, { nestedPasses, passes: this.passes, ...(lod ? { lod } : {}) }));
+        const movers = moversByBatch.get(batch);
+        this.cullingHandles.set(batch, attachBvhCulling(batch, coordinateSystem, { margin: movers ? this.moverMargin(movers) : 0, nestedPasses, passes: this.passes, ...(lod ? { lod } : {}) }));
       }
     }
-    for (const [mesh, rule] of syncRule) if (rule === null && result.slots.has(mesh)) this.syncedSet.add(mesh);
     this.installSync(result.slots);
     if (this.occlusion) this.installOcclusion();
 
@@ -468,7 +485,7 @@ export class World {
     if (this.freezeStatics) {
       const hiddenSet = new Set<Object3D>(this.hidden.map((h) => h.mesh));
       const syncedSet = new Set<Object3D>(this.hidden.filter((h) => h.synced).map((h) => h.mesh));
-      for (const object of freezableObjects(this.scene, { hidden: hiddenSet, synced: syncedSet, animated: animatedRoots(this.scene, this.animations) })) {
+      for (const object of freezableObjects(this.scene, { hidden: hiddenSet, synced: syncedSet, animated })) {
         object.updateMatrix();
         this.frozenList.push({ object, matrixAutoUpdate: object.matrixAutoUpdate });
         object.matrixAutoUpdate = false;
@@ -508,6 +525,22 @@ export class World {
       occlusion: this.occlusion ? { proxies: this.occluders.length, skippedSynced: this.occlusionSkippedSynced } : null,
       nestedPasses,
     };
+  }
+
+  /**
+   * The BVH box margin for a batch carrying these movers: the largest extent any of them has in the scene's space,
+   * which is where their instance boxes live. A mover then has a whole body length of slack before its leaf has to
+   * be refitted. Read from each mover's geometry as it stands at compile (`boundingBox`, computed once by three).
+   */
+  private moverMargin(movers: Mesh[]): number {
+    let extent = 0;
+    for (const mover of movers) {
+      const geometry = mover.geometry;
+      if (geometry.boundingBox === null) geometry.computeBoundingBox();
+      _box.copy(geometry.boundingBox!).applyMatrix4(this.space.toLocal(mover.matrixWorld, _local)).getSize(_size);
+      extent = Math.max(extent, _size.x, _size.y, _size.z);
+    }
+    return extent;
   }
 
   private installOcclusion(): void {
@@ -871,12 +904,18 @@ export class World {
     for (const restore of this.sceneHookRestores.reverse()) restore();
     this.sceneHookRestores = [];
     this.passes.reset();
+    // Materials merged into another of this compile's own materials are forgotten first, so `releaseMaterial()`
+    // below sees, per canonical, only the dependents this decompile is not also dropping.
+    for (const material of this.createdMaterials()) {
+      const canonical = this.registry.canonicalOf(material);
+      if (canonical !== undefined && canonical !== material) this.registry.forget(material);
+    }
     for (const restore of this.occlusionRestores) restore();
     this.occlusionRestores = [];
     for (const { proxy, targets } of this.occluders) {
       proxy.removeFromParent();
       proxy.geometry.dispose();
-      (proxy.material as Material).dispose();
+      this.releaseMaterial(proxy.material as Material);
       for (const t of targets) t.visible = true;
     }
     this.occluders = [];
@@ -887,13 +926,13 @@ export class World {
     for (const batch of this.batches) {
       this.cullingHandles.get(batch)?.detach();
       batch.removeFromParent();
-      if (this.ownedMaterials.has(batch.material as Material)) (batch.material as Material).dispose();
+      if (this.ownedMaterials.has(batch.material as Material)) this.releaseMaterial(batch.material as Material);
       batch.dispose();
     }
     for (const mesh of this.instanced) {
       (mesh as CulledInstancedMesh).forgeCulling?.detach();
       mesh.removeFromParent();
-      if (this.ownedMaterials.has(mesh.material as Material)) (mesh.material as Material).dispose();
+      if (this.ownedMaterials.has(mesh.material as Material)) this.releaseMaterial(mesh.material as Material);
       mesh.dispose();
     }
     this.ownedMaterials = new Set();
@@ -901,11 +940,15 @@ export class World {
       b.mesh.removeFromParent();
       b.mesh.geometry.dispose();
       b.removed.dispose();
-      if (b.ownsMaterial) (b.mesh.material as Material).dispose();
+      if (b.ownsMaterial) this.releaseMaterial(b.mesh.material as Material);
     }
     this.baked = [];
     for (const batch of this.spriteBatchList) {
       batch.mesh.removeFromParent();
+      // `SpriteBatch.dispose()` owns this material and disposes it; drop it from the registry first, unless a
+      // registered material still resolves to it (then it has to stay findable, as `releaseMaterial` keeps one).
+      const material = batch.material as Material;
+      if (this.registry.canonicalOf(material) !== undefined && this.registry.dependentsOf(material) === 0) this.registry.forget(material);
       batch.dispose();
     }
     this.spriteBatchList = [];
@@ -954,6 +997,39 @@ export class World {
       this.disposed = true;
       this.disposing = false;
     }
+  }
+
+  /**
+   * Every material this compile created and `decompile()` disposes: the white clones carrying per-instance colours
+   * for batches and instanced groups, a baked group's vertex-colour clone, and the occlusion proxies' and sprite
+   * batches' own materials. Never a material the app registered and the compiler only shared.
+   */
+  private createdMaterials(): Material[] {
+    const created: Material[] = [];
+    for (const { proxy } of this.occluders) created.push(proxy.material as Material);
+    for (const target of [...this.batches, ...this.instanced]) {
+      const material = target.material as Material;
+      if (this.ownedMaterials.has(material)) created.push(material);
+    }
+    for (const b of this.baked) if (b.ownsMaterial) created.push(b.mesh.material as Material);
+    for (const batch of this.spriteBatchList) created.push(batch.material as Material);
+    return created;
+  }
+
+  /**
+   * Drops a material this compile created from the registry and disposes it, so nothing the registry hands out ever
+   * points at a disposed object. A canonical another *registered* material still merges into is left exactly as it
+   * is — registered and undisposed — because that material resolves to this very object: disposing it would break
+   * every mesh drawn with it, and forgetting it would leave it resolving to an object the registry no longer knows.
+   * Such a material is the app's to release once it stops using the duplicate (`registry.dependentsOf`).
+   */
+  private releaseMaterial(material: Material): void {
+    const canonical = this.registry.canonicalOf(material);
+    if (canonical !== undefined) {
+      if (canonical === material && this.registry.dependentsOf(material) > 0) return;
+      this.registry.forget(material);
+    }
+    material.dispose();
   }
 
   private assertLive(): void {

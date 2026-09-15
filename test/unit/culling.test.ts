@@ -122,3 +122,18 @@ describe('attachBvhCulling', () => {
     expect(f.drawn()).toEqual(linear);
   });
 });
+
+describe('attachBvhCulling margin', () => {
+  it('only adds candidates: the drawn set is exactly the one a marginless tree gives', () => {
+    const none = field(4000);
+    attachBvhCulling(none.batch, WebGLCoordinateSystem);
+    none.cull();
+    const expected = none.drawn();
+    expect(expected.length).toBeGreaterThan(10);
+    expect(expected.length).toBeLessThan(4000);
+    const margined = field(4000); // the same seed, so the same instances
+    attachBvhCulling(margined.batch, WebGLCoordinateSystem, { margin: 25 });
+    margined.cull();
+    expect(margined.drawn()).toEqual(expected);
+  });
+});

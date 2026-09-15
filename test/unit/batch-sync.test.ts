@@ -167,3 +167,21 @@ describe('World.setVisible', () => {
     expect(world.resolve({ object: instanced, instanceId: 5 } as never).name).not.toBe(meshes[5]!.name);
   });
 });
+
+describe('World BVH margin for batch-synced movers', () => {
+  it('gives a batch carrying synced movers a margin and leaves a static-only batch at none', () => {
+    const synced = sceneWithDynamics();
+    const world = new World(synced.scene, { dynamics: 'batch-sync' });
+    world.compile();
+    const batch = world.slotOf(synced.mover)!.batch as BatchedMesh;
+    // A mover is written into the batch before every cull, so its leaf is refitted each time it moves: a margin lets
+    // bvh.js keep the leaf where it is while the box still fits, without changing which instances the cull draws.
+    expect(world.cullingOf(batch)!.margin).toBeGreaterThan(0);
+
+    const statics = sceneWithDynamics();
+    const plain = new World(statics.scene);
+    plain.compile();
+    const staticBatch = batchesIn(statics.scene)[0]!;
+    expect(plain.cullingOf(staticBatch)!.margin, 'statics only move through markDirty').toBe(0);
+  });
+});

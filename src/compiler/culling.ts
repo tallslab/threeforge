@@ -22,7 +22,11 @@ export interface CullingLod {
 export type NestedPassPolicy = 'per-pass' | 'reuse-main';
 
 export interface CullingOptions {
-  /** Box margin for instances that move; 0 (default) is fastest for statics. */
+  /**
+   * Box margin for instances that move; 0 (default) is fastest for statics. Leaf boxes are built and refitted this
+   * much larger, so `move` can leave a leaf alone while the instance's new box still fits inside it. It never changes
+   * which instances are drawn: a candidate the BVH offers still has to pass three's own bounding-sphere test.
+   */
   margin?: number;
   /** Pick a coarser geometry range for distant instances (batches only). */
   lod?: CullingLod;
@@ -112,6 +116,8 @@ export function levelFor(distance: number, distances: number[]): number {
 
 export interface CullingHandle {
   bvh: BVH<object, number>;
+  /** The box margin the tree was built with, and that `move`/`insert` refit by (`CullingOptions.margin`). */
+  readonly margin: number;
   /** Re-read an instance's matrix and update its leaf. */
   move(id: number): void;
   insert(id: number): void;
@@ -533,6 +539,7 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
 
   return {
     bvh,
+    margin,
     move(id) {
       const node = nodes.get(id);
       if (!node) return;

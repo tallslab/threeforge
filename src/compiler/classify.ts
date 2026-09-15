@@ -22,6 +22,12 @@ export interface ClassifyOptions {
    * `{ root, clips }` per character when several share bone or node names, since names resolve by first match.
    */
   animations?: AnimationSource[];
+  /**
+   * The nodes those clips target, already resolved by the caller (`animatedRoots(root, animations)`). When given it
+   * is used as it stands and `animations` is not resolved again: resolving a track is a `PropertyBinding.findNode`
+   * search of the graph, and `World.compile()` needs the very same set for its freeze pass.
+   */
+  animated?: Set<Object3D>;
 }
 
 type MeshLike = Mesh & { isSkinnedMesh?: boolean; isInstancedMesh?: boolean; morphTargetInfluences?: number[] };
@@ -83,7 +89,7 @@ export function exclusionRule(mesh: Mesh, root?: Object3D): string | null {
 export function classify(root: Object3D, options: ClassifyOptions = {}): Classification[] {
   const policy = options.policy ?? 'tagged';
   root.updateMatrixWorld(true);
-  const animated = animatedRoots(root, options.animations ?? []);
+  const animated = options.animated ?? animatedRoots(root, options.animations ?? []);
   const result: Classification[] = [];
   root.traverse((object) => {
     const mesh = object as MeshLike;
