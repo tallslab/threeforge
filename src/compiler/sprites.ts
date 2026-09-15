@@ -1,4 +1,6 @@
-import { Matrix4, Sphere, type Camera, type Frustum, type Material, type Object3D, type Sprite, type SpriteMaterial } from 'three';
+import { Matrix4, Sphere, SpriteMaterial, type Camera, type Frustum, type Material, type Object3D, type Sprite } from 'three';
+import { SpriteNodeMaterial } from 'three/webgpu';
+import { hasOwnFunctions } from './batchStatics.js';
 import type { SceneSpace } from './space.js';
 
 /** Sprites that share a material (by registry keys, not instance) and become one instanced billboard draw. */
@@ -59,6 +61,22 @@ export function ancestorExclusionRule(object: Object3D, root: Object3D): string 
 }
 
 /**
+ * The two material classes a sprite batch reproduces: `buildSpriteBatch` builds a plain `SpriteNodeMaterial` and copies the
+ * source's fields into it. `isBuiltInMaterial` (`batchStatics.ts`) accepts every three material type, so it does not fit.
+ */
+const SPRITE_PROTOTYPES = new Set<object>([SpriteMaterial.prototype, SpriteNodeMaterial.prototype]);
+
+/**
+ * Code the batch material would not carry: a prototype other than exactly `SpriteMaterial.prototype` or
+ * `SpriteNodeMaterial.prototype` (a subclass overriding `setupPositionView`, `setup`, `onBeforeCompile` or any other
+ * method, or a material class that is not a sprite material at all), or own function-valued properties (`hasOwnFunctions`:
+ * an instance `setup`, `onBeforeRender` …).
+ */
+function isCustomSpriteMaterial(material: Material): boolean {
+  return !SPRITE_PROTOTYPES.has(Object.getPrototypeOf(material) as object) || hasOwnFunctions(material);
+}
+
+/**
  * A node material with any node slot set. three r186's `NodeMaterial` declares its slots as `*Node` instance properties
  * (`NodeMaterial.js` ~103-390: `lightsNode`, `envNode`, `aoNode`, `colorNode`, `normalNode`, `opacityNode`,
  * `backdropNode`, `backdropAlphaNode`, `alphaTestNode`, `maskNode`, `maskShadowNode`, `positionNode`, `geometryNode`,
@@ -80,6 +98,9 @@ function hasNodeSlot(material: Material): boolean {
  * Why a sprite cannot join a batch, or null. Visibility is not a rule: the per-frame fill collapses hidden sprites.
  * `root` scopes `group-render-order` and `clipping-group` (ancestor-based); omit it to skip those two checks.
  *
+ * `sprite-custom-material`: the batch material is a plain `SpriteNodeMaterial`, so a subclass's methods and instance
+ * functions on the source would be dropped (`isCustomSpriteMaterial`). Checked before the node slots: code is the broader
+ * reason, and a separate name tells a classic `SpriteMaterial` subclass apart from node slots.
  * `sprite-node-material`: the batch replaces a node material's position and scale nodes with its instance attributes,
  * clears its vertex node, and any node reading the object (`modelWorldMatrix`, `positionWorld`) would read the batch mesh.
  * `sprite-count`: three draws `count` instances of a sprite (`RenderObject.getDrawParameters`, `object.count`), while a
@@ -89,6 +110,7 @@ export function spriteRule(sprite: Sprite, root?: Object3D): string | null {
   const material = sprite.material as SpriteMaterial | SpriteMaterial[];
   if (Array.isArray(material)) return 'multi-material';
   if (material.visible === false) return 'material-invisible';
+  if (isCustomSpriteMaterial(material)) return 'sprite-custom-material';
   if (hasNodeSlot(material)) return 'sprite-node-material';
   if (sprite.count !== 1) return 'sprite-count';
   if (sprite.center.x !== 0.5 || sprite.center.y !== 0.5) return 'sprite-center';

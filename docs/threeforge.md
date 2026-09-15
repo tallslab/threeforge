@@ -267,7 +267,9 @@ scene's, never per instance). Every
 excluded mesh shows up in the ledger as `excluded:<rule>`. `root` is optional; without it the three ancestor-scoped
 rules (`invisible-ancestor`, `group-render-order`, `clipping-group`) are skipped, since there is no boundary to walk
 to. `spriteRule(sprite, root?)` shares the same ancestor walker (`ancestorExclusionRule`) for `group-render-order`
-and `clipping-group`, plus its own `material-invisible`, `sprite-node-material` (a node material with any `*Node`
+and `clipping-group`, plus its own `material-invisible`, `sprite-custom-material` (the material is not exactly a
+`SpriteMaterial` or `SpriteNodeMaterial`, or holds its own functions: the batch builds a plain `SpriteNodeMaterial`
+and would drop that code), `sprite-node-material` (a node material with any `*Node`
 slot set: the batch replaces position and scale nodes and draws object-dependent nodes against itself), `sprite-count`
 (`Sprite.count !== 1`: three draws `count` instances of such a sprite), `multi-material`, `sprite-center`, `layers`,
 `render-order` and `custom-hook`.
@@ -476,8 +478,10 @@ occluded (see Occlusion).
   takes every field of the group's material through `material.copy()` (`alphaMap`, stencil, clipping planes and the
   rest), except `userData`, which the copy would JSON-serialise and which stays empty on the batch material.
   `alphaTest` is set by hand, because three r186's `NodeMaterial.copy` misses Material's accessor. The batch's own
-  `positionNode` and `scaleNode` read per-instance attributes. A sprite whose node material sets any node slot is not
-  batched (`sprite-node-material`), nor is one whose `count` is not 1 (`sprite-count`). Under a mirrored
+  `positionNode` and `scaleNode` read per-instance attributes. A sprite whose material is a subclass of `SpriteMaterial`
+  or `SpriteNodeMaterial`, or holds instance functions (`setup`, `onBeforeRender` …), is not batched
+  (`sprite-custom-material`); nor is one whose node material sets any node slot (`sprite-node-material`), nor one whose
+  `count` is not 1 (`sprite-count`). Under a mirrored
   scene the batch swaps `FrontSide` and `BackSide` (checked every render): three flips a mesh's front face under a
   negative world determinant, never a sprite's. The originals go
   to the hidden layer and keep auto-updating; a `FORGE_HOOK` render hook on the batch copies their world
@@ -488,7 +492,7 @@ occluded (see Occlusion).
   backends: three refreshes an object's attributes only on its first render object of a frame, so a second fill
   for a nested camera would be what the main pass draws (section 13). Reason
   `sprite-batch`, name `forge:sprites:<programHash>:<n>`, `after.spriteBatches` in the report; skipped sprites
-  carry `sprite-center`, `layers`, `render-order`, `material-invisible`, `sprite-node-material`, `sprite-count`,
+  carry `sprite-center`, `layers`, `render-order`, `material-invisible`, `sprite-custom-material`, `sprite-node-material`, `sprite-count`,
   `group-render-order`, `clipping-group`, `custom-hook` or `sprite-threshold`. `decompile()` restores.
 - **`ParticleBudget`** (`src/overdraw/ParticleBudget.ts`): `new ParticleBudget({ tier, particles?, pointSizeScale? })
   .apply(root)` counts every `Points` object (what its `drawRange` draws), every sprite batch (its instances) and

@@ -20,9 +20,10 @@ import {
   Vector3,
   WebGLCoordinateSystem,
   ZeroFactor,
+  type Material,
   type Texture,
 } from 'three';
-import { ClippingGroup, SpriteNodeMaterial } from 'three/webgpu';
+import { ClippingGroup, SpriteNodeMaterial, type Node, type NodeBuilder } from 'three/webgpu';
 import { positionWorld, vec2, vec3 } from 'three/tsl';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
@@ -264,5 +265,32 @@ describe('World sprite batch material', () => {
       plain: [],
     });
     expect(report.after.spriteBatches, 'the plain SpriteMaterial and the all-null node material').toBe(2);
+  });
+
+  /** A sprite node material class whose billboard placement is the app's own code. */
+  class CustomPlacementSpriteMaterial extends SpriteNodeMaterial {
+    override setupPositionView(builder: NodeBuilder): Node {
+      return super.setupPositionView(builder);
+    }
+  }
+
+  /** A classic sprite material class with its own shader hook. */
+  class CustomCompileSpriteMaterial extends SpriteMaterial {
+    override onBeforeCompile(): void {}
+  }
+
+  it.each<[string, () => Material]>([
+    ['a SpriteNodeMaterial subclass overriding setupPositionView', () => new CustomPlacementSpriteMaterial({ transparent: false })],
+    ['a SpriteMaterial subclass overriding onBeforeCompile', () => new CustomCompileSpriteMaterial({ transparent: false })],
+    ['a SpriteNodeMaterial with an instance setup', () => Object.assign(new SpriteNodeMaterial({ transparent: false }), { setup(this: SpriteNodeMaterial, builder: NodeBuilder): void { SpriteNodeMaterial.prototype.setup.call(this, builder); } })],
+    ['a SpriteNodeMaterial with an instance onBeforeRender', () => Object.assign(new SpriteNodeMaterial({ transparent: false }), { onBeforeRender(): void {} })],
+  ])('leaves %s unbatched as sprite-custom-material: the batch builds a plain SpriteNodeMaterial and would drop that code', (label, make) => {
+    const scene = new Scene();
+    sprites(scene, 4, make() as unknown as SpriteMaterial, 'custom');
+    sprites(scene, 4, new SpriteMaterial({ color: 0xff0000 }), 'plain');
+    scene.updateMatrixWorld(true);
+    const report = new World(scene).compile();
+    expect(report.skipped.filter((s) => s.name.startsWith('custom-')).map((s) => s.rule), label).toEqual(Array(4).fill('sprite-custom-material'));
+    expect(report.after.spriteBatches, `${label}: only the plain sprites batch`).toBe(1);
   });
 });
