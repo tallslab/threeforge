@@ -1,43 +1,22 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { VERSION } from '../version.js';
 import { analyzeAsset } from './analyze.js';
-import { parseArgs, COMMANDS, type Command } from './args.js';
+import { formatUsage, parseArgs, type Command } from './args.js';
 import { EnvironmentError, exitCodeFor, PageError, UsageError } from './errors.js';
 import { explain, REMEDIES } from './explain.js';
-import { summarize, summarizeOptimize } from './format.js';
+import { printDocument, summarize, summarizeOptimize } from './format.js';
 import { inspectApp } from './inspect.js';
 import { armExitWatchdog } from './lifecycle.js';
 import { ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA, SNAPSHOT_SCHEMA } from './schema.js';
 import { exitCodeOf } from './verdict.js';
 
-const FALLBACK_HELP = `threeforge ${VERSION} — frame-budget compiler and diagnostics for three.js games
-
-  threeforge analyze <file.glb|.gltf> [--backend webgl2|webgpu] [--tier auto|desktop|phone-mid|phone-low] [--budget N] [--frames 30] [--no-compile] [--json]
-  threeforge inspect <url> [--frames 30] [--compile] [--budget N] [--json]     drives a page that called exposeToAgents()
-  threeforge optimize <file.glb|.gltf> [--out out.glb] [--preset safe|balanced|aggressive] [--no-<step>|--<step>] [--simplify 0.5] [--compress meshopt] [--textures webp|avif] [--texture-size N] [--no-verify] [--parity 0.5] [--views 2] [--json]
-  threeforge explain <hint-code> | --all [--json]                             what a hint means and how to fix it
-  threeforge schema [snapshot|analyze|inspect|optimize|all] [--json]           JSON Schemas of what the commands print
-  threeforge mcp                                                              stdio MCP server (analyze_asset, inspect_app, optimize_asset, explain_hint)
-  threeforge decoders <dir>                                                  copies three's Draco and Basis decoders for createLoader()
-
-Exit codes: 0 pass · 1 verdict failed · 2 usage · 3 environment (install: npm i -D playwright && npx playwright install chromium) · 4 page error
-Commands: ${COMMANDS.join(', ')}`;
-
 function helpText(): string {
   try {
     return readFileSync(fileURLToPath(new URL('../../AGENTS.md', import.meta.url)), 'utf8');
   } catch {
-    return FALLBACK_HELP;
+    return formatUsage();
   }
-}
-
-function printDocument(doc: unknown, summary: string, json: boolean): void {
-  if (json) {
-    process.stdout.write(JSON.stringify(doc, null, 2) + '\n');
-    process.stderr.write(summary + '\n');
-  } else process.stdout.write(summary + '\n');
 }
 
 async function run(command: Command): Promise<number> {
@@ -50,18 +29,18 @@ async function run(command: Command): Promise<number> {
       return 0;
     case 'analyze': {
       const doc = await analyzeAsset(command.input, log);
-      printDocument(doc, summarize(doc), command.json);
+      printDocument(doc, summarize, command.json);
       return exitCodeOf(doc.verdict);
     }
     case 'inspect': {
       const doc = await inspectApp(command.input, log);
-      printDocument(doc, summarize(doc), command.json);
+      printDocument(doc, summarize, command.json);
       return exitCodeOf(doc.verdict);
     }
     case 'optimize': {
       const { optimizeAsset } = await import('./optimize.js');
       const doc = await optimizeAsset(command.input, log);
-      printDocument(doc, summarizeOptimize(doc), command.json);
+      printDocument(doc, summarizeOptimize, command.json);
       return exitCodeOf(doc.verdict);
     }
     case 'explain': {
@@ -99,7 +78,7 @@ async function main(): Promise<void> {
   try {
     command = parseArgs(process.argv.slice(2));
   } catch (error) {
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n\n${FALLBACK_HELP}\n`);
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n\n${formatUsage()}\n`);
     process.exit(2);
   }
   try {

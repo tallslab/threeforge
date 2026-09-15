@@ -28,7 +28,7 @@ every breach shows up as a hint in the overlay and the JSON report.
 ```bash
 npm i -D threeforge playwright && npx playwright install chromium
 npx threeforge analyze scene.glb --backend webgpu --tier phone-mid --json   # measure, compile, verdict, hints
-npx threeforge inspect http://localhost:5173 --compile --json              # your running app, via exposeToAgents()
+npx threeforge inspect http://localhost:5173 --json                        # your running app, via exposeToAgents()
 npx threeforge optimize scene.glb --json                                    # build-time glTF pipeline, verified by pixels
 npx threeforge explain point-light-shadow --json                            # what a hint means and how to fix it
 npx threeforge schema                                                       # JSON Schemas of everything above

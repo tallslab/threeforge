@@ -9,6 +9,35 @@
 - `window.__threeforge.frameAsync()` rejects when the render throws; it used to stay pending forever.
 - Programmatic `analyzeAsset`, `analyzeAssetWithShots`, `inspectApp` and `optimizeAsset` take an optional trailing `deps` (`{ launch, serve, appDir }`, type `CliDeps`).
 - The static server (`analyze`'s harness/asset host) no longer crashes the process on a malformed request URL, such as a texture named `100%.jpg`: a request whose path fails to decode now falls back to the literal, undecoded path when it names a real file inside the root, and answers 400 otherwise. It also compares real paths (`realpathSync`), so a symlink inside the root that resolves outside it now answers 403 instead of being served, and any other unexpected error in a request answers 500 instead of taking the server down.
+- The CLI parser is declarative (`COMMAND_SPECS` in `src/cli/args.ts`). Boolean flags no longer swallow the next argument (`analyze --json scene.glb`, `inspect --compile <url>` and `optimize --simplify scene.glb` now parse), `--` ends the flags, and the usage text plus the AGENTS.md command and flag tables are generated from the specs.
+- `RANGES` and `validateInput(command, input)` in `src/cli/args.ts` hold the input bounds and cross-field rules for the CLI (and the MCP server next).
+- `inspect` still compiles by default; the docs now show `[--no-compile]` instead of an opt-in `[--compile]` (still accepted). `--timeout`, `--headed`, `--simplify-error`, `--texture-quality` and `decoders` are documented.
+- With `--json`, the document is written to stdout before the human summary is built, so a summary that throws no longer loses the JSON.
+- Inputs that now exit 2 (usage error, nothing on stdout):
+
+| input | before | now |
+|---|---|---|
+| unknown flag (`explain untagged --jsonn`) | ignored, exit 0 | exit 2 with `did you mean --json?` |
+| a flag of another command (`inspect <url> --tier desktop`, `inspect <url> --bake`, `decoders <dir> --json`) | ignored | exit 2, naming the commands that take it |
+| `--no-<flag>` of a flag without a negation (`--no-json`) | ignored | exit 2 |
+| single-dash flag (`analyze a.glb -json`) | taken as a positional, then ignored | exit 2 with the `--json` suggestion |
+| a flag before the command (`threeforge --frames 5 analyze a.glb`) | parsed | exit 2 |
+| extra positional (`analyze a.glb b.glb`, `mcp serve`, `schema snapshot analyze`) | ignored | exit 2 |
+| `explain <code> --all` | printed every remedy | exit 2 |
+| `help <unknown command>` | printed the help | exit 2 |
+| value on a boolean flag (`--json=yes`, `--no-compile=1`) | the flag was set | exit 2 |
+| flag given twice or with its negation (`--frames 5 --frames 6`, `--compile --no-compile`) | the last value won; `--no-<flag>` always won | exit 2 |
+| `--frames 0`, `--frames 2.5`, `--frames=` | clamped to 1, rounded | exit 2 (an integer ≥ 1) |
+| `--timeout` below 1000, fractional, or above 2147483647 | accepted (`0` disabled Playwright's timeout; above 2^31 - 1 a Node timer fires at once) | exit 2 |
+| `--budget 1.5`, `--budget=` | accepted (the empty value as 0) | exit 2 (an integer ≥ 0) |
+| `--views` fractional or above 64 | rounded, accepted | exit 2 (an integer from 0 to 64) |
+| `--texture-size` 0, fractional or above 16384 | accepted (0 meant no resize), rounded | exit 2 (an integer from 1 to 16384) |
+| `--texture-quality` 0, above 100 or fractional | passed to sharp | exit 2 (an integer from 1 to 100) |
+| `--parity` above 100 | accepted | exit 2 (0 to 100) |
+| `--simplify-error` above 1 | accepted | exit 2 (0 to 1) |
+| malformed numbers (`--frames 0x10`, `--frames ''`) | `0x10` read as 16, empty as 0 | exit 2 |
+| `--out=` (empty) | resolved to the working directory | exit 2 |
+| `optimize --budget N --no-verify` | the budget was silently not judged | exit 2: the budget is judged on the verified render |
 
 ## 0.8.0 — 2026-09-14
 

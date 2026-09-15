@@ -1,12 +1,48 @@
-// Generates AGENTS.md, llms.txt and docs/agents.md from the built remedy table so the hint list never drifts.
-// Run after `pnpm build:lib`: node scripts/agents-md.mjs
+// Generates AGENTS.md, llms.txt and docs/agents.md from the built remedy table and command specs so the hint list,
+// the command table and the flag table never drift. Run after `pnpm build:lib`: node scripts/agents-md.mjs
 import { writeFileSync } from 'node:fs';
+import { COMMAND_SPECS, flagForms, usageLine } from '../dist/cli/args.js';
 import { REMEDIES } from '../dist/cli/explain.js';
 import { VERSION } from '../dist/version.js';
 
 const hintRows = Object.values(REMEDIES)
   .map((r) => `| \`${r.code}\` | ${r.category} | ${r.severity} | ${r.fix} |`)
   .join('\n');
+
+/** Table cells: a literal `|` would end the cell. */
+const cell = (text) => text.replaceAll('|', '\\|');
+
+/** What each command does, in the command table. The usage column comes from COMMAND_SPECS. */
+const COMMAND_DESCRIPTIONS = {
+  analyze:
+    'Renders the asset headlessly, measures every cost category, compiles (batches, or bakes with `--bake`) it, measures again, checks pixel parity from the default framing plus `--views` orbit views, returns hints and a verdict.',
+  inspect:
+    'Drives your running app (dev server) through `window.__threeforge`, compiling through the hook unless `--no-compile`; same document without asset facts and parity. The app measures itself at the tier its ledger detects, so there is no `tier` flag here.',
+  optimize:
+    'Rewrites the asset with glTF-Transform and writes `<name>.forge.glb`. `safe` (default) never changes a pixel: dedup, palette, weld, resample, prune. `balanced` adds quantize and WebP textures (2048 px); `aggressive` adds simplify to 50 % and 1024 px textures. Renders the original and the result, compares pixels, compiles both, and lists what the file needs at load time (`requires`).',
+  explain: 'What a hint means, what to change, which API (a hint code or `--all`, not both).',
+  schema: 'JSON Schemas (draft 2020-12) of everything the commands print.',
+  mcp: 'Stdio MCP server with tools `analyze_asset`, `inspect_app`, `optimize_asset`, `explain_hint` (needs `npm i -D @modelcontextprotocol/sdk zod`).',
+  decoders: "Copies three's Draco decoder and Basis transcoder into `<dir>/draco` and `<dir>/basis` for `createLoader(renderer, { decoders })`. No JSON output.",
+};
+
+const specs = Object.values(COMMAND_SPECS);
+for (const spec of specs) if (!COMMAND_DESCRIPTIONS[spec.name]) throw new Error(`scripts/agents-md.mjs: no description for command ${spec.name}`);
+
+const commandRows = specs.map((spec) => `| \`npx ${cell(usageLine(spec))}\` | ${COMMAND_DESCRIPTIONS[spec.name]} |`).join('\n');
+
+// One row per distinct flag (same forms and meaning), listing every command that takes it.
+const flagRowsByKey = new Map();
+for (const spec of specs) {
+  for (const flag of spec.flags) {
+    const forms = flagForms(flag);
+    const key = `${forms.join(' ')} :: ${flag.description}`;
+    const row = flagRowsByKey.get(key) ?? { forms, description: flag.description, commands: [] };
+    row.commands.push(spec.name);
+    flagRowsByKey.set(key, row);
+  }
+}
+const flagRows = [...flagRowsByKey.values()].map((row) => `| ${row.forms.map((form) => `\`${cell(form)}\``).join(', ')} | ${row.commands.join(', ')} | ${cell(row.description)} |`).join('\n');
 
 const body = `# threeforge for AI agents
 
@@ -28,16 +64,24 @@ such dependency. \`optimize\` works out of the box (glTF-Transform is a dependen
 
 | command | what it does |
 |---|---|
-| \`npx threeforge analyze <file.glb\\|.gltf> [--backend webgl2\\|webgpu] [--tier auto\\|desktop\\|phone-mid\\|phone-low] [--budget N] [--frames 30] [--no-compile] [--bake] [--bake-buried] [--views N] [--json]\` | Renders the asset headlessly, measures every cost category, compiles (batches, or bakes with \`--bake\`) it, measures again, checks pixel parity from the default framing plus \`--views\` orbit views, returns hints and a verdict. |
-| \`npx threeforge inspect <url> [--frames 30] [--compile] [--budget N] [--json]\` | Drives your running app (dev server) through \`window.__threeforge\`; same document without asset facts and parity. |
-| \`npx threeforge optimize <file.glb\\|.gltf> [--out out.glb] [--preset safe\\|balanced\\|aggressive] [--no-<step>\\|--<step>] [--simplify 0.5] [--compress meshopt] [--textures webp\\|avif] [--texture-size N] [--no-verify] [--parity 0.5] [--views 2] [--json]\` | Rewrites the asset with glTF-Transform and writes \`<name>.forge.glb\`. \`safe\` (default) never changes a pixel: dedup, palette, weld, resample, prune. \`balanced\` adds quantize and WebP textures (2048 px); \`aggressive\` adds simplify to 50 % and 1024 px textures. Renders the original and the result, compares pixels, compiles both, and lists what the file needs at load time (\`requires\`). |
-| \`npx threeforge explain <hint-code> \\| --all [--json]\` | What a hint means, what to change, which API. |
-| \`npx threeforge schema [snapshot\\|analyze\\|inspect\\|optimize\\|all]\` | JSON Schemas (draft 2020-12) of everything the commands print. |
-| \`npx threeforge mcp\` | Stdio MCP server with tools \`analyze_asset\`, \`inspect_app\`, \`optimize_asset\`, \`explain_hint\` (needs \`npm i -D @modelcontextprotocol/sdk zod\`). |
+${commandRows}
 
 Exit codes: \`0\` pass · \`1\` verdict failed (over budget, an error-severity hint, or pixel parity lost) · \`2\` usage or
 input error · \`3\` environment (Playwright or Chromium missing; the message has the install command) · \`4\` the page
 threw or timed out. In \`--json\` mode stdout is only the JSON document; the human summary goes to stderr.
+
+## Flags
+
+Flags follow the command, before or after its argument. A value is \`--flag value\` or \`--flag=value\`; boolean flags
+never take one, so \`analyze --json scene.glb\` works. \`--simplify\` and \`--textures\` take a value only after \`=\` or
+when the next argument is a valid value. \`--\` ends the flags (for a path that starts with \`-\`). \`--help\` on any
+command prints this file. An unknown flag (the message suggests the nearest one), an extra argument, a flag given twice,
+a malformed or out-of-range number, \`inspect --tier\` and \`optimize --budget\` with \`--no-verify\` exit \`2\` with
+nothing on stdout.
+
+| flag | commands | meaning |
+|---|---|---|
+${flagRows}
 
 ## Make your app inspectable (one line)
 
@@ -51,9 +95,9 @@ const world = new World(scene, { registry, ledger, policy: 'auto' });
 exposeToAgents({ ledger, world, renderer, scene, camera }); // publishes window.__threeforge
 \`\`\`
 
-Then \`npx threeforge inspect http://localhost:5173 --compile --json\`. The hook offers \`frame()\`, \`frameAsync()\`,
-\`compile()\`, \`decompile()\`, \`measureOverdraw()\`, \`measureMemory()\`, \`hints()\`, \`report()\`; an agent driving its own
-browser can call them directly.
+Then \`npx threeforge inspect http://localhost:5173 --json\` (it compiles through the hook; \`--no-compile\` measures
+only). The hook offers \`frame()\`, \`frameAsync()\`, \`compile()\`, \`decompile()\`, \`measureOverdraw()\`, \`measureMemory()\`,
+\`hints()\`, \`report()\`; an agent driving its own browser can call them directly.
 
 ## The document you get back
 
@@ -109,7 +153,8 @@ after looking at the views. The output never uses Draco. Not covered: atlasing t
 
 ## Budgets per device tier
 
-Tiers are detected from the GPU and device (override with \`--tier\`). Defaults: scene submissions 400 / 150 / 80,
+Tiers are detected from the GPU and device (override with \`--tier\` on \`analyze\` and \`optimize\`; \`inspect\` measures
+the app at the tier its own ledger detects). Defaults: scene submissions 400 / 150 / 80,
 triangles 5 M / 1.5 M / 500 k, transparent overdraw 3 / 2 / 1.5 fragments per pixel, skinned vertices 400 k /
 150 k / 60 k, shadow texels 4 M / 1 M / 262 k, textures 512 / 192 / 96 MB, frame 16.6 / 16.6 / 33 ms for
 desktop / phone-mid / phone-low. In code: \`budgetsFor(tier, overrides)\`.
@@ -149,7 +194,7 @@ writeFileSync(
 > Frame-budget compiler and diagnostics for three.js games. Batches naive scenes at load time, measures draw calls, overdraw, skinning, lighting, JS and memory in one ledger, explains what to fix. CLI and MCP server for AI agents.
 
 - Quick start for agents: AGENTS.md (also printed by \`npx threeforge\`)
-- Commands: analyze <file>, inspect <url>, optimize <file>, explain <hint>, schema, mcp — all with --json
+- Commands: ${specs.map((spec) => [spec.name, ...spec.positionals.map((p) => p.usage.startsWith('<') ? p.usage : `[${p.usage}]`)].join(' ')).join(', ')}; analyze, inspect, optimize, explain and schema take --json; unknown flags exit 2
 - JSON Schemas: \`npx threeforge schema\`
 - Hint remedies: \`npx threeforge explain --all --json\`
 - Complete reference (every module, option, mechanism): docs/threeforge.md
@@ -158,4 +203,4 @@ writeFileSync(
 - Design: docs/superpowers/specs/2026-09-13-frame-budget-design.md, docs/superpowers/specs/2026-09-13-agent-cli-design.md, docs/superpowers/specs/2026-09-14-optimize-command-design.md
 `,
 );
-console.log(`AGENTS.md, docs/agents.md, llms.txt written for ${VERSION} with ${Object.keys(REMEDIES).length} hint codes`);
+console.log(`AGENTS.md, docs/agents.md, llms.txt written for ${VERSION} with ${Object.keys(REMEDIES).length} hint codes, ${specs.length} commands and ${flagRowsByKey.size} flag rows`);

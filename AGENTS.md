@@ -18,16 +18,63 @@ such dependency. `optimize` works out of the box (glTF-Transform is a dependency
 
 | command | what it does |
 |---|---|
-| `npx threeforge analyze <file.glb\|.gltf> [--backend webgl2\|webgpu] [--tier auto\|desktop\|phone-mid\|phone-low] [--budget N] [--frames 30] [--no-compile] [--bake] [--bake-buried] [--views N] [--json]` | Renders the asset headlessly, measures every cost category, compiles (batches, or bakes with `--bake`) it, measures again, checks pixel parity from the default framing plus `--views` orbit views, returns hints and a verdict. |
-| `npx threeforge inspect <url> [--frames 30] [--compile] [--budget N] [--json]` | Drives your running app (dev server) through `window.__threeforge`; same document without asset facts and parity. |
-| `npx threeforge optimize <file.glb\|.gltf> [--out out.glb] [--preset safe\|balanced\|aggressive] [--no-<step>\|--<step>] [--simplify 0.5] [--compress meshopt] [--textures webp\|avif] [--texture-size N] [--no-verify] [--parity 0.5] [--views 2] [--json]` | Rewrites the asset with glTF-Transform and writes `<name>.forge.glb`. `safe` (default) never changes a pixel: dedup, palette, weld, resample, prune. `balanced` adds quantize and WebP textures (2048 px); `aggressive` adds simplify to 50 % and 1024 px textures. Renders the original and the result, compares pixels, compiles both, and lists what the file needs at load time (`requires`). |
-| `npx threeforge explain <hint-code> \| --all [--json]` | What a hint means, what to change, which API. |
-| `npx threeforge schema [snapshot\|analyze\|inspect\|optimize\|all]` | JSON Schemas (draft 2020-12) of everything the commands print. |
+| `npx threeforge analyze <file.glb\|.gltf> [--backend webgl2\|webgpu] [--tier auto\|desktop\|phone-mid\|phone-low] [--budget N] [--frames N] [--no-compile] [--timeout ms] [--headed] [--bake] [--bake-buried] [--views N] [--json]` | Renders the asset headlessly, measures every cost category, compiles (batches, or bakes with `--bake`) it, measures again, checks pixel parity from the default framing plus `--views` orbit views, returns hints and a verdict. |
+| `npx threeforge inspect <url> [--backend webgl2\|webgpu] [--budget N] [--frames N] [--no-compile] [--timeout ms] [--headed] [--json]` | Drives your running app (dev server) through `window.__threeforge`, compiling through the hook unless `--no-compile`; same document without asset facts and parity. The app measures itself at the tier its ledger detects, so there is no `tier` flag here. |
+| `npx threeforge optimize <file.glb\|.gltf> [--out out.glb] [--preset safe\|balanced\|aggressive] [--no-<step>\|--<step>] [--simplify [ratio]] [--simplify-error e] [--compress none\|meshopt] [--textures [webp\|avif\|none]] [--texture-size N] [--texture-quality Q] [--no-verify] [--parity pct] [--views N] [--budget N] [--backend webgl2\|webgpu] [--tier auto\|desktop\|phone-mid\|phone-low] [--frames N] [--no-compile] [--timeout ms] [--headed] [--json]` | Rewrites the asset with glTF-Transform and writes `<name>.forge.glb`. `safe` (default) never changes a pixel: dedup, palette, weld, resample, prune. `balanced` adds quantize and WebP textures (2048 px); `aggressive` adds simplify to 50 % and 1024 px textures. Renders the original and the result, compares pixels, compiles both, and lists what the file needs at load time (`requires`). |
+| `npx threeforge explain [<hint-code>] [--all] [--json]` | What a hint means, what to change, which API (a hint code or `--all`, not both). |
+| `npx threeforge schema [snapshot\|analyze\|inspect\|optimize\|all] [--json]` | JSON Schemas (draft 2020-12) of everything the commands print. |
 | `npx threeforge mcp` | Stdio MCP server with tools `analyze_asset`, `inspect_app`, `optimize_asset`, `explain_hint` (needs `npm i -D @modelcontextprotocol/sdk zod`). |
+| `npx threeforge decoders <dir>` | Copies three's Draco decoder and Basis transcoder into `<dir>/draco` and `<dir>/basis` for `createLoader(renderer, { decoders })`. No JSON output. |
 
 Exit codes: `0` pass · `1` verdict failed (over budget, an error-severity hint, or pixel parity lost) · `2` usage or
 input error · `3` environment (Playwright or Chromium missing; the message has the install command) · `4` the page
 threw or timed out. In `--json` mode stdout is only the JSON document; the human summary goes to stderr.
+
+## Flags
+
+Flags follow the command, before or after its argument. A value is `--flag value` or `--flag=value`; boolean flags
+never take one, so `analyze --json scene.glb` works. `--simplify` and `--textures` take a value only after `=` or
+when the next argument is a valid value. `--` ends the flags (for a path that starts with `-`). `--help` on any
+command prints this file. An unknown flag (the message suggests the nearest one), an extra argument, a flag given twice,
+a malformed or out-of-range number, `inspect --tier` and `optimize --budget` with `--no-verify` exit `2` with
+nothing on stdout.
+
+| flag | commands | meaning |
+|---|---|---|
+| `--backend webgl2\|webgpu` | analyze, inspect, optimize | Renderer backend to measure on (default `webgl2`). |
+| `--tier auto\|desktop\|phone-mid\|phone-low` | analyze, optimize | Device tier for budgets and hints (default `auto`: detected from the GPU and device). |
+| `--budget N` | analyze, inspect | Fail the verdict (exit 1) above N scene submissions after compiling (an integer ≥ 0). |
+| `--frames N` | analyze, inspect, optimize | Frames to measure; costs are medians (an integer ≥ 1, default 30). |
+| `--compile`, `--no-compile` | analyze, inspect, optimize | Compile (batch) the scene and measure again. On by default; `--no-compile` measures the scene as loaded. |
+| `--timeout ms` | analyze, inspect, optimize | Bound in milliseconds on each page step: the load, every evaluate, the whole N-frame measurement, `compile()` (an integer from 1000 to 2147483647, default 60000). A step over it exits 4. |
+| `--headed` | analyze, inspect, optimize | Show the browser window instead of running headless (debugging). |
+| `--bake` | analyze | Bake each finished static group into one mesh (seams and duplicated faces removed, vertices welded); check with `--views`. |
+| `--bake-buried` | analyze | Like `--bake`, and also remove faces with solid geometry within 0.1 units in front of them. |
+| `--views N` | analyze | Extra orbit views for pixel parity on top of the default framing (an integer from 0 to 64, default 0). |
+| `--json` | analyze, inspect, optimize, explain, schema | Print JSON on stdout. `analyze`, `inspect` and `optimize` print the document and move the human summary to stderr; `schema` prints JSON either way. |
+| `--out out.glb` | optimize | Output path (default `<name>.forge.glb` next to the input; never the input itself). |
+| `--preset safe\|balanced\|aggressive` | optimize | Step preset (default `safe`: dedup, palette, weld, resample, prune; never changes a pixel). |
+| `--dedup`, `--no-dedup` | optimize | Add (`--dedup`) or remove (`--no-dedup`) the dedup step: identical accessors, meshes, materials and textures become one (in every preset). |
+| `--instance`, `--no-instance` | optimize | Add (`--instance`) or remove (`--no-instance`) the instance step: repeated meshes become `EXT_mesh_gpu_instancing` (never in a preset: changes the node graph). |
+| `--palette`, `--no-palette` | optimize | Add (`--palette`) or remove (`--no-palette`) the palette step: materials that differ only by factors become one material sampling a palette texture (in every preset). |
+| `--flatten`, `--no-flatten` | optimize | Add (`--flatten`) or remove (`--no-flatten`) the flatten step: flatten the node hierarchy. |
+| `--join`, `--no-join` | optimize | Add (`--join`) or remove (`--no-join`) the join step: meshes sharing a material merge, implies flatten (never in a preset: changes the node graph). |
+| `--weld`, `--no-weld` | optimize | Add (`--weld`) or remove (`--no-weld`) the weld step: merge exact duplicate vertices (in every preset). |
+| `--resample`, `--no-resample` | optimize | Add (`--resample`) or remove (`--no-resample`) the resample step: drop redundant animation keyframes (in every preset). |
+| `--prune`, `--no-prune` | optimize | Add (`--prune`) or remove (`--no-prune`) the prune step: remove unused properties (in every preset). |
+| `--quantize`, `--no-quantize` | optimize | Add (`--quantize`) or remove (`--no-quantize`) the quantize step: `KHR_mesh_quantization` (`balanced`, `aggressive`). |
+| `--meshopt`, `--no-meshopt` | optimize | Add (`--meshopt`) or remove (`--no-meshopt`) the meshopt step: `EXT_meshopt_compression`, replaces quantize; the app needs `loader.setMeshoptDecoder` (same as `--compress meshopt`). |
+| `--simplify [ratio]`, `--no-simplify` | optimize | Add the simplify step with this ratio of vertices to keep, in (0, 1] (bare: 0.5); `--no-simplify` removes it from a preset. |
+| `--simplify-error e` | optimize | Simplify error limit as a fraction of the mesh radius, from 0 to 1 (default 0.001). |
+| `--compress none\|meshopt` | optimize | `meshopt` adds `EXT_meshopt_compression` (the app needs `loader.setMeshoptDecoder`); default `none`. |
+| `--textures [webp\|avif\|none]`, `--no-textures` | optimize | Add the texture step with this format (needs `sharp`; bare: `webp`); `none` or `--no-textures` removes it from a preset. |
+| `--texture-size N` | optimize | Longest texture side in pixels (an integer from 1 to 16384; default: the preset's size, no resize outside presets). |
+| `--texture-quality Q` | optimize | Texture encoder quality (an integer from 1 to 100, default 85). |
+| `--verify`, `--no-verify` | optimize | Render the original and the optimized file and compare pixels. On by default; `--no-verify` runs without a browser (and cannot take `--budget`). |
+| `--parity pct` | optimize | Allowed percent of changed pixels between the original and the optimized render, from 0 to 100 (default 0.5). |
+| `--views N` | optimize | Extra orbit views for the comparison (an integer from 0 to 64, default 2). |
+| `--budget N` | optimize | Fail the verdict (exit 1) when the optimized file compiles to more than N scene submissions (an integer ≥ 0); needs verification, so not with `--no-verify`. |
+| `--all` | explain | Every remedy instead of one hint code. |
 
 ## Make your app inspectable (one line)
 
@@ -41,9 +88,9 @@ const world = new World(scene, { registry, ledger, policy: 'auto' });
 exposeToAgents({ ledger, world, renderer, scene, camera }); // publishes window.__threeforge
 ```
 
-Then `npx threeforge inspect http://localhost:5173 --compile --json`. The hook offers `frame()`, `frameAsync()`,
-`compile()`, `decompile()`, `measureOverdraw()`, `measureMemory()`, `hints()`, `report()`; an agent driving its own
-browser can call them directly.
+Then `npx threeforge inspect http://localhost:5173 --json` (it compiles through the hook; `--no-compile` measures
+only). The hook offers `frame()`, `frameAsync()`, `compile()`, `decompile()`, `measureOverdraw()`, `measureMemory()`,
+`hints()`, `report()`; an agent driving its own browser can call them directly.
 
 ## The document you get back
 
@@ -119,7 +166,8 @@ after looking at the views. The output never uses Draco. Not covered: atlasing t
 
 ## Budgets per device tier
 
-Tiers are detected from the GPU and device (override with `--tier`). Defaults: scene submissions 400 / 150 / 80,
+Tiers are detected from the GPU and device (override with `--tier` on `analyze` and `optimize`; `inspect` measures
+the app at the tier its own ledger detects). Defaults: scene submissions 400 / 150 / 80,
 triangles 5 M / 1.5 M / 500 k, transparent overdraw 3 / 2 / 1.5 fragments per pixel, skinned vertices 400 k /
 150 k / 60 k, shadow texels 4 M / 1 M / 262 k, textures 512 / 192 / 96 MB, frame 16.6 / 16.6 / 33 ms for
 desktop / phone-mid / phone-low. In code: `budgetsFor(tier, overrides)`.

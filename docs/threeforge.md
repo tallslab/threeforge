@@ -54,7 +54,7 @@ const frame = ledger.frame();                // FrameSnapshot v2: six cost secti
 
 ```bash
 npx threeforge analyze scene.glb --backend webgpu --tier phone-mid --json
-npx threeforge inspect http://localhost:5173 --compile --json
+npx threeforge inspect http://localhost:5173 --json
 ```
 
 ## 3. Architecture
@@ -465,26 +465,52 @@ swaps change data, not draw calls.
 - **Hook**: `exposeToAgents({ ledger, world, renderer, scene, camera })` publishes `window.__threeforge` with
   `version`, `schemaVersion`, `frame()`, `frameAsync()` (waits one animation frame so shadow maps update, renders if it
   can), `compile()` / `decompile()`, `measureOverdraw()`, `measureMemory()`, `hints()`, `report()`. Returns a disposer.
-- **CLI** (`npx threeforge`, no arguments prints AGENTS.md):
+- **CLI** (`npx threeforge` with no arguments, `threeforge help [<command>]`, or `--help` on any command prints
+  AGENTS.md). Every command's positionals and flags are declared once in `COMMAND_SPECS` (`src/cli/args.ts`); the
+  parser, the usage text printed after a usage error, and the AGENTS.md command and flag tables come from it.
   - `analyze <file.glb|.gltf> [--backend webgl2|webgpu] [--tier auto|desktop|phone-mid|phone-low] [--budget N]
-    [--frames 30] [--no-compile] [--bake] [--bake-buried] [--views N] [--json]`: serves the shipped harness page and the
-    asset's folder from a built-in static server on 127.0.0.1, launches headless Chromium through Playwright
-    (headless shell for WebGL2, full Chromium with WebGPU flags otherwise), loads the asset with Draco/KTX2/meshopt
-    support, measures N frames, overdraw and memory, screenshots the default framing plus the orbit views, compiles,
-    measures and screenshots again, computes pixel parity per view, and prints one JSON document.
-  - `inspect <url> [--frames 30] [--compile] [--budget N] [--json]`: drives the agent's own dev server through the
-    hook; same document without asset facts and parity.
-  - `optimize <file.glb|.gltf> [--out out.glb] [--preset safe|balanced|aggressive] [--no-<step>|--<step>] [--simplify 0.5]
-    [--compress meshopt] [--textures webp|avif] [--texture-size N] [--texture-quality 85] [--no-verify] [--parity 0.5]
-    [--views 2] [--budget N] [--json]`: the build-time pipeline, see below.
-  - `explain <code> | --all`: `{ code, category, severity, meaning, fix, api, docs }` per hint code.
-  - `decoders <dir>`: copies three's Draco decoder and Basis transcoder into `<dir>/{draco,basis}` for `createLoader` (no JSON output).
-  - `schema [snapshot|analyze|inspect|optimize|all]`: JSON Schema (draft 2020-12) of everything printed.
-  - `mcp`: stdio Model Context Protocol server with `analyze_asset`, `inspect_app`, `optimize_asset`, `explain_hint`.
+    [--frames N] [--no-compile] [--timeout ms] [--headed] [--bake] [--bake-buried] [--views N] [--json]`: serves the
+    shipped harness page and the asset's folder from a built-in static server on 127.0.0.1, launches headless Chromium
+    through Playwright (headless shell for WebGL2, full Chromium with WebGPU flags otherwise), loads the asset with
+    Draco/KTX2/meshopt support, measures N frames (default 30), overdraw and memory, screenshots the default framing
+    plus the orbit views, compiles, measures and screenshots again, computes pixel parity per view, and prints one
+    JSON document.
+  - `inspect <url> [--backend webgl2|webgpu] [--budget N] [--frames N] [--no-compile] [--timeout ms] [--headed]
+    [--json]`: drives the agent's own dev server through the hook, compiling through it unless `--no-compile`
+    (`--compile` is accepted and is the default); same document without asset facts and parity. There is no
+    `--tier`: the app measures itself at the tier its own ledger detects.
+  - `optimize <file.glb|.gltf> [--out out.glb] [--preset safe|balanced|aggressive] [--no-<step>|--<step>]
+    [--simplify [ratio]] [--simplify-error e] [--compress none|meshopt] [--textures [webp|avif|none]]
+    [--texture-size N] [--texture-quality Q] [--no-verify] [--parity pct] [--views N] [--budget N] [--backend …]
+    [--tier …] [--frames N] [--no-compile] [--timeout ms] [--headed] [--json]`: the build-time pipeline, see below.
+  - `explain [<hint-code>] [--all] [--json]`: `{ code, category, severity, meaning, fix, api, docs }` for one hint
+    code, or every remedy with `--all` (a code or `--all`, not both).
+  - `decoders <dir>`: copies three's Draco decoder and Basis transcoder into `<dir>/{draco,basis}` for `createLoader` (no JSON output, no flags).
+  - `schema [snapshot|analyze|inspect|optimize|all] [--json]`: JSON Schema (draft 2020-12) of everything printed (always JSON).
+  - `mcp`: stdio Model Context Protocol server with `analyze_asset`, `inspect_app`, `optimize_asset`, `explain_hint` (no arguments).
+- **Flags** (`parseArgs`, `src/cli/args.ts`):
+  - Flags follow the command, before or after its argument. A value flag takes `--flag value` or `--flag=value`; a
+    boolean flag never takes one (`analyze --json scene.glb` parses), and a negatable one also accepts
+    `--no-<flag>`. `--simplify` and `--textures` take a value only after `=` or when the next argument is a valid
+    value (a number, a format), so `optimize --simplify scene.glb` keeps the file. `--` ends the flags.
+  - `--timeout ms` bounds each page step (the load, every evaluate, the whole N-frame measurement, `compile()`;
+    default 60000, a step over it exits 4). `--headed` shows the browser. `--simplify-error e` is the simplify error
+    limit as a fraction of the mesh radius (default 0.001). `--texture-quality Q` is the encoder quality (default 85).
+    `--textures none` and `--compress none` leave those steps out.
+  - Usage errors (exit 2, nothing on stdout; the message and the usage text on stderr): an unknown flag (the nearest
+    flag of the command is suggested, or the commands that take it are named), a flag before the command, an extra
+    positional, a value on a boolean flag, a missing value, a flag given twice or with its negation, a malformed
+    number (hex, `Infinity`, empty), a number outside `RANGES`, `inspect --tier`, `explain <code> --all`, and
+    `optimize --budget` with `--no-verify` (the budget is judged on the verified render).
+  - `RANGES` (by input field; `validateInput(command, input)` checks them plus the cross-field rules and is exported
+    for the MCP server): `frames` an integer ≥ 1, `timeout` an integer from 1000 to 2147483647 (a longer Node timer
+    fires at once), `budget` an integer ≥ 0, `views` an integer from 0 to 64, `parity` 0 to 100, `simplify` in
+    (0, 1], `simplifyError` 0 to 1, `textureSize` an integer from 1 to 16384, `textureQuality` an integer from 1 to 100.
 - **The document**: `{ schemaVersion: 1, tool, version, command, input, env, asset, before, after, compile, parity,
   hints, verdict, timings }`. `verdict.pass` is false over the budget, with an error-severity hint, or when parity is
   lost. Exit codes: 0 pass, 1 verdict failed, 2 usage/input, 3 environment (install command in the message),
-  4 page error/timeout. `--json` prints JSON on stdout and the human summary on stderr.
+  4 page error/timeout. `--json` writes the JSON document to stdout before the human summary is built
+  (`printDocument`), then the summary to stderr; a summary that throws leaves a note on stderr and the document intact.
 - **Programmatic**: `import { analyzeAsset, inspectApp, optimizeAsset, explain } from 'threeforge/cli'`.
 - Playwright, `@modelcontextprotocol/sdk` and `zod` are optional peers imported lazily; game code never pays for them.
 

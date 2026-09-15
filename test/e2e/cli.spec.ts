@@ -147,6 +147,24 @@ test('explain, schema and help are pure and fast', () => {
   expect(help.stdout).toContain('analyze');
 });
 
+test('usage errors exit 2 with nothing on stdout, and a boolean flag never swallows the argument after it', () => {
+  const typo = run(['explain', 'untagged', '--jsonn']);
+  expect(typo.status, typo.stderr).toBe(2);
+  expect(typo.stdout).toBe('');
+  expect(typo.stderr).toContain('did you mean --json?');
+  const tier = run(['inspect', 'http://localhost:5179/', '--tier', 'desktop', '--json']);
+  expect(tier.status, tier.stderr).toBe(2);
+  expect(tier.stdout).toBe('');
+  expect(tier.stderr).toContain('--tier is not a flag of inspect');
+  const budget = run(['optimize', asset('Fox'), '--no-verify', '--budget', '10', '--json']);
+  expect(budget.status, budget.stderr).toBe(2);
+  expect(budget.stdout).toBe('');
+  expect(budget.stderr).toContain('--budget needs verification');
+  const swallowed = run(['explain', '--json', 'untagged']);
+  expect(swallowed.status, swallowed.stderr).toBe(0);
+  expect(JSON.parse(swallowed.stdout).code).toBe('untagged');
+});
+
 test('analyze --bake --views keeps parity on a multi-part static asset and reports what the bake removed', async ({ forge }) => {
   test.setTimeout(600_000);
   const index = JSON.parse(readFileSync('test/assets/files/index.json', 'utf8')) as Array<{ name: string; entry: string }>;

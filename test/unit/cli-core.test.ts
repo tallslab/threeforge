@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { parseArgs, UsageError } from '../../src/cli/args.js';
+import { COMMAND_SPECS, COMMANDS, formatUsage, parseArgs, RANGES, UsageError, validateInput } from '../../src/cli/args.js';
 import { explain, REMEDIES } from '../../src/cli/explain.js';
-import { summarize, summarizeOptimize } from '../../src/cli/format.js';
+import { printDocument, summarize, summarizeOptimize } from '../../src/cli/format.js';
 import { ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA, SNAPSHOT_SCHEMA } from '../../src/cli/schema.js';
 import type { AgentDocument, AnalyzeInput, OptimizeDocument, OptimizeInput } from '../../src/cli/types.js';
 import { exitCodeOf, verdictOf } from '../../src/cli/verdict.js';
@@ -126,7 +126,8 @@ describe('parseArgs optimize', () => {
     expect(parseArgs(['optimize', 'a.glb', '--simplify', '0.3', '--simplify-error', '0.01', '--compress', 'meshopt', '--textures', 'avif', '--texture-size', '512', '--texture-quality', '70'])).toMatchObject({ input: { simplify: 0.3, simplifyError: 0.01, compress: 'meshopt', textures: 'avif', textureSize: 512, textureQuality: 70 } });
     expect(parseArgs(['optimize', 'a.glb', '--simplify', '--textures'])).toMatchObject({ input: { simplify: 0.5, textures: 'webp' } });
     expect(parseArgs(['optimize', 'a.glb', '--no-simplify', '--textures', 'none'])).toMatchObject({ input: { steps: { simplify: false }, textures: 'none' } });
-    expect(parseArgs(['optimize', 'a.glb', '--no-verify', '--parity', '2', '--views', '0', '--budget', '10', '--frames', '5', '--no-compile'])).toMatchObject({ input: { verify: false, parity: 2, views: 0, budget: 10, frames: 5, compile: false } });
+    expect(parseArgs(['optimize', 'a.glb', '--no-verify', '--parity', '2', '--views', '0', '--frames', '5', '--no-compile'])).toMatchObject({ input: { verify: false, parity: 2, views: 0, budget: null, frames: 5, compile: false } });
+    expect(parseArgs(['optimize', 'a.glb', '--budget', '10'])).toMatchObject({ input: { verify: true, budget: 10 } });
   });
 
   it('rejects bad optimize input', () => {
@@ -138,6 +139,205 @@ describe('parseArgs optimize', () => {
     expect(() => parseArgs(['optimize', 'a.glb', '--textures', 'jpg'])).toThrow(/textures/);
     expect(() => parseArgs(['optimize', 'a.glb', '--out'])).toThrow(/out/);
     expect(parseArgs(['schema', 'optimize'])).toEqual({ name: 'schema', which: 'optimize', json: false });
+  });
+});
+
+describe('parseArgs flag model', () => {
+  const usage = (argv: string[]): string => {
+    try {
+      parseArgs(argv);
+    } catch (error) {
+      expect(error).toBeInstanceOf(UsageError);
+      return (error as Error).message;
+    }
+    throw new Error(`expected a UsageError for ${argv.join(' ')}`);
+  };
+
+  it('never lets a boolean flag swallow the positional after it', () => {
+    expect(parseArgs(['analyze', '--json', 'a.glb'])).toMatchObject({ name: 'analyze', json: true, input: { file: 'a.glb' } });
+    expect(parseArgs(['inspect', '--compile', 'http://x'])).toMatchObject({ name: 'inspect', input: { url: 'http://x', compile: true } });
+    expect(parseArgs(['analyze', '--headed', '--bake', 'a.glb'])).toMatchObject({ input: { file: 'a.glb', headed: true, bake: 'on' } });
+    expect(parseArgs(['optimize', '--no-verify', '--quantize', 'a.glb'])).toMatchObject({ input: { file: 'a.glb', verify: false, steps: { quantize: true } } });
+    expect(parseArgs(['explain', '--json', 'untagged'])).toEqual({ name: 'explain', code: 'untagged', all: false, json: true });
+  });
+
+  it('takes an optional value only when the next argument is one, or after =', () => {
+    expect(parseArgs(['optimize', '--simplify', 'a.glb'])).toMatchObject({ input: { file: 'a.glb', simplify: 0.5 } });
+    expect(parseArgs(['optimize', '--textures', 'a.glb'])).toMatchObject({ input: { file: 'a.glb', textures: 'webp' } });
+    expect(parseArgs(['optimize', 'a.glb', '--simplify=0.3', '--textures=avif', '--frames=4'])).toMatchObject({ input: { simplify: 0.3, textures: 'avif', frames: 4 } });
+    expect(usage(['optimize', '--textures', 'jpg', 'a.glb'])).toMatch(/--textures/);
+    expect(usage(['optimize', 'a.glb', '--simplify', 'half'])).toMatch(/--simplify/);
+  });
+
+  it('ends flag parsing at --', () => {
+    expect(parseArgs(['analyze', '--json', '--', '--odd.glb'])).toMatchObject({ json: true, input: { file: '--odd.glb' } });
+    expect(parseArgs(['decoders', '--', '--help'])).toEqual({ name: 'decoders', dir: '--help' });
+  });
+
+  it('rejects unknown flags with a suggestion, and flags that belong to another command', () => {
+    expect(usage(['explain', 'untagged', '--jsonn'])).toMatch(/--jsonn.*did you mean --json\?/);
+    expect(usage(['analyze', 'a.glb', '--frame', '5'])).toMatch(/did you mean --frames\?/);
+    expect(usage(['optimize', 'a.glb', '--no-verfy'])).toMatch(/did you mean --no-verify\?/);
+    expect(usage(['analyze', 'a.glb', '-json'])).toMatch(/-json.*did you mean --json\?/);
+    expect(usage(['inspect', 'http://x', '--tier', 'phone-low'])).toMatch(/--tier/);
+    expect(usage(['inspect', 'http://x', '--bake'])).toMatch(/--bake.*analyze/);
+    expect(usage(['mcp', '--json'])).toMatch(/--json/);
+    expect(usage(['decoders', 'dir', '--json'])).toMatch(/--json/);
+    expect(usage(['analyze', 'a.glb', '--no-json'])).toMatch(/--no-json/);
+  });
+
+  it('rejects extra positionals, values on boolean flags, missing values, repeats and flags before the command', () => {
+    expect(usage(['analyze', 'a.glb', 'b.glb'])).toMatch(/b\.glb/);
+    expect(usage(['inspect', 'http://x', 'http://y'])).toMatch(/http:\/\/y/);
+    expect(usage(['explain', 'untagged', 'sprite'])).toMatch(/sprite/);
+    expect(usage(['explain', 'untagged', '--all'])).toMatch(/--all/);
+    expect(usage(['schema', 'snapshot', 'analyze'])).toMatch(/analyze/);
+    expect(usage(['mcp', 'serve'])).toMatch(/serve/);
+    expect(usage(['decoders', 'a', 'b'])).toMatch(/"b"/);
+    expect(usage(['analyze', 'a.glb', '--json=yes'])).toMatch(/--json/);
+    expect(usage(['analyze', 'a.glb', '--no-compile=1'])).toMatch(/--no-compile/);
+    expect(usage(['analyze', 'a.glb', '--frames'])).toMatch(/--frames/);
+    expect(usage(['analyze', 'a.glb', '--frames', '--json'])).toMatch(/--frames/);
+    expect(usage(['optimize', 'a.glb', '--out='])).toMatch(/--out/);
+    expect(usage(['analyze', 'a.glb', '--frames', '5', '--frames', '6'])).toMatch(/--frames.*more than once/);
+    expect(usage(['analyze', 'a.glb', '--compile', '--no-compile'])).toMatch(/compile.*more than once/);
+    expect(usage(['--json', 'analyze', 'a.glb'])).toMatch(/command/);
+    expect(usage(['help', 'nope'])).toMatch(/nope/);
+    expect(usage(['frobnicate'])).toMatch(/^unknown command "frobnicate"; commands: analyze/);
+    expect(usage(['analyse', 'a.glb'])).toMatch(/did you mean analyze\?/);
+    expect(usage(['optimize', 'a.glb', '--simplify', '2'])).toBe('--simplify must be a number in (0, 1] (got 2)');
+  });
+
+  it('prints help for --help anywhere and for help <command>', () => {
+    expect(parseArgs(['analyze', '--help'])).toEqual({ name: 'help' });
+    expect(parseArgs(['optimize', 'a.glb', '--frames', '0', '--help'])).toEqual({ name: 'help' });
+    expect(parseArgs(['help', 'optimize'])).toEqual({ name: 'help' });
+  });
+
+  it('rejects zero, fractional, malformed and out-of-range numbers', () => {
+    for (const bad of [
+      ['analyze', 'a.glb', '--frames', '0'],
+      ['analyze', 'a.glb', '--frames', '2.5'],
+      ['analyze', 'a.glb', '--frames='],
+      ['analyze', 'a.glb', '--frames', '0x10'],
+      ['analyze', 'a.glb', '--frames', 'Infinity'],
+      ['analyze', 'a.glb', '--timeout', '0'],
+      ['analyze', 'a.glb', '--timeout', '999'],
+      ['analyze', 'a.glb', '--timeout', '1500.5'],
+      ['analyze', 'a.glb', '--timeout', '3000000000'],
+      ['analyze', 'a.glb', '--budget', '1.5'],
+      ['analyze', 'a.glb', '--budget', '-1'],
+      ['analyze', 'a.glb', '--views', '1.5'],
+      ['analyze', 'a.glb', '--views', '-1'],
+      ['analyze', 'a.glb', '--views', '65'],
+      ['optimize', 'a.glb', '--views', '2.5'],
+      ['optimize', 'a.glb', '--texture-size', '0'],
+      ['optimize', 'a.glb', '--texture-size', '512.5'],
+      ['optimize', 'a.glb', '--texture-size', '32768'],
+      ['optimize', 'a.glb', '--texture-quality', '0'],
+      ['optimize', 'a.glb', '--texture-quality', '101'],
+      ['optimize', 'a.glb', '--texture-quality', '70.5'],
+      ['optimize', 'a.glb', '--parity', '-0.1'],
+      ['optimize', 'a.glb', '--parity', '100.5'],
+      ['optimize', 'a.glb', '--simplify-error', '-1'],
+      ['optimize', 'a.glb', '--simplify-error', '2'],
+    ]) {
+      const flag = bad.find((a) => a.startsWith('--'))!.split('=')[0]!;
+      expect(usage(bad), bad.join(' ')).toContain(flag);
+    }
+    expect(parseArgs(['analyze', 'a.glb', '--timeout', '1000', '--budget', '0', '--views', '0', '--frames', '1'])).toMatchObject({ input: { timeout: 1000, budget: 0, views: 0, frames: 1 } });
+    expect(parseArgs(['optimize', 'a.glb', '--parity', '0', '--simplify', '1', '--simplify-error', '0', '--texture-quality', '100'])).toMatchObject({ input: { parity: 0, simplify: 1, simplifyError: 0, textureQuality: 100 } });
+    expect(parseArgs(['optimize', 'a.glb', '--parity', '100'])).toMatchObject({ input: { parity: 100 } });
+  });
+
+  it('rejects inspect --tier and optimize --budget with --no-verify', () => {
+    expect(usage(['inspect', 'http://x', '--tier', 'desktop'])).toMatch(/--tier/);
+    expect(usage(['optimize', 'a.glb', '--budget', '10', '--no-verify'])).toMatch(/--budget.*--no-verify/);
+  });
+
+  it('keeps --compile accepted on inspect and analyze as the default', () => {
+    expect(parseArgs(['inspect', 'http://x'])).toMatchObject({ input: { compile: true } });
+    expect(parseArgs(['inspect', 'http://x', '--no-compile'])).toMatchObject({ input: { compile: false } });
+    expect(parseArgs(['analyze', 'a.glb', '--compile'])).toMatchObject({ input: { compile: true } });
+  });
+});
+
+describe('RANGES and validateInput', () => {
+  const analyze: AnalyzeInput = { file: 'a.glb', backend: 'webgl2', tier: 'auto', budget: null, frames: 30, compile: true, bake: 'off', views: 0, timeout: 60000, headed: false };
+  const optimize = (parseArgs(['optimize', 'a.glb']) as { input: OptimizeInput }).input;
+
+  it('declares the shared bounds', () => {
+    expect(RANGES.frames).toMatchObject({ min: 1, integer: true });
+    expect(RANGES.timeout).toMatchObject({ min: 1000, max: 2_147_483_647, integer: true });
+    expect(RANGES.parity).toMatchObject({ min: 0, max: 100, integer: false });
+    expect(RANGES.simplify).toMatchObject({ min: 0, minExclusive: true, max: 1 });
+    expect(RANGES.budget).toMatchObject({ min: 0, integer: true });
+  });
+
+  it('returns a valid input and names the field of an invalid one', () => {
+    expect(validateInput('analyze', analyze)).toBe(analyze);
+    expect(validateInput('optimize', optimize)).toBe(optimize);
+    expect(() => validateInput('analyze', { ...analyze, frames: 0 })).toThrow(UsageError);
+    expect(() => validateInput('analyze', { ...analyze, frames: 0 })).toThrow(/^frames/);
+    expect(() => validateInput('analyze', { ...analyze, frames: 0 }, { names: 'flags' })).toThrow(/^--frames/);
+    expect(() => validateInput('analyze', { ...analyze, timeout: 10 })).toThrow(/timeout/);
+    expect(() => validateInput('analyze', { ...analyze, backend: 'metal' as never })).toThrow(/backend/);
+    expect(() => validateInput('analyze', { ...analyze, frames: '5' as never })).toThrow(/frames/);
+    expect(() => validateInput('analyze', { ...analyze, file: '' })).toThrow(/file/);
+    expect(() => validateInput('inspect', { url: 'http://x', backend: 'webgl2', tier: 'desktop', budget: null, frames: 30, compile: true, timeout: 60000, headed: false })).toThrow(/tier/);
+    expect(() => validateInput('optimize', { ...optimize, budget: 10, verify: false })).toThrow(/budget.*verify/);
+    expect(() => validateInput('optimize', { ...optimize, simplify: 0 })).toThrow(/simplify/);
+    expect(() => validateInput('optimize', { ...optimize, parity: 101 })).toThrow(/parity/);
+    expect(() => validateInput('optimize', { ...optimize, steps: { bogus: true } as never })).toThrow(/bogus/);
+  });
+});
+
+describe('COMMAND_SPECS and usage', () => {
+  it('has a spec for every command and prints every flag in the usage', () => {
+    expect(Object.keys(COMMAND_SPECS)).toEqual([...COMMANDS]);
+    const text = formatUsage();
+    for (const spec of Object.values(COMMAND_SPECS)) {
+      expect(text).toContain(`threeforge ${spec.name}`);
+      for (const flag of spec.flags) if (!flag.group) expect(text, `${spec.name} --${flag.name}`).toMatch(new RegExp(`--(no-)?${flag.name}(?![\\w-])`));
+    }
+    const inspectLine = text.split('\n').find((line) => line.includes('threeforge inspect'))!;
+    expect(inspectLine).toContain('--no-compile');
+    expect(inspectLine).not.toContain('--tier');
+    expect(text).toContain('--no-<step>');
+  });
+});
+
+describe('printDocument', () => {
+  const capture = () => {
+    const out = { stdout: '', stderr: '' };
+    return { out, streams: { stdout: { write: (s: string) => (out.stdout += s) }, stderr: { write: (s: string) => (out.stderr += s) } } };
+  };
+  const doc = { tool: 'threeforge', verdict: { pass: true } };
+
+  it('writes the JSON before building the summary, so a throwing summarizer still leaves parseable stdout', () => {
+    const { out, streams } = capture();
+    expect(() =>
+      printDocument(
+        doc,
+        () => {
+          throw new Error('formatter broke');
+        },
+        true,
+        streams,
+      ),
+    ).not.toThrow();
+    expect(JSON.parse(out.stdout)).toEqual(doc);
+    expect(out.stderr).toContain('formatter broke');
+  });
+
+  it('prints the summary to stderr in json mode and to stdout otherwise', () => {
+    const json = capture();
+    printDocument(doc, () => 'PASS', true, json.streams);
+    expect(JSON.parse(json.out.stdout)).toEqual(doc);
+    expect(json.out.stderr).toBe('PASS\n');
+    const human = capture();
+    printDocument(doc, () => 'PASS', false, human.streams);
+    expect(human.out).toEqual({ stdout: 'PASS\n', stderr: '' });
   });
 });
 

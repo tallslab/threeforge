@@ -2,6 +2,30 @@ import { formatCostRows, formatHints } from '../overlay/index.js';
 import { describeChange } from './transform.js';
 import type { AgentDocument, OptimizeDocument } from './types.js';
 
+/** Where a command prints: `process` in the CLI, anything with the two `write` methods in tests. */
+export interface OutputStreams {
+  readonly stdout: { write(chunk: string): unknown };
+  readonly stderr: { write(chunk: string): unknown };
+}
+
+/**
+ * Prints a command's document. With `json`, stdout gets the JSON before the summary is built, so a summarizer that
+ * throws costs only the stderr summary (a note replaces it) and never the document an agent parses. Without `json`,
+ * the summary is the output and its error propagates.
+ */
+export function printDocument<T>(doc: T, summarizeDoc: (doc: T) => string, json: boolean, streams: OutputStreams = process): void {
+  if (!json) {
+    streams.stdout.write(summarizeDoc(doc) + '\n');
+    return;
+  }
+  streams.stdout.write(JSON.stringify(doc, null, 2) + '\n');
+  try {
+    streams.stderr.write(summarizeDoc(doc) + '\n');
+  } catch (error) {
+    streams.stderr.write(`summary unavailable: ${error instanceof Error ? error.message : String(error)}\n`);
+  }
+}
+
 /** The human summary (stderr in --json mode): one screen, the verdict first. */
 export function summarize(doc: AgentDocument): string {
   const target = 'file' in doc.input ? doc.input.file : doc.input.url;
