@@ -17,13 +17,15 @@ on:
     types: [labeled, edited]
 permissions: {}
 jobs:
-  # An edit to an issue that currently carries `bench-accepted` means the content a maintainer approved may no
-  # longer be what's there. Pull the label and say why; a maintainer has to look again and re-apply it. Removing a
-  # label emits `unlabeled`, which this workflow does not subscribe to, and commenting emits no issue event at
-  # all — neither step here can retrigger this workflow, so there's no loop.
+  # An edit to an OPEN issue that currently carries `bench-accepted` means the content a maintainer approved may
+  # no longer be what's there. Pull the label and say why; a maintainer has to look again and re-apply it. (A
+  # closed issue is skipped: its result is already ingested, so re-applying the label on it would do nothing —
+  # `ingest` itself requires `issue.state == 'open'` — and telling someone to re-apply a label that can't do
+  # anything would be misleading.) Removing a label emits `unlabeled`, which this workflow does not subscribe to,
+  # and commenting emits no issue event at all — neither step here can retrigger this workflow, so there's no loop.
   revoke:
     name: Revoke acceptance on edit
-    if: github.event.action == 'edited' && contains(github.event.issue.labels.*.name, 'bench-accepted')
+    if: github.event.action == 'edited' && github.event.issue.state == 'open' && contains(github.event.issue.labels.*.name, 'bench-accepted')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -57,8 +59,10 @@ jobs:
       group: bench-results-${{ github.event.issue.number }}
       cancel-in-progress: false
     steps:
-      # Applying a label is not itself proof of maintainer trust — anyone can apply a label they can see if the
-      # workflow doesn't check who. Ask GitHub who applied it and what access they actually have on this repo.
+      # Applying a label needs Triage access or higher, which is still short of write/admin — a triage-only
+      # collaborator could apply this one, so applying it is not itself proof of maintainer trust. Ask GitHub who
+      # applied it and what access they actually have on this repo. (A collaborator with the Maintain role is
+      # accepted too: this API reports that role's `permission` as `write`, not `maintain`.)
       - name: Check the labeler's permission
         id: perm
         env:
@@ -68,11 +72,15 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
           set +e
-          PERMISSION=$(gh api "repos/$REPO/collaborators/$SENDER/permission" --jq .permission 2>&1)
+          # stdout and stderr are kept apart: a warning gh prints to stderr on an otherwise-successful call must
+          # never end up appended to $PERMISSION (that would turn a maintainer's real "write" into a string that
+          # matches neither "admin" nor "write", rejecting a legitimate acceptance).
+          PERMISSION=$(gh api "repos/$REPO/collaborators/$SENDER/permission" --jq .permission 2>"$RUNNER_TEMP/perm-stderr.txt")
           API_STATUS=$?
           set -e
           if [ "$API_STATUS" -ne 0 ]; then
-            echo "could not read $SENDER's permission, treating as unauthorized: $PERMISSION" >&2
+            echo "could not read $SENDER's permission, treating as unauthorized:" >&2
+            cat "$RUNNER_TEMP/perm-stderr.txt" >&2
             PERMISSION="none"
           fi
           echo "sender=$SENDER permission=$PERMISSION"
@@ -120,16 +128,27 @@ jobs:
 
       # Copies the already-validated file into the real checkout and commits it. Retries on a losing race against
       # another accepted result being pushed concurrently (different issue, same target branch): re-fetch, hard
-      # reset to the new tip, redo the copy and regenerate, and try the push again, up to 3 attempts. If nothing
-      # changed (this id is already on main — the same issue accepted twice, or a duplicate webhook delivery), the
-      # loop stops without committing: the ingest script's own `wx` write already guarantees the stored file's
-      # bytes are stable for a given issue body, so re-copying it and finding `git diff --cached` empty is exactly
-      # that "already recorded" case, handled without ever attempting a second commit.
+      # reset to the new tip, and try again, up to 3 attempts, recorded to `$RUNNER_TEMP/commit-result.txt` as
+      # exactly one of:
+      #   - `pushed`          a new commit landed on main.
+      #   - `already-recorded` this id is already on main with byte-identical content (the same issue accepted
+      #     twice, or a duplicate webhook delivery) — nothing to commit, reported as success without a second
+      #     commit or push.
+      #   - `id-collision`    this id is already on main with *different* content. The id is
+      #     `day-hash8(gpu|ua|backend)` (`scripts/bench-id.mjs`), so the same device re-running the bench on the
+      #     same day reproduces it. `bench-ingest.mjs`'s `wx` write only protects one invocation against
+      #     overwriting a file already in ITS OWN output directory; it never sees `bench/devices` on `main` here
+      #     (validation runs in an empty scratch dir precisely so a bad submission can't touch the checkout), so
+      #     this step has to make that "never silently overwrite" guarantee itself before copying over main's
+      #     copy — checked fresh on every retry, since main can move between attempts.
+      #   - `failed`          every push attempt was rejected; the loop ran out of retries with nothing landed.
+      # The step exits non-zero for `failed` and `id-collision` (nothing recorded) and zero for `pushed` and
+      # `already-recorded` (the intended state is on main either way), so `steps.commit.outcome` alone tells the
+      # later steps whether to deploy Pages and how to report back.
       - name: Store the result and update the table
         id: commit
         if: steps.perm.outputs.authorized == 'true' && steps.ingest.outcome == 'success'
         env:
-          GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
           set -e
@@ -147,46 +166,69 @@ jobs:
 
           ATTEMPTS=3
           ATTEMPT=1
-          COMMITTED=0
-          PUSHED=0
+          RESULT="failed"
           while [ "$ATTEMPT" -le "$ATTEMPTS" ]; do
             git fetch origin main
             git reset --hard origin/main
+
+            if git cat-file -e "origin/main:bench/devices/$FILE_NAME" 2>/dev/null; then
+              if git show "origin/main:bench/devices/$FILE_NAME" | cmp -s - "$SRC"; then
+                echo "$FILE_NAME is already recorded on main with identical content"
+                RESULT="already-recorded"
+              else
+                echo "$FILE_NAME already exists on main with different content (id collision)" >&2
+                RESULT="id-collision"
+              fi
+              break
+            fi
+
             mkdir -p bench/devices
             cp -f "$SRC" "bench/devices/$FILE_NAME"
             node scripts/bench-devices.mjs
             git add bench/devices docs/devices.md
             if git diff --cached --quiet; then
               echo "nothing to commit; $FILE_NAME is already recorded on main"
+              RESULT="already-recorded"
               break
             fi
             git commit -m "bench: device result from #${ISSUE_NUMBER}"
-            COMMITTED=1
             if git push origin HEAD:main; then
-              PUSHED=1
+              RESULT="pushed"
               break
             fi
             echo "push rejected, retrying ($ATTEMPT/$ATTEMPTS)"
-            COMMITTED=0
             ATTEMPT=$((ATTEMPT + 1))
           done
 
-          if [ "$COMMITTED" -eq 1 ] && [ "$PUSHED" -ne 1 ]; then
-            echo "push kept failing after $ATTEMPTS attempts" >&2
+          echo "$RESULT" > "$RUNNER_TEMP/commit-result.txt"
+          if [ "$RESULT" = "failed" ] || [ "$RESULT" = "id-collision" ]; then
             exit 1
           fi
 
-          if [ "$PUSHED" -eq 1 ]; then
-            # A GITHUB_TOKEN push never fires `on: push` in another workflow, so `pages.yml` (which deploys the
-            # public devices table) would otherwise never run for this change; ask for it explicitly.
-            gh workflow run pages.yml --ref main
+      # A GITHUB_TOKEN push never fires `on: push` in another workflow, so `pages.yml` (which deploys the public
+      # devices table) would otherwise never run for this change; ask for it explicitly. Its own step (rather than
+      # folded into the commit step above) so that a dispatch failure is never reported as "could not be
+      # committed" when the commit itself actually succeeded. Skipped for `already-recorded`: nothing changed, so
+      # the already-deployed table is still current.
+      - name: Deploy the public table
+        if: steps.commit.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+          RESULT=$(cat "$RUNNER_TEMP/commit-result.txt" 2>/dev/null || echo "")
+          if [ "$RESULT" = "pushed" ]; then
+            gh workflow run pages.yml --ref main --repo "$REPO"
           fi
 
       # Always reports back, success or failure, so a contributor (or maintainer) never has to go read Actions
       # logs to find out what happened. Every value interpolated into a `gh` command below is a shell variable
       # sourced from a file or an `env:`-passed built-in step field, never a raw `${{ }}` template expansion of
-      # attacker-controlled text, and the comment body is always built with `printf`/`--body-file`, never by
-      # dropping the message straight into a `run:` string.
+      # attacker-controlled text, and the comment body is always built with `printf '%s'`. Any message that can
+      # contain attacker text (the ingest script's stderr, which can echo back a submitted object's key names) is
+      # wrapped in a fence computed to be one backtick longer than the longest run of backticks already inside
+      # it, so the message can never break out of its own code block to inject live Markdown or an @-mention.
       - name: Report the outcome
         if: always() && steps.perm.outputs.authorized == 'true'
         env:
@@ -197,17 +239,48 @@ jobs:
           COMMIT_OUTCOME: ${{ steps.commit.outcome }}
         run: |
           set -e
+
+          fence_for() {
+            local msg=$1 max=2 len run
+            while IFS= read -r run; do
+              len=${#run}
+              if [ "$len" -gt "$max" ]; then max=$len; fi
+            done < <(grep -oE '`+' <<<"$msg" || true)
+            printf '%*s' "$((max + 1))" '' | tr ' ' '`'
+          }
+
+          # `ingest` is 'skipped' (not 'failure') when a required prior step (checkout, setup-node) never ran it
+          # at all — an infrastructure problem, not anything wrong with the submitted JSON. Say so distinctly
+          # instead of blaming the contributor's data.
+          if [ "$INGEST_OUTCOME" = "skipped" ]; then
+            gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body \
+              "The workflow could not prepare the checkout before validating this result (an infrastructure problem, not the submission). Re-apply \`bench-accepted\` to retry."
+            exit 0
+          fi
+
           if [ "$INGEST_OUTCOME" != "success" ]; then
             MESSAGE=$(cat "$RUNNER_TEMP/ingest-stderr.txt" 2>/dev/null || echo "no error output captured")
-            BODY=$(printf 'The result could not be recorded:\n\n```\n%s\n```\nEdit the issue to fix the JSON block; a maintainer can re-apply `bench-accepted` once it looks right.' "$MESSAGE")
+            FENCE=$(fence_for "$MESSAGE")
+            BODY=$(printf 'The result could not be recorded:\n\n%s\n%s\n%s\nEdit the issue to fix the JSON block; a maintainer can re-apply `bench-accepted` once it looks right.' "$FENCE" "$MESSAGE" "$FENCE")
             gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$BODY"
             exit 0
           fi
+
           if [ "$COMMIT_OUTCOME" != "success" ]; then
-            gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body \
-              "Validation passed but the result could not be committed to \`main\` (the push kept failing). A maintainer should check the \`bench-results\` workflow run and re-apply \`bench-accepted\` to retry."
+            RESULT=$(cat "$RUNNER_TEMP/commit-result.txt" 2>/dev/null || echo "")
+            # Remove the label so a maintainer's re-apply fires a fresh `labeled` event instead of silently
+            # sitting there "accepted" while nothing was actually recorded.
+            gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --remove-label bench-accepted || true
+            if [ "$RESULT" = "id-collision" ]; then
+              FILE_NAME=$(cat "$RUNNER_TEMP/result-file-name.txt" 2>/dev/null || echo "this id")
+              BODY=$(printf 'A different result already exists on `main` as `%s` (same GPU, browser and backend, submitted the same day) — this submission was not recorded, to avoid overwriting it. The `bench-accepted` label has been removed; a maintainer can re-apply it after confirming which result should win, or ask for a resubmission on a later day.' "$FILE_NAME")
+            else
+              BODY="Validation passed but the result could not be committed to \`main\` (the push kept failing). The \`bench-accepted\` label has been removed; a maintainer can re-apply it to retry."
+            fi
+            gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$BODY"
             exit 0
           fi
+
           FILE_NAME=$(cat "$RUNNER_TEMP/result-file-name.txt" 2>/dev/null || echo "the result")
           BODY=$(printf 'Recorded as `%s` and added to docs/devices.md. Thank you.' "$FILE_NAME")
           gh issue close "$ISSUE_NUMBER" --repo "$REPO" --comment "$BODY"
