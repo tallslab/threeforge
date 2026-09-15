@@ -347,7 +347,7 @@ export class World {
     if (this.dynamicsMode === 'batch-sync') {
       for (const c of classifications) {
         if (c.kind !== 'dynamic') continue;
-        const rule = Array.isArray(c.object.material) ? 'multi-material' : exclusionRule(c.object);
+        const rule = Array.isArray(c.object.material) ? 'multi-material' : exclusionRule(c.object, this.scene);
         syncRule.set(c.object, rule);
         if (rule === null) statics.push(c.object);
       }
@@ -385,7 +385,7 @@ export class World {
       this.scene.traverse((o) => {
         if ((o as Sprite).isSprite) sprites.push(o as Sprite);
       });
-      const grouped = groupSprites(sprites, this.spriteThreshold, (m) => this.registry.describe(m));
+      const grouped = groupSprites(sprites, this.spriteThreshold, (m) => this.registry.describe(m), this.scene);
       // One sync per frame, for the main camera: three uploads the node-bound instance attributes once per frame,
       // so a second fill for a nested pass (a reflection) would be what the main pass draws. Nested passes draw the
       // main camera's list instead, on both backends.

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `classify`'s `exclusionRule(mesh, root?)` gains four rules the classifier previously missed: `invisible-ancestor`
+  (an ancestor up to `root` with `visible = false` — a static mesh under a hidden Group no longer gets batched and
+  drawn), `material-invisible` (`material.visible === false`, distinct from the mesh's own `visible`),
+  `group-render-order` (an `isGroup` ancestor with a non-zero `renderOrder`, which three uses for everything inside
+  it) and `clipping-group` (an enabled `isClippingGroup` ancestor). `spriteRule(sprite, root?)` gains the last
+  three. Both functions' new `root` parameter is optional; without it the ancestor-scoped rules are skipped, which
+  is unchanged behaviour for existing callers.
 - `nestedPasses: 'auto'` (the `World` default) now resolves to `'per-pass'` on both backends; it was `'reuse-main'` on WebGPU. `'reuse-main'` stays available as an explicit option, and the harness accepts `nested=reuse-main`.
 - Compacted `InstancedMesh`es draw the right instances in shadow maps on both backends: a shadow pass keeps the rows the enclosing pass drew and appends, once per frame, the instances every shadow-casting light reaches (directional and spot frusta, a point light's cube of half-size `distance || shadow.camera.far`), uploading only that range with `addUpdateRange`; `count` and `visibleIds` are restored when the nested render ends. A nested pass that reaches a mesh before the main pass compacts it for the main camera first, and reflections draw the main camera's list, under either policy. Shadow passes previously drew the main list under `reuse-main` (casters outside the view missing) and rewrote the main pass's list under `per-pass`. On WebGPU, shadow-pass `gpuDraws` and `triangles` rise where casters lie outside the view.
 - `InstancingOptions.mainCamera` is replaced by `passes: PassTracker`; `createCulledInstancedMesh` without it compacts for every camera it is drawn with.

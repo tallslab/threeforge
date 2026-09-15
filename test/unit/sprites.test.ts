@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Frustum, Group, Matrix4, PerspectiveCamera, Scene, Sprite, SpriteMaterial, Vector2, type Material } from 'three';
+import { ClippingGroup } from 'three/webgpu';
 import { fillSpriteInstances, groupSprites, isVisibleInGraph, spriteRule } from '../../src/compiler/sprites.js';
 
 /** Keys the way the registry describes materials: same map and flags → same variant, colour separate. */
@@ -46,6 +47,30 @@ describe('groupSprites', () => {
     hooked.onBeforeRender = () => {};
     expect(spriteRule(hooked)).toBe('custom-hook');
     expect(spriteRule(spriteAt(0, 0, 0, m))).toBeNull();
+  });
+
+  it("spriteRule names an invisible material, independent of the sprite's own visible flag", () => {
+    const invisible = new Sprite(new SpriteMaterial({ visible: false }));
+    expect(spriteRule(invisible)).toBe('material-invisible');
+  });
+
+  it('spriteRule names ancestor-scoped rules only when a root is given: a render-ordered Group and an enabled ClippingGroup', () => {
+    const scene = new Scene();
+    const group = new Group();
+    group.renderOrder = 4;
+    const ordered = new Sprite(new SpriteMaterial());
+    group.add(ordered);
+    scene.add(group);
+    expect(spriteRule(ordered)).toBeNull();
+    expect(spriteRule(ordered, scene)).toBe('group-render-order');
+
+    const clipper = new ClippingGroup();
+    const clipped = new Sprite(new SpriteMaterial());
+    clipper.add(clipped);
+    scene.add(clipper);
+    expect(spriteRule(clipped, scene)).toBe('clipping-group');
+    clipper.enabled = false;
+    expect(spriteRule(clipped, scene)).toBeNull();
   });
 });
 

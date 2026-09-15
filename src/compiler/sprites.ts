@@ -22,22 +22,53 @@ export interface SpriteKeys {
 
 const OWN = Object.prototype.hasOwnProperty;
 
-/** Why a sprite cannot join a batch, or null. Visibility is not a rule: the per-frame fill collapses hidden sprites. */
-export function spriteRule(sprite: Sprite): string | null {
-  if (Array.isArray(sprite.material)) return 'multi-material';
+type AncestorLike = Object3D & { isGroup?: boolean; isClippingGroup?: boolean; enabled?: boolean };
+
+/**
+ * The first ancestor-scoped exclusion rule between `object` (exclusive) and `root` (inclusive), or null. Three sets
+ * `groupOrder = object.renderOrder` while walking an `isGroup` ancestor, so a non-zero value there changes the
+ * effective order of everything inside it, which a batch's single `renderOrder` cannot reproduce (`group-render-order`).
+ * An enabled `isClippingGroup` ancestor applies extra clipping planes to its descendants that a batch's one shared
+ * clipping context cannot reproduce per-instance (`clipping-group`). Shared by `exclusionRule` and `spriteRule` so
+ * there is one ancestor walker, not one per rule.
+ */
+export function ancestorExclusionRule(object: Object3D, root: Object3D): string | null {
+  let current: Object3D | null = object.parent;
+  while (current) {
+    const node = current as AncestorLike;
+    if (node.isGroup && node.renderOrder !== 0) return 'group-render-order';
+    if (node.isClippingGroup && node.enabled) return 'clipping-group';
+    if (current === root) break;
+    current = current.parent;
+  }
+  return null;
+}
+
+/**
+ * Why a sprite cannot join a batch, or null. Visibility is not a rule: the per-frame fill collapses hidden sprites.
+ * `root` scopes `group-render-order` and `clipping-group` (ancestor-based); omit it to skip those two checks.
+ */
+export function spriteRule(sprite: Sprite, root?: Object3D): string | null {
+  const material = sprite.material as SpriteMaterial | SpriteMaterial[];
+  if (Array.isArray(material)) return 'multi-material';
+  if (material.visible === false) return 'material-invisible';
   if (sprite.center.x !== 0.5 || sprite.center.y !== 0.5) return 'sprite-center';
   if (sprite.layers.mask !== 1) return 'layers';
   if (sprite.renderOrder !== 0) return 'render-order';
+  if (root) {
+    const ancestor = ancestorExclusionRule(sprite, root);
+    if (ancestor) return ancestor;
+  }
   if (OWN.call(sprite, 'onBeforeRender') || OWN.call(sprite, 'onAfterRender')) return 'custom-hook';
   return null;
 }
 
 /** Groups sprites by material keys; groups under `threshold` are skipped with `sprite-threshold`. Order is first-seen. */
-export function groupSprites(sprites: Sprite[], threshold: number, describe: (material: Material) => SpriteKeys): { groups: SpriteGroup[]; skipped: SpriteSkip[] } {
+export function groupSprites(sprites: Sprite[], threshold: number, describe: (material: Material) => SpriteKeys, root?: Object3D): { groups: SpriteGroup[]; skipped: SpriteSkip[] } {
   const byKey = new Map<string, SpriteGroup>();
   const skipped: SpriteSkip[] = [];
   for (const sprite of sprites) {
-    const rule = spriteRule(sprite);
+    const rule = spriteRule(sprite, root);
     if (rule) {
       skipped.push({ sprite, rule });
       continue;

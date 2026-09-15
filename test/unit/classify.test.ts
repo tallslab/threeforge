@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BoxGeometry, Group, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, MeshStandardMaterial, Scene, ShaderMaterial, SkinnedMesh } from 'three';
-import { classify } from '../../src/compiler/classify.js';
+import { ClippingGroup } from 'three/webgpu';
+import { classify, exclusionRule } from '../../src/compiler/classify.js';
 import { tag } from '../../src/tags.js';
 
 const box = new BoxGeometry();
@@ -106,5 +107,51 @@ describe('classify', () => {
     const m = tag.dynamic(new Mesh(box, mat()));
     m.renderOrder = 3;
     expect(one(m)).toMatchObject({ kind: 'dynamic' });
+  });
+
+  it("excludes a mesh whose own material is invisible, distinct from the mesh's own visible flag", () => {
+    const invisibleMaterial = tag.static(new Mesh(box, mat()));
+    invisibleMaterial.material.visible = false;
+    expect(one(invisibleMaterial)).toMatchObject({ kind: 'excluded', rule: 'material-invisible' });
+  });
+
+  it('excludes a mesh hidden by an invisible ancestor even though the mesh itself is visible', () => {
+    const scene = new Scene();
+    const group = new Group();
+    group.visible = false;
+    const child = tag.static(new Mesh(box, mat()));
+    group.add(child);
+    scene.add(group);
+    expect(classify(scene)[0]).toMatchObject({ kind: 'excluded', rule: 'invisible-ancestor' });
+  });
+
+  it("excludes a mesh under a Group ancestor with a non-zero renderOrder: three uses the group's renderOrder for everything inside it", () => {
+    const scene = new Scene();
+    const group = new Group();
+    group.renderOrder = 2;
+    const child = tag.static(new Mesh(box, mat()));
+    group.add(child);
+    scene.add(group);
+    expect(classify(scene)[0]).toMatchObject({ kind: 'excluded', rule: 'group-render-order' });
+  });
+
+  it('excludes a mesh under an enabled ClippingGroup ancestor, but not once it is disabled', () => {
+    const scene = new Scene();
+    const clipper = new ClippingGroup();
+    const child = tag.static(new Mesh(box, mat()));
+    clipper.add(child);
+    scene.add(clipper);
+    expect(classify(scene)[0]).toMatchObject({ kind: 'excluded', rule: 'clipping-group' });
+
+    clipper.enabled = false;
+    expect(classify(scene)[0]).toMatchObject({ kind: 'static' });
+  });
+
+  it('skips the ancestor-scoped rules when exclusionRule is called without a root: there is no boundary to walk to', () => {
+    const group = new Group();
+    group.visible = false;
+    const child = tag.static(new Mesh(box, mat()));
+    group.add(child);
+    expect(exclusionRule(child)).toBeNull();
   });
 });

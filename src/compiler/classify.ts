@@ -1,5 +1,6 @@
 import { DynamicDrawUsage, PropertyBinding, StreamDrawUsage, type AnimationClip, type Material, type Mesh, type Object3D } from 'three';
 import { effectiveTag } from '../ledger/reasons.js';
+import { ancestorExclusionRule, isVisibleInGraph } from './sprites.js';
 
 export type MeshKind = 'static' | 'dynamic' | 'skinned' | 'morph' | 'excluded' | 'untagged' | 'unsupported';
 
@@ -32,14 +33,24 @@ function isShader(material: Material | Material[]): boolean {
   return Boolean(m?.isShaderMaterial || m?.isRawShaderMaterial);
 }
 
-/** Rules that make a mesh unreproducible inside a BatchedMesh, in the order they are checked. */
-export function exclusionRule(mesh: Mesh): string | null {
+/**
+ * Rules that make a mesh unreproducible inside a BatchedMesh, in the order they are checked. `root` scopes the
+ * ancestor-based rules (`invisible-ancestor`, `group-render-order`, `clipping-group`); omit it to skip those three
+ * and check only the mesh's own state.
+ */
+export function exclusionRule(mesh: Mesh, root?: Object3D): string | null {
   if (!mesh.visible) return 'invisible';
+  // Own visibility is checked above; this only catches an ancestor Group (or Scene) turned off, which three's
+  // renderer treats as hiding the whole subtree, batch-worthy mesh included.
+  if (root && !isVisibleInGraph(mesh, root)) return 'invisible-ancestor';
   if ((mesh as MeshLike).isInstancedMesh) return 'already-instanced';
   // three's transmission code derives volume thickness from the object's model-matrix scale; a batch or an
   // instanced mesh presents one identity matrix for every instance, so refraction would be wrong.
   const material = mesh.material as Material & { transmission?: number };
-  if (!Array.isArray(mesh.material) && (material.transmission ?? 0) > 0) return 'transmission';
+  if (!Array.isArray(mesh.material)) {
+    if (material.visible === false) return 'material-invisible';
+    if ((material.transmission ?? 0) > 0) return 'transmission';
+  }
   // Geometry rewritten at runtime (trails, ribbons, soft bodies): a batch copies vertices once.
   const geometry = mesh.geometry;
   const attributes = [...Object.values(geometry.attributes), ...(geometry.index ? [geometry.index] : [])] as Array<{ usage?: number }>;
@@ -47,6 +58,10 @@ export function exclusionRule(mesh: Mesh): string | null {
   if (Array.isArray(mesh.material)) return 'multi-material';
   if (mesh.layers.mask !== 1) return 'layers';
   if (mesh.renderOrder !== 0) return 'render-order';
+  if (root) {
+    const ancestor = ancestorExclusionRule(mesh, root);
+    if (ancestor) return ancestor;
+  }
   if (OWN.call(mesh, 'onBeforeRender') || OWN.call(mesh, 'onAfterRender')) return 'custom-hook';
   const range = mesh.geometry.drawRange;
   if (range.start !== 0 || range.count !== Infinity) return 'draw-range';
@@ -67,7 +82,7 @@ export function classify(root: Object3D, options: ClassifyOptions = {}): Classif
   root.traverse((object) => {
     const mesh = object as MeshLike;
     if (!mesh.isMesh) return;
-    result.push({ object: mesh, ...decide(mesh, policy, animated) });
+    result.push({ object: mesh, ...decide(mesh, policy, animated, root) });
   });
   return result;
 }
@@ -108,7 +123,7 @@ function underAnimated(object: Object3D, animated: Set<Object3D>): boolean {
   return false;
 }
 
-function decide(mesh: MeshLike, policy: 'tagged' | 'auto', animated: Set<Object3D>): { kind: MeshKind; rule: string } {
+function decide(mesh: MeshLike, policy: 'tagged' | 'auto', animated: Set<Object3D>, root: Object3D): { kind: MeshKind; rule: string } {
   if (mesh.isSkinnedMesh) return { kind: 'skinned', rule: 'skinned-mesh' };
   if (mesh.morphTargetInfluences && mesh.morphTargetInfluences.length > 0) return { kind: 'morph', rule: 'morph-targets' };
   if (isShader(mesh.material)) return { kind: 'unsupported', rule: 'shader-material' };
@@ -117,7 +132,7 @@ function decide(mesh: MeshLike, policy: 'tagged' | 'auto', animated: Set<Object3
   // Anything hanging off a bone (a weapon in a hand) moves with the rig, whatever its tag says.
   if (underBone(mesh)) return { kind: 'dynamic', rule: 'bone-parented' };
   if (underAnimated(mesh, animated)) return { kind: 'dynamic', rule: 'animated' };
-  const excluded = exclusionRule(mesh);
+  const excluded = exclusionRule(mesh, root);
   if (excluded) return { kind: 'excluded', rule: excluded };
   if (tag === 'static') return { kind: 'static', rule: 'tag:static' };
   if (policy === 'auto') return { kind: 'static', rule: 'auto' };

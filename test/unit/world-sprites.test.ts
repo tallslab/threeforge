@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { InstancedBufferGeometry, Scene, Sprite, SpriteMaterial } from 'three';
+import { Group, InstancedBufferGeometry, Scene, Sprite, SpriteMaterial } from 'three';
+import { ClippingGroup } from 'three/webgpu';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 import { FORGE_HIDDEN_LAYER, World } from '../../src/compiler/World.js';
@@ -65,5 +66,35 @@ describe('World sprite batching', () => {
     const { registry: r2, ledger: l2, scene: s2 } = setup();
     const report = new World(s2, { registry: r2, ledger: l2, spriteThreshold: 2 }).compile();
     expect(report.after.spriteBatches).toBe(3);
+  });
+
+  it('skips sprites under a render-ordered Group ancestor or an enabled ClippingGroup ancestor, naming the rule (root threaded from the scene)', () => {
+    const renderer = new FakeRenderer();
+    const registry = new MaterialRegistry();
+    const ledger = new DrawCallLedger({ registry });
+    ledger.attach(renderer as never);
+    const { scene } = sceneWithCamera();
+    const shared = new SpriteMaterial({ color: 0xffffff });
+    const ordered = new Group();
+    ordered.renderOrder = 3;
+    for (let i = 0; i < 6; i++) {
+      const s = new Sprite(shared);
+      s.name = `ordered-${i}`;
+      ordered.add(s);
+    }
+    scene.add(ordered);
+    const clipper = new ClippingGroup();
+    const clipped: Sprite[] = [];
+    for (let i = 0; i < 6; i++) {
+      const s = new Sprite(shared);
+      s.name = `clipped-${i}`;
+      clipper.add(s);
+      clipped.push(s);
+    }
+    scene.add(clipper);
+    const world = new World(scene, { registry, ledger });
+    const report = world.compile();
+    expect(report.skipped.filter((s) => s.name.startsWith('ordered-')).map((s) => s.rule)).toEqual(Array(6).fill('group-render-order'));
+    expect(report.skipped.filter((s) => s.name.startsWith('clipped-')).map((s) => s.rule)).toEqual(Array(6).fill('clipping-group'));
   });
 });

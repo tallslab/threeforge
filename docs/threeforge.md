@@ -215,11 +215,20 @@ counted by the registry are real programs.
 `classify(root, { policy, animations })` decides per mesh, in this order: skinned → morph targets → `ShaderMaterial`
 (unsupported) → dynamic tag → parented under a bone → animated by a clip (pass `animations`: clips, or
 `{ root, clips }` per animated root so shared bone names resolve correctly) → exclusion rules → static tag → policy
-`auto` (untagged plain meshes become static) → `untagged`. Exclusion rules (`exclusionRule`): `invisible`,
-`already-instanced`, `transmission` (three scales volume thickness by the object matrix, which a batch cannot
-provide), `dynamic-geometry` (`DynamicDrawUsage` / `StreamDrawUsage` attributes), `multi-material`, `layers`,
-`render-order`, `custom-hook` (own `onBeforeRender`/`onAfterRender`), `draw-range`, `frustum-culled-off`, `mirrored`
-(negative determinant). Every excluded mesh shows up in the ledger as `excluded:<rule>`.
+`auto` (untagged plain meshes become static) → `untagged`. Exclusion rules (`exclusionRule(mesh, root?)`): `invisible`,
+`invisible-ancestor` (an ancestor up to `root` with `visible = false`, via `isVisibleInGraph`; the mesh's own
+visibility is `invisible` above), `already-instanced`, `material-invisible` (`material.visible === false`),
+`transmission` (three scales volume thickness by the object matrix, which a batch cannot provide), `dynamic-geometry`
+(`DynamicDrawUsage` / `StreamDrawUsage` attributes), `multi-material`, `layers`, `render-order`, `group-render-order`
+(an `isGroup` ancestor with `renderOrder !== 0`: three uses a group's `renderOrder` for everything inside it),
+`clipping-group` (an enabled `isClippingGroup` ancestor — WebGPU-only per three's docs, but the shared `Renderer.js`
+`_projectObject` that reads it backs both the WebGL2 and WebGPU backends here), `custom-hook` (own
+`onBeforeRender`/`onAfterRender`), `draw-range`, `frustum-culled-off`, `mirrored` (negative determinant). Every
+excluded mesh shows up in the ledger as `excluded:<rule>`. `root` is optional; without it the three ancestor-scoped
+rules (`invisible-ancestor`, `group-render-order`, `clipping-group`) are skipped, since there is no boundary to walk
+to. `spriteRule(sprite, root?)` shares the same ancestor walker (`ancestorExclusionRule`) for `group-render-order`
+and `clipping-group`, plus its own `material-invisible`, `multi-material`, `sprite-center`, `layers`, `render-order`
+and `custom-hook`.
 
 ## 7. The scene compiler (`World`)
 
@@ -352,7 +361,8 @@ three compiles wrong that way (transparent double-sided and transmissive ones; s
   backends: three refreshes an object's attributes only on its first render object of a frame, so a second fill
   for a nested camera would be what the main pass draws (section 13). Reason
   `sprite-batch`, name `forge:sprites:<programHash>:<n>`, `after.spriteBatches` in the report; skipped sprites
-  carry `sprite-center`, `layers`, `render-order`, `custom-hook` or `sprite-threshold`. `decompile()` restores.
+  carry `sprite-center`, `layers`, `render-order`, `material-invisible`, `group-render-order`, `clipping-group`,
+  `custom-hook` or `sprite-threshold`. `decompile()` restores.
 - **`ParticleBudget`** (`src/overdraw/ParticleBudget.ts`): `new ParticleBudget({ tier, particles?, pointSizeScale? })
   .apply(root)` counts every `Points` object (what its `drawRange` draws), every sprite batch (its instances) and
   every single sprite; over the tier's `particles` budget, points and batches shrink by one common ratio (points
