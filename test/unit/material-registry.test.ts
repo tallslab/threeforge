@@ -276,6 +276,74 @@ describe('MaterialRegistry caching', () => {
   });
 });
 
+describe('MaterialRegistry.hashesOf', () => {
+  it('returns the hashes describe() reports from the key cache: the same object on every call, no key or hash recomputed', () => {
+    const registry = new MaterialRegistry();
+    const computeSpy = vi.spyOn(materialKeyModule, 'computeMaterialKeys');
+    const hashSpy = vi.spyOn(materialKeyModule, 'hashKey');
+    const material = new MeshStandardMaterial({ roughness: 0.2, transparent: true });
+    registry.register(material);
+    const computed = computeSpy.mock.calls.length;
+    const hashed = hashSpy.mock.calls.length;
+    const first = registry.hashesOf(material);
+    for (let i = 0; i < 5; i++) expect(registry.hashesOf(material)).toBe(first);
+    const described = registry.describe(material);
+    expect(computeSpy.mock.calls.length).toBe(computed);
+    expect(hashSpy.mock.calls.length).toBe(hashed);
+    computeSpy.mockRestore();
+    hashSpy.mockRestore();
+    expect({ programHash: first.programHash, variantHash: first.variantHash, description: first.description, unsupported: first.unsupported }).toEqual({
+      programHash: described.programHash,
+      variantHash: described.variantHash,
+      description: described.description,
+      unsupported: false,
+    });
+    const shader = new ShaderMaterial();
+    expect(registry.hashesOf(shader).unsupported).toBe(true);
+    expect(registry.hashesOf(shader).programHash).toBe(registry.describe(shader).programHash);
+  });
+
+  it('returns the re-filed hashes after invalidate(), and leaves a result held from before unchanged', () => {
+    const registry = new MaterialRegistry();
+    const material = new MeshStandardMaterial({ roughness: 0.2 });
+    registry.register(material);
+    const before = registry.hashesOf(material);
+    const beforeProgram = before.programHash;
+    material.flatShading = true; // mutation outside the immutable-once-registered contract
+    expect(registry.hashesOf(material).programHash).toBe(beforeProgram);
+    registry.invalidate(material);
+    const after = registry.hashesOf(material);
+    const fresh = materialKeyModule.computeMaterialKeys(material);
+    expect(after.programHash).toBe(materialKeyModule.hashKey(fresh.programKey));
+    expect(after.variantHash).toBe(materialKeyModule.hashKey(fresh.variantKey));
+    expect(after.description).toBe(fresh.description);
+    expect(after.programHash).not.toBe(beforeProgram);
+    expect(registry.describe(material).programHash).toBe(after.programHash);
+    expect(before.programHash).toBe(beforeProgram);
+    expect(registry.hashesOf(material)).toBe(after);
+  });
+
+  it('keysRevision moves whenever invalidate() or forget() drops cached keys, and only then', () => {
+    const registry = new MaterialRegistry();
+    const a = new MeshStandardMaterial({ roughness: 0.2 });
+    const b = new MeshStandardMaterial({ roughness: 0.7 });
+    const start = registry.keysRevision;
+    registry.register(a);
+    registry.hashesOf(b);
+    registry.describe(a);
+    registry.stats();
+    expect(registry.keysRevision).toBe(start);
+    registry.invalidate(a);
+    const afterInvalidate = registry.keysRevision;
+    expect(afterInvalidate).not.toBe(start);
+    registry.invalidate(b); // never registered: its cached keys are dropped all the same
+    const afterUnregistered = registry.keysRevision;
+    expect(afterUnregistered).not.toBe(afterInvalidate);
+    registry.forget(a);
+    expect(registry.keysRevision).not.toBe(afterUnregistered);
+  });
+});
+
 describe('MaterialRegistry.invalidate: re-files under the new keys, not just the describe() cache', () => {
   it('removes the stale canonicalByFullKey entry: a fresh material matching the OLD state no longer merges into the mutated canonical', () => {
     const registry = new MaterialRegistry();

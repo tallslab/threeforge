@@ -45,6 +45,14 @@ export interface RegistryStats {
   byProgram: ProgramStats[];
 }
 
+/** The part of a material's cached keys the ledger reads for every submission (`hashesOf`). */
+export interface MaterialHashes {
+  readonly programHash: string;
+  readonly variantHash: string;
+  readonly description: string;
+  readonly unsupported: boolean;
+}
+
 interface ProgramEntry {
   type: string;
   description: string;
@@ -80,6 +88,15 @@ export class MaterialRegistry {
   private registered = 0;
   private merged = 0;
   private unsupported = 0;
+  private revision = 0;
+
+  /**
+   * Moves whenever `invalidate()` or `forget()` drops a material's cached keys, and at no other time. A caller that
+   * memoizes `hashesOf()` results (the ledger does, per frame) reads again when it changes.
+   */
+  get keysRevision(): number {
+    return this.revision;
+  }
 
   register(material: Material): Material {
     this.registered++;
@@ -129,6 +146,18 @@ export class MaterialRegistry {
       unsupported: keys.unsupported,
       canonical: record?.canonical ?? null,
     };
+  }
+
+  /**
+   * The hashes, description and `unsupported` flag `describe()` reports, read straight from the key cache (Ruling R6):
+   * nothing is allocated and no key or hash is recomputed once the material has been keyed (an unregistered material
+   * is keyed and cached on first use, as `describe()` does). The result is the cache entry itself. `invalidate()` and
+   * `forget()` replace an entry rather than change it, so a result held from before keeps its old values; after
+   * either, `hashesOf()` returns the re-keyed hashes and `keysRevision` has moved. For per-submission callers such as
+   * the ledger; `describe()` adds the outcome, colours and canonical.
+   */
+  hashesOf(material: Material): MaterialHashes {
+    return this.keys(material);
   }
 
   /** The material `register()` would return for this one, without registering it. */
@@ -182,6 +211,7 @@ export class MaterialRegistry {
    * `describe()` will recompute its keys lazily on the next call regardless, same as before).
    */
   invalidate(material: Material): void {
+    this.revision++;
     const record = this.records.get(material);
     if (!record) {
       this.keyCache.delete(material);
@@ -260,6 +290,7 @@ export class MaterialRegistry {
    * before disposing, or `forget()` (and, separately, arrange disposal for) every dependent first.
    */
   forget(material: Material): void {
+    this.revision++;
     const record = this.records.get(material);
     if (!record) {
       this.keyCache.delete(material);
