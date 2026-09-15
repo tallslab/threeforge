@@ -179,20 +179,34 @@ Biome on the WebGL2 backend: 20,943 naive submissions (17,191 main + reflection 
 `dynamics: 'batch-sync'`, 20.4 M triangles, 30,731 instances of which 20,943 are drawn, 0.00 % pixels changed.
 The same scene on the native WebGPU backend matches at 0.00 % too, after two backend-specific findings:
 
-- **Nested passes on WebGPU** (`nestedPasses`, default `auto`). When a `BatchedMesh` or a compacted
-  `InstancedMesh` changes its visible set twice in one frame (the main pass culls it, then the water's reflection,
-  rendered from inside the main pass, culls it again), the main pass on the WebGPU backend draws with the nested
-  pass's instance list: every prop scatters. Pure three `BatchedMesh` with its own culling shows the same. Every
-  material of a batch reads one index texture (`nodes/accessors/Batch.js`), `queue.writeTexture` lands at once, and
-  the main pass is submitted only in `finishRender`. The first fix, `reuse-main` (nested passes draw the main
-  camera's list), hid a second case: shadow maps render from inside the first receiver's draw too, and under
-  `reuse-main` they lost every caster outside the view (the 0.9.0 audit counted 12 shadow draws instead of 502);
-  under `per-pass` on WebGL that receiver drew the shadow camera's list. Batches now keep a **stable prefix**: a
-  nested pass leaves the rows an open enclosing pass recorded untouched, zeroes the counts of those its camera does
-  not need, appends what it lacks, and the counts come back when the nested render ends (`PassTracker`, scene
-  hooks). The policy only decides a batch no open pass has culled yet (`per-pass`: a fresh cull; `reuse-main`:
-  append to its last outermost rows). Compacted instanced meshes still use `reuse-main`: reflections may miss
-  instances outside the main frustum.
+- **Nested passes on WebGPU** (`nestedPasses`, default `auto`, now `per-pass` on both backends). When a
+  `BatchedMesh` or a compacted `InstancedMesh` changes its visible set twice in one frame (the main pass culls it,
+  then the water's reflection, rendered from inside the main pass, culls it again), the main pass on the WebGPU
+  backend draws with the nested pass's instance list: every prop scatters. Pure three `BatchedMesh` with its own
+  culling shows the same. Every material of a batch reads one index texture (`nodes/accessors/Batch.js`),
+  `queue.writeTexture` lands at once, and the main pass is submitted only in `finishRender`. The first fix,
+  `reuse-main` (nested passes draw the main camera's list), hid a second case: shadow maps render from inside the
+  first receiver's draw too, and under `reuse-main` they lost every caster outside the view (on the audit scene the
+  WebGPU `shadow:sun` pass issued 255 GPU draws where the naive scene issues 502, with 247 of 441 batched casters
+  missing); under `per-pass` on WebGL that receiver drew the shadow camera's list. Batches now keep a **stable
+  prefix**: a nested pass leaves the rows an open enclosing pass recorded untouched, zeroes the counts of those its
+  camera does not need, appends what it lacks, and the counts come back when the nested render ends
+  (`PassTracker`, scene hooks). The policy only decides a batch no open pass has culled yet (`per-pass`: a fresh
+  cull; `reuse-main`: append to its last outermost rows).
+  Compacted instanced meshes keep a stable prefix as well, under either policy. Their matrices above the
+  uniform-buffer limit sit in one vertex buffer synced once per frame per render object, and three checks it for
+  upload at most once per render call, a count every nested render advances: a pass that rewrites rows after a
+  nested render drew the mesh cannot upload them (under the old WebGL2 `per-pass` the 1,500-box field of
+  `test/e2e/nested-passes.spec.ts` differed in 17.0 % of its pixels when the ground received shadows first, and in
+  15.5 % when the boxes did, their main pass drawing the spot light's list). So a nested pass that reaches a mesh first compacts it for the main camera, a
+  shadow pass appends the frame's shadow casters of every light in the same rows (a point light's six faces share one
+  upload), and reflections draw the main list: they may miss instances outside the main frustum.
+
+  | Nested pass | Batch `per-pass` | Batch `reuse-main` | Instanced mesh (either policy) |
+  |---|---|---|---|
+  | an open pass culled the object | keep, zero, append | keep, zero, append | shadow: keep, append casters; other: keep |
+  | no open pass culled it | fresh cull | append to last outermost rows | compact for the main camera, then as above |
+  | outermost render | fresh cull | fresh cull | compact (cached by view) |
 - **`compileAsync` mis-compiles two-pass materials.** In three r186 `Renderer.renderObject()` renders a
   transparent `DoubleSide` material twice, flipping `material.side` to `BackSide` then `FrontSide` around each
   `_handleObjectFunction` call (`_renderTransparents()` does the same for transmissive `DoubleSide`). During
