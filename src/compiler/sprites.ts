@@ -59,13 +59,38 @@ export function ancestorExclusionRule(object: Object3D, root: Object3D): string 
 }
 
 /**
+ * A node material with any node slot set. three r186's `NodeMaterial` declares its slots as `*Node` instance properties
+ * (`NodeMaterial.js` ~103-390: `lightsNode`, `envNode`, `aoNode`, `colorNode`, `normalNode`, `opacityNode`,
+ * `backdropNode`, `backdropAlphaNode`, `alphaTestNode`, `maskNode`, `maskShadowNode`, `positionNode`, `geometryNode`,
+ * `depthNode`, `receivedShadowPositionNode`, `castShadowPositionNode`, `receivedShadowNode`, `castShadowNode`,
+ * `outputNode`, `mrtNode`, `fragmentNode`, `vertexNode`, `contextNode`); `SpriteNodeMaterial` adds `rotationNode` and
+ * `scaleNode` (`SpriteNodeMaterial.js` ~63-86). Every own property ending in `Node` is read, so a subclass's slots count.
+ */
+function hasNodeSlot(material: Material): boolean {
+  if ((material as { isNodeMaterial?: boolean }).isNodeMaterial !== true) return false;
+  for (const key of Object.keys(material)) {
+    if (!key.endsWith('Node')) continue;
+    const value = (material as unknown as Record<string, unknown>)[key];
+    if (value !== null && value !== undefined) return true;
+  }
+  return false;
+}
+
+/**
  * Why a sprite cannot join a batch, or null. Visibility is not a rule: the per-frame fill collapses hidden sprites.
  * `root` scopes `group-render-order` and `clipping-group` (ancestor-based); omit it to skip those two checks.
+ *
+ * `sprite-node-material`: the batch replaces a node material's position and scale nodes with its instance attributes,
+ * clears its vertex node, and any node reading the object (`modelWorldMatrix`, `positionWorld`) would read the batch mesh.
+ * `sprite-count`: three draws `count` instances of a sprite (`RenderObject.getDrawParameters`, `object.count`), while a
+ * batch draws one quad per sprite.
  */
 export function spriteRule(sprite: Sprite, root?: Object3D): string | null {
   const material = sprite.material as SpriteMaterial | SpriteMaterial[];
   if (Array.isArray(material)) return 'multi-material';
   if (material.visible === false) return 'material-invisible';
+  if (hasNodeSlot(material)) return 'sprite-node-material';
+  if (sprite.count !== 1) return 'sprite-count';
   if (sprite.center.x !== 0.5 || sprite.center.y !== 0.5) return 'sprite-center';
   if (sprite.layers.mask !== 1) return 'layers';
   if (sprite.renderOrder !== 0) return 'render-order';

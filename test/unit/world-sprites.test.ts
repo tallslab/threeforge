@@ -23,7 +23,7 @@ import {
   type Texture,
 } from 'three';
 import { ClippingGroup, SpriteNodeMaterial } from 'three/webgpu';
-import { color, float, vec2, vec3, vec4 } from 'three/tsl';
+import { positionWorld, vec2, vec3 } from 'three/tsl';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 import { FORGE_HIDDEN_LAYER, World } from '../../src/compiler/World.js';
@@ -198,7 +198,8 @@ describe('World sprite batch material', () => {
         const out: string[] = [];
         for (const key of keys) {
           const got = field(material, key);
-          const want = key === 'side' ? (mirrored ? BackSide : FrontSide) : field(source, key);
+          // userData stays out of the copy (NodeMaterial.copy would JSON-serialise it).
+          const want = key === 'side' ? (mirrored ? BackSide : FrontSide) : key === 'userData' ? {} : field(source, key);
           const same = (want as Texture | null)?.isTexture ? got === want : JSON.stringify(got) === JSON.stringify(want);
           if (!same) out.push(`${label}: ${key} ${JSON.stringify(got)} instead of ${JSON.stringify(want)}`);
         }
@@ -214,24 +215,54 @@ describe('World sprite batch material', () => {
     }
   });
 
-  it("from a node material takes its node slots too, but places the instances itself: the source's position, scale and vertex nodes are not carried", () => {
-    const source = new SpriteNodeMaterial({ transparent: false });
-    source.colorNode = color(1, 0, 0);
-    source.opacityNode = float(0.5);
-    source.rotationNode = float(0.3);
-    source.positionNode = vec3(0, 1, 0);
-    source.scaleNode = vec2(2, 2);
-    source.vertexNode = vec4(0, 0, 0, 1);
+  it('compiles sprites whose material userData cannot be serialised (circular, BigInt), restores it, and leaves the batch material userData empty', () => {
+    const circular: Record<string, unknown> = { name: 'loop' };
+    circular.self = circular;
+    const cases: Array<[string, Record<string, unknown>]> = [
+      ['circular', circular],
+      ['BigInt', { big: BigInt(1) }],
+    ];
+    for (const [label, userData] of cases) {
+      const source = new SpriteMaterial({ color: 0xffffff });
+      source.userData = userData;
+      const scene = new Scene();
+      sprites(scene, 4, source, label);
+      const world = new World(scene);
+      let spriteBatches = -1;
+      expect(() => {
+        spriteBatches = world.compile().after.spriteBatches;
+      }, `${label}: compile`).not.toThrow();
+      expect(spriteBatches, `${label}: batches`).toBe(1);
+      expect((world.spriteBatches[0]!.material as SpriteNodeMaterial).userData, `${label}: batch material userData`).toEqual({});
+      expect(source.userData, `${label}: the source keeps its userData`).toBe(userData);
+    }
+  });
+
+  it("leaves unbatched, with their rule, node-material sprites with a node slot set and sprites that draw other than one instance; a node material with every slot null still batches", () => {
     const scene = new Scene();
-    sprites(scene, 4, source as unknown as SpriteMaterial, 'node');
+    const node = (set: (m: SpriteNodeMaterial) => void): SpriteMaterial => {
+      const material = new SpriteNodeMaterial({ transparent: false });
+      set(material);
+      return material as unknown as SpriteMaterial;
+    };
+    sprites(scene, 4, node((m) => (m.positionNode = vec3(0, 1, 0))), 'bobbing');
+    sprites(scene, 4, node((m) => (m.scaleNode = vec2(2, 2))), 'pulsing');
+    sprites(scene, 4, node((m) => (m.colorNode = positionWorld)), 'world-coloured');
+    for (const s of sprites(scene, 4, new SpriteMaterial({ color: 0x00ff00 }), 'particles')) (s as Sprite & { count: number }).count = 3;
+    sprites(scene, 4, node(() => {}), 'plain-node');
+    sprites(scene, 4, new SpriteMaterial({ color: 0xff0000 }), 'plain');
     scene.updateMatrixWorld(true);
-    const world = new World(scene);
-    expect(world.compile().after.spriteBatches).toBe(1);
-    const material = world.spriteBatches[0]!.material as SpriteNodeMaterial;
-    expect({ color: material.colorNode === source.colorNode, opacity: material.opacityNode === source.opacityNode, rotation: material.rotationNode === source.rotationNode }, 'node slots carried').toEqual({ color: true, opacity: true, rotation: true });
-    expect(
-      { position: material.positionNode !== null && material.positionNode !== source.positionNode, scale: material.scaleNode !== null && material.scaleNode !== source.scaleNode, vertex: material.vertexNode },
-      'instance placement kept',
-    ).toEqual({ position: true, scale: true, vertex: null });
+    const report = new World(scene).compile();
+    const prefixes = ['bobbing', 'pulsing', 'world-coloured', 'particles', 'plain-node', 'plain'];
+    const rules = Object.fromEntries(prefixes.map((p) => [p, report.skipped.filter((s) => s.name.startsWith(`${p}-`)).map((s) => s.rule)]));
+    expect(rules).toEqual({
+      bobbing: Array(4).fill('sprite-node-material'),
+      pulsing: Array(4).fill('sprite-node-material'),
+      'world-coloured': Array(4).fill('sprite-node-material'),
+      particles: Array(4).fill('sprite-count'),
+      'plain-node': [],
+      plain: [],
+    });
+    expect(report.after.spriteBatches, 'the plain SpriteMaterial and the all-null node material').toBe(2);
   });
 });

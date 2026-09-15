@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Frustum, Group, Matrix4, Object3D, PerspectiveCamera, Scene, Sprite, SpriteMaterial, Vector2, Vector3, type Material } from 'three';
-import { ClippingGroup } from 'three/webgpu';
+import { ClippingGroup, SpriteNodeMaterial } from 'three/webgpu';
+import { float } from 'three/tsl';
 import { fillSpriteInstances, groupSprites, isVisibleInGraph, spriteRule } from '../../src/compiler/sprites.js';
 import { SceneSpace } from '../../src/compiler/space.js';
 
@@ -53,6 +54,24 @@ describe('groupSprites', () => {
   it("spriteRule names an invisible material, independent of the sprite's own visible flag", () => {
     const invisible = new Sprite(new SpriteMaterial({ visible: false }));
     expect(spriteRule(invisible)).toBe('material-invisible');
+  });
+
+  it('spriteRule names a node material with any node slot set (sprite-node-material) and a sprite drawing other than one instance (sprite-count)', () => {
+    // three r186 NodeMaterial's slots, plus SpriteNodeMaterial's rotationNode and scaleNode.
+    const slots = ['lightsNode', 'envNode', 'aoNode', 'colorNode', 'normalNode', 'opacityNode', 'backdropNode', 'backdropAlphaNode', 'alphaTestNode', 'maskNode', 'maskShadowNode', 'positionNode', 'geometryNode', 'depthNode', 'receivedShadowPositionNode', 'castShadowPositionNode', 'receivedShadowNode', 'castShadowNode', 'outputNode', 'mrtNode', 'fragmentNode', 'vertexNode', 'contextNode', 'rotationNode', 'scaleNode'];
+    const unnamed = slots.filter((slot) => {
+      const material = new SpriteNodeMaterial();
+      (material as unknown as Record<string, unknown>)[slot] = float(1);
+      return spriteRule(new Sprite(material as unknown as SpriteMaterial)) !== 'sprite-node-material';
+    });
+    expect(unnamed, 'slots not named').toEqual([]);
+    expect(spriteRule(new Sprite(new SpriteNodeMaterial() as unknown as SpriteMaterial)), 'every slot null').toBeNull();
+    for (const count of [0, 3]) {
+      const sprite = new Sprite(new SpriteMaterial());
+      (sprite as Sprite & { count: number }).count = count;
+      expect(spriteRule(sprite), `count ${count}`).toBe('sprite-count');
+    }
+    expect(spriteRule(new Sprite(new SpriteMaterial())), 'count 1').toBeNull();
   });
 
   it('spriteRule names ancestor-scoped rules only when a root is given: a render-ordered Group and an enabled ClippingGroup', () => {

@@ -285,6 +285,7 @@ export class World {
   private ownedMaterials = new Set<Material>();
   private compiled = false;
   private disposed = false;
+  private disposing = false;
 
   constructor(scene: Scene, options: WorldOptions = {}) {
     this.scene = scene;
@@ -934,17 +935,23 @@ export class World {
    * pass tracker's scene hooks, removes and disposes the occlusion proxies (a re-enable a depth-0 render queued finds no
    * proxy) and disposes what the World created, never a material the app registered. Then every `onDirty` listener is
    * dropped. The registry and the ledger stay the app's. Calling `dispose()` again, or `decompile()`, does nothing;
-   * `compile`, `markDirty`, `setVisible`, `onDirty` and `warmup` throw.
+   * `compile`, `markDirty`, `setVisible`, `onDirty` and `warmup` throw, already while `dispose()` runs (a `decompile`
+   * listener that recompiles is refused), and the World ends disposed even when a listener throws.
    */
   dispose(): void {
-    if (this.disposed) return;
-    this.decompile();
-    this.dirtyListeners.clear();
-    this.disposed = true;
+    if (this.disposed || this.disposing) return;
+    this.disposing = true;
+    try {
+      this.decompile();
+    } finally {
+      this.dirtyListeners.clear();
+      this.disposed = true;
+      this.disposing = false;
+    }
   }
 
   private assertLive(): void {
-    if (this.disposed) throw new Error('World is disposed; create a new World to compile the scene again.');
+    if (this.disposed || this.disposing) throw new Error('World is disposed; create a new World to compile the scene again.');
   }
 
   slotOf(mesh: Mesh): Slot | undefined {

@@ -17,6 +17,7 @@ import {
   Raycaster,
   RGBAFormat,
   Scene,
+  ShaderMaterial,
   SkinnedMesh,
   Sprite,
   SpriteMaterial,
@@ -890,12 +891,45 @@ describe('World material ownership', () => {
     expect(clones.map((m) => counts.get(m)! > 0), 'clones disposed on decompile').toEqual([true, true]);
     expect(batchOriginals.every((m) => m.material === sharedBatch) && instancedOriginals.every((m) => m.material === sharedInstanced)).toBe(true);
 
-    // Still usable: the next compile shares them again, and dispose() leaves them alone too.
+    // Still usable: the next compile shares them again, and dispose() leaves them alone but frees that compile's clones.
     world.compile();
     expect(world.batchedMeshes.map((b) => b.material)).toContain(sharedBatch);
     expect(world.instancedMeshes.map((m) => m.material)).toContain(sharedInstanced);
+    const secondClones = [...world.batchedMeshes, ...world.instancedMeshes].map((m) => m.material as Material).filter((m) => m !== sharedBatch && m !== sharedInstanced);
+    expect(secondClones, 'the second compile made its own clones').toHaveLength(2);
+    expect(secondClones.some((m) => clones.includes(m))).toBe(false);
+    const secondCounts = disposeCounts(secondClones);
     world.dispose();
     expect([counts.get(sharedBatch), counts.get(sharedInstanced)], 'shared materials disposed on dispose').toEqual([0, 0]);
+    expect(secondClones.map((m) => secondCounts.get(m)! > 0), "the second compile's clones disposed on dispose").toEqual([true, true]);
+  });
+
+  it("never disposes the originals' own material: materials: 'keep' batches with it, and an unsupported ShaderMaterial is never batched", () => {
+    for (const mode of ['unsupported', 'keep'] as const) {
+      const scene = new Scene();
+      const material: Material = mode === 'unsupported' ? new ShaderMaterial() : solid(0xffffff, { roughness: 0.4 });
+      for (let i = 0; i < 3; i++) {
+        const mesh = tag.static(new Mesh(box, material));
+        mesh.position.set(i * 2, 0, 0);
+        scene.add(mesh);
+      }
+      const world = new World(scene, mode === 'keep' ? { materials: 'keep' } : {});
+      const report = world.compile();
+      if (mode === 'keep') {
+        expect(world.batchedMeshes.map((b) => b.material), "keep: the batch draws with the originals' material").toEqual([material]);
+      } else {
+        // classify excludes ShaderMaterial and RawShaderMaterial, the only materials the registry marks unsupported, so the
+        // ownership pass's `o.material === material` branch is defensive: no World batch can draw with such a material.
+        expect(world.batchedMeshes, 'unsupported: batches').toHaveLength(0);
+        expect(new Set(report.skipped.map((s) => s.rule)), 'unsupported: rule').toEqual(new Set(['shader-material']));
+      }
+      const counts = disposeCounts([material]);
+      world.decompile();
+      expect(counts.get(material), `${mode}: disposed on decompile`).toBe(0);
+      world.compile();
+      world.dispose();
+      expect(counts.get(material), `${mode}: disposed on dispose`).toBe(0);
+    }
   });
 });
 
@@ -918,6 +952,26 @@ describe('World.dispose', () => {
     world.decompile();
     off();
     expect(events).toEqual(['compile', 'decompile']);
+  });
+
+  it('refuses a recompile from a decompile listener while disposing: no scene hook or batch is left behind', () => {
+    const { scene } = mixedScene();
+    const world = new World(scene);
+    const errors: string[] = [];
+    world.onDirty((e) => {
+      if (e.kind !== 'decompile') return;
+      try {
+        world.compile();
+      } catch (error) {
+        errors.push((error as Error).message);
+      }
+    });
+    world.compile();
+    world.dispose();
+    expect(OWN(scene, 'onBeforeRender') || OWN(scene, 'onAfterRender'), 'pass tracker hooks left installed').toBe(false);
+    expect(batchesIn(scene)).toHaveLength(0);
+    expect(errors).toEqual([expect.stringContaining('World is disposed')]);
+    expect(() => world.compile()).toThrow('World is disposed');
   });
 
   it('throws a clear error on compile, markDirty, setVisible, onDirty and warmup after dispose', async () => {
