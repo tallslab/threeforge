@@ -400,6 +400,19 @@ try {
     throw new Error(`unknown scene "${sceneName}"`);
   }
 
+  if (params.get('sceneOffset') === '1') {
+    // The whole scene translated, turned and scaled; the camera follows (position and a point ahead of it go through
+    // the same matrix, and a perspective view does not change under a uniform scale), so the same view stays framed.
+    const ahead = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion).add(camera.position);
+    scene.position.set(40, -12, -30);
+    scene.rotation.y = 0.5;
+    scene.scale.setScalar(0.8);
+    scene.updateMatrixWorld(true);
+    camera.position.applyMatrix4(scene.matrix);
+    camera.lookAt(ahead.applyMatrix4(scene.matrix));
+    camera.updateMatrixWorld();
+  }
+
   const tracker = new ResourceTracker({ registry });
   let loadedRoot: THREE.Object3D | null = null;
   const memory: MemoryHarness = {

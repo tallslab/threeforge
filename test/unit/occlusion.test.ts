@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BatchedMesh, BoxGeometry, InstancedMesh, Mesh, MeshStandardMaterial, Object3D, PerspectiveCamera, Scene } from 'three';
+import { BatchedMesh, Box3, BoxGeometry, DodecahedronGeometry, InstancedMesh, Mesh, MeshStandardMaterial, Object3D, PerspectiveCamera, Scene } from 'three';
 import { World } from '../../src/compiler/World.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { tag } from '../../src/tags.js';
@@ -122,5 +122,45 @@ describe('World occlusion', () => {
     const cam = new PerspectiveCamera();
     void cam;
     expect(scene.children.some((o) => (o as InstancedMesh).isInstancedMesh)).toBe(true);
+  });
+});
+
+describe('World occlusion proxies after markDirty', () => {
+  it('resizes the proxy of a batch and of an instanced group to their new bounds when an instance moves to x = 500', () => {
+    const scene = new Scene();
+    const dodeca = new DodecahedronGeometry(0.5);
+    const boxes = [0, 1, 2].map((i) => {
+      const m = tag.static(new Mesh(box, solid(0x336699)));
+      m.name = `box-${i}`;
+      m.position.set(i * 2, 0, 0);
+      scene.add(m);
+      return m;
+    });
+    const dodecas = [0, 1, 2, 3].map((i) => {
+      const m = tag.static(new Mesh(dodeca, solid(0x336699)));
+      m.name = `dodeca-${i}`;
+      m.position.set(i * 2, 5, 0);
+      scene.add(m);
+      return m;
+    });
+    const world = new World(scene, { occlusion: true, instanceThreshold: 4 });
+    world.compile();
+    const batch = world.slotOf(boxes[0]!)!.batch as BatchedMesh;
+    const instanced = world.slotOf(dodecas[0]!)!.batch as InstancedMesh;
+    expect(batch.isBatchedMesh).toBe(true);
+    expect(instanced.isInstancedMesh).toBe(true);
+    boxes[2]!.position.x = 500;
+    dodecas[3]!.position.x = 500;
+    world.markDirty(boxes[2]!);
+    world.markDirty(dodecas[3]!);
+    scene.updateMatrixWorld();
+    for (const [target, originals] of [[batch, boxes], [instanced, dodecas]] as const) {
+      const proxy = proxiesIn(scene).find((p) => p.name === `forge:occluder:${target.name}`)!;
+      // The union of the instances' boxes, as the batch and the instanced group bound them (scene space is world space here).
+      const expected = new Box3();
+      for (const m of originals) expected.expandByObject(m);
+      const actual = new Box3().setFromObject(proxy);
+      [...actual.min.toArray(), ...actual.max.toArray()].forEach((v, i) => expect(v, `${target.name} proxy [${i}]`).toBeCloseTo([...expected.min.toArray(), ...expected.max.toArray()][i]!, 4));
+    }
   });
 });

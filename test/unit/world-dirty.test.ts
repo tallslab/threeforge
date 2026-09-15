@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BoxGeometry, DodecahedronGeometry, Group, Matrix4, Mesh, MeshStandardMaterial, Scene, type BatchedMesh } from 'three';
+import { Box3, BoxGeometry, DodecahedronGeometry, Frustum, Group, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Scene, Vector3, WebGLCoordinateSystem, type BatchedMesh, type Sphere } from 'three';
 import { World } from '../../src/compiler/World.js';
 import type { CulledInstancedMesh } from '../../src/compiler/instancing.js';
 import { tag } from '../../src/tags.js';
@@ -88,5 +88,81 @@ describe('World.markDirty', () => {
     off();
     world.markDirty(a);
     expect(events).toHaveLength(2);
+  });
+});
+
+describe('World.markDirty bounds', () => {
+  const renderer = { coordinateSystem: WebGLCoordinateSystem };
+
+  /** A camera looking straight down at (x, 0, 0), as three's whole-object culling sees it. */
+  function frustumAt(x: number): Frustum {
+    const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+    camera.position.set(x, 10, 0);
+    camera.lookAt(x, 0, 0);
+    camera.updateMatrixWorld();
+    return new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+  }
+
+  function expectInside(box: Box3 | null, sphere: Sphere | null, moved: Box3, label: string): void {
+    expect(box!.containsBox(moved), `${label}: bounding box ${JSON.stringify(box)} holds ${JSON.stringify(moved)}`).toBe(true);
+    for (const x of [moved.min.x, moved.max.x]) {
+      for (const y of [moved.min.y, moved.max.y]) {
+        for (const z of [moved.min.z, moved.max.z]) expect(sphere!.distanceToPoint(new Vector3(x, y, z)), `${label}: bounding sphere`).toBeLessThanOrEqual(1e-4);
+      }
+    }
+  }
+
+  it('recomputes the bounds of a touched batch once, so an instance moved to x = 500 stays inside them and in view', () => {
+    const { scene, props, a } = batchedScene();
+    const world = new World(scene);
+    world.compile();
+    scene.updateMatrixWorld();
+    const batch = world.slotOf(a)!.batch as BatchedMesh;
+    expect(frustumAt(500).intersectsObject(batch)).toBe(false);
+    const computeBox = vi.spyOn(batch, 'computeBoundingBox');
+    const computeSphere = vi.spyOn(batch, 'computeBoundingSphere');
+    a.position.x = 500;
+    expect(world.markDirty(props)).toBe(2); // both instances of the batch, one recompute
+    expect(computeBox).toHaveBeenCalledTimes(1);
+    expect(computeSphere).toHaveBeenCalledTimes(1);
+    expectInside(batch.boundingBox, batch.boundingSphere, new Box3().setFromObject(a, true), 'batch');
+    expect(frustumAt(500).intersectsObject(batch)).toBe(true);
+  });
+
+  it("refreshes an instanced group's bounds on every LOD level from the moved instance, not from the rows it drew", () => {
+    const geometry = new BoxGeometry(1, 1, 1);
+    geometry.userData.forgeLods = [new BoxGeometry(1, 1, 1)];
+    const scene = new Scene();
+    const meshes = Array.from({ length: 4 }, (_, i) => {
+      const m = tag.static(new Mesh(geometry, solid(0x2244ff)));
+      m.name = `lod-${i}`;
+      m.position.set(i * 2, 0, 0);
+      scene.add(m);
+      return m;
+    });
+    const world = new World(scene, { instanceThreshold: 2, lod: { distances: [50] } });
+    world.compile();
+    scene.updateMatrixWorld();
+    const mesh = world.instancedMeshes[0] as CulledInstancedMesh;
+    expect(mesh.levels).toHaveLength(2);
+    // A narrow camera over instance 0: the rows then hold fewer instances than the group.
+    const camera = new PerspectiveCamera(20, 1, 0.1, 100);
+    camera.position.set(0, 5, 0);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    mesh.onBeforeRender(renderer as never, scene, camera, mesh.geometry, mesh.material as never, null as never);
+    expect(mesh.levels[0]!.count + mesh.levels[1]!.count).toBe(1);
+    meshes[3]!.position.x = 500;
+    expect(world.markDirty(meshes[3]!)).toBe(1);
+    const rest = new Box3();
+    for (const m of meshes.slice(0, 3)) rest.expandByObject(m, true);
+    for (const level of mesh.levels) {
+      expectInside(level.boundingBox, level.boundingSphere, new Box3().setFromObject(meshes[3]!, true), `level ${level.lodLevel}`);
+      expect(level.boundingBox!.containsBox(rest), `level ${level.lodLevel} still holds the undrawn instances`).toBe(true);
+      expect(frustumAt(500).intersectsObject(level), `level ${level.lodLevel} in view at x = 500`).toBe(true);
+    }
+    const refresh = vi.spyOn(mesh.forgeCulling, 'refreshBounds');
+    world.markDirty(scene); // all four instances, one refresh
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 });

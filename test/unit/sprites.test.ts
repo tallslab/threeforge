@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { Frustum, Group, Matrix4, Object3D, PerspectiveCamera, Scene, Sprite, SpriteMaterial, Vector2, type Material } from 'three';
+import { Frustum, Group, Matrix4, Object3D, PerspectiveCamera, Scene, Sprite, SpriteMaterial, Vector2, Vector3, type Material } from 'three';
 import { ClippingGroup } from 'three/webgpu';
 import { fillSpriteInstances, groupSprites, isVisibleInGraph, spriteRule } from '../../src/compiler/sprites.js';
+import { SceneSpace } from '../../src/compiler/space.js';
 
 /** Keys the way the registry describes materials: same map and flags → same variant, colour separate. */
 const describeMaterial = (m: Material) => {
@@ -167,5 +168,29 @@ describe('fillSpriteInstances', () => {
     s.visible = false;
     expect(isVisibleInGraph(s, scene)).toBe(false);
     expect(new Vector2().x).toBe(0);
+  });
+});
+
+describe('fillSpriteInstances in scene space', () => {
+  it("writes centres and scales in the space's root frame, so the batch's world matrix draws each sprite where it is", () => {
+    const scene = new Scene();
+    scene.position.set(10, -2, 4);
+    scene.rotation.y = 0.5;
+    scene.scale.set(2, 3, 2);
+    const material = new SpriteMaterial();
+    const sprites = [spriteAt(1, 2, 3, material, [1.5, 0.5]), spriteAt(-4, 0, 2, material, [1, 2])];
+    scene.add(...sprites);
+    scene.updateMatrixWorld(true);
+    const centers = new Float32Array(6);
+    const scales = new Float32Array(4);
+    expect(fillSpriteInstances(sprites, centers, scales, { camera: null, sorted: false, cap: Infinity, root: scene, frustum: null, space: new SceneSpace(scene) })).toBe(2);
+    sprites.forEach((s, k) => {
+      const centre = new Vector3(centers[k * 3]!, centers[k * 3 + 1]!, centers[k * 3 + 2]!).applyMatrix4(scene.matrixWorld);
+      const expected = new Vector3().setFromMatrixPosition(s.matrixWorld);
+      centre.toArray().forEach((v, i) => expect(v, `sprite ${k} centre [${i}]`).toBeCloseTo(expected.toArray()[i]!, 4));
+      const m = s.matrixWorld.elements;
+      expect(scales[k * 2]! * 2, `sprite ${k} scale x`).toBeCloseTo(Math.hypot(m[0]!, m[1]!, m[2]!), 4);
+      expect(scales[k * 2 + 1]! * 3, `sprite ${k} scale y`).toBeCloseTo(Math.hypot(m[4]!, m[5]!, m[6]!), 4);
+    });
   });
 });

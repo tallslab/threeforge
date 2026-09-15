@@ -1,4 +1,4 @@
-import { BatchedMesh, Color, DoubleSide, Mesh, WebGLCoordinateSystem, type BufferGeometry, type CoordinateSystem, type InstancedMesh, type Material, type Scene } from 'three';
+import { BatchedMesh, Color, DoubleSide, Matrix4, Mesh, WebGLCoordinateSystem, type BufferGeometry, type CoordinateSystem, type InstancedMesh, type Material, type Scene } from 'three';
 import { bakeGeometries, type BakeEntry, type BakeOptions, type BakeReport } from './bake.js';
 import { createCulledInstancedMesh } from './instancing.js';
 import type { NestedPassPolicy } from './culling.js';
@@ -6,6 +6,7 @@ import type { PassTracker } from './passTracker.js';
 import { lodsOf } from '../lod/generateLods.js';
 import type { MaterialRegistry } from '../registry/MaterialRegistry.js';
 import { attributeSignature, ensureIndexed } from './geometryCompat.js';
+import { SceneSpace } from './space.js';
 
 /** Where an original mesh went: a BatchedMesh instance id, an InstancedMesh master index, or a baked mesh's entry index. */
 export interface Slot {
@@ -13,7 +14,7 @@ export interface Slot {
   instanceId: number;
 }
 
-/** A finished group baked into one world-space mesh; rebaked when a module is hidden or shown. */
+/** A finished group baked into one mesh in the scene's space; rebaked when a module is hidden or shown. */
 export interface BakedGroup {
   mesh: Mesh;
   /** The modules, in entry order (`triangleOrigins` indexes this). */
@@ -26,6 +27,8 @@ export interface BakedGroup {
   triangleOrigins: Uint32Array;
   /** The removed triangles, for inspection. */
   removed: BufferGeometry;
+  /** The space the modules are baked in: the scene's, which the baked mesh is a child of. */
+  space: SceneSpace;
 }
 
 export interface BatchOptions {
@@ -45,6 +48,12 @@ export interface BatchOptions {
   noBake?: Set<Mesh>;
   /** `batch` (default): transparent groups batch/bake like any other. `keep` routes them aside, unbatched. */
   transparent?: 'batch' | 'keep';
+  /**
+   * The space of `scene`, which every batch, instanced mesh and baked mesh is added to: instance matrices and baked
+   * vertices are written in it (`inverse(scene.matrixWorld) * original.matrixWorld`). Pass the caller's to share its
+   * cache; a new one by default.
+   */
+  space?: SceneSpace;
 }
 
 export interface GroupReport {
@@ -89,6 +98,7 @@ interface Group {
 }
 
 const _white = new Color(0xffffff);
+const _local = new Matrix4();
 
 /**
  * One BatchedMesh per (material variant, geometry attribute signature, shadow flags). Colour is per instance,
@@ -99,6 +109,7 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
   const coordinateSystem = options.coordinateSystem ?? WebGLCoordinateSystem;
   const chunkSize = options.chunkSize;
   const lodDistances = options.lodDistances;
+  const space = options.space ?? new SceneSpace(scene);
   const groups = new Map<string, Group>();
   for (const mesh of statics) {
     if (Array.isArray(mesh.material)) continue;
@@ -154,7 +165,8 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
         }
         const { material, perInstanceColor } = batchMaterial();
         if (material !== group.canonical) material.name = `${group.canonical.name || group.canonical.type} (forge instanced)`;
-        const matrices = meshes.map((m) => m.matrixWorld);
+        // The level meshes are children of the scene: scene-space masters (an untransformed scene passes the world matrices).
+        const matrices = space.update() ? meshes.map((m) => m.matrixWorld) : meshes.map((m) => space.toLocal(m.matrixWorld, new Matrix4()));
         const colors = perInstanceColor ? meshes.map((m) => (m.material as Material & { color: Color }).color) : null;
         const lods = lodDistances ? lodsOf(geometry) : [];
         const instanced = createCulledInstancedMesh(geometry, material, matrices, colors, coordinateSystem, {
@@ -207,7 +219,7 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
     if (options.bake && !group.meshes.some((m) => options.noBake?.has(m))) {
       const index = perProgramBaked.get(programHash) ?? 0;
       perProgramBaked.set(programHash, index + 1);
-      const baked = bakeGroup(group, options.bake, shareCanonical, `forge:bake:${programHash}:${index}`);
+      const baked = bakeGroup(group, options.bake, shareCanonical, `forge:bake:${programHash}:${index}`, space);
       scene.add(baked.mesh);
       result.baked.push(baked);
       group.meshes.forEach((mesh, i) => result.slots.set(mesh, { batch: baked.mesh, instanceId: i }));
@@ -273,7 +285,7 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
         if (lods && lods.length > 0) levelIds.set(geometryId, [geometryId, ...lods.map((g) => batch.addGeometry(g))]);
       }
       const instanceId = batch.addInstance(geometryId);
-      batch.setMatrixAt(instanceId, mesh.matrixWorld);
+      batch.setMatrixAt(instanceId, space.toLocal(mesh.matrixWorld, _local));
       if (hasColor) batch.setColorAt(instanceId, (mesh.material as Material & { color: Color }).color);
       result.slots.set(mesh, { batch, instanceId });
       originals[instanceId] = mesh;
@@ -302,22 +314,26 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
   return result;
 }
 
-/** Bake entries for a group's modules: world matrices, instance tints, per-module opt-out, material sidedness. */
-export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Material): BakeEntry[] {
+/**
+ * Bake entries for a group's modules: matrices in `space` (world matrices without one, or while its root has no
+ * transform), instance tints, per-module opt-out, material sidedness.
+ */
+export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Material, space?: SceneSpace): BakeEntry[] {
+  const local = space !== undefined && !space.update();
   return meshes
     .filter((m) => !hidden.has(m))
     .map((m) => ({
       geometry: m.geometry,
-      matrix: m.matrixWorld,
+      matrix: local ? space!.toLocal(m.matrixWorld, new Matrix4()) : m.matrixWorld,
       color: (m.material as Material & { color?: Color }).color ?? null,
       bake: m.userData.forgeBake !== false,
       doubleSided: material.side === DoubleSide,
     }));
 }
 
-function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, name: string): BakedGroup {
+function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, name: string, space: SceneSpace): BakedGroup {
   const canonical = group.canonical;
-  const entries = bakeEntriesOf(group.meshes, new Set(), canonical);
+  const entries = bakeEntriesOf(group.meshes, new Set(), canonical, space);
   const result = bakeGeometries(entries, options);
   // Instance tints become vertex colours: the material then needs vertexColors and a white base colour.
   let material: Material = canonical;
@@ -336,7 +352,7 @@ function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, 
   mesh.castShadow = group.castShadow;
   mesh.receiveShadow = group.receiveShadow;
   mesh.matrixAutoUpdate = false;
-  const baked: BakedGroup = { mesh, entries: group.meshes, hidden: new Set(), options, ownsMaterial, report: result.report, triangleOrigins: result.triangleOrigins, removed: result.removed };
+  const baked: BakedGroup = { mesh, entries: group.meshes, hidden: new Set(), options, ownsMaterial, report: result.report, triangleOrigins: result.triangleOrigins, removed: result.removed, space };
   mesh.userData.forge = { kind: 'bake', report: result.report, triangleOrigins: result.triangleOrigins };
   return baked;
 }
@@ -345,7 +361,7 @@ function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, 
 export function rebake(group: BakedGroup): void {
   const material = group.mesh.material as Material;
   const entriesVisible = group.entries.filter((m) => !group.hidden.has(m));
-  const entries = bakeEntriesOf(entriesVisible, new Set(), material);
+  const entries = bakeEntriesOf(entriesVisible, new Set(), material, group.space);
   const result = bakeGeometries(entries, group.options);
   group.mesh.geometry.dispose();
   group.removed.dispose();

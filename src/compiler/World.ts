@@ -1,19 +1,24 @@
-import { BoxGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, Vector3, Vector4, WebGLCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Sprite, type Texture } from 'three';
+import { BoxGeometry, DoubleSide, Group, Matrix4, Mesh, MeshBasicMaterial, Vector3, Vector4, WebGLCoordinateSystem, type BatchedMesh, type Box3, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Sprite, type Texture } from 'three';
 import type { DrawCallLedger } from '../ledger/DrawCallLedger.js';
 import { displayName } from '../ledger/reasons.js';
 import { MaterialRegistry, type RegistryStats } from '../registry/MaterialRegistry.js';
 import { batchStatics, type GroupReport, type Slot, rebake, type BakedGroup } from './batchStatics.js';
 import type { BakeOptions } from './bake.js';
-import type { CulledInstancedMesh } from './instancing.js';
+import type { CulledInstancedMesh, InstanceCullingHandle } from './instancing.js';
 import { animatedRoots, classify, exclusionRule, type AnimationSource, type Classification } from './classify.js';
 import { freezableObjects } from './freeze.js';
 import { buildSpriteBatch, type SpriteBatch } from './spriteBatch.js';
 import { groupSprites } from './sprites.js';
 import { attachBvhCulling, prependAfterRenderHook, prependRenderHook, type CullingHandle, type NestedPassPolicy } from './culling.js';
 import { PassTracker } from './passTracker.js';
+import { SceneSpace } from './space.js';
 
 /** Hidden originals live on this layer: invisible to default cameras and default raycasters, matrices still valid. */
 export const FORGE_HIDDEN_LAYER = 31;
+
+const _local = new Matrix4();
+const _size = new Vector3();
+const _center = new Vector3();
 
 export interface WorldOptions {
   registry?: MaterialRegistry;
@@ -27,7 +32,8 @@ export interface WorldOptions {
   instanceThreshold?: number;
   /**
    * `separate` (default): tagged dynamics stay their own draws. `batch-sync`: batchable dynamics join batches and
-   * their world matrices are copied in whenever they change, before each cull. Colour changes are not synced.
+   * their matrices are copied in (in the scene's space) whenever their world matrices change, before each cull. Colour
+   * changes are not synced.
    */
   dynamics?: 'separate' | 'batch-sync';
   /** World-space cell size. Splits each material group into one batch per cell: tight bounds for whole-chunk culling and a unit for streaming. */
@@ -217,6 +223,8 @@ export class World {
   private readonly materialsMode: 'canonical' | 'keep';
   /** Follows render nesting through the scene hooks: the main camera, and which passes are open (culling). */
   private readonly passes = new PassTracker();
+  /** The scene's space: batches, instanced meshes, baked meshes and sprite batches are its children, so instance data is written in it. */
+  private readonly space: SceneSpace;
   private sceneHookRestores: (() => void)[] = [];
   private occluders: OcclusionEntry[] = [];
   private occlusionRestores: (() => void)[] = [];
@@ -242,6 +250,7 @@ export class World {
 
   constructor(scene: Scene, options: WorldOptions = {}) {
     this.scene = scene;
+    this.space = new SceneSpace(scene);
     this.registry = options.registry ?? options.ledger?.registry ?? new MaterialRegistry();
     this.ledger = options.ledger;
     this.policy = options.policy ?? 'tagged';
@@ -353,7 +362,7 @@ export class World {
       }
     }
     const noBake = new Set<Mesh>([...syncRule.entries()].filter(([, rule]) => rule === null).map(([mesh]) => mesh));
-    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem, chunkSize: this.chunkSizeOption, nestedPasses, passes: this.passes, transparent: this.transparentMode, ...(this.lod ? { lodDistances: this.lod.distances } : {}), ...(this.bakeOptions ? { bake: this.bakeOptions, noBake } : {}) });
+    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem, chunkSize: this.chunkSizeOption, nestedPasses, passes: this.passes, space: this.space, transparent: this.transparentMode, ...(this.lod ? { lodDistances: this.lod.distances } : {}), ...(this.bakeOptions ? { bake: this.bakeOptions, noBake } : {}) });
     const transparentKeptSet = new Set<Mesh>(result.transparentKept);
     this.batches = result.batches;
     this.instanced = result.instanced;
@@ -391,7 +400,7 @@ export class World {
       // main camera's list instead, on both backends.
       const sync = (camera: Camera): boolean => this.passes.mainCamera === null || camera === this.passes.mainCamera;
       grouped.groups.forEach((group, i) => {
-        const batch = buildSpriteBatch(group, i, { sync, root: this.scene });
+        const batch = buildSpriteBatch(group, i, { sync, root: this.scene, space: this.space });
         this.scene.add(batch.mesh);
         this.spriteBatchList.push(batch);
         for (const sprite of group.sprites) {
@@ -490,6 +499,29 @@ export class World {
     }
   }
 
+  /**
+   * Fits an occlusion proxy to its target's bounding box again, the way `installOcclusion` sized it (the box's centre,
+   * each extent 1 mm at least; target and proxy are both children of the scene). The proxy moves and the corners of its
+   * one-segment box geometry are rewritten in place: every position component of such a box is plus or minus half an
+   * extent, so no geometry is created and the values match a new `BoxGeometry` of that size exactly.
+   */
+  private fitProxy(entry: OcclusionEntry): void {
+    const box = (entry.targets[0] as Object3D & { boundingBox?: Box3 | null }).boundingBox;
+    if (!box) return;
+    box.getSize(_size);
+    box.getCenter(_center);
+    const hx = Math.max(_size.x, 1e-3) / 2;
+    const hy = Math.max(_size.y, 1e-3) / 2;
+    const hz = Math.max(_size.z, 1e-3) / 2;
+    const geometry = entry.proxy.geometry;
+    const position = geometry.getAttribute('position');
+    for (let i = 0; i < position.count; i++) position.setXYZ(i, Math.sign(position.getX(i)) * hx, Math.sign(position.getY(i)) * hy, Math.sign(position.getZ(i)) * hz);
+    position.needsUpdate = true;
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    entry.proxy.position.copy(_center);
+  }
+
   /** Show or hide an original mesh, wherever it ended up. A baked module rebakes its group. */
   /** Listen for graph changes that need a new frame (`markDirty`, `setVisible`, `compile`, `decompile`); returns the disposer. */
   onDirty(listener: (event: DirtyEvent) => void): () => void {
@@ -505,15 +537,19 @@ export class World {
 
   /**
    * Move a frozen static (or a whole subtree) on demand: recomposes every local matrix under `object`, recomputes
-   * the world matrices, and pushes every batched original in the subtree into its batch (BatchedMesh matrix and BVH
-   * leaf, InstancedMesh through its culling handle, baked groups by rebaking once). Sprite batches follow on their
-   * own. Returns the number of batched instances updated.
+   * the world matrices, and pushes every batched original in the subtree into its batch in the scene's space
+   * (BatchedMesh matrix and BVH leaf, InstancedMesh through its culling handle, baked groups by rebaking once). Then
+   * recomputes the bounds of each touched batch and instanced group once, so three's whole-object frustum test keeps a
+   * moved instance, and fits their occlusion proxies to the new bounds. Sprite batches follow on their own. Returns the
+   * number of batched instances updated.
    */
   markDirty(object: Object3D): number {
     object.traverse((o) => o.updateMatrix());
     object.updateMatrixWorld(true);
     let updated = 0;
     const rebakes = new Set<BakedGroup>();
+    const batches = new Set<BatchedMesh>();
+    const handles = new Set<InstanceCullingHandle>();
     object.traverse((o) => {
       const slot = this.slots.get(o as Mesh);
       if (!slot) return;
@@ -524,15 +560,29 @@ export class World {
         return;
       }
       const target = slot.batch as BatchedMesh | CulledInstancedMesh;
+      const matrix = this.space.toLocal(o.matrixWorld, _local);
       if ((target as BatchedMesh).isBatchedMesh) {
-        (target as BatchedMesh).setMatrixAt(slot.instanceId, o.matrixWorld);
+        (target as BatchedMesh).setMatrixAt(slot.instanceId, matrix);
         this.cullingHandles.get(target as BatchedMesh)?.move(slot.instanceId);
+        batches.add(target as BatchedMesh);
       } else {
-        (target as CulledInstancedMesh).forgeCulling.setMatrixAt(slot.instanceId, o.matrixWorld);
+        (target as CulledInstancedMesh).forgeCulling.setMatrixAt(slot.instanceId, matrix);
+        handles.add((target as CulledInstancedMesh).forgeCulling);
       }
       updated++;
     });
     for (const group of rebakes) rebake(group);
+    for (const batch of batches) {
+      batch.computeBoundingBox();
+      batch.computeBoundingSphere();
+    }
+    for (const handle of handles) handle.refreshBounds();
+    if (batches.size + handles.size > 0) {
+      for (const entry of this.occluders) {
+        const target = entry.targets[0] as BatchedMesh | CulledInstancedMesh;
+        if (batches.has(target as BatchedMesh) || handles.has((target as CulledInstancedMesh).forgeCulling)) this.fitProxy(entry);
+      }
+    }
     this.emitDirty({ kind: 'markDirty', object });
     return updated;
   }
@@ -574,6 +624,7 @@ export class World {
       const batched = (target as BatchedMesh).isBatchedMesh ? (target as BatchedMesh) : null;
       const handle = batched ? this.cullingHandles.get(batched) : undefined;
       const instanced = batched ? null : (target as CulledInstancedMesh);
+      const space = this.space;
       const sync = (): void => {
         for (const entry of entries) {
           const e = entry.mesh.matrixWorld.elements;
@@ -587,11 +638,13 @@ export class World {
           }
           if (!changed) continue;
           last.set(e);
+          // In the scene's space as of this render: three refreshes scene.matrixWorld before any object hook runs.
+          const matrix = space.toLocal(entry.mesh.matrixWorld, _local);
           if (batched) {
-            batched.setMatrixAt(entry.instanceId, entry.mesh.matrixWorld);
+            batched.setMatrixAt(entry.instanceId, matrix);
             handle?.move(entry.instanceId);
           } else if (instanced) {
-            instanced.forgeCulling.setMatrixAt(entry.instanceId, entry.mesh.matrixWorld);
+            instanced.forgeCulling.setMatrixAt(entry.instanceId, matrix);
           }
         }
       };

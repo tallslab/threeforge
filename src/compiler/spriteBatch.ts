@@ -3,6 +3,7 @@ import { SpriteNodeMaterial } from 'three/webgpu';
 import { instancedDynamicBufferAttribute } from 'three/tsl';
 import { prependRenderHook } from './culling.js';
 import { fillSpriteInstances, type SpriteGroup } from './sprites.js';
+import { SceneSpace } from './space.js';
 
 /** One instanced billboard draw standing in for a group of sprites; the originals keep driving it. */
 export interface SpriteBatch {
@@ -20,12 +21,18 @@ export interface SpriteBatchOptions {
   sync(camera: Camera): boolean;
   /** Visibility of the originals is resolved up to this root. */
   root: Object3D;
+  /**
+   * The space of the object the batch mesh is added to: instances are written in it. Default: `root`'s (add the mesh
+   * to `root`, as `World` does with the scene, passing its own `SceneSpace`).
+   */
+  space?: SceneSpace;
 }
 
 /**
  * Builds the batch: a unit quad as InstancedBufferGeometry, a SpriteNodeMaterial copied from the group's
  * SpriteMaterial with per-instance centre and scale nodes, and a FORGE_HOOK render hook that fills the attributes
- * from the originals' world matrices every frame (sorted back to front when the material blends). A ParticleBudget
+ * from the originals' world matrices every frame, written in `options.space` (sorted back to front when the material
+ * blends). A ParticleBudget
  * caps the instance count through `mesh.userData.forge.cap`.
  */
 export function buildSpriteBatch(group: SpriteGroup, index: number, options: SpriteBatchOptions): SpriteBatch {
@@ -70,6 +77,7 @@ export function buildSpriteBatch(group: SpriteGroup, index: number, options: Spr
   mesh.matrixAutoUpdate = false;
   mesh.userData.forge = { kind: 'sprites', cap: Infinity };
   const sorted = source.transparent && source.blending === NormalBlending;
+  const space = options.space ?? new SceneSpace(options.root);
   const frustum = new Frustum();
   const projScreen = new Matrix4();
   const restoreHook = prependRenderHook(mesh, (renderer, _scene, camera) => {
@@ -77,7 +85,7 @@ export function buildSpriteBatch(group: SpriteGroup, index: number, options: Spr
     const cap = (mesh.userData.forge as { cap?: number }).cap ?? Infinity;
     projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     frustum.setFromProjectionMatrix(projScreen, (renderer as { coordinateSystem?: CoordinateSystem }).coordinateSystem);
-    const count = fillSpriteInstances(group.sprites, centers.array as Float32Array, scales.array as Float32Array, { camera, sorted, cap, root: options.root, frustum });
+    const count = fillSpriteInstances(group.sprites, centers.array as Float32Array, scales.array as Float32Array, { camera, sorted, cap, root: options.root, frustum, space });
     geometry.instanceCount = count;
     centers.needsUpdate = true;
     scales.needsUpdate = true;

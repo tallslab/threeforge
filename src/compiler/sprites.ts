@@ -1,4 +1,5 @@
 import { Matrix4, Sphere, type Camera, type Frustum, type Material, type Object3D, type Sprite, type SpriteMaterial } from 'three';
+import type { SceneSpace } from './space.js';
 
 /** Sprites that share a material (by registry keys, not instance) and become one instanced billboard draw. */
 export interface SpriteGroup {
@@ -128,6 +129,11 @@ export interface SpriteFillOptions {
    * oblique projection whose near plane is the mirror, and the far plane never decides a sprite.
    */
   frustum: Frustum | null;
+  /**
+   * The space the batch draws in, its parent's (`World`: the scene). Centres and scales are written relative to it, so
+   * the batch's world matrix puts each instance where its sprite is. Without it they are world positions and scales.
+   */
+  space?: SceneSpace | null;
 }
 
 let order: Uint32Array = new Uint32Array(0);
@@ -145,7 +151,7 @@ function insideSidePlanes(frustum: Frustum, sphere: Sphere): boolean {
 }
 
 /**
- * Copies every sprite's world position and scale into the instanced attributes (an invisible sprite gets scale 0),
+ * Copies every sprite's position and scale, in `space` when given, into the instanced attributes (an invisible sprite gets scale 0),
  * culled against `frustum` when given, optionally sorted back to front for `camera`, capped to `cap`. Returns the
  * instance count written.
  */
@@ -184,18 +190,33 @@ export function fillSpriteInstances(sprites: Sprite[], centers: Float32Array, sc
     view.sort((a, b) => depths[b]! - depths[a]!);
     start = n - limit;
   }
+  // Culling and sorting above are in world space, like the camera; the instances are written in the batch's space.
+  const space = options.space ?? null;
+  const inverse = space !== null && !space.update() ? space.inverse.elements : null;
+  const scaleX = inverse === null ? 1 : space!.scaleX;
+  const scaleY = inverse === null ? 1 : space!.scaleY;
   let written = 0;
   for (let k = start; k < start + limit; k++) {
     const sprite = sprites[order[k]!]!;
     const m = sprite.matrixWorld.elements;
     const o = written * 3;
-    centers[o] = m[12]!;
-    centers[o + 1] = m[13]!;
-    centers[o + 2] = m[14]!;
+    if (inverse === null) {
+      centers[o] = m[12]!;
+      centers[o + 1] = m[13]!;
+      centers[o + 2] = m[14]!;
+    } else {
+      const x = m[12]!;
+      const y = m[13]!;
+      const z = m[14]!;
+      centers[o] = inverse[0]! * x + inverse[4]! * y + inverse[8]! * z + inverse[12]!;
+      centers[o + 1] = inverse[1]! * x + inverse[5]! * y + inverse[9]! * z + inverse[13]!;
+      centers[o + 2] = inverse[2]! * x + inverse[6]! * y + inverse[10]! * z + inverse[14]!;
+    }
     const s = written * 2;
     if (isVisibleInGraph(sprite, options.root)) {
-      scales[s] = Math.hypot(m[0]!, m[1]!, m[2]!);
-      scales[s + 1] = Math.hypot(m[4]!, m[5]!, m[6]!);
+      // three scales a sprite quad by its model matrix's column lengths: the batch's (the space's) times these.
+      scales[s] = Math.hypot(m[0]!, m[1]!, m[2]!) / scaleX;
+      scales[s + 1] = Math.hypot(m[4]!, m[5]!, m[6]!) / scaleY;
     } else {
       scales[s] = 0;
       scales[s + 1] = 0;

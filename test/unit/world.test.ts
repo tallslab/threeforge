@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   BatchedMesh,
+  Box3,
   BoxGeometry,
   Color,
+  CylinderGeometry,
   DataTexture,
   DirectionalLight,
   DodecahedronGeometry,
@@ -16,12 +18,19 @@ import {
   RGBAFormat,
   Scene,
   SkinnedMesh,
+  Sprite,
+  SpriteMaterial,
   Vector3,
+  WebGLCoordinateSystem,
+  type Camera,
+  type InstancedBufferGeometry,
 } from 'three';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 import { FORGE_HIDDEN_LAYER, World } from '../../src/compiler/World.js';
 import { FORGE_HOOK } from '../../src/compiler/culling.js';
+import type { CulledInstancedMesh } from '../../src/compiler/instancing.js';
+import type { SpriteBatch } from '../../src/compiler/spriteBatch.js';
 import { tag } from '../../src/tags.js';
 import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
 
@@ -428,6 +437,155 @@ describe('World instancing', () => {
     world.decompile();
     expect(meshesIn(scene).some((m) => (m as InstancedMesh).isInstancedMesh)).toBe(false);
     expect(meshesIn(scene)).toHaveLength(70);
+  });
+});
+
+describe('World in a transformed scene', () => {
+  const cylinder = new CylinderGeometry(0.5, 0.5, 2, 8);
+  const renderer = { coordinateSystem: WebGLCoordinateSystem };
+  const _row = new Matrix4();
+
+  /**
+   * Under a translated, turned and non-uniformly scaled scene: three batched boxes in a rotated group plus a
+   * batch-synced dynamic box, six instanced dodecahedra, two baked cylinders and four sprites.
+   */
+  function transformedScene() {
+    const scene = new Scene();
+    scene.position.set(30, -4, 12);
+    scene.rotation.y = 0.7;
+    scene.scale.set(2, 3, 2);
+    const props = new Group();
+    props.name = 'props';
+    props.position.set(-3, 1, 2);
+    props.rotation.x = 0.2;
+    scene.add(props);
+    const batched = [0, 1, 2].map((i) => {
+      const m = tag.static(new Mesh(box, solid(0x110000 * (i + 1))));
+      m.name = `batched-${i}`;
+      m.position.set(i * 3, 0.5 * i, -i);
+      m.rotation.z = 0.3 * i;
+      props.add(m);
+      return m;
+    });
+    const mover = tag.dynamic(new Mesh(box, solid(0xff8800)));
+    mover.name = 'mover';
+    mover.position.set(0, 2, 6);
+    scene.add(mover);
+    const instanced = Array.from({ length: 6 }, (_, i) => {
+      const m = tag.static(new Mesh(dodeca, solid(0x2244ff)));
+      m.name = `instanced-${i}`;
+      m.position.set(i * 2, 4, 0);
+      m.rotation.y = i * 0.4;
+      scene.add(m);
+      return m;
+    });
+    const bakedMaterial = new MeshStandardMaterial({ color: 0x777777, roughness: 0.2, metalness: 0.5 });
+    const baked = [0, 1].map((i) => {
+      const m = tag.static(new Mesh(cylinder, bakedMaterial));
+      m.name = `baked-${i}`;
+      m.position.set(-10 + i * 4, 0, 5);
+      m.rotation.x = 0.5 * i;
+      scene.add(m);
+      return m;
+    });
+    const spriteMaterial = new SpriteMaterial({ color: 0xffffff, transparent: false });
+    const sprites = Array.from({ length: 4 }, (_, i) => {
+      const s = new Sprite(spriteMaterial);
+      s.name = `sprite-${i}`;
+      s.position.set(i * 2, 8, -2);
+      s.scale.set(1 + i * 0.5, 2, 1);
+      scene.add(s);
+      return s;
+    });
+    scene.updateMatrixWorld(true);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 2000);
+    camera.position.set(30, 40, 260);
+    camera.lookAt(30, 0, 12);
+    camera.updateMatrixWorld();
+    return { scene, props, batched, mover, instanced, baked, sprites, camera };
+  }
+  type Fixture = ReturnType<typeof transformedScene>;
+
+  function expectMatrix(actual: Matrix4, expected: Matrix4, label: string): void {
+    actual.elements.forEach((e, i) => expect(e, `${label} [${i}]`).toBeCloseTo(expected.elements[i]!, 3));
+  }
+
+  function expectBox(actual: Box3, expected: Box3, label: string): void {
+    [...actual.min.toArray(), ...actual.max.toArray()].forEach((v, i) => expect(v, `${label} [${i}]`).toBeCloseTo([...expected.min.toArray(), ...expected.max.toArray()][i]!, 3));
+  }
+
+  /** Compacts an instanced group for `camera` and returns what three draws for master instance `id`. */
+  function instancedWorld(mesh: CulledInstancedMesh, id: number, scene: Scene, camera: Camera): Matrix4 {
+    mesh.onBeforeRender(renderer as never, scene, camera, mesh.geometry, mesh.material as never, null as never);
+    const k = mesh.visibleIds.indexOf(id);
+    expect(k, `instance ${id} is drawn`).toBeGreaterThanOrEqual(0);
+    mesh.getMatrixAt(k, _row);
+    return new Matrix4().multiplyMatrices(mesh.matrixWorld, _row);
+  }
+
+  /** Runs every compiled object's hooks for the fixture's camera and checks what three would draw against the originals. */
+  function expectCompiled(world: World, f: Fixture, label: string): void {
+    f.scene.updateMatrixWorld();
+    const batch = world.slotOf(f.mover)!.batch as BatchedMesh;
+    // The batch hook runs the matrix sync of the mover first.
+    batch.onBeforeRender(renderer as never, f.scene, f.camera, batch.geometry, batch.material as never, null as never);
+    for (const m of [...f.batched, f.mover]) {
+      batch.getMatrixAt(world.slotOf(m)!.instanceId, _row);
+      expectMatrix(new Matrix4().multiplyMatrices(batch.matrixWorld, _row), m.matrixWorld, `${label}: ${m.name}`);
+    }
+    const instanced = world.slotOf(f.instanced[0]!)!.batch as CulledInstancedMesh;
+    for (const m of f.instanced) expectMatrix(instancedWorld(instanced, world.slotOf(m)!.instanceId, f.scene, f.camera), m.matrixWorld, `${label}: ${m.name}`);
+    const bakedMesh = world.slotOf(f.baked[0]!)!.batch as Mesh;
+    const originals = new Box3();
+    for (const m of f.baked) originals.expandByObject(m, true);
+    expectBox(new Box3().setFromObject(bakedMesh, true), originals, `${label}: baked vertices`);
+    const sprites = (world as unknown as { spriteBatchList: SpriteBatch[] }).spriteBatchList[0]!;
+    const mesh = sprites.mesh;
+    mesh.onBeforeRender(renderer as never, f.scene, f.camera, mesh.geometry, mesh.material as never, null as never);
+    expect((mesh.geometry as InstancedBufferGeometry).instanceCount, `${label}: sprites drawn`).toBe(f.sprites.length);
+    const e = mesh.matrixWorld.elements;
+    const batchScaleX = Math.hypot(e[0]!, e[1]!, e[2]!);
+    const batchScaleY = Math.hypot(e[4]!, e[5]!, e[6]!);
+    const c = sprites.centers.array;
+    const s = sprites.scales.array;
+    f.sprites.forEach((sprite, k) => {
+      const centre = new Vector3(c[k * 3]!, c[k * 3 + 1]!, c[k * 3 + 2]!).applyMatrix4(mesh.matrixWorld);
+      const expected = new Vector3().setFromMatrixPosition(sprite.matrixWorld);
+      centre.toArray().forEach((v, i) => expect(v, `${label}: ${sprite.name} centre [${i}]`).toBeCloseTo(expected.toArray()[i]!, 3));
+      const m = sprite.matrixWorld.elements;
+      expect(batchScaleX * s[k * 2]!, `${label}: ${sprite.name} scale x`).toBeCloseTo(Math.hypot(m[0]!, m[1]!, m[2]!), 3);
+      expect(batchScaleY * s[k * 2 + 1]!, `${label}: ${sprite.name} scale y`).toBeCloseTo(Math.hypot(m[4]!, m[5]!, m[6]!), 3);
+    });
+  }
+
+  it('writes instance data in scene space: batched, instanced, baked, sprite and synced results draw at each original', () => {
+    const f = transformedScene();
+    const world = new World(f.scene, { instanceThreshold: 6, dynamics: 'batch-sync', bake: true });
+    const report = world.compile();
+    expect(report.after).toMatchObject({ batches: 1, instanced: 1, baked: 1, spriteBatches: 1 });
+    expect(report.synced).toBe(1);
+    expectCompiled(world, f, 'after compile');
+    f.mover.position.set(-5, 1, 9);
+    expectCompiled(world, f, 'after the mover moved');
+  });
+
+  it('uses the scene matrix of the moment: after the scene moves, synced movers, sprites and markDirty still land on the originals', () => {
+    const f = transformedScene();
+    const world = new World(f.scene, { instanceThreshold: 6, dynamics: 'batch-sync', bake: true });
+    world.compile();
+    expectCompiled(world, f, 'after compile');
+    f.scene.position.set(-12, 6, 3);
+    f.scene.rotation.y = -0.4;
+    f.scene.scale.set(0.5, 0.75, 1.5);
+    f.mover.position.set(2, -1, 4);
+    expectCompiled(world, f, 'after the scene moved');
+    f.batched[1]!.position.x += 5;
+    f.instanced[2]!.position.y += 3;
+    f.baked[0]!.position.z -= 2;
+    expect(world.markDirty(f.batched[1]!)).toBe(1);
+    expect(world.markDirty(f.instanced[2]!)).toBe(1);
+    expect(world.markDirty(f.baked[0]!)).toBe(1);
+    expectCompiled(world, f, 'after markDirty in the moved scene');
   });
 });
 

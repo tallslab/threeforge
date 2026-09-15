@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Box3, BoxGeometry, Color, DirectionalLight, Frustum, InstancedMesh, Matrix4, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, Scene, Vector3, WebGLCoordinateSystem, type Camera } from 'three';
+import { Box3, BoxGeometry, Color, DirectionalLight, Frustum, InstancedMesh, Matrix4, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, Scene, Sphere, Vector3, WebGLCoordinateSystem, type Camera } from 'three';
 import { createCulledInstancedMesh, FORGE_HOOK } from '../../src/compiler/instancing.js';
 import { PassTracker } from '../../src/compiler/passTracker.js';
 import { mulberry32 } from '../../test/scenes/naive.js';
@@ -96,6 +96,26 @@ describe('createCulledInstancedMesh', () => {
     const m = new Matrix4();
     f.instanced.getMatrixAt(k, m);
     m.elements.forEach((e, i) => expect(e).toBeCloseTo(f.matrices[master]!.elements[i]!, 3));
+  });
+
+  it("refreshBounds recomputes every level's box and sphere from the master matrices, not from the compacted rows", () => {
+    const matrices = [0, 1, 2, 3].map((i) => new Matrix4().makeTranslation(i * 2, 0, 0));
+    const mesh = createCulledInstancedMesh(box, new MeshBasicMaterial(), matrices, null, WebGLCoordinateSystem, { lods: [new BoxGeometry(1, 1, 1)], distances: [50] });
+    const camera = new PerspectiveCamera(20, 1, 0.1, 100);
+    camera.position.set(0, 5, 0);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    mesh.onBeforeRender({ coordinateSystem: WebGLCoordinateSystem } as never, new Scene(), camera, mesh.geometry, mesh.material as never, null as never);
+    expect(mesh.levels[0]!.count + mesh.levels[1]!.count, 'the rows hold instance 0 only').toBe(1);
+    mesh.forgeCulling.setMatrixAt(3, new Matrix4().makeTranslation(500, 0, 0));
+    mesh.forgeCulling.refreshBounds();
+    const expected = new Box3(new Vector3(-0.5, -0.5, -0.5), new Vector3(500.5, 0.5, 0.5));
+    const sphere = expected.getBoundingSphere(new Sphere());
+    for (const level of mesh.levels) {
+      expect(level.boundingBox, `level ${level.lodLevel} box`).toEqual(expected);
+      expect(level.boundingSphere, `level ${level.lodLevel} sphere`).toEqual(sphere);
+    }
+    expect(mesh.levels[0]!.boundingBox).not.toBe(mesh.levels[1]!.boundingBox);
   });
 });
 

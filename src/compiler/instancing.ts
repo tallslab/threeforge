@@ -24,8 +24,17 @@ import type { PassTracker } from './passTracker.js';
 export { FORGE_HOOK };
 
 export interface InstanceCullingHandle {
-  /** Update one instance's master matrix and its BVH leaf; the next cull re-uploads. */
+  /**
+   * Update one instance's master matrix, in the space of the mesh's parent (`World` passes scene space), and its BVH
+   * leaf; the next cull rewrites every row through the usual update marking. The bounds are left as they are: call
+   * `refreshBounds()` once after a batch of moves.
+   */
   setMatrixAt(id: number, matrix: Matrix4): void;
+  /**
+   * Recompute the bounding box and sphere of every level from the master matrices (every instance, drawn or not; not
+   * the compacted rows), so three's whole-object frustum test keeps a moved instance.
+   */
+  refreshBounds(): void;
   setVisibleAt(id: number, visible: boolean): void;
   getVisibleAt(id: number): boolean;
   /** Restore an uncompacted mesh drawing every instance. */
@@ -73,6 +82,7 @@ const _inverse = new Matrix4();
 const _frustum = new Frustum();
 const _position = new Vector3();
 const _cube = new Float32Array(6);
+const _instanceBox = new Float32Array(6);
 
 type CameraLike = Camera & { isArrayCamera?: boolean; reversedDepth?: boolean; far?: number };
 type ShadowLight = Light & {
@@ -152,6 +162,8 @@ function markRows(attribute: BufferAttribute, start: number, count: number, mode
  * - `count` and `visibleIds` go back to the enclosing length when the nested render ends (a `PassTracker.atEnd`
  *   callback, or the tracker's reset after a render that threw), never in the mesh's own `onAfterRender`, which three
  *   calls before the ledger reads the draw.
+ * `matrices` are in the space of the parent the level meshes are added to (`World` adds them to the scene and passes
+ * scene-space matrices). The bounds cover every instance; `handle.refreshBounds()` recomputes them after moves.
  * The culling hook is the level meshes' own `onBeforeRender` (marked `FORGE_HOOK`; `InstancedMesh` has none to compose).
  */
 export function createCulledInstancedMesh(
@@ -550,6 +562,20 @@ export function createCulledInstancedMesh(
       rowsStale = true;
       mainDirty = true;
       unionDirty = true;
+    },
+    refreshBounds() {
+      bounds.makeEmpty();
+      for (let i = 0; i < n; i++) {
+        boxOf(i, _instanceBox);
+        bounds.union(_box);
+      }
+      bounds.getBoundingSphere(sphere);
+      for (const mesh of levels) {
+        if (mesh.boundingBox === null) mesh.boundingBox = new Box3();
+        if (mesh.boundingSphere === null) mesh.boundingSphere = new Sphere();
+        mesh.boundingBox.copy(bounds);
+        mesh.boundingSphere.copy(sphere);
+      }
     },
     setVisibleAt(id, visible) {
       const value = visible ? 1 : 0;
