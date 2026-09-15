@@ -10,6 +10,7 @@ import {
   InstancedMesh,
   Matrix4,
   Mesh,
+  MeshBasicMaterial,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
@@ -436,4 +437,137 @@ describe('FakeRenderer draw rules (RenderObject.getDrawParameters, Info.update)'
     renderer.drawingBufferSize.set(800, 600);
     expect(renderer.getDrawingBufferSize(new Vector2()).toArray()).toEqual([800, 600]);
   });
+
+  it("lighting.getNode(scene) is the lights node the scene's renders pass as argument 7 (Lighting.getNode)", () => {
+    const renderer = new FakeRenderer();
+    const { scene, camera } = sceneWithCamera();
+    const key = new DirectionalLight();
+    scene.add(key, cube('m'));
+    let lights: Light[] = [];
+    let node: unknown = null;
+    const renderObject = renderer.renderObject.bind(renderer);
+    renderer.renderObject = (...args: Parameters<FakeRenderer['renderObject']>) => {
+      if (args[0].name === 'm') {
+        node = args[6];
+        lights = [...renderer.lighting.getNode(scene).getLights()];
+      }
+      renderObject(...args);
+    };
+    renderer.render(scene, camera);
+    expect(renderer.lighting.getNode(scene)).toBe(node);
+    expect(lights).toEqual([key]);
+  });
 });
+
+describe('FakeRenderer instance matrices (nodes/accessors/Instance.js, NodeMaterialObserver, Geometries)', () => {
+  const at = (x: number): Matrix4 => new Matrix4().makeTranslation(x, 0, 0);
+  /** The x translation of every row a draw read. */
+  const xs = (rows: Float32Array | null): number[] | null => (rows === null ? null : Array.from({ length: rows.length / 16 }, (_, k) => rows[k * 16 + 12]!));
+  function instanced(n: number): InstancedMesh {
+    const mesh = named(new InstancedMesh(box, new MeshStandardMaterial(), n), 'instanced');
+    for (let i = 0; i < n; i++) mesh.setMatrixAt(i, at(i));
+    return mesh;
+  }
+  const drawn = (renderer: FakeRenderer, mesh: InstancedMesh): (number[] | null)[][] => renderer.passes.map((p) => p.draws.filter((d) => d.object === mesh).map((d) => xs(d.instanceRows)));
+
+  it('reads a uniform buffer per render object, written only when instanceMatrix.version changed since that render object refreshed', () => {
+    for (const webgpu of [false, true]) {
+      const renderer = new FakeRenderer({ webgpu, record: true });
+      const { scene, camera } = sceneWithCamera();
+      const mesh = instanced(4);
+      mesh.count = 2;
+      scene.add(mesh);
+      scene.updateMatrixWorld();
+      renderer.render(scene, camera);
+      expect(drawn(renderer, mesh), 'first draw').toEqual([[[0, 1]]]);
+      mesh.setMatrixAt(0, at(9)); // no needsUpdate: the render object keeps its buffer
+      renderer.render(scene, camera);
+      expect(drawn(renderer, mesh), 'same version').toEqual([[[0, 1]]]);
+      mesh.instanceMatrix.needsUpdate = true;
+      renderer.render(scene, camera);
+      expect(drawn(renderer, mesh), 'new version').toEqual([[[9, 1]]]);
+      expect(renderer.passes[0]!.draws.find((d) => d.object.name === 'Output Color Transform')!.instanceRows).toBeNull();
+    }
+  });
+
+  it('above uniformBufferLimit shares one vertex buffer, synced once per frame per render object and uploaded with its update ranges; WebGPU reads it when the render() call ends', () => {
+    for (const webgpu of [false, true]) {
+      // 4 instances x 64 bytes > 64: the InstancedInterleavedBuffer path.
+      const renderer = new FakeRenderer({ webgpu, record: true, uniformBufferLimit: 64 });
+      const { scene, camera } = sceneWithCamera();
+      const mesh = instanced(4);
+      mesh.count = 2;
+      const reflection = camera.clone();
+      let next = 5;
+      // Row 1 changes in every reflection render, before the mesh draws in it (an update range, as the interleaved sync copies).
+      mesh.onBeforeRender = (_r, _s, c) => {
+        if (c !== reflection) return;
+        mesh.setMatrixAt(1, at(next++));
+        mesh.instanceMatrix.addUpdateRange(16, 16);
+        mesh.instanceMatrix.needsUpdate = true;
+      };
+      // Drawn after the mesh: renders the scene twice with the same camera, at the same depth (one render object).
+      const mirror = cube('mirror', new MeshBasicMaterial());
+      let reflecting = false;
+      mirror.onBeforeRender = () => {
+        if (reflecting) return;
+        reflecting = true;
+        renderer.render(scene, reflection);
+        renderer.render(scene, reflection);
+        reflecting = false;
+      };
+      scene.add(mesh, mirror);
+      scene.updateMatrixWorld();
+      renderer.render(scene, camera);
+      expect(passKinds(renderer)).toEqual(['render:0', 'render:1', 'render:1']);
+      // Frame 1. Reflection 1 is a new render object: its frame event syncs the version, the range uploads (row 1 = 5).
+      // Reflection 2 writes 6, but its node already synced this frame: no upload, it draws 5. WebGL drew the main pass
+      // before the upload; WebGPU submits it at the end of the call and reads the buffer as uploaded by then.
+      expect(drawn(renderer, mesh), 'frame 1').toEqual([[webgpu ? [0, 5] : [0, 1]], [[0, 5]], [[0, 5]]]);
+      renderer.render(scene, camera);
+      // Frame 2. The main render object refreshes (version changed), syncs and uploads the pending range (6); reflection
+      // 1 syncs 7; reflection 2 draws 7 again.
+      expect(drawn(renderer, mesh), 'frame 2').toEqual([[webgpu ? [0, 7] : [0, 6]], [[0, 7]], [[0, 7]]]);
+    }
+  });
+
+  it('checks a shared vertex buffer at most once per render() call: drawn after a nested render that checked it, a render object cannot upload what changed since (Geometries.updateAttribute keys the check by info.render.calls)', () => {
+    for (const webgpu of [false, true]) {
+      const renderer = new FakeRenderer({ webgpu, record: true, uniformBufferLimit: 64 });
+      const { scene, camera } = sceneWithCamera();
+      const mesh = instanced(4);
+      mesh.count = 2;
+      const reflection = camera.clone();
+      // Drawn before the mesh: renders the scene once per frame, with the mesh in it.
+      const mirror = cube('mirror', new MeshBasicMaterial());
+      let reflecting = false;
+      mirror.onBeforeRender = () => {
+        if (reflecting) return;
+        reflecting = true;
+        renderer.render(scene, reflection);
+        reflecting = false;
+      };
+      // The main pass writes row 0 every frame, after the reflection has drawn the mesh.
+      let next = 5;
+      mesh.onBeforeRender = (_r, _s, c) => {
+        if (c !== camera) return;
+        mesh.setMatrixAt(0, at(next++));
+        mesh.instanceMatrix.needsUpdate = true;
+      };
+      scene.add(mirror, mesh);
+      scene.updateMatrixWorld();
+      renderer.render(scene, camera);
+      // Frame 1: both render objects are new; their first check is not keyed by the call, the main one uploads 5.
+      expect(drawn(renderer, mesh), 'frame 1').toEqual([[[5, 1]], [[0, 1]]]);
+      renderer.render(scene, camera);
+      // Frame 2: the reflection checked the buffer in its call (nothing new); the main pass writes 6 in that same call
+      // count and cannot upload it: both draw 5.
+      expect(drawn(renderer, mesh), 'frame 2').toEqual([[[5, 1]], [[5, 1]]]);
+      renderer.render(scene, camera);
+      // Frame 3: the reflection's call uploads 6; the main pass's 7 waits again.
+      expect(drawn(renderer, mesh), 'frame 3').toEqual([[[6, 1]], [[6, 1]]]);
+    }
+  });
+});
+
+const passKinds = (renderer: FakeRenderer): string[] => renderer.passes.map((p) => `${p.kind}:${p.depth}`);

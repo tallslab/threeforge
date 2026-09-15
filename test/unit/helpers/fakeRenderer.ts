@@ -37,6 +37,7 @@ import {
   VSMShadowMap,
   WebGLCoordinateSystem,
   WebGPUCoordinateSystem,
+  type BufferAttribute,
   type Camera,
   type CoordinateSystem,
   type Light,
@@ -76,6 +77,12 @@ export interface FakeRendererOptions {
   record?: boolean;
   /** With `renderer.shadowMap.type === VSMShadowMap`, render the two blur quads after each non-point map (ShadowNode.vsmPass). */
   vsmQuad?: boolean;
+  /**
+   * Bytes of instance matrices (`instanceMatrix.count * 64`) three r186 keeps in a uniform buffer (`Instance.js`,
+   * `builder.getUniformBufferLimit()`); above it they go to one vertex buffer shared by every render object. Default
+   * 65536, WebGPU's default `maxUniformBufferBindingSize`. Read with `record` only (see `FakeDraw.instanceRows`).
+   */
+  uniformBufferLimit?: number;
 }
 
 /** One draw as the backend issued it. */
@@ -98,6 +105,12 @@ export interface FakeDraw {
    * on WebGPU (the pass is submitted then; filled in at that point).
    */
   batchIds: number[] | null;
+  /**
+   * InstancedMesh draws only (with `record`), else null: the matrix rows `[0, instanceCount)` the draw reads, 16 floats
+   * per row, from the GPU buffer three r186 would bind (see `uploadInstances`). Read when the draw is issued on WebGL,
+   * when its render() call ends on WebGPU (queue writes land at once; the pass is submitted then).
+   */
+  instanceRows: Float32Array | null;
 }
 
 /** One render() call of the last frame. */
@@ -161,9 +174,34 @@ interface RenderItem {
 }
 type PassKind = Pick<FakePass, 'kind' | 'light' | 'face'>;
 interface RenderCall {
+  kind: PassKind;
   pass: FakePass | null;
   /** WebGPU batch draws whose ids resolve when the call ends. */
   pending: Array<{ draw: FakeDraw; texture: IndexTexture; counts: number[] }>;
+  /** WebGPU instanced draws whose rows resolve when the call ends. */
+  pendingInstances: Array<{ draw: FakeDraw; read: () => Float32Array; count: number }>;
+}
+type Instanced = Object3D & { isInstancedMesh?: boolean; count: number; instanceMatrix: BufferAttribute };
+/** A RenderObject of an InstancedMesh with its NodeBuilderState (three keys both by object, material and render context). */
+interface InstanceRenderObject {
+  /** `instanceMatrix.version` at the last refresh (NodeMaterialObserver). */
+  version: number;
+  /** frameId when its OnBeforeFrameUpdate event last ran. */
+  frame: number;
+  /** The uniform buffer of the uniform path. */
+  buffer: Float32Array | null;
+  /** Whether Geometries.updateAttribute has checked its attribute once (the first check is not keyed by the render call). */
+  checked: boolean;
+}
+/** Instance.js's InstancedInterleavedBuffer over an `instanceMatrix` array, and its GPU buffer. */
+interface InstanceVertexBuffer {
+  version: number;
+  ranges: { start: number; count: number }[];
+  /** The version uploaded last; -1 before the buffer exists. */
+  uploaded: number;
+  /** `info.render.calls` of the last upload check. */
+  call: number;
+  data: Float32Array;
 }
 
 const _position = new Vector3();
@@ -171,7 +209,7 @@ const _target = new Vector3();
 
 export class FakeRenderer {
   readonly info = { render: { drawCalls: 0, triangles: 0, calls: 0, frameCalls: 0 }, memory: { programs: 0 } };
-  readonly backend: { isWebGPUBackend?: boolean; hasFeature(name: string): boolean };
+  readonly backend: { isWebGPUBackend?: boolean; hasFeature(name: string): boolean; capabilities: { getUniformBufferLimit(): number } };
   readonly coordinateSystem: CoordinateSystem = WebGLCoordinateSystem;
   readonly outputQuad: Mesh;
   /** `enabled` starts true when `shadowLight` or `shadowLights` is set (three's own default is false). */
@@ -189,8 +227,12 @@ export class FakeRenderer {
    * output colour space, need one) and that the scene hooks receive. The output quad then resolves it to the canvas.
    */
   readonly frameBufferTarget = { isPostProcessingRenderTarget: true };
+  /** Renderer.lighting: `getNode(scene)` is the lights node of that root (Lighting.getNode), holding the lights of its current render. */
+  readonly lighting: { getNode(scene: Object3D): { getLights(): Light[] } } = { getNode: (scene) => this.lightsNodeFor(scene) };
 
   private readonly options: FakeRendererOptions;
+  private readonly instanceObjects = new Map<string, InstanceRenderObject>();
+  private readonly instanceBuffers = new WeakMap<BufferAttribute, InstanceVertexBuffer>();
   /** ShadowBaseNode's shadow material, flagged so renderObject derives the shadow side for it. */
   private readonly shadowMaterial = Object.assign(new MeshDepthMaterial(), { isShadowPassMaterial: true });
   private readonly internalScene = new Scene();
@@ -210,9 +252,11 @@ export class FakeRenderer {
   constructor(options: FakeRendererOptions = {}) {
     this.options = options;
     const multiDraw = options.multiDraw ?? true;
+    // WebGPUCapabilities / WebGLCapabilities.getUniformBufferLimit, which NodeBuilder.getUniformBufferLimit reads.
+    const capabilities = { getUniformBufferLimit: () => options.uniformBufferLimit ?? 65536 };
     this.backend = options.webgpu
-      ? { isWebGPUBackend: true, hasFeature: () => false }
-      : { hasFeature: (name: string) => name === 'WEBGL_multi_draw' && multiDraw };
+      ? { isWebGPUBackend: true, hasFeature: () => false, capabilities }
+      : { hasFeature: (name: string) => name === 'WEBGL_multi_draw' && multiDraw, capabilities };
     this.shadowLights = [...(options.shadowLight ? [options.shadowLight] : []), ...(options.shadowLights ?? [])];
     this.shadowMap = { enabled: this.shadowLights.length > 0, type: PCFShadowMap };
     // QuadMesh's shared QuadGeometry: one fullscreen triangle.
@@ -260,7 +304,7 @@ export class FakeRenderer {
     const previousLights = lightsNode.getLights();
     // Renderer._renderScene: with no render target the pass draws into the frame-buffer target; both scene hooks get it.
     const hookTarget = this.renderTarget ?? this.frameBufferTarget;
-    const call: RenderCall = { pass: null, pending: [] };
+    const call: RenderCall = { kind, pass: null, pending: [], pendingInstances: [] };
     if (this.options.record) {
       call.pass = {
         ...kind,
@@ -331,6 +375,7 @@ export class FakeRenderer {
 
     // Backend.finishRender: WebGPU submits the pass now, so its batch draws read the index textures as uploaded by now.
     for (const { draw, texture, counts } of call.pending) draw.batchIds = slotIds(counts, this.uploads.get(texture)!.data);
+    for (const { draw, read, count } of call.pendingInstances) draw.instanceRows = read().slice(0, count * 16);
     lightsNode.setLights(previousLights);
     this.calls.pop();
     (sceneRef.onAfterRender as (...args: unknown[]) => void)(this, scene, camera, hookTarget);
@@ -373,14 +418,19 @@ export class FakeRenderer {
 
   /** Renderer._renderObjectDirect and the backend's draw: the shadow maps a receiver needs, uploads, then the draw. */
   private drawObject(object: Object3D, material: Material, scene: Scene, camera: Camera, lightsNode: FakeLightsNode | null, group: DrawGroup | null): void {
+    const call = this.calls[this.calls.length - 1];
+    // NodeMaterialObserver.needsRefresh decides the refresh before any updateBefore node runs.
+    const instances = this.options.record && (object as Instanced).isInstancedMesh === true && call ? this.instanceRenderObject(object as Instanced, material, call) : null;
     // NodeManager.updateBefore: a receiver's ShadowNode renders its map before this object draws.
     const shadowPass = (material as Material & { isShadowPassMaterial?: boolean }).isShadowPassMaterial === true;
     if (this.options.shadowTrigger === 'first-receiver' && object.receiveShadow && lightsNode !== null && !shadowPass) {
       this.updateShadows(scene, camera, lightsNode);
     }
+    // Then the instance event (a vertex-stage node: NodeBuilder analyzes defaultShaderStages ['fragment', 'vertex'] in
+    // order, so updateBeforeNodes lists the lighting's shadow nodes first), geometries and bindings.
+    const readInstances = instances ? this.uploadInstances(object as Instanced, instances.state, instances.full) : null;
     const params = drawParameters(object, material, group);
     if (params === null) return;
-    const call = this.calls[this.calls.length - 1];
     let drawCalls = 1;
     let triangles = trianglesOf(object, params.vertexCount, params.instanceCount);
     let counts: number[] | null = null;
@@ -394,8 +444,13 @@ export class FakeRenderer {
     this.info.render.drawCalls += drawCalls;
     this.info.render.triangles += triangles;
     if (!call?.pass) return;
-    const draw: FakeDraw = { object, material, side: material.side, drawCalls, triangles, instanceCount: params.instanceCount, batchIds: null };
+    const draw: FakeDraw = { object, material, side: material.side, drawCalls, triangles, instanceCount: params.instanceCount, batchIds: null, instanceRows: null };
     call.pass.draws.push(draw);
+    if (readInstances !== null) {
+      if (this.backend.isWebGPUBackend) call.pendingInstances.push({ draw, read: readInstances, count: params.instanceCount });
+      else draw.instanceRows = readInstances().slice(0, params.instanceCount * 16);
+      return;
+    }
     if (counts === null) return;
     // Bindings.updateForRender: the index texture uploads when its version changed since the last upload.
     const texture = batch._indirectTexture;
@@ -406,6 +461,73 @@ export class FakeRenderer {
     }
     if (this.backend.isWebGPUBackend) call.pending.push({ draw, texture, counts });
     else draw.batchIds = slotIds(counts, upload.data);
+  }
+
+  /**
+   * The render object of an InstancedMesh draw and whether it refreshes in full (NodeMaterialObserver: the first draw, or
+   * `instanceMatrix.version` changed since its last refresh). three keys it by object, material and render context (the
+   * target's attachments and the call depth); a shadow map's override material is one per light
+   * (ShadowBaseNode `_shadowMaterialLib`), where the fake shares one, so the light is part of the key.
+   */
+  private instanceRenderObject(mesh: Instanced, material: Material, call: RenderCall): { state: InstanceRenderObject; full: boolean } {
+    const target = this.renderTarget as { texture?: { name?: string } } | null;
+    const key = `${mesh.uuid}|${material.uuid}|${call.kind.light?.uuid ?? ''}|${this.calls.length - 1}|${target?.texture?.name ?? 'default'}`;
+    let state = this.instanceObjects.get(key);
+    const full = state === undefined || state.version !== mesh.instanceMatrix.version;
+    if (state === undefined) {
+      state = { version: 0, frame: -1, buffer: null, checked: false };
+      this.instanceObjects.set(key, state);
+    }
+    state.version = mesh.instanceMatrix.version;
+    return { state, full };
+  }
+
+  /**
+   * The rest of Renderer._renderObjectDirect for instance matrices (`nodes/accessors/Instance.js`); returns how to read the
+   * buffer the draw binds.
+   * - Up to `uniformBufferLimit` bytes: a uniform buffer per render object (objectGroup bindings are cloned per render
+   *   object, NodeBuilderState.createBindings), written from the array by Bindings.updateForRender on a full refresh.
+   * - Above: an InstancedInterleavedBuffer over the same array, one GPU buffer for every render object. Its
+   *   OnBeforeFrameUpdate event copies the version and update ranges once per frame per node builder; on a full refresh
+   *   Geometries.updateAttribute uploads when the GPU copy is older: the ranges, or the whole array when there are none
+   *   (WebGPUAttributeUtils.updateAttribute). After a render object's first check it checks the shared buffer at most
+   *   once per `info.render.calls`, which every render() advances and nothing restores after a nested one.
+   */
+  private uploadInstances(mesh: Instanced, state: InstanceRenderObject, full: boolean): () => Float32Array {
+    const matrices = mesh.instanceMatrix;
+    const array = matrices.array as Float32Array;
+    if (matrices.count * 64 <= (this.options.uniformBufferLimit ?? 65536)) {
+      if (full || state.buffer === null) state.buffer = array.slice();
+      return () => state.buffer!;
+    }
+    let gpu = this.instanceBuffers.get(matrices);
+    if (gpu === undefined) {
+      gpu = { version: 0, ranges: [], uploaded: -1, call: -1, data: new Float32Array(array.length) };
+      this.instanceBuffers.set(matrices, gpu);
+    }
+    if (state.frame !== this.frameId) {
+      state.frame = this.frameId;
+      if (gpu.version !== matrices.version) {
+        gpu.ranges = matrices.updateRanges.map((range) => ({ start: range.start, count: range.count }));
+        matrices.clearUpdateRanges();
+        gpu.version = matrices.version;
+      }
+    }
+    if (full && (!state.checked || gpu.call !== this.info.render.calls)) {
+      if (state.checked) gpu.call = this.info.render.calls;
+      state.checked = true;
+      if (gpu.uploaded < 0) {
+        gpu.data.set(array); // Attributes.update: createAttribute uploads the whole array
+        gpu.uploaded = gpu.version;
+      } else if (gpu.uploaded < gpu.version) {
+        if (gpu.ranges.length === 0) gpu.data.set(array);
+        else for (const range of gpu.ranges) gpu.data.set(array.subarray(range.start, range.start + range.count), range.start);
+        gpu.ranges = [];
+        gpu.uploaded = gpu.version;
+      }
+    }
+    const data = gpu.data;
+    return () => data;
   }
 
   /** Lighting.getNode: one lights node per Scene or Group root; other roots share a default node. */
