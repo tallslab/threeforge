@@ -251,7 +251,7 @@ rebuilds them in a scissored frame. The result reports `{ mode, textures, repair
   could not explain. Tests hold this at 0.
 - **instances / instancesDrawn / drawCommands**: scene instances submitted, instances left after per-instance
   culling, and GPU draw commands regardless of API packaging (a multi-draw of N ranges is N, an instanced draw is 1).
-  Neither counts a multi-draw range a nested pass zeroed.
+  `instancesDrawn` and `drawCommands` do not count a multi-draw range a nested pass zeroed; `instances` is unaffected.
 - **reasons**: `batched`, `instanced`, `dynamic`, `skinned`, `morph`, `transparent`, `unique-material`, `untagged`,
   `multi-material-group`, `points`, `sprite`, `sprite-batch`, `line`, `excluded:<rule>`, `unsupported-material`,
   `renderer-internal`, `fullscreen-pass`, `occlusion-proxy`.

@@ -279,7 +279,8 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     }
     renderer.render(scene, camera);
     const frame = ledger.frame({ items: true });
-    const seen = Object.fromEntries(frame.items!.map((i) => [`${i.pass} ${i.name}`, [i.expectedGpuDraws, i.flags.includes('double-sided-transparent')]]));
+    // renderer-internal items are left out: three draws the output quad on this canvas render too, the fake does not (Task 41).
+    const seen = Object.fromEntries(frame.items!.filter((i) => i.reason !== 'renderer-internal').map((i) => [`${i.pass} ${i.name}`, [i.expectedGpuDraws, i.flags.includes('double-sided-transparent')]]));
     expect(seen).toEqual({ 'override opaque': [1, false], 'override transparent': [2, true], 'override no-override': [1, false] });
     expect(frame.totals).toMatchObject({ sceneSubmissions: 3, unattributed: 0 });
   });

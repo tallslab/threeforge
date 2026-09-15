@@ -130,14 +130,20 @@ For each submission the ledger predicts the draw calls three r186's `renderer.in
 - ×2 when the material three draws is transparent, `DoubleSide` and not `forceSinglePass`. That material is the source
   material, or `scene.overrideMaterial` for a source with `allowOverride`: transparent when the source is transparent,
   transmissive or has a backdrop node, with the override's own side, except in a shadow pass, where the side is the
-  source's `shadowSide`, else its side (flipped, which keeps `DoubleSide`). The factor is read before `renderObject`
-  runs, because three puts the override material's side back as it returns. A double-sided transmissive material is
-  two submissions of one draw each: its back-side pass, then its front.
+  source's `shadowSide`, else its side (PCF flips it, VSM keeps the source side; either way `DoubleSide` stays
+  `DoubleSide`). The factor is read before `renderObject` runs, because three puts the override material's side back
+  as it returns. So a `side` or `transparent` change made inside `object.onBeforeRender`, which three calls at the
+  start of `renderObject`, is not seen by the prediction. A double-sided transmissive material is two submissions of
+  one draw each: its back-side pass, then its front.
+- A draw range three rejects (`RenderObject.getDrawParameters` returns null when the range count is below 0 or
+  `Infinity`: malformed app geometry, such as a group past the end of its index) still predicts 1 draw and shows as
+  `unattributed`.
 
 `reportedDrawCalls` is the change in `renderer.info.render.drawCalls` inside the frame;
 `unattributed = reportedDrawCalls − gpuDraws` and is asserted to be 0 in every test. `drawCommands` counts multi-draw
 ranges individually. It and `instancesDrawn` count only the slots with a non-zero index count: a zeroed slot adds a
-draw call but draws no instance.
+draw call but draws no instance. A batched double-sided transparent submission adds its drawn slots to `drawCommands`
+once, without the ×2 its `expectedGpuDraws` carries, while a non-batched one adds 2; this predates 0.9.0.
 
 ### The snapshot (`ledger.frame()`), schema version 3
 
@@ -224,7 +230,9 @@ per-submission path allocates nothing, and none of the following changes a numbe
 - **Draw state** (`expectedGpuDraws`, `instances`, `instancesDrawn`) is copied into the record as soon as
   `renderObject` returns, after a pass nested inside that draw (a receiver's shadow map) has restored the counts it
   changed. The side factor of `expectedGpuDraws` and the `double-sided-transparent` flag are read as the call starts,
-  before three puts an override material's side back.
+  before three puts an override material's side back. `writeInstanceCounts` loops over every multi-draw slot of a
+  batched submission to count the non-zero ones, without allocating; `scripts/ledger-overhead.mjs` renders plain
+  meshes only, so it does not measure that loop.
 - **One traversal per scene per frame** collects shadow cameras and the lighting section's lights. The rescan every 60
   frames reads each shared material's texture properties once (`collectResources`).
 
