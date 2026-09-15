@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BatchedMesh, BoxGeometry, DataTexture, Group, Mesh, MeshStandardMaterial, RGBAFormat, Scene, SphereGeometry, UnsignedByteType, type Texture } from 'three';
+import { BatchedMesh, BoxGeometry, DataTexture, Group, Mesh, MeshStandardMaterial, RGBAFormat, Scene, SphereGeometry, UnsignedByteType, type Material, type Texture } from 'three';
 import { ResourceTracker } from '../../src/memory/ResourceTracker.js';
+import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 import { collectResources, emptyResourceSets, unreferencedResources } from '../../src/memory/resources.js';
 
 const tex = () => new DataTexture(new Uint8Array(16), 2, 2, RGBAFormat, UnsignedByteType);
@@ -96,5 +97,55 @@ describe('unreferencedResources', () => {
     expect(unreferencedResources({ geometries: 3, textures: 4 }, scene)).toEqual({ geometries: 2, textures: 3 });
     expect(unreferencedResources({ geometries: 3, textures: 4 }, scene, { textures: 2 })).toEqual({ geometries: 2, textures: 1 });
     expect(unreferencedResources({ geometries: 0, textures: 0 }, scene)).toEqual({ geometries: 0, textures: 0 });
+  });
+});
+
+describe('ResourceTracker and the material registry', () => {
+  const owned = (material: Material) => new Group().add(new Mesh(new BoxGeometry(), material));
+
+  it('forgets a released material the registry knows, without disposing it', () => {
+    const registry = new MaterialRegistry();
+    const material = registry.register(new MeshStandardMaterial({ color: 0x223344 }));
+    const spy = vi.spyOn(material, 'dispose');
+    const root = owned(material);
+    const tracker = new ResourceTracker({ registry }).track(root);
+    expect(tracker.release(root).materials, 'a registered material is still never disposed here').toBe(0);
+    expect(spy).not.toHaveBeenCalled();
+    expect(registry.describe(material).outcome, 'but the registry no longer holds it').toBe('unregistered');
+    expect(registry.stats().registered).toBe(0);
+  });
+
+  it('forgets the materials merged into a canonical before the canonical itself', () => {
+    const registry = new MaterialRegistry();
+    const canonical = registry.register(new MeshStandardMaterial({ color: 0x556677, roughness: 0.25 }));
+    const duplicate = new MeshStandardMaterial({ color: 0x556677, roughness: 0.25 });
+    expect(registry.register(duplicate)).toBe(canonical);
+    const root = new Group().add(new Mesh(new BoxGeometry(), canonical), new Mesh(new BoxGeometry(), duplicate));
+    new ResourceTracker({ registry }).track(root).release(root);
+    expect(registry.describe(duplicate).outcome).toBe('unregistered');
+    expect(registry.describe(canonical).outcome, 'forgotten last, once nothing merged into it was left').toBe('unregistered');
+    expect(registry.stats().registered).toBe(0);
+  });
+
+  it('keeps a canonical another live material still merges into, so nothing resolves to a material the registry dropped', () => {
+    const registry = new MaterialRegistry();
+    const canonical = registry.register(new MeshStandardMaterial({ color: 0x113355, roughness: 0.75 }));
+    const duplicate = new MeshStandardMaterial({ color: 0x113355, roughness: 0.75 });
+    expect(registry.register(duplicate)).toBe(canonical);
+    const released = owned(canonical);
+    const kept = owned(duplicate);
+    const tracker = new ResourceTracker({ registry }).track(released).track(kept);
+    tracker.release(released);
+    expect(registry.canonicalOf(duplicate), 'the live duplicate still resolves to it').toBe(canonical);
+    expect(registry.describe(canonical).outcome, 'so the canonical stays registered').not.toBe('unregistered');
+  });
+
+  it('works with a registry that only offers canonicalOf', () => {
+    const material = new MeshStandardMaterial();
+    const registry = { canonicalOf: (m: unknown) => (m === material ? material : undefined) };
+    const spy = vi.spyOn(material, 'dispose');
+    const root = owned(material);
+    expect(new ResourceTracker({ registry }).track(root).release(root).materials).toBe(0);
+    expect(spy).not.toHaveBeenCalled();
   });
 });

@@ -2,8 +2,17 @@ import type { BufferGeometry, Material, Object3D, Texture } from 'three';
 import { collectResources, emptyResourceSets, type ResourceSets } from './resources.js';
 
 export interface ResourceTrackerOptions {
-  /** Materials the registry knows are shared across the scene and are never disposed here. */
-  registry?: { canonicalOf(material: Material): Material | undefined };
+  /**
+   * The scene's `MaterialRegistry`. A material it knows is shared across the scene and is never disposed here; when
+   * the released owner was the last one holding it, it is dropped from the registry instead (`forget`), so the
+   * registry's records stop keeping a material nothing references alive. `forget` and `dependentsOf` are optional:
+   * without them a known material is simply left registered, as before.
+   */
+  registry?: {
+    canonicalOf(material: Material): Material | undefined;
+    forget?(material: Material): void;
+    dependentsOf?(material: Material): number;
+  };
 }
 
 export interface ReleaseReport {
@@ -42,7 +51,15 @@ export class ResourceTracker {
     return this;
   }
 
-  /** Disposes the owner's resources no other owner references; an Object3D owner is detached from its parent. */
+  /**
+   * Disposes the owner's resources no other owner references; an Object3D owner is detached from its parent.
+   *
+   * A material the registry knows is still never disposed (it is shared with the rest of the scene), but one no
+   * other owner holds any more is forgotten, so the registry does not keep it alive for the process's lifetime.
+   * Materials merged into a canonical are forgotten before canonicals, and a canonical another *registered* material
+   * still resolves to is kept: dropping it would leave that material pointing at an object the registry no longer
+   * knows. Such a canonical is not revisited when its last dependent is released later; it stays registered.
+   */
   release(owner: object): ReleaseReport {
     const report: ReleaseReport = { geometries: 0, materials: 0, textures: 0 };
     const sets = this.owners.get(owner);
@@ -60,11 +77,27 @@ export class ResourceTracker {
       t.dispose();
       report.textures++;
     }
+    const registry = this.options.registry;
+    const forgettable: Material[] = [];
     for (const m of sets.materials) {
-      if (this.options.registry?.canonicalOf(m) !== undefined) continue;
-      if (heldElsewhere((s) => s.materials, m)) continue;
+      const held = heldElsewhere((s) => s.materials, m);
+      if (registry?.canonicalOf(m) !== undefined) {
+        if (!held) forgettable.push(m);
+        continue;
+      }
+      if (held) continue;
       m.dispose();
       report.materials++;
+    }
+    if (registry?.forget) {
+      // Merged duplicates first, so `dependentsOf` below sees only the dependents this release does not also drop.
+      for (const m of forgettable) if (registry.canonicalOf(m) !== m) registry.forget(m);
+      for (const m of forgettable) {
+        const canonical = registry.canonicalOf(m);
+        if (canonical === undefined) continue; // already forgotten above
+        if (canonical === m && (registry.dependentsOf?.(m) ?? 0) > 0) continue;
+        registry.forget(m);
+      }
     }
     if ((owner as Object3D).isObject3D) (owner as Object3D).removeFromParent();
     return report;
