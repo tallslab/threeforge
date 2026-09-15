@@ -162,8 +162,8 @@ result carries no asset or page text, so it has no such block.
 `--bake` turns each finished static group into one mesh: seams between touching modules and duplicated faces
 are removed and matching vertices welded. `--bake-buried` also removes faces with solid geometry within 0.1
 units in front of them. A wrong deletion is visible and a missed one is invisible, so: run with `--views 6`,
-read `parity.views` (every view must stay under the threshold) and `compile.bake` (seams, duplicates, buried,
-welded counts). If a view changed, retry without `--bake-buried`, or exclude modules with
+read `parity.views` (every view must stay under the threshold) and `compile.bake` (seams, coincident faces kept,
+duplicates, buried, welded counts). If a view changed, retry without `--bake-buried`, or exclude modules with
 `mesh.userData.forgeBake = false` in the app. In code: `new World(scene, { bake: true | { removeBuried, tolerance } })`,
 `world.bakeDebug()` returns the removed faces as meshes to render and screenshot.
 
