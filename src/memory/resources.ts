@@ -25,15 +25,25 @@ function texturesOf(material: Material, into: Set<Texture>): void {
  * for a Scene its background and environment.
  */
 export function collectResources(root: Object3D, into: ResourceSets = emptyResourceSets()): ResourceSets {
+  // A material shared by thousands of meshes has its properties read once per call. Only materials seen in this call
+  // are skipped: one already in `into` is read again (`ResourceTracker.track(material)` files it without its textures).
+  const seen = new Set<Material>();
+  const addMaterial = (material: Material): void => {
+    if (seen.has(material)) return;
+    seen.add(material);
+    into.materials.add(material);
+    texturesOf(material, into.textures);
+  };
   root.traverse((o) => {
     const mesh = o as Object3D & { geometry?: BufferGeometry; material?: Material | Material[]; isBatchedMesh?: boolean; _matricesTexture?: Texture | null; _indirectTexture?: Texture | null; _colorsTexture?: Texture | null; isSkinnedMesh?: boolean; skeleton?: { boneTexture?: Texture | null } };
     if (mesh.geometry) into.geometries.add(mesh.geometry);
     if (mesh.isBatchedMesh) for (const t of [mesh._matricesTexture, mesh._indirectTexture, mesh._colorsTexture]) if (t) into.textures.add(t);
     if (mesh.isSkinnedMesh && mesh.skeleton?.boneTexture) into.textures.add(mesh.skeleton.boneTexture);
-    const materials = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
-    for (const material of materials) {
-      into.materials.add(material);
-      texturesOf(material, into.textures);
+    const material = mesh.material;
+    if (Array.isArray(material)) {
+      for (const m of material) addMaterial(m);
+    } else if (material) {
+      addMaterial(material);
     }
   });
   const scene = root as Object3D & { isScene?: boolean; background?: unknown; environment?: unknown };

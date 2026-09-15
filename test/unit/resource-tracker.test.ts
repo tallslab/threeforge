@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BatchedMesh, BoxGeometry, DataTexture, Group, Mesh, MeshStandardMaterial, RGBAFormat, Scene, SphereGeometry, UnsignedByteType, type Texture } from 'three';
 import { ResourceTracker } from '../../src/memory/ResourceTracker.js';
-import { collectResources, unreferencedResources } from '../../src/memory/resources.js';
+import { collectResources, emptyResourceSets, unreferencedResources } from '../../src/memory/resources.js';
 
 const tex = () => new DataTexture(new Uint8Array(16), 2, 2, RGBAFormat, UnsignedByteType);
 
@@ -30,6 +30,27 @@ describe('collectResources', () => {
     expect(r.textures.has(node)).toBe(true);
     expect(r.textures.has((batch as unknown as { _matricesTexture: Texture })._matricesTexture)).toBe(true);
     expect(r.textures.size).toBeGreaterThanOrEqual(3);
+  });
+
+  it('reads each material once per call however many meshes share it, and still collects textures into sets that already hold the material', () => {
+    const map = tex();
+    const geometry = new BoxGeometry();
+    const shared = new MeshStandardMaterial({ map });
+    const other = new MeshStandardMaterial();
+    const root = new Group();
+    for (let i = 0; i < 50; i++) root.add(new Mesh(geometry, i % 2 ? shared : [other, shared]));
+    const values = vi.spyOn(Object, 'values');
+    const r = collectResources(root);
+    const materialReads = values.mock.calls.filter(([v]) => (v as { isMaterial?: boolean } | null)?.isMaterial === true).length;
+    values.mockRestore();
+    expect(materialReads).toBe(2);
+    expect(r.materials.size).toBe(2);
+    expect([...r.textures]).toEqual([map]);
+    // ResourceTracker.track(material) files a material without its textures; a later walk still collects them.
+    const sets = emptyResourceSets();
+    sets.materials.add(shared);
+    collectResources(root, sets);
+    expect(sets.textures.has(map)).toBe(true);
   });
 });
 

@@ -13,7 +13,7 @@ nothing classifies a scene, applies batching with safe defaults, keeps it revers
 | module | file | job |
 |---|---|---|
 | MaterialRegistry | `src/registry/MaterialRegistry.ts`, `materialKey.ts` | dedup materials by value; program / variant / colour keys; stats |
-| DrawCallLedger | `src/ledger/DrawCallLedger.ts`, `reasons.ts`, `snapshot.ts`, `expectedDraws.ts` | attribute every render item to a reason; reconcile with `renderer.info` |
+| DrawCallLedger | `src/ledger/DrawCallLedger.ts`, `reasons.ts`, `names.ts`, `snapshot.ts`, `expectedDraws.ts` | attribute every render item to a reason; reconcile with `renderer.info`; pooled records and cached display names keep the per-submission path allocation-free |
 | classify | `src/compiler/classify.ts` | per-mesh decision with the rule that fired |
 | batchStatics | `src/compiler/batchStatics.ts`, `geometryCompat.ts` | one `BatchedMesh` per material variant / attribute signature / shadow flags; large single-geometry groups become `InstancedMesh` |
 | culling | `src/compiler/culling.ts` | BVH per-instance frustum culling hook for `BatchedMesh` (bvh.js); `prependRenderHook` |

@@ -76,14 +76,18 @@ export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): H
   if (f.js.objects > b.objects) push('js', 'warn', 'js-objects', `${f.js.objects} objects walked by three every frame (matrices and culling), budget ${b.objects}: batch, detach originals, flatten empty groups`);
   if (f.js.hiddenOriginals >= 1000) push('js', 'info', 'detach-originals', `${f.js.hiddenOriginals} hidden originals are still walked every frame: construct World with originals: 'detach'`);
   if (ctx.staticAutoUpdated?.length) push('js', 'info', 'static-auto-update', `${ctx.staticAutoUpdated.length} static-tagged objects still auto-update their matrices every frame`, ctx.staticAutoUpdated.slice(0, 5));
-  const items = ctx.items ?? [];
-  const mainTransparent = items.filter((i) => i.pass === 'main' && i.transparent);
-  const forgeBatches = mainTransparent.filter((i) => i.reason === 'batched' && i.name.startsWith('forge:batch:'));
+  // One pass over the frame's items, copying only the names of threeforge's transparent batches.
+  let mainTransparent = 0;
+  const names: string[] = [];
+  for (const i of ctx.items ?? []) {
+    if (i.pass !== 'main' || !i.transparent) continue;
+    mainTransparent++;
+    if (i.reason === 'batched' && i.name.startsWith('forge:batch:')) names.push(i.name);
+  }
   // A batch "shares the pass with other transparent submissions" whenever the main pass has more than one
   // transparent item and at least one of them is a threeforge batch (two threeforge batches alone still qualify:
   // each is the other's "other transparent submission").
-  if (forgeBatches.length > 0 && mainTransparent.length > 1) {
-    const names = forgeBatches.map((i) => i.name);
+  if (names.length > 0 && mainTransparent > 1) {
     const n = names.length;
     const message =
       n === 1

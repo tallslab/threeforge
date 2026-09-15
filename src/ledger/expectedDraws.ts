@@ -28,16 +28,27 @@ export function expectedGpuDraws(object: Object3D, material: Material, scene: Sc
 
 /** Instances covered by a submission and how many of them the renderer will actually draw. */
 export function instanceCounts(object: Object3D): { instances: number; instancesDrawn: number } {
+  return writeInstanceCounts(object, { instances: 0, instancesDrawn: 0 });
+}
+
+/** `instanceCounts`, written into `into` (the ledger's pooled record). Like `expectedGpuDraws`, read after the renderer processed the object. */
+export function writeInstanceCounts<T extends { instances: number; instancesDrawn: number }>(object: Object3D, into: T): T {
   const o = object as Object3D & { isBatchedMesh?: boolean; isInstancedMesh?: boolean; instanceCount?: number; count?: number; _multiDrawCount?: number; geometry?: { isInstancedBufferGeometry?: boolean; instanceCount?: number } };
-  if (o.isBatchedMesh) return { instances: o.instanceCount ?? 0, instancesDrawn: o._multiDrawCount ?? 0 };
-  // A plain mesh over an InstancedBufferGeometry (sprite batches): one draw, geometry.instanceCount instances.
-  if (o.geometry?.isInstancedBufferGeometry) {
+  if (o.isBatchedMesh) {
+    into.instances = o.instanceCount ?? 0;
+    into.instancesDrawn = o._multiDrawCount ?? 0;
+  } else if (o.geometry?.isInstancedBufferGeometry) {
+    // A plain mesh over an InstancedBufferGeometry (sprite batches): one draw, geometry.instanceCount instances.
     const n = o.geometry.instanceCount ?? 0;
-    return { instances: n, instancesDrawn: n };
-  }
-  if (o.isInstancedMesh) {
+    into.instances = n;
+    into.instancesDrawn = n;
+  } else if (o.isInstancedMesh) {
     const total = (object.userData as { forge?: { instances?: number } }).forge?.instances;
-    return { instances: total ?? o.count ?? 0, instancesDrawn: o.count ?? 0 };
+    into.instances = total ?? o.count ?? 0;
+    into.instancesDrawn = o.count ?? 0;
+  } else {
+    into.instances = 1;
+    into.instancesDrawn = 1;
   }
-  return { instances: 1, instancesDrawn: 1 };
+  return into;
 }

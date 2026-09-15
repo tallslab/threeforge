@@ -87,7 +87,11 @@ function isUserHook(object: Object3D, name: 'onBeforeRender' | 'onAfterRender'):
 }
 
 export function flagsOf(object: Object3D, material: Material): Flag[] {
-  const flags: Flag[] = [];
+  return flagsInto(object, material, []);
+}
+
+/** `flagsOf`, pushed onto `flags` (the ledger reuses one array per pooled record). */
+export function flagsInto(object: Object3D, material: Material, flags: Flag[]): Flag[] {
   if (object.castShadow) flags.push('shadow-caster');
   if (isDoubleSidedTransparent(material)) flags.push('double-sided-transparent');
   // Own-property hooks are user-installed; BatchedMesh defines its own on the prototype and threeforge marks its hooks.
@@ -98,18 +102,20 @@ export function flagsOf(object: Object3D, material: Material): Flag[] {
   return flags;
 }
 
-export interface ReasonInput {
-  object: Object3D;
-  material: Material;
-  group: unknown;
-  root: Object3D;
-  unsupported: boolean;
-  annotation: Reason | undefined;
-}
-
-export function reasonOf({ object, material, group, root, unsupported, annotation }: ReasonInput): Reason {
+/**
+ * One primary reason per submission. A single walk up the ancestors answers both questions that need them: whether
+ * `root` is among them (`isDescendantOf`) and the nearest tag (`effectiveTag`, which may sit above the root).
+ */
+export function reasonOf(object: Object3D, material: Material, group: unknown, root: Object3D, unsupported: boolean, annotation: Reason | undefined): Reason {
   const o = object as Flags;
-  if (!isDescendantOf(object, root)) return 'renderer-internal';
+  let underRoot = false;
+  let nearestTag: ForgeTag | undefined;
+  for (let current: Object3D | null = object; current; current = current.parent) {
+    if (current === root) underRoot = true;
+    if (nearestTag === undefined) nearestTag = tag.of(current);
+    if (underRoot && nearestTag !== undefined) break;
+  }
+  if (!underRoot) return 'renderer-internal';
   if ((root as { isScene?: boolean }).isScene !== true) return 'fullscreen-pass';
   const forgeKind = (object.userData.forge as { kind?: string } | undefined)?.kind;
   if (forgeKind === 'occlusion-proxy') return 'occlusion-proxy';
@@ -126,15 +132,17 @@ export function reasonOf({ object, material, group, root, unsupported, annotatio
   if (unsupported) return 'unsupported-material';
   if (group !== null || Array.isArray(o.material)) return 'multi-material-group';
   if (annotation) return annotation;
-  const t = effectiveTag(object);
-  if (t === 'dynamic') return 'dynamic';
+  if (nearestTag === 'dynamic') return 'dynamic';
   if (material.transparent) return 'transparent';
-  if (t === 'static') return 'unique-material';
-  if (t === undefined) return 'untagged';
+  if (nearestTag === 'static') return 'unique-material';
+  if (nearestTag === undefined) return 'untagged';
   return 'unclassified';
 }
 
-/** `name`, or a path of ancestor names with `Type[index]` for unnamed nodes; the root is implied. */
+/**
+ * `name`, or a path of ancestor names with `Type[index]` for unnamed nodes; the root is implied. The ledger names
+ * submissions through `DisplayNames` (`names.ts`), a cache that returns exactly this string.
+ */
 export function displayName(object: Object3D, root: Object3D | null): string {
   if (object.name) return object.name;
   const parts: string[] = [];

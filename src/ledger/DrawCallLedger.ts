@@ -1,7 +1,8 @@
 import { REVISION, type Camera, type Light, type Material, type Object3D, type Scene } from 'three';
-import { MaterialRegistry } from '../registry/MaterialRegistry.js';
-import { expectedGpuDraws, instanceCounts, type BackendInfo } from './expectedDraws.js';
-import { displayName, flagsOf, kindOf, reasonOf, type Reason } from './reasons.js';
+import { MaterialRegistry, type MaterialHashes } from '../registry/MaterialRegistry.js';
+import { expectedGpuDraws, writeInstanceCounts, type BackendInfo } from './expectedDraws.js';
+import { flagsInto, kindOf, reasonOf, type Reason } from './reasons.js';
+import { DisplayNames, type PathCache } from './names.js';
 import { budgetsFor, type Budgets } from './budgets.js';
 import { Vector2 } from 'three';
 import { hintsFor, type HintContext } from './hints.js';
@@ -9,7 +10,7 @@ import { estimateMemory } from './memory.js';
 import { measureOverdraw, type OverdrawRenderer, type OverdrawResult } from './overdraw.js';
 import { formatCostRows, formatHints } from '../overlay/index.js';
 import { FORGE_TAG_KEY } from '../tags.js';
-import { scanLights, type LightInfo } from './sections.js';
+import { lightInfoOf, type LightInfo } from './sections.js';
 import { buildFrame, emptyFrame, emptySections, type BudgetResult, type FrameEnv, type FrameSnapshot, type MemorySnapshot, type SubmissionRecord, type Tier } from './snapshot.js';
 
 /** The slice of three's common Renderer the ledger patches and reads. Structural so tests can fake it. */
@@ -44,17 +45,33 @@ const RESCAN_EVERY = 60;
 const HIDDEN_MASK = (1 << 31) >>> 0;
 const FRAME_WINDOW = 60;
 
-type InternalRecord = SubmissionRecord & { description: string };
-
 /** One `render()` call. The outermost call of a frame is `main`; nested calls are passes of it. */
 interface RenderContext {
   root: Object3D;
   pass: string;
+  /** The display-name cache of `root`. */
+  paths: PathCache;
+}
+
+/**
+ * Submission records, reused frame after frame. The ledger keeps two: the frame in progress writes one while the last
+ * completed frame's items stay intact in the other, so a read between or inside frames never sees a half-written frame.
+ */
+interface RecordBuffer {
+  /** Every record this buffer has created, in acquisition order; never shrinks. */
+  records: SubmissionRecord[];
+  /** The records filed this frame, in filing order (a pass nested inside a draw files before that draw). */
+  items: SubmissionRecord[];
+  acquired: number;
 }
 
 interface FrameState {
   mainScene: Object3D | null;
-  items: InternalRecord[];
+  buffer: RecordBuffer;
+  /** Items filed into `buffer.items` so far. */
+  count: number;
+  /** programHash → the type and description of the first item filed with it. */
+  descriptions: Map<string, { type: string; description: string }>;
   drawCallsStart: number;
   trianglesStart: number;
   shadowCameras: Map<Camera, Light>;
@@ -65,11 +82,25 @@ interface FrameState {
   startedAt: number;
 }
 
+/** A blank record; the property order is `SubmissionRecord`'s, which `frame({ items: true })` copies. */
+function newRecord(): SubmissionRecord {
+  return { name: '', kind: 'other', materialType: '', programHash: '', variantHash: '', transparent: false, pass: '', reason: 'unclassified', flags: [], expectedGpuDraws: 0, instances: 0, instancesDrawn: 0, vertices: 0, bones: 0, skeleton: null, morphTargets: 0 };
+}
+
+function acquire(buffer: RecordBuffer): SubmissionRecord {
+  if (buffer.acquired === buffer.records.length) buffer.records.push(newRecord());
+  return buffer.records[buffer.acquired++]!;
+}
+
 /**
  * Attributes every render item to a reason. Patches `renderObject`, `render` and `renderAsync` on the renderer
  * instance: every render-object function three installs (including ShadowNode's) ends in `renderer.renderObject`,
  * so this sees main, shadow and post-processing passes without composing `setRenderObjectFunction`.
  * The outermost `render()` call is a frame; nested calls are passes of it.
+ *
+ * The per-submission path allocates nothing in a steady scene: records are pooled, material hashes are read from the
+ * registry's key cache once per material per frame, display names come from a validated cache, and a frame walks
+ * each scene once (docs/threeforge.md section 4, "Overhead").
  */
 export class DrawCallLedger {
   readonly registry: MaterialRegistry;
@@ -80,6 +111,18 @@ export class DrawCallLedger {
   private readonly contexts: RenderContext[] = [];
   private last: FrameSnapshot;
   private lastItems: SubmissionRecord[] = [];
+  private readonly buffers: [RecordBuffer, RecordBuffer] = [
+    { records: [], items: [], acquired: 0 },
+    { records: [], items: [], acquired: 0 },
+  ];
+  /** The buffer the next frame writes: never the one holding `lastItems`. */
+  private write = 0;
+  private readonly names = new DisplayNames();
+  /** This frame's registry reads, by material; cleared at frame boundaries and whenever `registry.keysRevision` moves. */
+  private readonly hashes = new Map<Material, MaterialHashes>();
+  private hashesRevision = -1;
+  private lastMaterial: Material | null = null;
+  private lastHashes: MaterialHashes | null = null;
   private readonly annotations = new WeakMap<Object3D, Reason>();
   private backendInfo: BackendInfo = { backend: 'unknown', multiDraw: false };
   private environment: { tier: Tier; gpu: string; dpr: number; viewport: [number, number] } = { tier: 'desktop', gpu: 'unknown', dpr: 1, viewport: [0, 0] };
@@ -112,16 +155,15 @@ export class DrawCallLedger {
     this.originals = originals;
     const ledger = this;
 
-    renderer.renderObject = function (this: LedgerRenderer, ...args: unknown[]) {
-      if (ledger.depth === 0 || ledger.current === null) return originals.renderObject.apply(this, args);
-      const [object, scene, , , material, group] = args as [Object3D, Scene, Camera, unknown, Material, unknown];
-      const record = ledger.begin(object, material, group);
-      const result = originals.renderObject.apply(this, args);
-      record.expectedGpuDraws = expectedGpuDraws(object, material, scene, ledger.backendInfo);
-      const counts = instanceCounts(object);
-      record.instances = counts.instances;
-      record.instancesDrawn = counts.instancesDrawn;
-      ledger.current.items.push(record);
+    // `arguments` forwards exactly what three passed without copying it into a rest array on every call.
+    renderer.renderObject = function (this: LedgerRenderer, object: Object3D, scene: Scene, _camera: Camera, _geometry: unknown, material: Material, group: unknown) {
+      if (ledger.depth === 0 || ledger.current === null) return originals.renderObject.apply(this, arguments as unknown as unknown[]);
+      const hashes = ledger.hashesOf(material);
+      const record = ledger.begin(object, material, group, hashes);
+      const result = originals.renderObject.apply(this, arguments as unknown as unknown[]);
+      // Draw state is read after the call returns: BatchedMesh fills `_multiDrawCount` in its onBeforeRender, and a
+      // pass nested inside this draw (the shadow map a receiver triggers) restores the counts it changed as it ends.
+      ledger.file(record, object, material, scene, hashes);
       return result;
     };
     renderer.render = function (this: LedgerRenderer, scene: Scene, camera: Camera) {
@@ -154,6 +196,7 @@ export class DrawCallLedger {
     this.depth = 0;
     this.current = null;
     this.contexts.length = 0;
+    this.clearHashes();
   }
 
   /** Describe the device and canvas for the snapshot's `env` (the harness and the bench page call this once). */
@@ -173,19 +216,20 @@ export class DrawCallLedger {
     let auto = 0;
     let hidden = 0;
     const ctx: Required<Omit<HintContext, 'items'>> = { staticAutoUpdated: [], pointShadowLights: [], transmissive: [] };
+    const paths = this.names.forRoot(scene);
     scene.traverse((o) => {
       objects++;
       if (o.layers.mask === HIDDEN_MASK) hidden++;
       if (o.matrixAutoUpdate && o.matrixWorldAutoUpdate) {
         auto++;
-        if ((o.userData as Record<string, unknown>)[FORGE_TAG_KEY] === 'static' && (o as { isMesh?: boolean }).isMesh) ctx.staticAutoUpdated.push(displayName(o, scene));
+        if ((o.userData as Record<string, unknown>)[FORGE_TAG_KEY] === 'static' && (o as { isMesh?: boolean }).isMesh) ctx.staticAutoUpdated.push(this.names.of(o, scene, paths));
       }
       const light = o as Light & { isPointLight?: boolean };
-      if (light.isLight && light.isPointLight && light.castShadow && light.visible) ctx.pointShadowLights.push(displayName(o, scene));
+      if (light.isLight && light.isPointLight && light.castShadow && light.visible) ctx.pointShadowLights.push(this.names.of(o, scene, paths));
       const material = (o as { material?: Material | Material[] }).material;
       for (const m of Array.isArray(material) ? material : material ? [material] : []) {
         if (((m as Material & { transmission?: number }).transmission ?? 0) > 0) {
-          ctx.transmissive.push(displayName(o, scene));
+          ctx.transmissive.push(this.names.of(o, scene, paths));
           break;
         }
       }
@@ -248,6 +292,7 @@ export class DrawCallLedger {
     this.annotations.set(object, reason);
   }
 
+  /** The last completed frame. `items: true` adds copies of its records: they stay valid however long they are held. */
   frame(options: { items?: boolean } = {}): FrameSnapshot {
     return options.items ? { ...this.last, items: this.lastItems.map((i) => ({ ...i, flags: [...i.flags] })) } : this.last;
   }
@@ -284,9 +329,14 @@ export class DrawCallLedger {
   private enter(scene: Object3D, camera: Camera): void {
     if (this.paused) return;
     if (this.depth === 0 && this.renderer) {
+      const buffer = this.buffers[this.write]!;
+      buffer.acquired = 0;
+      this.clearHashes();
       this.current = {
         mainScene: null,
-        items: [],
+        buffer,
+        count: 0,
+        descriptions: new Map(),
         drawCallsStart: this.renderer.info.render.drawCalls,
         trianglesStart: this.renderer.info.render.triangles,
         shadowCameras: new Map(),
@@ -303,11 +353,16 @@ export class DrawCallLedger {
     const isScene = (scene as Scene).isScene === true;
     if (isScene && !state.scannedScenes.has(scene)) {
       state.scannedScenes.add(scene);
+      // One traversal per scene per frame: every light's shadow camera, and the first scene's visible lights for the
+      // lighting section (what `scanLights` returns).
+      const lights: LightInfo[] | null = state.mainScene === null ? [] : null;
       scene.traverse((o) => {
         const light = o as Light & { shadow?: { camera?: Camera } };
-        if (light.isLight && light.shadow?.camera) state.shadowCameras.set(light.shadow.camera, light);
+        if (!light.isLight) return;
+        if (light.shadow?.camera) state.shadowCameras.set(light.shadow.camera, light);
+        if (lights !== null && light.visible) lights.push(lightInfoOf(light));
       });
-      if (state.mainScene === null) state.lights = scanLights(scene);
+      if (lights !== null) state.lights = lights;
     }
     let pass: string;
     const light = state.shadowCameras.get(camera);
@@ -323,7 +378,7 @@ export class DrawCallLedger {
       const name = target?.texture?.name || target?.name;
       pass = `nested:${name || ++state.nestedScenes}`;
     } else pass = `scene:${scene.name || ++state.nestedScenes}`;
-    this.contexts.push({ root: scene, pass });
+    this.contexts.push({ root: scene, pass, paths: this.names.forRoot(scene) });
     this.depth++;
   }
 
@@ -332,45 +387,81 @@ export class DrawCallLedger {
     this.depth--;
     this.contexts.pop();
     if (this.depth > 0 || !this.current || !this.renderer) return;
-    const descriptions = new Map<string, { type: string; description: string }>();
-    for (const item of this.current.items) {
-      if (!descriptions.has(item.programHash)) descriptions.set(item.programHash, { type: item.materialType, description: item.description });
-    }
-    this.lastItems = this.current.items.map(({ description: _d, ...rest }) => rest);
+    const state = this.current;
+    const items = state.buffer.items;
+    if (items.length !== state.count) items.length = state.count;
+    this.lastItems = items;
+    this.write = state.buffer === this.buffers[0] ? 1 : 0;
+    this.clearHashes();
     this.framesSeen++;
-    this.lastScene = this.current.mainScene;
+    this.lastScene = state.mainScene;
     if (this.graphStats.at < 0 || this.framesSeen - this.graphStats.at >= RESCAN_EVERY) this.rescan();
     const intervals: number[] = [];
     for (let i = 1; i < this.frameStarts.length; i++) intervals.push(this.frameStarts[i]! - this.frameStarts[i - 1]!);
     intervals.sort((a, b) => a - b);
     const frameMs = intervals.length ? intervals[Math.floor(intervals.length / 2)]! : 0;
+    let transparentSubmissions = 0;
+    let particles = 0;
+    for (const i of items) {
+      if (i.pass !== 'main') continue;
+      if (i.transparent && i.reason !== 'renderer-internal') transparentSubmissions++;
+      particles += i.kind === 'points' ? i.vertices : i.reason === 'sprite-batch' ? i.instances : i.kind === 'sprite' ? 1 : 0;
+    }
     this.last = buildFrame({
       env: this.env(),
-      items: this.lastItems,
-      reportedDrawCalls: this.renderer.info.render.drawCalls - this.current.drawCallsStart,
-      triangles: this.renderer.info.render.triangles - this.current.trianglesStart,
+      items,
+      reportedDrawCalls: this.renderer.info.render.drawCalls - state.drawCallsStart,
+      triangles: this.renderer.info.render.triangles - state.trianglesStart,
       programs: this.renderer.info.memory.programs,
-      descriptions,
-      lights: this.current.lights,
-      js: { renderMs: this.now() - this.current.startedAt, frameMs, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals, skipped: this.scheduler?.skippedRecently() ?? 0 },
+      descriptions: state.descriptions,
+      lights: state.lights,
+      js: { renderMs: this.now() - state.startedAt, frameMs, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals, skipped: this.scheduler?.skippedRecently() ?? 0 },
       memory: this.memoryNow(),
       overdraw: {
         opaque: this.overdraw?.opaque ?? 0,
         transparent: this.overdraw?.transparent ?? 0,
-        transparentSubmissions: this.lastItems.filter((i) => i.transparent && i.pass === 'main' && i.reason !== 'renderer-internal').length,
-        particles: this.lastItems.reduce((sum, i) => (i.pass !== 'main' ? sum : i.kind === 'points' ? sum + i.vertices : i.reason === 'sprite-batch' ? sum + i.instances : i.kind === 'sprite' ? sum + 1 : sum), 0),
+        transparentSubmissions,
+        particles,
         pixels: this.renderer.getDrawingBufferSize ? (() => { const s = this.renderer.getDrawingBufferSize!(_bufferSize); return s.x * s.y; })() : 0,
         measured: this.overdraw !== null,
       },
     });
-    this.last.hints = hintsFor(this.last, this.budgets(), { ...this.hintContext, items: this.lastItems });
+    this.last.hints = hintsFor(this.last, this.budgets(), { ...this.hintContext, items });
     this.current = null;
   }
 
-  private begin(object: Object3D, material: Material, group: unknown): InternalRecord {
+  /** The registry's cached hashes for `material`, read at most once per material per frame (`hashesOf`, R6). */
+  private hashesOf(material: Material): MaterialHashes {
+    const revision = this.registry.keysRevision;
+    if (revision !== this.hashesRevision) {
+      // invalidate() or forget() dropped cached keys: read every material again, even mid-frame.
+      this.clearHashes();
+      this.hashesRevision = revision;
+    } else if (material === this.lastMaterial) {
+      return this.lastHashes!;
+    }
+    let hashes = this.hashes.get(material);
+    if (hashes === undefined) {
+      hashes = this.registry.hashesOf(material);
+      this.hashes.set(material, hashes);
+    }
+    this.lastMaterial = material;
+    this.lastHashes = hashes;
+    return hashes;
+  }
+
+  /** Between frames nothing here holds a material. */
+  private clearHashes(): void {
+    this.hashes.clear();
+    this.lastMaterial = null;
+    this.lastHashes = null;
+  }
+
+  /** Fills a pooled record with everything known before the renderer processes the object. */
+  private begin(object: Object3D, material: Material, group: unknown, hashes: MaterialHashes): SubmissionRecord {
+    const state = this.current!;
     const context = this.contexts[this.contexts.length - 1]!;
-    const described = this.registry.describe(material);
-    const reason = reasonOf({ object, material, group, root: context.root, unsupported: described.unsupported, annotation: this.annotations.get(object) });
+    const reason = reasonOf(object, material, group, context.root, hashes.unsupported, this.annotations.get(object));
     const geometry = (object as { geometry?: { attributes?: { position?: { count: number } }; morphAttributes?: { position?: unknown[] }; drawRange?: { start: number; count: number } } }).geometry;
     const positionCount = geometry?.attributes?.position?.count ?? 0;
     const range = geometry?.drawRange;
@@ -379,29 +470,39 @@ export class DrawCallLedger {
     const skinned = object as { isSkinnedMesh?: boolean; skeleton?: { bones: unknown[] } };
     let skeleton: number | null = null;
     if (skinned.isSkinnedMesh && skinned.skeleton) {
-      const known = this.current!.skeletons;
+      const known = state.skeletons;
       if (!known.has(skinned.skeleton)) known.set(skinned.skeleton, known.size);
       skeleton = known.get(skinned.skeleton)!;
     }
-    return {
-      name: displayName(object, context.root),
-      kind: kindOf(object),
-      materialType: material.type,
-      programHash: described.programHash,
-      variantHash: described.variantHash,
-      transparent: material.transparent,
-      pass: context.pass,
-      reason,
-      flags: reason === 'renderer-internal' ? [] : flagsOf(object, material),
-      expectedGpuDraws: 0,
-      instances: 0,
-      instancesDrawn: 0,
-      vertices,
-      bones: skinned.isSkinnedMesh ? (skinned.skeleton?.bones.length ?? 0) : 0,
-      skeleton,
-      morphTargets: geometry?.morphAttributes?.position?.length ?? 0,
-      description: described.description,
-    };
+    const record = acquire(state.buffer);
+    record.name = this.names.of(object, context.root, context.paths);
+    record.kind = kindOf(object);
+    record.materialType = material.type;
+    record.programHash = hashes.programHash;
+    record.variantHash = hashes.variantHash;
+    record.transparent = material.transparent;
+    record.pass = context.pass;
+    record.reason = reason;
+    record.flags.length = 0;
+    if (reason !== 'renderer-internal') flagsInto(object, material, record.flags);
+    record.expectedGpuDraws = 0;
+    record.instances = 0;
+    record.instancesDrawn = 0;
+    record.vertices = vertices;
+    record.bones = skinned.isSkinnedMesh ? (skinned.skeleton?.bones.length ?? 0) : 0;
+    record.skeleton = skeleton;
+    record.morphTargets = geometry?.morphAttributes?.position?.length ?? 0;
+    return record;
+  }
+
+  /** Snapshots the draw state into the record once the renderer returned, then files it as this frame's next item. */
+  private file(record: SubmissionRecord, object: Object3D, material: Material, scene: Scene, hashes: MaterialHashes): void {
+    record.expectedGpuDraws = expectedGpuDraws(object, material, scene, this.backendInfo);
+    writeInstanceCounts(object, record);
+    const state = this.current;
+    if (state === null) return; // detached inside the draw
+    state.buffer.items[state.count++] = record;
+    if (!state.descriptions.has(record.programHash)) state.descriptions.set(record.programHash, { type: record.materialType, description: hashes.description });
   }
 }
 

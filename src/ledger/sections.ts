@@ -42,12 +42,16 @@ export function skinningOf(items: SubmissionRecord[]): SkinningSnapshot {
 export function scanLights(scene: Object3D): LightInfo[] {
   const out: LightInfo[] = [];
   scene.traverse((o) => {
-    const light = o as Object3D & { isLight?: boolean; isPointLight?: boolean; castShadow: boolean; shadow?: { mapSize: { x: number; y: number } } };
-    if (!light.isLight || !light.visible) return;
-    const shadow = light.castShadow && light.shadow ? light.shadow : null;
-    out.push({ type: o.type, name: o.name, castShadow: shadow !== null, mapSize: shadow ? [shadow.mapSize.x, shadow.mapSize.y] : [0, 0], faces: light.isPointLight ? 6 : 1 });
+    if ((o as { isLight?: boolean }).isLight && o.visible) out.push(lightInfoOf(o));
   });
   return out;
+}
+
+/** The lighting section's view of one light (`scanLights` keeps the visible ones; the ledger scans in its own traversal). */
+export function lightInfoOf(o: Object3D): LightInfo {
+  const light = o as Object3D & { isPointLight?: boolean; castShadow: boolean; shadow?: { mapSize: { x: number; y: number } } };
+  const shadow = light.castShadow && light.shadow ? light.shadow : null;
+  return { type: o.type, name: o.name, castShadow: shadow !== null, mapSize: shadow ? [shadow.mapSize.x, shadow.mapSize.y] : [0, 0], faces: light.isPointLight ? 6 : 1 };
 }
 
 const TYPE_KEYS: Record<string, keyof LightingSnapshot['lights']> = {

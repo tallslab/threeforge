@@ -63,7 +63,7 @@ npx threeforge inspect http://localhost:5173 --json
 |---|---|
 | `src/tags.ts` | `tag.static(obj)`, `tag.dynamic(obj)`, `tag.of(obj)`; stored in `userData.forge` |
 | `src/registry` | `MaterialRegistry`: material keys (program, variant, colour) and canonical sharing; three's own material classes (`isBuiltInMaterial`) |
-| `src/ledger` | `DrawCallLedger`, the v2 snapshot, reasons, expected GPU draws, sections (skinning, lighting), memory estimate, measured overdraw, budgets and tiers, hints |
+| `src/ledger` | `DrawCallLedger`, the v2 snapshot, reasons, display names (`DisplayNames`, a validated cache), expected GPU draws, sections (skinning, lighting), memory estimate, measured overdraw, budgets and tiers, hints |
 | `src/compiler` | `classify` (rules), `batchStatics` (batches, instancing, bake), `bake` (geometry bake), `culling` (BVH, hooks), `instancing` (compacted InstancedMesh), `geometryCompat`, `World` (compile/decompile/resolve/warmup) |
 | `src/lod` | meshoptimizer LOD generation |
 | `src/overdraw` | `ParticleBudget` (particle caps per tier) and `ResolutionScaler` (dynamic drawing-buffer scale) |
@@ -170,6 +170,43 @@ items?:    per-submission records with ledger.frame({ items: true })
 Other methods: `ledger.report()` (text), `ledger.budget({ maxSubmissions })` → `{ pass, actual, max, offenders }`,
 `ledger.setEnvironment({ tier, gpu, dpr, viewport })`, `ledger.budgets()`.
 
+### Overhead
+
+The ledger runs inside `render()`, so its own cost is part of `js.renderMs`. In a steady scene its per-submission path
+allocates nothing, and none of the following changes a number in the snapshot:
+
+- **Pooled records.** Two record buffers alternate: the frame in progress writes one while the last completed frame's
+  items stay intact in the other, so a read between frames or inside one (a hook, an agent's `evaluate` during
+  `renderAsync`) sees whole frames. `frame({ items: true })` returns copies, valid however long they are held.
+- **Material hashes** come from `registry.hashesOf()` (the registry's key cache, section 5), read at most once per
+  material per frame, and again after `invalidate()` or `forget()` (`registry.keysRevision`), even within a frame.
+- **Display names** come from a cache checked against the live graph on every read: the object's name, type and
+  sibling index, and its parent's path. A sibling index is trusted only while `parent.children[index] === object`, so
+  a rename, reorder, reparent or removal (even from a hook between two submissions) gives `displayName()`'s answer
+  without calling `children.indexOf`.
+- **One ancestor walk** per submission finds both the root and the nearest tag.
+- **Draw state** (`expectedGpuDraws`, `instances`, `instancesDrawn`) is copied into the record as soon as
+  `renderObject` returns, after a pass nested inside that draw (a receiver's shadow map) has restored the counts it
+  changed.
+- **One traversal per scene per frame** collects shadow cameras and the lighting section's lights. The rescan every 60
+  frames reads each shared material's texture properties once (`collectResources`).
+
+`pnpm build:lib && node scripts/ledger-overhead.mjs [submissions…]` reports the µs added per submission, the bytes
+allocated per frame and the rescan time, at 2k, 10k and 20k submissions by default. It renders a flat scene (unnamed
+meshes under the scene) and a nested one (unnamed meshes in unnamed groups under named zones) through a minimal
+renderer, bare and with a ledger attached. It is a report, not a gate: compare runs on one machine. On a 10-core Mac
+with node 22, the flat scene over two runs (timings move between runs, bytes do not):
+
+| submissions | µs / submission | MB / frame | rescan ms | 0.8.0: µs / submission | 0.8.0: MB / frame |
+|---|---|---|---|---|---|
+| 2k | 0.24–0.36 | 0.18 | 0.5–0.7 | 0.83 | 2.3 |
+| 10k | 0.32–0.51 | 0.80 | 1.7–3.1 | 1.84 | 11.4 |
+| 20k | 0.42–0.53 | 1.74 | 5.5–10.0 | 3.07 | 23.1 |
+
+The unit guards in `test/unit/ledger-hot-path.test.ts` count registry reads (at most one per material per frame),
+traversals (at most one on a frame without a rescan) and `children.indexOf` calls (none), and check that µs per
+submission grows less than 3× from 2k to 20k submissions (best of 7).
+
 ### Tiers, budgets and hints
 
 `detectTier({ gpu, deviceMemory, cores, touch, dpr })` returns `desktop` (no touch), `phone-low` (Adreno 1xx–5xx and
@@ -221,6 +258,10 @@ values, `visible`, or an instance `onBeforeRender`), `shader-variant` (another p
 (`ShaderMaterial` / `RawShaderMaterial` do not render on `WebGPURenderer`), `unregistered`. `describe(material)` gives
 the hashes, `colorHex`/`colorKey` and outcome;
 `canonicalOf`, `keys`, and `stats()` (`registered, canonical, merged, unsupported, programs, byProgram[]`).
+`hashesOf(material)` returns `{ programHash, variantHash, description, unsupported }` straight from the key cache,
+allocating nothing and recomputing nothing: it is the cache entry itself, which `invalidate()` and `forget()` replace
+rather than change. `keysRevision` moves whenever either of them drops cached keys, so a caller that memoizes
+`hashesOf()` (the ledger, per frame) knows to read again.
 `programs` is checked against `renderer.info.memory.programs` in the tests: shader variants counted by the registry
 are real programs. The count can exceed the programs three compiles when materials run different function objects or
 classes whose code compiles to the same shader (closures from one factory with the same source text, or a subclass
@@ -919,6 +960,8 @@ gated.
   `overlay=1&budget=30`, `animate=1`, `dynamics=batch-sync`, `lod=1`, `chunk=40`, `culling=linear`, `threshold=N`,
   `occlusion=1`, `wall=1`, `shadows=0`, `freeze=1`, `sceneOffset=1` (the whole scene translated, turned and scaled, the camera following), `materials=keep`, `nested=per-pass|reuse-main`, `bake=1|buried`, `env=0`,
   `bloom=1`, `assemble=1`, `fighters`, `blocky`, `vfx=0`, `t`, `density`, `count`, `tier`.
+- `pnpm build:lib && node scripts/ledger-overhead.mjs [submissions…]` reports the ledger's own µs per submission and
+  bytes per frame (section 4, "Overhead"); it is not a gate.
 - `pnpm test` (Vitest, 199 units against a fake renderer that mirrors the backends' draw counting), `pnpm e2e`
   (Playwright, projects `webgl2` and `webgpu`; screenshot baselines without platform suffixes), `pnpm budget` (naive
   scene ≤ 30 submissions), `pnpm assets` / `pnpm assets:kits` (public glTF corpus and Kenney kits, gitignored),
