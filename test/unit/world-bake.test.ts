@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { AdditiveBlending, BackSide, BoxGeometry, BufferAttribute, DataTexture, DoubleSide, FrontSide, GreaterEqualDepth, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, Plane, Scene, ShaderMaterial, Vector3, type BufferGeometry, type Intersection, type Material } from 'three';
-import { positionLocal } from 'three/tsl';
+import { AdditiveBlending, BackSide, BoxGeometry, BufferAttribute, DataTexture, DoubleSide, FrontSide, GreaterEqualDepth, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, Plane, Raycaster, Scene, ShaderMaterial, Vector3, type BufferGeometry, type Intersection, type Material } from 'three';
+import { Discard, Fn, positionLocal, vec4 } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { World } from '../../src/compiler/World.js';
+import type { BakeReport } from '../../src/compiler/bake.js';
 import { bakeEntriesOf } from '../../src/compiler/batchStatics.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { tag } from '../../src/tags.js';
@@ -27,6 +28,26 @@ function wall(
   scene.updateMatrixWorld(true);
   return { scene, boxes };
 }
+
+/** Two touching boxes (one seam) and a block 5 cm inside a solid, all with one material and one `castShadow` flag. */
+function sealed(material: Material, castShadow = false): Scene {
+  const scene = new Scene();
+  const add = (size: number, x: number, z: number): void => {
+    const m = new Mesh(new BoxGeometry(size, size, size), material);
+    m.position.set(x, 0, z);
+    m.castShadow = castShadow;
+    tag.static(m);
+    scene.add(m);
+  };
+  add(1, 0, 0);
+  add(1, 1, 0);
+  add(2, 0, -5);
+  add(1.9, 0, -5);
+  scene.updateMatrixWorld(true);
+  return scene;
+}
+
+const bakeSealed = (material: Material, castShadow = false) => new World(sealed(material, castShadow), { bake: { removeBuried: true } }).compile();
 
 describe('World with bake', () => {
   it('bakes each static group into one mesh, removes the seams and reports it', () => {
@@ -70,23 +91,7 @@ describe('World with bake', () => {
   });
 
   it('keeps seams and buried faces when the material draws faces the rules assume hidden, or moves or cuts them', () => {
-    /** Two touching boxes (one seam) and a block 5 cm inside a solid, all with one material. */
-    const scene = (material: Material): Scene => {
-      const s = new Scene();
-      const add = (size: number, x: number, z: number): void => {
-        const m = new Mesh(new BoxGeometry(size, size, size), material);
-        m.position.set(x, 0, z);
-        tag.static(m);
-        s.add(m);
-      };
-      add(1, 0, 0);
-      add(1, 1, 0);
-      add(2, 0, -5);
-      add(1.9, 0, -5);
-      s.updateMatrixWorld(true);
-      return s;
-    };
-    const bake = (material: Material) => new World(scene(material), { bake: { removeBuried: true } }).compile();
+    const bake = (material: Material) => bakeSealed(material);
     expect(bake(new MeshStandardMaterial()).bake, 'control').toEqual(expect.objectContaining({ contactFaces: 4, keptCoincidentFaces: 0, buriedFaces: 12 }));
     const cases: Array<[string, () => Material]> = [
       ['BackSide', () => new MeshStandardMaterial({ side: BackSide })],
@@ -102,10 +107,69 @@ describe('World with bake', () => {
     }
   });
 
+  it('keeps seams and buried faces when the modules cast shadows: non-VSM shadow maps draw the back faces of a front-side material', () => {
+    expect(bakeSealed(new MeshStandardMaterial()).bake, 'control').toEqual(expect.objectContaining({ contactFaces: 4, keptCoincidentFaces: 0, buriedFaces: 12 }));
+    const report = bakeSealed(new MeshStandardMaterial(), true);
+    expect(report.after.baked).toBe(1);
+    expect(report.bake).toEqual(expect.objectContaining({ contactFaces: 0, keptCoincidentFaces: 4, buriedFaces: 0 }));
+  });
+
+  it.each([
+    ['a negative polygonOffset', () => new MeshStandardMaterial({ polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 })],
+    ['Discard() in a colorNode', () => Object.assign(new MeshStandardNodeMaterial(), { colorNode: Fn(() => { Discard(); return vec4(1, 1, 1, 1); })() })],
+    ['a custom onBeforeCompile', () => Object.assign(new MeshStandardMaterial(), { onBeforeCompile: () => {} })],
+    ['a customProgramCacheKey override', () => Object.assign(new MeshStandardMaterial(), { customProgramCacheKey: () => 'custom' })],
+    ['extra shader defines', () => Object.assign(new MeshStandardMaterial(), { defines: { STANDARD: '', USE_ALPHAHASH: '' } })],
+  ] as Array<[string, () => Material]>)('keeps seams and buried faces for a material with %s (an allowlist, not a denylist)', (_label, material) => {
+    const report = bakeSealed(material());
+    expect(report.after.baked).toBe(1);
+    expect(report.bake).toEqual(expect.objectContaining({ contactFaces: 0, keptCoincidentFaces: 4, buriedFaces: 0 }));
+  });
+
+  it('a rebake keeps the opacity decided at bake time: a tinted group whose material has extra defines keeps its seams after setVisible', () => {
+    // A tinted group bakes with a vertex-colour clone of its material, and MeshStandardMaterial.copy() resets `defines`
+    // (Material.copy() does not copy an instance `onBeforeCompile` either), so the clone alone would pass the allowlist.
+    const tints = [0xff0000, 0x00ff00, 0x0000ff];
+    const { scene, boxes } = wall(3, (i) => Object.assign(new MeshStandardMaterial({ color: tints[i]! }), { defines: { STANDARD: '', USE_ALPHAHASH: '' } }));
+    const world = new World(scene, { bake: true });
+    expect(world.compile().bake, 'compile').toEqual(expect.objectContaining({ contactFaces: 0, keptCoincidentFaces: 8 }));
+    world.setVisible(boxes[2]!, false);
+    const report = (world.bakedMeshes[0]!.userData.forge as { report: BakeReport }).report;
+    expect(report, 'after the rebake').toEqual(expect.objectContaining({ contactFaces: 0, keptCoincidentFaces: 4 }));
+  });
+
+  it('does not pair outlines shortened by an edge used three times: the top of a longer box beside a doubled box stays covered', () => {
+    // The reviewer's probe: above y = 0 a unit box at x in [0,1], one at [1,2] and a copy of it turned about y; below,
+    // a unit box at [0,1], a 2x1x1 box at [1,3] and a 1x1x2 box turned about y into the same place.
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    const add = (geometry: BufferGeometry, x: number, y: number, turned: boolean): void => {
+      const m = new Mesh(geometry, material);
+      m.position.set(x, y, 0);
+      if (turned) m.rotation.y = Math.PI / 2;
+      tag.static(m);
+      scene.add(m);
+    };
+    add(new BoxGeometry(1, 1, 1), 0.5, 0.5, false);
+    add(new BoxGeometry(1, 1, 1), 1.5, 0.5, false);
+    add(new BoxGeometry(1, 1, 1), 1.5, 0.5, true);
+    add(new BoxGeometry(1, 1, 1), 0.5, -0.5, false);
+    add(new BoxGeometry(2, 1, 1), 2, -0.5, false);
+    add(new BoxGeometry(1, 1, 2), 2, -0.5, true);
+    scene.updateMatrixWorld(true);
+    const world = new World(scene, { bake: true });
+    expect(world.compile().after.baked).toBe(1);
+    const hit = new Raycaster(new Vector3(2.5, 5, 0.1), new Vector3(0, -1, 0)).intersectObject(world.bakedMeshes[0]!)[0];
+    expect(hit, 'the top over x in [2, 3] is open to the sky in the naive scene').toBeDefined();
+    expect(hit!.point.y).toBeCloseTo(0);
+  });
+
   it('bakeEntriesOf takes opacity, sidedness and vertex colours from the material', () => {
     const mesh = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
     const entry = (material: Material, vertexColors?: boolean) => bakeEntriesOf([mesh], new Set(), material, undefined, vertexColors)[0]!;
-    expect(entry(new MeshStandardMaterial())).toMatchObject({ opaque: true, side: FrontSide, doubleSided: false, vertexColors: false });
+    expect(entry(new MeshStandardMaterial())).toMatchObject({ opaque: true, side: FrontSide, castShadow: false, doubleSided: false, vertexColors: false });
+    const caster = Object.assign(new Mesh(new BoxGeometry(), new MeshStandardMaterial()), { castShadow: true });
+    expect(bakeEntriesOf([caster], new Set(), new MeshStandardMaterial())[0]!.castShadow, 'castShadow is copied from each module').toBe(true);
     expect(entry(new MeshStandardMaterial({ side: BackSide }))).toMatchObject({ side: BackSide, doubleSided: false });
     expect(entry(new MeshStandardNodeMaterial()).opaque, 'a node material without vertex or depth nodes').toBe(true);
     expect(entry(new MeshStandardMaterial({ clippingPlanes: [] })).opaque, 'an empty clipping plane list').toBe(true);
@@ -135,6 +199,12 @@ describe('World with bake', () => {
       ['depthFunc', new MeshStandardMaterial({ depthFunc: GreaterEqualDepth })],
       ['wireframe', new MeshStandardMaterial({ wireframe: true })],
       ['stencilWrite', new MeshStandardMaterial({ stencilWrite: true })],
+      ['polygonOffset', new MeshStandardMaterial({ polygonOffset: true, polygonOffsetFactor: -1 })],
+      ['colorNode', Object.assign(new MeshStandardNodeMaterial(), { colorNode: positionLocal })],
+      ['emissiveNode', Object.assign(new MeshStandardNodeMaterial(), { emissiveNode: positionLocal })],
+      ['onBeforeCompile', Object.assign(new MeshStandardMaterial(), { onBeforeCompile: () => {} })],
+      ['customProgramCacheKey', Object.assign(new MeshStandardMaterial(), { customProgramCacheKey: () => 'custom' })],
+      ['defines', Object.assign(new MeshStandardMaterial(), { defines: { STANDARD: '', USE_ALPHAHASH: '' } })],
     ];
     for (const [label, material] of notOpaque) expect(entry(material).opaque, label).toBe(false);
   });

@@ -292,3 +292,55 @@ test('touching BackSide rooms keep the wall between them, seen from inside a roo
     expect(diff, views[i]!.name).toBeLessThan(0.0005);
   }
 });
+
+test('touching toon boxes that cast shadows keep their seam, lit along it with shadows on', async ({ forge }) => {
+  test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+  await forge.open('empty', { bake: '1' });
+  await forge.page.evaluate(() => {
+    const f = window.__forge;
+    const T = f.three;
+    f.renderer.shadowMap.enabled = true;
+    // Non-VSM shadow maps draw a front-side material's back faces. With the light along +x, the first box's +x seam face
+    // is the nearest caster, so the second box's +x face (turned away from the light) is in shadow; a toon material
+    // still lights that face at 0.7 x light x shadow, so removing the seam would light it.
+    const material = new T.MeshToonMaterial({ color: 0xd0b890 });
+    for (const x of [0, 1]) {
+      const box = new T.Mesh(new T.BoxGeometry(1, 1, 1), material);
+      box.position.set(x, 0.5, 0);
+      box.castShadow = true;
+      box.receiveShadow = true;
+      box.name = `toon-${x}`;
+      (box.userData as { forge?: string }).forge = 'static';
+      f.scene.add(box);
+    }
+    const sun = new T.DirectionalLight(0xffffff, 2.5);
+    sun.position.set(-10, 0.6, 0.3);
+    sun.target.position.set(1, 0.5, 0);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    const shadowCamera = sun.shadow.camera;
+    shadowCamera.left = -3;
+    shadowCamera.right = 3;
+    shadowCamera.top = 3;
+    shadowCamera.bottom = -3;
+    shadowCamera.near = 1;
+    shadowCamera.far = 30;
+    shadowCamera.updateProjectionMatrix();
+    f.scene.add(sun, sun.target, new T.AmbientLight(0xffffff, 0.3));
+    f.scene.updateMatrixWorld(true);
+    f.camera.position.set(4, 2.5, 3);
+    f.camera.lookAt(1, 0.5, 0);
+    f.camera.updateMatrixWorld();
+  });
+  await settle(forge.page, 5);
+  const before = await forge.page.screenshot({ type: 'png' });
+  const r = await compileAndSettle(forge);
+  await settle(forge.page, 2);
+  const after = await forge.page.screenshot({ type: 'png' });
+  const diff = pixelDiff(before, after, { threshold: 4 });
+  note(`[${forge.backend}] shadow-casting toon boxes: ${r.bake.contactFaces} removed, ${r.bake.keptCoincidentFaces} kept, pixel diff ${(diff * 100).toFixed(4)}%`);
+  expect(r.after.baked).toBe(1);
+  expect(r.bake.contactFaces).toBe(0);
+  expect(r.bake.keptCoincidentFaces).toBe(4);
+  expect(diff).toBeLessThan(0.0005);
+});

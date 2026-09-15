@@ -5,7 +5,7 @@
  * pair that is not provably a seam between two solids stays, and is counted) and every removal is counted and
  * returned as geometry (`removed`) that an agent can render to check.
  */
-import { BufferAttribute, BufferGeometry, Color, DoubleSide, FrontSide, Matrix3, Matrix4, Ray, Vector3, type Side } from 'three';
+import { BackSide, BufferAttribute, BufferGeometry, Color, DoubleSide, FrontSide, Matrix3, Matrix4, Ray, Vector3, type Side } from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 
 export interface BakeEntry {
@@ -25,11 +25,18 @@ export interface BakeEntry {
    */
   side?: Side;
   /**
-   * The material hides whatever lies behind its faces and draws them where the geometry puts them (`bakeEntriesOf`
-   * decides it from the material: no blending, discard, transmission, vertex displacement, material clipping planes,
-   * custom depth, wireframe, stencil test, or depth test other than less-or-equal). Only opaque modules lose seam or
-   * buried faces, and only their faces block buried-face rays. Absent counts as NOT opaque: that entry loses no faces
-   * (a missed deletion is invisible, a wrong one is visible).
+   * The module casts shadows (`bakeEntriesOf` copies the original's `castShadow`). Only modules with `castShadow: false`
+   * lose seam, buried or duplicate faces: non-VSM shadow maps draw a front-side material's back faces, so a seam face is
+   * a shadow caster for the neighbouring module. Absent counts as casting: that entry loses no faces.
+   */
+  castShadow?: boolean;
+  /**
+   * The material hides whatever lies behind its faces and draws them where the geometry puts them, judged by an
+   * allowlist of three's default material hooks (`bakeEntriesOf` decides it: no blending, discard, transmission, node
+   * in any slot, custom `onBeforeCompile`, `customProgramCacheKey` or `defines`, displacement, material clipping planes,
+   * polygon offset, wireframe, stencil test, or depth test other than less-or-equal). Only opaque modules lose seam,
+   * buried or duplicate faces, and only their faces block buried-face rays. Absent counts as NOT opaque: that entry
+   * loses no faces (a missed deletion is invisible, a wrong one is visible).
    */
   opaque?: boolean;
   /**
@@ -54,14 +61,15 @@ export interface BakeOptions {
   /** Colour channels within this weld (default 1/255). */
   colorTolerance?: number;
   /**
-   * Remove seams between touching solids (default true): a coincident, opposite-winding pair goes only when its two
-   * sides come from different entries that are all closed, manifold, outward, front-side and opaque. Every other
-   * coincident, opposite pair stays and is counted in `keptCoincidentFaces`.
+   * Remove seams between touching solids (default true): a coincident, opposite-winding pair goes only when both sides
+   * cover their region exactly once and come from different entries that are all closed, manifold, outward,
+   * front-side, opaque and cast no shadow. Every other coincident, opposite pair stays and is counted in
+   * `keptCoincidentFaces`.
    */
   removeContactFaces?: boolean;
-  /** Keep one of several coincident, same-winding triangles (default true). */
+  /** Keep one of several exactly coincident, same-winding triangles of opaque, front-side, non-casting entries (default true). */
   removeDuplicateFaces?: boolean;
-  /** Remove faces of opaque, front-side entries that cannot be seen because opaque geometry sits right in front of them (default false). */
+  /** Remove faces of opaque, front-side, non-casting entries that cannot be seen because opaque geometry sits right in front of them (default false). */
   removeBuried?: boolean | BuriedOptions;
 }
 
@@ -315,16 +323,105 @@ function closedOutwardShell(g: Gathered, posIds: Uint32Array, posCount: number, 
 }
 
 /**
+ * Whether no two triangles of a coplanar island overlap by more than `tolerance` in their plane, so the island covers
+ * each point of its region at most once. Triangles are projected onto the plane of the first one, swept along one axis
+ * and compared by separating axes (their six edge normals): a shared edge or vertex separates with zero overlap.
+ */
+function coversOnce(g: Gathered, tris: number[], tolerance: number): boolean {
+  const count = tris.length;
+  if (count < 2) return true;
+  const p = g.position;
+  const first = tris[0]! * 3;
+  const origin = new Vector3().fromArray(p, g.index[first]! * 3);
+  const normal = new Vector3().fromArray(p, g.index[first + 1]! * 3).sub(origin).cross(new Vector3().fromArray(p, g.index[first + 2]! * 3).sub(origin)).normalize();
+  const u = new Vector3(1, 0, 0);
+  if (Math.abs(normal.x) > 0.9) u.set(0, 1, 0);
+  u.cross(normal).normalize();
+  const v = new Vector3().crossVectors(normal, u);
+  const xy = new Float64Array(count * 6);
+  const minX = new Float64Array(count).fill(Infinity);
+  const maxX = new Float64Array(count).fill(-Infinity);
+  const minY = new Float64Array(count).fill(Infinity);
+  const maxY = new Float64Array(count).fill(-Infinity);
+  for (let i = 0; i < count; i++) {
+    for (let c = 0; c < 3; c++) {
+      const o = g.index[tris[i]! * 3 + c]! * 3;
+      const x = p[o]! * u.x + p[o + 1]! * u.y + p[o + 2]! * u.z;
+      const y = p[o]! * v.x + p[o + 1]! * v.y + p[o + 2]! * v.z;
+      xy[i * 6 + c * 2] = x;
+      xy[i * 6 + c * 2 + 1] = y;
+      minX[i] = Math.min(minX[i]!, x);
+      maxX[i] = Math.max(maxX[i]!, x);
+      minY[i] = Math.min(minY[i]!, y);
+      maxY[i] = Math.max(maxY[i]!, y);
+    }
+  }
+  const order = Array.from({ length: count }, (_, i) => i).sort((i, j) => minX[i]! - minX[j]!);
+  const active: number[] = [];
+  for (const i of order) {
+    for (let k = active.length - 1; k >= 0; k--) {
+      if (maxX[active[k]!]! <= minX[i]! + tolerance) {
+        active[k] = active[active.length - 1]!;
+        active.pop();
+      }
+    }
+    for (const j of active) {
+      if (maxY[j]! <= minY[i]! + tolerance || maxY[i]! <= minY[j]! + tolerance) continue;
+      if (trianglesOverlap(xy, i, j, tolerance)) return false;
+    }
+    active.push(i);
+  }
+  return true;
+}
+
+/** Whether projected triangles `i` and `j` overlap by more than `tolerance` along each of their six edge normals. */
+function trianglesOverlap(xy: Float64Array, i: number, j: number, tolerance: number): boolean {
+  for (const [s, o] of [[i, j], [j, i]] as const) {
+    for (let e = 0; e < 3; e++) {
+      const x0 = xy[s * 6 + e * 2]!;
+      const y0 = xy[s * 6 + e * 2 + 1]!;
+      const x1 = xy[s * 6 + ((e + 1) % 3) * 2]!;
+      const y1 = xy[s * 6 + ((e + 1) % 3) * 2 + 1]!;
+      const length = Math.hypot(x1 - x0, y1 - y0);
+      if (length === 0) continue;
+      const ax = (y1 - y0) / length;
+      const ay = (x0 - x1) / length;
+      let minS = Infinity;
+      let maxS = -Infinity;
+      let minO = Infinity;
+      let maxO = -Infinity;
+      for (let c = 0; c < 3; c++) {
+        const ps = xy[s * 6 + c * 2]! * ax + xy[s * 6 + c * 2 + 1]! * ay;
+        const po = xy[o * 6 + c * 2]! * ax + xy[o * 6 + c * 2 + 1]! * ay;
+        minS = Math.min(minS, ps);
+        maxS = Math.max(maxS, ps);
+        minO = Math.min(minO, po);
+        maxO = Math.max(maxO, po);
+      }
+      if (Math.min(maxS, maxO) - Math.max(minS, minO) <= tolerance) return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Coplanar contact: triangles are grouped by plane, split into the two facing sides, and each side is merged into
- * islands (polygons) along shared edges. An island without boundary edges is skipped: a region covered twice with
- * different triangulations fuses into one island whose every edge is used twice, and its empty outline would match
- * any other such region's. Equal non-empty boundaries on the same side would be duplicates (one stays), but islands
- * sharing outline edges fuse into one, so that check only guards the invariant; exact duplicates are removed before
- * this pass. An island whose boundary edges exactly equal an island's on the other side is a coincident, opposite
- * pair, whatever the triangulation. It is a seam (both go) only when the two islands' entries are disjoint and
- * `seamSafe` holds for every entry involved (closed, manifold, outward, front-side, opaque); otherwise both are
- * `kept`. With `seamSafe` null (contact removal off) no pair is judged. Partial overlaps are left alone (invisible
- * cost, never a visible hole).
+ * islands (polygons) along shared edges. An island is paired only when it covers its region exactly once, so that its
+ * outline (the edges used once, sorted) bounds exactly that region:
+ * - an island with an edge used three or more times is skipped: that edge drops out of the outline, so a doubled box
+ *   beside a longer one could share an outline with the longer one's top;
+ * - an island without outline edges is skipped: a region covered twice with different triangulations fuses into one
+ *   island whose every edge is used twice, and its empty outline would match any other such region's;
+ * - a pair whose islands have overlapping triangles (`coversOnce`) is kept: overlapping triangles can share every edge
+ *   at most twice and still double an area behind a matching outline.
+ * With every edge used at most twice the once-used edges are the region's boundary, and without overlaps two islands
+ * with the same boundary cover the same region, whatever their triangulations. Equal non-empty outlines on the same
+ * side would be duplicates (one stays, only among `removable` entries), but islands sharing outline edges fuse into one,
+ * so that check only guards the invariant; exact duplicates are removed before this pass. An island whose outline
+ * equals an island's on the other side is a coincident, opposite pair. It is a seam (both go) only when the two
+ * islands' entries are disjoint, `seamSafe` holds for every entry involved (closed, manifold, outward, front-side,
+ * opaque, casting no shadow) and both islands cover their region once; otherwise both are `kept`. With `seamSafe` null
+ * (contact removal off) no pair is judged. Partial overlaps are left alone (invisible cost, never a visible hole).
  */
 function coincidentIslands(
   g: Gathered,
@@ -332,6 +429,7 @@ function coincidentIslands(
   candidates: number[],
   tolerance: number,
   seamSafe: ((entry: number) => boolean) | null,
+  removable: (entry: number) => boolean,
 ): { seams: number[]; duplicates: number[]; kept: number[] } {
   const a = new Vector3();
   const b = new Vector3();
@@ -388,23 +486,32 @@ function coincidentIslands(
     const out = new Map<string, number[]>();
     for (const island of groups.values()) {
       const counts = new Map<string, number>();
+      let overused = false;
       for (const t of island) {
         const ids = [posIds[g.index[t * 3]!]!, posIds[g.index[t * 3 + 1]!]!, posIds[g.index[t * 3 + 2]!]!];
         for (let k = 0; k < 3; k++) {
           const key = edgeKey(ids[k]!, ids[(k + 1) % 3]!);
-          counts.set(key, (counts.get(key) ?? 0) + 1);
+          const used = (counts.get(key) ?? 0) + 1;
+          counts.set(key, used);
+          if (used > 2) overused = true;
         }
       }
+      // An edge used three or more times drops out of the once-used outline, which then no longer bounds the region
+      // (it could match a region of a different size). Leave such an island alone.
+      if (overused) continue;
       const boundary = [...counts.entries()].filter(([, c]) => c === 1).map(([k]) => k).sort().join(';');
       // No outline: every such region shares the empty key, so it can be matched against nothing. Leave it alone.
       if (boundary.length === 0) continue;
       const existing = out.get(boundary);
-      if (existing) duplicates.push(...island); // same side, same outline: keep the first island only
-      else out.set(boundary, island);
+      if (existing) {
+        // Same side, same outline: keep the first island only, and only when every entry involved may lose faces.
+        const removableIsland = (tris: number[]): boolean => tris.every((t) => removable(g.triangleEntry[t]!));
+        if (removableIsland(existing) && removableIsland(island)) duplicates.push(...island);
+      } else out.set(boundary, island);
     }
     return out;
   };
-  // The four seam conditions: the two islands' entries are disjoint, and every entry is safe (see `seamSafe`).
+  // The entry conditions of a seam: the two islands' entries are disjoint, and every entry is safe (see `seamSafe`).
   const isSeam = (island: number[], facing: number[], safe: (entry: number) => boolean): boolean => {
     const own = new Set<number>();
     for (const t of island) own.add(g.triangleEntry[t]!);
@@ -424,8 +531,9 @@ function coincidentIslands(
     if (!seamSafe) continue;
     for (const [boundary, island] of plus) {
       const facing = minus.get(boundary);
-      if (!facing || boundary.length === 0) continue;
-      (isSeam(island, facing, seamSafe) ? seams : kept).push(...island, ...facing);
+      if (!facing) continue;
+      const seam = isSeam(island, facing, seamSafe) && coversOnce(g, island, tolerance) && coversOnce(g, facing, tolerance);
+      (seam ? seams : kept).push(...island, ...facing);
     }
   }
   return { seams, duplicates, kept };
@@ -451,11 +559,12 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
     degenerateFaces: 0,
     excludedEntries: entries.filter((e) => e.bake === false).length,
   };
-  // Entries whose faces a rule may remove (opaque and front-side only), and entries whose faces block buried-face rays
-  // (opaque and front- or double-sided: a back-side shell draws its far wall behind whatever is inside it).
+  // Entries whose faces a rule may remove (opaque, front-side and casting no shadow: a shadow map draws a front-side
+  // material's back faces), and entries whose faces block buried-face rays (opaque and front- or double-sided: a
+  // back-side shell draws its far wall behind whatever is inside it).
   const removable = (k: number): boolean => {
     const e = entries[k]!;
-    return e.opaque === true && e.side === FrontSide && e.doubleSided !== true;
+    return e.opaque === true && e.side === FrontSide && e.doubleSided !== true && e.castShadow === false;
   };
   const occludes = (k: number): boolean => {
     const e = entries[k]!;
@@ -495,8 +604,9 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
     }
     if (triangleLocked(t)) continue;
     // Exact duplicates (same points, same winding: a module placed twice) never reach the island pass, where
-    // their shared edges would fuse the copies into one island.
-    if (opts.removeDuplicateFaces) {
+    // their shared edges would fuse the copies into one island. Only copies in entries that may lose faces count:
+    // a copy that is not opaque, front-side and non-casting neither removes nor is removed.
+    if (opts.removeDuplicateFaces && removable(g.triangleEntry[t]!)) {
       const sorted = [a, b, c].sort((x, y) => x - y);
       const key = `${sorted[0]},${sorted[1]},${sorted[2]}|${parity(a, b, c)}`;
       if (seen.has(key)) {
@@ -516,7 +626,7 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
       if (shells[k] === 0) shells[k] = closedOutwardShell(g, posIds, nextPos, k, opts.tolerance) ? 1 : -1;
       return shells[k] === 1;
     };
-    const found = coincidentIslands(g, posIds, candidates, opts.tolerance, opts.removeContactFaces ? seamSafe : null);
+    const found = coincidentIslands(g, posIds, candidates, opts.tolerance, opts.removeContactFaces ? seamSafe : null, removable);
     kept = found.kept;
     if (opts.removeContactFaces) {
       for (const t of found.seams) {
@@ -537,7 +647,8 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
   }
 
   // 3. Buried faces (opt-in): every ray from the face's front, over the hemisphere, hits opaque geometry within
-  // `distance`. Only faces of `occludes` entries block, and only faces of `removable` entries are removed.
+  // `distance`. Only faces of `occludes` entries block, only on their back side (see the raycast), and only faces of
+  // `removable` entries are removed.
   if (buried) {
     const occluders: number[] = [];
     for (let t = 0; t < triangleCount; t++) if (!removedTriangle[t] && occludes(g.triangleEntry[t]!)) occluders.push(t);
@@ -567,7 +678,10 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
           const phi = i * GOLDEN;
           ray.origin.copy(origin);
           ray.direction.set(0, 0, 0).addScaledVector(t1, r * Math.cos(phi)).addScaledVector(t2, r * Math.sin(phi)).addScaledVector(normal, z).normalize();
-          const hit = bvh.raycastFirst(ray, DoubleSide);
+          // A hit blocks only when a viewer beyond it, looking back along the ray, would see that triangle drawn: the ray
+          // meets its back side (three-mesh-bvh's BackSide test culls triangles facing the ray origin). A front-side card
+          // facing the face shows that viewer its culled back, so it hides nothing.
+          const hit = bvh.raycastFirst(ray, BackSide);
           // Depth along the face normal, so a wall parallel to the face at gap g blocks at g from every angle.
           if (!hit || hit.distance * z > buried.distance) return false;
         }

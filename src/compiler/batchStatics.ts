@@ -1,4 +1,5 @@
-import { BatchedMesh, Color, DoubleSide, LessEqualDepth, Matrix4, Mesh, NoBlending, NormalBlending, WebGLCoordinateSystem, type BufferGeometry, type CoordinateSystem, type InstancedMesh, type Material, type Scene } from 'three';
+import { BatchedMesh, Color, DoubleSide, LessEqualDepth, Material, Matrix4, Mesh, NoBlending, NormalBlending, WebGLCoordinateSystem, type BufferGeometry, type CoordinateSystem, type InstancedMesh, type Scene } from 'three';
+import { NodeMaterial } from 'three/webgpu';
 import { bakeGeometries, type BakeEntry, type BakeOptions, type BakeReport } from './bake.js';
 import { createCulledInstancedMesh } from './instancing.js';
 import type { NestedPassPolicy } from './culling.js';
@@ -34,6 +35,12 @@ export interface BakedGroup {
    * forced on (for the tints), so a rebake passes this to `bakeEntriesOf` instead of reading that clone.
    */
   vertexColors: boolean;
+  /**
+   * Whether the original material passed the bake's opacity allowlist at bake time. A tinted group's clone loses what
+   * `copy()` does not carry (`MeshStandardMaterial.copy()` resets `defines`; an instance `onBeforeCompile` or
+   * `customProgramCacheKey` is not copied), so a rebake requires this as well as the current material passing.
+   */
+  opaque: boolean;
 }
 
 export interface BatchOptions {
@@ -319,67 +326,64 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
   return result;
 }
 
+/** The `defines` three's own mesh materials set: `MeshStandardMaterial`, `MeshPhysicalMaterial`, `MeshToonMaterial`, `MeshMatcapMaterial`. */
+const MATERIAL_DEFINES = new Set(['STANDARD', 'PHYSICAL', 'TOON', 'MATCAP']);
+
 /**
- * Whether a material hides whatever lies behind its faces and draws them where the geometry puts them, so the bake may
- * remove faces nothing can see:
- * - nothing blends: not transparent, normal or no blending, no transmission;
- * - no fragment is discarded: no `alphaTest`, `alphaHash`, `alphaToCoverage`, `maskNode`, `alphaTestNode`, custom
- *   fragment stage (`ShaderMaterial`, `fragmentNode`), material `clippingPlanes` or `stencilWrite` (the stencil test);
- * - no vertex moves and no custom depth: no `displacementMap`, `positionNode`, `vertexNode`, `geometryNode` or
- *   `depthNode`; triangles, not `wireframe` lines;
- * - depth write on, and the depth test on with three's default `LessEqualDepth`.
- * Anything else counts as not opaque, which only keeps faces. The side is judged separately (`BakeEntry.side`), and
- * renderer-level clipping planes are outside what a material shows.
+ * No node slot is set. three r186's `NodeMaterial` declares its slots as `*Node` properties (`lightsNode`, `envNode`,
+ * `aoNode`, `colorNode`, `normalNode`, `opacityNode`, `backdropNode`, `backdropAlphaNode`, `alphaTestNode`, `maskNode`,
+ * `maskShadowNode`, `positionNode`, `geometryNode`, `depthNode`, `receivedShadowPositionNode`, `castShadowPositionNode`,
+ * `receivedShadowNode`, `castShadowNode`, `outputNode`, `mrtNode`, `fragmentNode`, `vertexNode`, `contextNode`;
+ * subclasses add `emissiveNode`, `metalnessNode`, `roughnessNode` and more) and reads every own property holding a node
+ * as a child (`NodeMaterial._getNodeChildren`). Any of them can carry `Discard()` (`nodes/utils/Discard.js`), so any
+ * non-null `*Node` property, or any other own property holding a node, fails.
+ */
+function hasNoNodes(material: Material): boolean {
+  for (const key of Object.getOwnPropertyNames(material)) {
+    if (key.startsWith('_')) continue;
+    const value = (material as unknown as Record<string, unknown>)[key];
+    if (value === null || value === undefined) continue;
+    if (key.endsWith('Node') || (value as { isNode?: boolean }).isNode === true) return false;
+  }
+  return true;
+}
+
+/**
+ * Whether the bake may treat a material as opaque: an allowlist of three's default material hooks, so a hook this code
+ * does not know about keeps faces instead of deleting them. The material must:
+ * - not blend: not transparent, normal or no blending, no transmission;
+ * - discard nothing: no `alphaTest`, `alphaHash` or `alphaToCoverage`, not a `ShaderMaterial`, no node in any slot
+ *   (`hasNoNodes`), no material `clippingPlanes`, no `stencilWrite` (the stencil test);
+ * - run three's own shader: `onBeforeCompile` is `Material`'s, `customProgramCacheKey` is `Material`'s (`NodeMaterial`'s
+ *   for a node material), `defines` holds only three's material defines;
+ * - draw its triangles where the geometry puts them, at their own depth: no `displacementMap`, `polygonOffset` or
+ *   `wireframe`; depth write on; the depth test on with three's default `LessEqualDepth`.
+ * The side (`BakeEntry.side`) and shadow casting (`BakeEntry.castShadow`) are judged separately, and renderer-level
+ * clipping planes are outside what a material shows. Node-material statics authored with custom nodes keep all faces.
  */
 function isOpaque(material: Material): boolean {
-  const m = material as Material & {
-    transmission?: number;
-    displacementMap?: unknown;
-    wireframe?: boolean;
-    maskNode?: unknown;
-    alphaTestNode?: unknown;
-    fragmentNode?: unknown;
-    positionNode?: unknown;
-    vertexNode?: unknown;
-    geometryNode?: unknown;
-    depthNode?: unknown;
-    isShaderMaterial?: boolean;
-  };
-  const unset = (value: unknown): boolean => value === undefined || value === null;
-  return (
-    !m.transparent &&
-    (m.blending === NormalBlending || m.blending === NoBlending) &&
-    !((m.transmission ?? 0) > 0) &&
-    !(m.alphaTest > 0) &&
-    !m.alphaHash &&
-    !m.alphaToCoverage &&
-    unset(m.maskNode) &&
-    unset(m.alphaTestNode) &&
-    unset(m.fragmentNode) &&
-    m.isShaderMaterial !== true &&
-    (m.clippingPlanes?.length ?? 0) === 0 &&
-    !m.stencilWrite &&
-    unset(m.displacementMap) &&
-    unset(m.positionNode) &&
-    unset(m.vertexNode) &&
-    unset(m.geometryNode) &&
-    unset(m.depthNode) &&
-    m.wireframe !== true &&
-    m.depthWrite &&
-    m.depthTest &&
-    m.depthFunc === LessEqualDepth
-  );
+  const m = material as Material & { transmission?: number; displacementMap?: unknown; wireframe?: boolean; isShaderMaterial?: boolean; isNodeMaterial?: boolean; defines?: Record<string, unknown> | null };
+  if (m.transparent || !(m.blending === NormalBlending || m.blending === NoBlending) || (m.transmission ?? 0) > 0) return false;
+  if (m.alphaTest > 0 || m.alphaHash || m.alphaToCoverage || m.isShaderMaterial === true || !hasNoNodes(m)) return false;
+  if ((m.clippingPlanes?.length ?? 0) > 0 || m.stencilWrite) return false;
+  if (m.onBeforeCompile !== Material.prototype.onBeforeCompile) return false;
+  const ownCacheKey = m.isNodeMaterial === true ? NodeMaterial.prototype.customProgramCacheKey : Material.prototype.customProgramCacheKey;
+  if (m.customProgramCacheKey !== ownCacheKey) return false;
+  if (m.defines && Object.keys(m.defines).some((key) => !MATERIAL_DEFINES.has(key))) return false;
+  if ((m.displacementMap ?? null) !== null || m.polygonOffset || m.wireframe === true) return false;
+  return m.depthWrite && m.depthTest && m.depthFunc === LessEqualDepth;
 }
 
 /**
  * Bake entries for a group's modules: matrices in `space` (world matrices without one, or while its root has no
- * transform), instance tints, per-module opt-out, and from the material its sidedness, opacity (`isOpaque`) and
- * `vertexColors`. A rebake passes the `vertexColors` recorded at bake time, because the baked mesh's material may be a
- * clone with vertex colours forced on.
+ * transform), instance tints, per-module opt-out and shadow casting, and from the material its sidedness, opacity
+ * (`isOpaque`) and `vertexColors`. A rebake passes the `vertexColors` and opacity recorded at bake time, because the
+ * baked mesh's material may be a clone with vertex colours forced on and without the original's `defines` or instance
+ * hooks: an entry is opaque only when `opaqueAtBake` holds and the given material passes too.
  */
-export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Material, space?: SceneSpace, vertexColors: boolean = material.vertexColors): BakeEntry[] {
+export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Material, space?: SceneSpace, vertexColors: boolean = material.vertexColors, opaqueAtBake = true): BakeEntry[] {
   const local = space !== undefined && !space.update();
-  const opaque = isOpaque(material);
+  const opaque = opaqueAtBake && isOpaque(material);
   return meshes
     .filter((m) => !hidden.has(m))
     .map((m) => ({
@@ -389,6 +393,7 @@ export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Mater
       bake: m.userData.forgeBake !== false,
       doubleSided: material.side === DoubleSide,
       side: material.side,
+      castShadow: m.castShadow,
       opaque,
       vertexColors,
     }));
@@ -397,7 +402,8 @@ export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Mater
 function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, name: string, space: SceneSpace): BakedGroup {
   const canonical = group.canonical;
   const vertexColors = canonical.vertexColors;
-  const entries = bakeEntriesOf(group.meshes, new Set(), canonical, space, vertexColors);
+  const opaque = isOpaque(canonical);
+  const entries = bakeEntriesOf(group.meshes, new Set(), canonical, space, vertexColors, opaque);
   const result = bakeGeometries(entries, options);
   // Instance tints become vertex colours: the material then needs vertexColors and a white base colour.
   let material: Material = canonical;
@@ -416,7 +422,7 @@ function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, 
   mesh.castShadow = group.castShadow;
   mesh.receiveShadow = group.receiveShadow;
   mesh.matrixAutoUpdate = false;
-  const baked: BakedGroup = { mesh, entries: group.meshes, hidden: new Set(), options, ownsMaterial, report: result.report, triangleOrigins: result.triangleOrigins, removed: result.removed, space, vertexColors };
+  const baked: BakedGroup = { mesh, entries: group.meshes, hidden: new Set(), options, ownsMaterial, report: result.report, triangleOrigins: result.triangleOrigins, removed: result.removed, space, vertexColors, opaque };
   mesh.userData.forge = { kind: 'bake', report: result.report, triangleOrigins: result.triangleOrigins };
   return baked;
 }
@@ -425,7 +431,7 @@ function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, 
 export function rebake(group: BakedGroup): void {
   const material = group.mesh.material as Material;
   const entriesVisible = group.entries.filter((m) => !group.hidden.has(m));
-  const entries = bakeEntriesOf(entriesVisible, new Set(), material, group.space, group.vertexColors);
+  const entries = bakeEntriesOf(entriesVisible, new Set(), material, group.space, group.vertexColors, group.opaque);
   const result = bakeGeometries(entries, group.options);
   group.mesh.geometry.dispose();
   group.removed.dispose();
