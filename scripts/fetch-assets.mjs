@@ -29,8 +29,39 @@ async function download(url, dest) {
   return { bytes: buffer.length, cached: false };
 }
 
-/** Downloads `names` (every manifest asset when empty) into `root`. The only top-level side effect is the entry
- * guard below, so importing this module (e.g. from a test) does no network or filesystem writes. */
+/**
+ * The index after a run limited to some names: `existing` with each entry the run fetched replaced in place (matched
+ * by `name`) and assets it did not list yet appended, so `fetch-assets Fox` never drops the other assets. A missing
+ * or malformed `existing` counts as empty; rows without a string `name`, and repeats of a name, are dropped. Pure.
+ */
+export function mergeIndex(existing, entries) {
+  const fresh = new Map(entries.map((e) => [e.name, e]));
+  const seen = new Set();
+  const merged = [];
+  for (const row of Array.isArray(existing) ? existing : []) {
+    if (!row || typeof row.name !== 'string' || seen.has(row.name)) continue;
+    seen.add(row.name);
+    merged.push(fresh.get(row.name) ?? row);
+  }
+  for (const row of entries) {
+    if (seen.has(row.name)) continue;
+    seen.add(row.name);
+    merged.push(row);
+  }
+  return merged;
+}
+
+async function readIndex(path) {
+  try {
+    return JSON.parse(await readFile(path, 'utf8'));
+  } catch {
+    return [];
+  }
+}
+
+/** Downloads `names` (every manifest asset when empty) into `root`. A run limited to `names` merges its entries into
+ * the existing index.json; a full run rewrites it. The only top-level side effect is the entry guard below, so
+ * importing this module (e.g. from a test) does no network or filesystem writes. */
 export async function main(names = []) {
   const manifest = JSON.parse(await readFile('test/assets/manifest.json', 'utf8'));
   const only = new Set(names);
@@ -74,8 +105,11 @@ export async function main(names = []) {
     await mkdir(to, { recursive: true });
     for (const f of await readdir(from)) if (!f.endsWith('.md')) await copyFile(join(from, f), join(to, f));
   }
-  await writeFile(join(root, 'index.json'), JSON.stringify(index, null, 2));
+  const indexPath = join(root, 'index.json');
+  const written = only.size ? mergeIndex(await readIndex(indexPath), index) : index;
+  await writeFile(indexPath, JSON.stringify(written, null, 2));
   console.log(`\n${index.filter((a) => !a.error).length}/${index.length} assets ready, ${(total / 1e6).toFixed(1)} MB in ${root}`);
+  if (only.size) console.log(`index.json: ${written.length} entries (merged)`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

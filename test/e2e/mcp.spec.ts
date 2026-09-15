@@ -1,5 +1,5 @@
 import { spawn, execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DATA_NOTE } from '../../src/cli/mcp.js';
 import { expect, test } from './fixtures.js';
@@ -162,8 +162,12 @@ test('optimize_asset refuses a .gltf out whose resource file (not the out path i
 test('optimize_asset with overwrite: true replaces both the out file and a pre-existing resource clash', async () => {
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
   await ready();
-  const target = join(dirname(fox()), 'mcp-resource-overwrite.gltf');
-  const clashing = join(dirname(fox()), 'mcp-resource-overwrite.bin');
+  const dir = dirname(fox());
+  const target = join(dir, 'mcp-resource-overwrite.gltf');
+  const clashing = join(dir, 'mcp-resource-overwrite.bin');
+  // The run also writes the Fox's texture beside the .gltf (named after its slot: baseColor.png). Remove every file
+  // this test adds to the asset folder: a leftover baseColor.png makes the resource-clash test above name the PNG.
+  const before = new Set(readdirSync(dir));
   writeFileSync(clashing, 'stale bytes');
   const { client, close } = await connect();
   try {
@@ -173,8 +177,7 @@ test('optimize_asset with overwrite: true replaces both the out file and a pre-e
     expect(readFileSync(clashing, 'utf8')).not.toBe('stale bytes');
   } finally {
     await close();
-    rmSync(clashing, { force: true });
-    rmSync(target, { force: true });
+    for (const name of readdirSync(dir)) if (!before.has(name)) rmSync(join(dir, name), { recursive: true, force: true });
   }
 });
 
