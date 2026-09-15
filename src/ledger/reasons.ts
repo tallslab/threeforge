@@ -1,7 +1,11 @@
 import { DoubleSide, type Material, type Object3D } from 'three';
 import { tag, type ForgeTag } from '../tags.js';
 
-/** Why a submission exists. One primary reason per submission; `excluded:<rule>` comes from the compiler. */
+/**
+ * Why a submission exists. One primary reason per submission; `excluded:<rule>` comes from the compiler. `reasonOf` gives
+ * a static drawn alone `unique-material`; the ledger relabels it `static-unbatched` at the end of any frame in which
+ * another object of the main pass draws the same canonical material.
+ */
 export type Reason =
   | 'batched'
   | 'baked'
@@ -9,6 +13,7 @@ export type Reason =
   | 'vat-instanced'
   | 'instanced'
   | 'unique-material'
+  | 'static-unbatched'
   | 'dynamic'
   | 'skinned'
   | 'morph'

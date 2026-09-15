@@ -5,6 +5,12 @@ import { capName } from './text.js';
 export interface SubmissionRecord {
   name: string;
   kind: SubmissionKind;
+  /**
+   * Per-frame index of the submission's material: the registry's canonical for a registered material, else the material
+   * itself, numbered in the order the frame first drew each (stable within a snapshot, no uuids). Submissions with equal
+   * indices draw one material.
+   */
+  material: number;
   materialType: string;
   programHash: string;
   variantHash: string;

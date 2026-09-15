@@ -48,6 +48,7 @@ describe('snapshot.ts caps names pushed into byReason[].top', () => {
     const item: SubmissionRecord = {
       name: longName,
       kind: 'mesh',
+      material: 0,
       materialType: 'MeshStandardMaterial',
       programHash: 'p1',
       variantHash: 'v1',

@@ -829,6 +829,25 @@ describe('World and the ledger under policy auto', () => {
     const reasons = Object.fromEntries((ledger.frame({ items: true }).items ?? []).filter((i) => i.reason !== 'renderer-internal').map((i) => [i.name, i.reason]));
     expect(reasons).toEqual({ lonely: 'unique-material', other: 'unique-material' });
   });
+
+  it('relabels lone statics static-unbatched when their canonical material is shared: same material, groups split by castShadow', () => {
+    const { scene, camera } = sceneWithCamera();
+    const caster = new Mesh(box, solid(0x13579b));
+    caster.name = 'caster';
+    caster.castShadow = true;
+    const plain = new Mesh(box, solid(0x13579b));
+    plain.name = 'plain';
+    scene.add(caster, plain);
+    const renderer = new FakeRenderer();
+    const ledger = new DrawCallLedger();
+    ledger.attach(renderer as never);
+    const report = new World(scene, { ledger, policy: 'auto' }).compile();
+    expect(report.skipped.map((s) => s.rule)).toEqual(['singleton', 'singleton']);
+    expect(caster.material).toBe(plain.material);
+    renderer.render(scene, camera);
+    const reasons = Object.fromEntries((ledger.frame({ items: true }).items ?? []).filter((i) => i.reason !== 'renderer-internal').map((i) => [i.name, i.reason]));
+    expect(reasons).toEqual({ caster: 'static-unbatched', plain: 'static-unbatched' });
+  });
 });
 
 describe('World materials option', () => {

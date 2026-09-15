@@ -4,7 +4,7 @@ import { lightingOf, scanLights, skinningOf } from '../../src/ledger/sections.js
 import type { SubmissionRecord } from '../../src/ledger/snapshot.js';
 
 const rec = (over: Partial<SubmissionRecord>): SubmissionRecord => ({
-  name: 'x', kind: 'mesh', materialType: 'M', programHash: 'p', variantHash: 'v', transparent: false, pass: 'main', reason: 'untagged', flags: [],
+  name: 'x', kind: 'mesh', material: 0, materialType: 'M', programHash: 'p', variantHash: 'v', transparent: false, pass: 'main', reason: 'untagged', flags: [],
   expectedGpuDraws: 1, instances: 1, instancesDrawn: 1, vertices: 0, bones: 0, skeleton: null, morphTargets: 0, ...over,
 });
 

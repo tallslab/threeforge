@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { skinningOf } from '../../src/ledger/sections.js';
 import type { SubmissionRecord } from '../../src/ledger/snapshot.js';
 
-const record = (over: Partial<SubmissionRecord>): SubmissionRecord => ({ name: 'x', kind: 'mesh', materialType: 'MeshStandardMaterial', programHash: 'p', variantHash: 'v', transparent: false, pass: 'main', reason: 'batched', flags: [], expectedGpuDraws: 1, instances: 1, instancesDrawn: 1, vertices: 0, bones: 0, skeleton: null, morphTargets: 0, ...over });
+const record = (over: Partial<SubmissionRecord>): SubmissionRecord => ({ name: 'x', kind: 'mesh', material: 0, materialType: 'MeshStandardMaterial', programHash: 'p', variantHash: 'v', transparent: false, pass: 'main', reason: 'batched', flags: [], expectedGpuDraws: 1, instances: 1, instancesDrawn: 1, vertices: 0, bones: 0, skeleton: null, morphTargets: 0, ...over });
 
 describe('skinningOf with animated instances', () => {
   it('counts vat instances and their vertices next to bone-skinned draws, main pass only (numbered shadow passes included)', () => {

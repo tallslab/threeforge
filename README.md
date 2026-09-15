@@ -252,7 +252,8 @@ rebuilds them in a scissored frame. The result reports `{ mode, textures, repair
 - **instances / instancesDrawn / drawCommands**: scene instances submitted, instances left after per-instance
   culling, and GPU draw commands regardless of API packaging (a multi-draw of N ranges is N, an instanced draw is 1).
   `instancesDrawn` and `drawCommands` do not count a multi-draw range a nested pass zeroed; `instances` is unaffected.
-- **reasons**: `batched`, `instanced`, `dynamic`, `skinned`, `morph`, `transparent`, `unique-material`, `untagged`,
+- **reasons**: `batched`, `instanced`, `dynamic`, `skinned`, `morph`, `transparent`, `unique-material` (a static drawn
+  alone whose material no other object of the main pass draws), `static-unbatched` (one whose material is shared), `untagged`,
   `multi-material-group`, `points`, `sprite`, `sprite-batch`, `line`, `excluded:<rule>`, `unsupported-material`,
   `renderer-internal`, `fullscreen-pass`, `occlusion-proxy`.
 - **overdraw.particles / overdraw.pixels**: quads drawn per frame (points vertices, sprites, sprite-batch instances)

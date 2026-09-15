@@ -36,7 +36,7 @@ const snapshotProperties: Record<string, Schema> = {
   js: obj({ renderMs: number, ledgerMs: number, frameMs: number, objects: integer, autoUpdatedMatrices: integer, hiddenOriginals: integer, skipped: integer }),
   memory: obj({ textures: obj({ count: integer, bytes: integer }), geometries: obj({ count: integer, bytes: integer }), renderTargets: obj({ count: integer, bytes: integer }), unreferenced: obj({ geometries: integer, textures: integer }), chunks: obj({ total: integer, resident: integer }), measured: nullable(obj({ textures: obj({ count: integer, bytes: number }), geometries: obj({ count: integer, bytes: number }), renderTargets: obj({ count: integer }), bytes: number })), estimated: { const: true } }),
   hints: arr(hint),
-  items: arr(obj({ name: string, kind: string, materialType: string, programHash, variantHash, transparent: boolean, pass: string, reason: string, flags: arr(string), expectedGpuDraws: integer, instances: integer, instancesDrawn: integer, vertices: integer, bones: integer, skeleton: nullable(integer), morphTargets: integer })),
+  items: arr(obj({ name: string, kind: string, material: integer, materialType: string, programHash, variantHash, transparent: boolean, pass: string, reason: string, flags: arr(string), expectedGpuDraws: integer, instances: integer, instancesDrawn: integer, vertices: integer, bones: integer, skeleton: nullable(integer), morphTargets: integer })),
 };
 const snapshotRequired = ['byReason', 'env', 'hints', 'js', 'lighting', 'memory', 'overdraw', 'passes', 'programs', 'schemaVersion', 'skinning', 'totals'];
 

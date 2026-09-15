@@ -160,6 +160,20 @@ describe('hintsFor', () => {
     expect(hints.find((h) => h.code === 'untagged')).toEqual({ category: 'drawCalls', severity: 'warn', code: 'untagged', message: '7 untagged meshes: tag.static() or tag.dynamic() them', objects: ['crate', 'barrel'] });
   });
 
+  it('reports static-unbatched above 20 statics that draw alone although their material is shared, apart from unique-materials', () => {
+    const f = emptyFrame(env);
+    f.byReason = {
+      'static-unbatched': { submissions: 21, gpuDraws: 21, top: ['rock-1', 'rock-2'] },
+      'unique-material': { submissions: 20, gpuDraws: 20, top: ['statue'] },
+    };
+    expect(hintsFor(f, budgetsFor('desktop'))).toEqual([
+      { category: 'drawCalls', severity: 'info', code: 'static-unbatched', message: '21 static meshes draw one by one although other draws share their material: batch them with World', objects: ['rock-1', 'rock-2'] },
+    ]);
+    f.byReason['static-unbatched']!.submissions = 20;
+    f.byReason['unique-material']!.submissions = 21;
+    expect(hintsFor(f, budgetsFor('desktop')).map((h) => h.code)).toEqual(['unique-materials']);
+  });
+
   it('uses singular wording for exactly one point light or transmissive mesh', () => {
     const f = emptyFrame(env);
     const hints = hintsFor(f, budgetsFor('desktop'), { pointShadowLights: ['lamp'], transmissive: ['glass'] });

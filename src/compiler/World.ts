@@ -484,7 +484,9 @@ export class World {
       skipped.push({ name: displayName(c.object, this.scene), rule });
       if (c.kind === 'excluded') this.ledger?.annotate(c.object, `excluded:${c.rule}`);
       // A static with nothing to share a draw with: the ledger should say why, even under policy 'auto'. A
-      // transparent static left unbatched by `transparent: 'keep'` gets its own reason, not `unique-material`.
+      // transparent static left unbatched by `transparent: 'keep'` gets its own reason, not `unique-material`. Whether its
+      // canonical material is shared is a per-frame fact: the ledger relabels it `static-unbatched` in a frame where
+      // another object of the main pass draws that material.
       if (c.kind === 'static') this.ledger?.annotate(c.object, transparentKept ? 'excluded:transparent-kept' : 'unique-material');
       // Dynamic by rule (under a bone, animated) rather than by tag: still a dynamic draw, not an untagged one.
       if (c.kind === 'dynamic') this.ledger?.annotate(c.object, 'dynamic');

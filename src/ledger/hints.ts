@@ -41,6 +41,9 @@ export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): H
   if (untagged) push('drawCalls', 'warn', 'untagged', `${untagged.submissions} untagged meshes: tag.static() or tag.dynamic() them`, untagged.top);
   const unique = f.byReason['unique-material'];
   if (unique && unique.submissions > 20) push('drawCalls', 'info', 'unique-materials', `${unique.submissions} meshes each with a material used once: share materials through the registry`, unique.top);
+  // The statics `unique-materials` used to count although another draw shares their material: the same threshold.
+  const unbatched = f.byReason['static-unbatched'];
+  if (unbatched && unbatched.submissions > 20) push('drawCalls', 'info', 'static-unbatched', `${unbatched.submissions} static meshes draw one by one although other draws share their material: batch them with World`, unbatched.top);
   const unsupported = f.byReason['unsupported-material'];
   if (unsupported) push('drawCalls', 'error', 'unsupported-material', `${unsupported.submissions} ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer`, unsupported.top);
   if (t.programs > 40) push('drawCalls', 'warn', 'programs', `${t.programs} shader programs: fewer material variants means fewer compiles and switches`);

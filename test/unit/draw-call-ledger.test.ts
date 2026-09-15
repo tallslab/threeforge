@@ -36,6 +36,7 @@ import {
 } from 'three';
 import { World } from '../../src/compiler/World.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
+import type { SubmissionRecord } from '../../src/ledger/snapshot.js';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 import { AnimatedInstances } from '../../src/skinning/AnimatedInstances.js';
 import { bakeAnimationTexture } from '../../src/skinning/bakeAnimationTexture.js';
@@ -726,5 +727,123 @@ describe('DrawCallLedger snapshot, report and budget', () => {
     ledger.rescan();
     renderer.render(scene, camera);
     expect(ledger.frame().memory.chunks).toEqual({ total: 0, resident: 0 });
+  });
+});
+
+describe('DrawCallLedger shared materials: unique-material and static-unbatched', () => {
+  const named = <T extends Mesh>(mesh: T, name: string): T => {
+    mesh.name = name;
+    return mesh;
+  };
+  /** name → reason of the frame's scene items in `pass` (renderer-internal work left out). */
+  const reasonsIn = (ledger: DrawCallLedger, pass = 'main') =>
+    Object.fromEntries((ledger.frame({ items: true }).items ?? []).filter((i) => i.pass === pass && i.reason !== 'renderer-internal').map((i) => [i.name, i.reason]));
+  const indexOf = (ledger: DrawCallLedger, name: string) => ledger.frame({ items: true }).items!.find((i) => i.name === name)!.material;
+
+  it('calls two statics sharing one built-in material static-unbatched, without a World; a material instance drawn once stays unique-material', () => {
+    const { renderer, ledger, scene, camera } = attached();
+    const shared = new MeshStandardMaterial({ color: 0x336699 });
+    // Equal by value, but its own instance and never registered: nothing else draws it.
+    const own = new MeshStandardMaterial({ color: 0x336699 });
+    scene.add(named(tag.static(new Mesh(box, shared)), 'a'), named(tag.static(new Mesh(new PlaneGeometry(1, 1), shared)), 'b'), named(tag.static(new Mesh(box, own)), 'alone'));
+    renderer.render(scene, camera);
+    const frame = ledger.frame();
+    expect(reasonsIn(ledger)).toEqual({ a: 'static-unbatched', b: 'static-unbatched', alone: 'unique-material' });
+    expect(frame.byReason['static-unbatched']).toEqual({ submissions: 2, gpuDraws: 2, top: ['a', 'b'] });
+    expect(frame.byReason['unique-material']).toEqual({ submissions: 1, gpuDraws: 1, top: ['alone'] });
+    expect(indexOf(ledger, 'a')).toBe(indexOf(ledger, 'b'));
+    expect(indexOf(ledger, 'alone')).not.toBe(indexOf(ledger, 'a'));
+  });
+
+  it("counts uses per registry canonical: identical registered built-ins share one, materials differing only in an instance onBeforeRender do not", () => {
+    const { renderer, registry, ledger, scene, camera } = attached();
+    const first = new MeshStandardMaterial({ color: 0x884422 });
+    const second = new MeshStandardMaterial({ color: 0x884422 });
+    registry.register(first);
+    registry.register(second);
+    expect(registry.canonicalOf(second)).toBe(first);
+    const hooked = [0, 1].map(() => {
+      const material = new MeshStandardMaterial({ color: 0x224488 });
+      material.onBeforeRender = () => {};
+      registry.register(material);
+      return material;
+    });
+    expect(registry.canonicalOf(hooked[1]!)).toBe(hooked[1]);
+    // The meshes keep their own instances: no World swapped the canonicals in.
+    scene.add(
+      named(tag.static(new Mesh(box, first)), 'merged-1'),
+      named(tag.static(new Mesh(box, second)), 'merged-2'),
+      named(tag.static(new Mesh(box, hooked[0]!)), 'hooked-1'),
+      named(tag.static(new Mesh(box, hooked[1]!)), 'hooked-2'),
+    );
+    renderer.render(scene, camera);
+    expect(reasonsIn(ledger)).toEqual({ 'merged-1': 'static-unbatched', 'merged-2': 'static-unbatched', 'hooked-1': 'unique-material', 'hooked-2': 'unique-material' });
+    expect(indexOf(ledger, 'merged-1')).toBe(indexOf(ledger, 'merged-2'));
+    expect(indexOf(ledger, 'hooked-1')).not.toBe(indexOf(ledger, 'hooked-2'));
+  });
+
+  it('counts uses per object: a static the main pass draws twice (the back-side pass of a double-sided transmissive material) is not shared with itself', () => {
+    const { renderer, ledger, scene, camera } = attached();
+    scene.add(named(tag.static(new Mesh(box, new MeshPhysicalMaterial({ transmission: 1, side: DoubleSide }))), 'glass'));
+    renderer.render(scene, camera);
+    const glass = ledger.frame({ items: true }).items!.filter((i) => i.pass === 'main' && i.name === 'glass');
+    expect(glass).toHaveLength(2);
+    expect(glass.map((i) => i.reason)).toEqual(['unique-material', 'unique-material']);
+    expect(glass[0]!.material).toBe(glass[1]!.material);
+  });
+
+  it('counts main-pass uses only, and relabels a shared static in every pass it draws in', () => {
+    const sun = new DirectionalLight();
+    sun.name = 'sun';
+    sun.castShadow = true;
+    const { renderer, ledger, scene, camera } = attached({ shadowLight: sun });
+    const stone = new MeshStandardMaterial({ color: 0x777777 });
+    const caster = named(tag.static(new Mesh(box, stone)), 'caster');
+    caster.castShadow = true;
+    // Drawn in the main pass and, through its hook, the only user of `paint` in the main pass: a second scene draws it too.
+    const paint = new MeshStandardMaterial({ color: 0x3355ff });
+    const portal = named(tag.static(new Mesh(box, paint)), 'portal');
+    const room = new Scene();
+    room.name = 'room';
+    room.add(named(tag.static(new Mesh(box, paint)), 'far-wall'));
+    let inside = false;
+    portal.onBeforeRender = ((r: unknown) => {
+      if (inside) return;
+      inside = true;
+      (r as FakeRenderer).render(room, camera);
+      inside = false;
+    }) as Mesh['onBeforeRender'];
+    scene.add(sun, caster, named(tag.static(new Mesh(box, stone)), 'plinth'), portal);
+    renderer.render(scene, camera);
+    expect(reasonsIn(ledger)).toEqual({ caster: 'static-unbatched', plinth: 'static-unbatched', portal: 'unique-material' });
+    expect(reasonsIn(ledger, 'shadow:sun')).toEqual({ caster: 'static-unbatched' });
+    expect(reasonsIn(ledger, 'scene:room')).toEqual({ 'far-wall': 'unique-material' });
+  });
+
+  it('indexes materials per frame in first-draw order and decides shared per frame; items held from an earlier frame keep their values', () => {
+    const { renderer, ledger, scene, camera } = attached();
+    const red = new MeshStandardMaterial({ color: 0xff0000 });
+    const blue = new MeshStandardMaterial({ color: 0x0000ff });
+    const lead = named(tag.static(new Mesh(box, red)), 'lead');
+    const twin = named(tag.static(new Mesh(box, blue)), 'twin');
+    const other = named(tag.static(new Mesh(box, blue)), 'other');
+    scene.add(lead, twin, other);
+    renderer.render(scene, camera);
+    const scene1 = (items: SubmissionRecord[]) => items.filter((i) => i.reason !== 'renderer-internal').map((i) => [i.name, i.material, i.reason]);
+    const first = ledger.frame({ items: true }).items!;
+    expect(scene1(first)).toEqual([
+      ['lead', 0, 'unique-material'],
+      ['twin', 1, 'static-unbatched'],
+      ['other', 1, 'static-unbatched'],
+    ]);
+    lead.visible = false;
+    other.visible = false;
+    renderer.render(scene, camera);
+    expect(scene1(ledger.frame({ items: true }).items!)).toEqual([['twin', 0, 'unique-material']]);
+    expect(scene1(first)).toEqual([
+      ['lead', 0, 'unique-material'],
+      ['twin', 1, 'static-unbatched'],
+      ['other', 1, 'static-unbatched'],
+    ]);
   });
 });

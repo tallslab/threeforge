@@ -884,6 +884,7 @@
       {
         "name": "crate",
         "kind": "mesh",
+        "material": 0,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -904,6 +905,7 @@
       {
         "name": "crate",
         "kind": "mesh",
+        "material": 0,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -924,6 +926,7 @@
       {
         "name": "Mesh[2]",
         "kind": "mesh",
+        "material": 1,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -942,6 +945,7 @@
       {
         "name": "assembly/Mesh[0]",
         "kind": "mesh",
+        "material": 2,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -960,6 +964,7 @@
       {
         "name": "mirrored-prop",
         "kind": "mesh",
+        "material": 3,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -978,6 +983,7 @@
       {
         "name": "batch-3",
         "kind": "batched",
+        "material": 4,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -996,6 +1002,7 @@
       {
         "name": "debris-empty",
         "kind": "instanced",
+        "material": 5,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1014,6 +1021,7 @@
       {
         "name": "debris",
         "kind": "instanced",
+        "material": 6,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1032,6 +1040,7 @@
       {
         "name": "body",
         "kind": "skinned",
+        "material": 7,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "17573467",
@@ -1050,6 +1059,7 @@
       {
         "name": "body-2",
         "kind": "skinned",
+        "material": 7,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "17573467",
@@ -1068,6 +1078,7 @@
       {
         "name": "blob",
         "kind": "mesh",
+        "material": 8,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1086,6 +1097,7 @@
       {
         "name": "dust",
         "kind": "points",
+        "material": 9,
         "materialType": "PointsMaterial",
         "programHash": "81a90998",
         "variantHash": "9f3c8563",
@@ -1104,6 +1116,7 @@
       {
         "name": "panel",
         "kind": "mesh",
+        "material": 10,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1122,6 +1135,7 @@
       {
         "name": "panel",
         "kind": "mesh",
+        "material": 11,
         "materialType": "MeshBasicMaterial",
         "programHash": "dbf62424",
         "variantHash": "9cad3b56",
@@ -1140,6 +1154,7 @@
       {
         "name": "fx-panel",
         "kind": "mesh",
+        "material": 12,
         "materialType": "ShaderMaterial",
         "programHash": "5d1b489b",
         "variantHash": "5d1b489b",
@@ -1158,6 +1173,7 @@
       {
         "name": "crate",
         "kind": "mesh",
+        "material": 0,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1178,6 +1194,7 @@
       {
         "name": "Mesh[2]",
         "kind": "mesh",
+        "material": 1,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1196,6 +1213,7 @@
       {
         "name": "assembly/Mesh[0]",
         "kind": "mesh",
+        "material": 2,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1214,6 +1232,7 @@
       {
         "name": "mirrored-prop",
         "kind": "mesh",
+        "material": 3,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1232,6 +1251,7 @@
       {
         "name": "batch-3",
         "kind": "batched",
+        "material": 4,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1250,6 +1270,7 @@
       {
         "name": "debris-empty",
         "kind": "instanced",
+        "material": 5,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1268,6 +1289,7 @@
       {
         "name": "debris",
         "kind": "instanced",
+        "material": 6,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1286,6 +1308,7 @@
       {
         "name": "body",
         "kind": "skinned",
+        "material": 7,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "17573467",
@@ -1304,6 +1327,7 @@
       {
         "name": "body-2",
         "kind": "skinned",
+        "material": 7,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "17573467",
@@ -1322,6 +1346,7 @@
       {
         "name": "blob",
         "kind": "mesh",
+        "material": 8,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1340,6 +1365,7 @@
       {
         "name": "dust",
         "kind": "points",
+        "material": 9,
         "materialType": "PointsMaterial",
         "programHash": "81a90998",
         "variantHash": "9f3c8563",
@@ -1358,6 +1384,7 @@
       {
         "name": "panel",
         "kind": "mesh",
+        "material": 10,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1376,6 +1403,7 @@
       {
         "name": "panel",
         "kind": "mesh",
+        "material": 11,
         "materialType": "MeshBasicMaterial",
         "programHash": "dbf62424",
         "variantHash": "9cad3b56",
@@ -1394,6 +1422,7 @@
       {
         "name": "fx-panel",
         "kind": "mesh",
+        "material": 12,
         "materialType": "ShaderMaterial",
         "programHash": "5d1b489b",
         "variantHash": "5d1b489b",
@@ -1412,6 +1441,7 @@
       {
         "name": "forge:sprites:aa11bb22:0",
         "kind": "mesh",
+        "material": 14,
         "materialType": "MeshBasicMaterial",
         "programHash": "dfb75c13",
         "variantHash": "b947c1c5",
@@ -1432,6 +1462,7 @@
       {
         "name": "Output Color Transform",
         "kind": "mesh",
+        "material": 15,
         "materialType": "Material",
         "programHash": "b51912c4",
         "variantHash": "097ab33f",
@@ -1450,6 +1481,7 @@
       {
         "name": "mirror",
         "kind": "mesh",
+        "material": 13,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1470,6 +1502,7 @@
       {
         "name": "far-room",
         "kind": "mesh",
+        "material": 17,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1488,6 +1521,7 @@
       {
         "name": "Output Color Transform",
         "kind": "mesh",
+        "material": 15,
         "materialType": "Material",
         "programHash": "b51912c4",
         "variantHash": "097ab33f",
@@ -1506,6 +1540,7 @@
       {
         "name": "portal",
         "kind": "mesh",
+        "material": 16,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1526,6 +1561,7 @@
       {
         "name": "forge:sprites:aa11bb22:0",
         "kind": "mesh",
+        "material": 14,
         "materialType": "MeshBasicMaterial",
         "programHash": "dfb75c13",
         "variantHash": "b947c1c5",
@@ -1546,6 +1582,7 @@
       {
         "name": "Output Color Transform",
         "kind": "mesh",
+        "material": 15,
         "materialType": "Material",
         "programHash": "b51912c4",
         "variantHash": "097ab33f",

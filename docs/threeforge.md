@@ -112,10 +112,14 @@ work (three's output colour transform quad, the VSM blur quads) is attributed as
 
 ### Reasons and flags
 
-Every submission gets one reason: `batched`, `baked`, `instanced`, `unique-material`, `dynamic`, `skinned`,
-`morph`, `transparent`, `multi-material-group`, `untagged`, `unsupported-material`, `renderer-internal`,
+Every submission gets one reason: `batched`, `baked`, `instanced`, `unique-material`, `static-unbatched`, `dynamic`,
+`skinned`, `morph`, `transparent`, `multi-material-group`, `untagged`, `unsupported-material`, `renderer-internal`,
 `fullscreen-pass`, `occlusion-proxy`, `points`, `sprite`, `line`, `unclassified`, or `excluded:<rule>`. The compiler
-annotates objects it left alone (`ledger.annotate(object, reason)`) so the ledger says why. Flags add detail:
+annotates objects it left alone (`ledger.annotate(object, reason)`) so the ledger says why. A static drawn alone is
+`unique-material` when no other object of the frame's main pass draws its material, and `static-unbatched` when one
+does: at the end of the frame the ledger counts, per canonical material (the registry's, else the instance itself), the
+distinct objects that drew it in the main pass, so a mesh drawn twice there is one use. The item's `material` is that
+material's per-frame index. Flags add detail:
 `shadow-caster`, `double-sided-transparent`, `custom-hook`, `render-order`, `layers`, `transparent`.
 `double-sided-transparent` describes the material three draws in that pass (see Reconciliation), so a shadow caster can
 carry it in its shadow pass and not in the main pass, or the other way round.
@@ -336,7 +340,7 @@ Budgets per tier (`BUDGETS`, `budgetsFor(tier, overrides)`):
 | objects walked per frame | 20 k | 5 k | 2 k |
 
 Hint codes (`hintsFor`, remedies in `npx threeforge explain --all`): `over-budget-submissions`,
-`over-budget-triangles`, `untagged`, `unique-materials`, `unsupported-material`, `programs`, `transparent-overdraw`,
+`over-budget-triangles`, `untagged`, `unique-materials`, `static-unbatched`, `unsupported-material`, `programs`, `transparent-overdraw`,
 `skinned-vertices`, `point-light-shadow`, `shadow-texels`, `transmission`, `transparent-batch-order`, `texture-bytes`,
 `static-auto-update`, `particles-over-budget`, `sprites-unbatched`, `js-objects`, `detach-originals`,
 `bones-over-budget`, `skinned-crowd`, `geometry-bytes`, `unreferenced-resources`.
@@ -474,7 +478,8 @@ slot set: the batch replaces position and scale nodes and draws object-dependent
 4. `batchStatics`: register materials, group statics by **variant key + geometry attribute signature + castShadow +
    receiveShadow (+ chunk cell)**. Per group: geometry repeated at least `instanceThreshold` times in an opaque group
    becomes a compacted `InstancedMesh` per geometry; the rest becomes one `BatchedMesh` (or, with `bake`, one baked
-   `Mesh`); a group of one mesh stays a mesh with the canonical material (`unique-material`). Batches use the
+   `Mesh`); a group of one mesh stays a mesh with the canonical material (`unique-material`, or `static-unbatched` in a frame
+   where another object draws that canonical). Batches use the
    canonical material itself when every instance is white, else a white clone with per-instance colour. The clone
    (`cloneMaterial`, also used for a baked group's vertex-colour material) gets back what three's `clone()` drops:
    every function assigned to the instance (`onBeforeCompile`, `customProgramCacheKey`, `onBeforeRender`, a node
