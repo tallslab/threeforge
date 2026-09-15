@@ -3,7 +3,7 @@ import type { SceneSpace } from './space.js';
 
 /** Sprites that share a material (by registry keys, not instance) and become one instanced billboard draw. */
 export interface SpriteGroup {
-  /** `variantHash|colorHex`: everything the batch material copies from the first sprite's material. */
+  /** `variantHash|colorKey`: everything the batch material copies from the first sprite's material. */
   key: string;
   programHash: string;
   material: SpriteMaterial;
@@ -18,7 +18,9 @@ export interface SpriteSkip {
 export interface SpriteKeys {
   programHash: string;
   variantHash: string;
-  colorHex: string;
+  /** Exact colour key (`MaterialDescription.colorKey`), not the rounded display hex: two colours under 1/255
+   *  apart must group separately, since a sprite group's batch material copies just the first sprite's colour. */
+  colorKey: string;
 }
 
 const OWN = Object.prototype.hasOwnProperty;
@@ -87,7 +89,7 @@ export function groupSprites(sprites: Sprite[], threshold: number, describe: (ma
     }
     const material = sprite.material;
     const keys = describe(material);
-    const key = `${keys.variantHash}|${keys.colorHex}`;
+    const key = `${keys.variantHash}|${keys.colorKey}`;
     let group = byKey.get(key);
     if (!group) {
       group = { key, programHash: keys.programHash, material, sprites: [] };

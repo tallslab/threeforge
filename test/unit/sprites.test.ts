@@ -7,7 +7,7 @@ import { SceneSpace } from '../../src/compiler/space.js';
 /** Keys the way the registry describes materials: same map and flags → same variant, colour separate. */
 const describeMaterial = (m: Material) => {
   const s = m as SpriteMaterial;
-  return { programHash: `p:${s.map ? 'map' : 'flat'}`, variantHash: `v:${s.map ? 'map' : 'flat'}:${s.opacity}`, colorHex: s.color.getHexString() };
+  return { programHash: `p:${s.map ? 'map' : 'flat'}`, variantHash: `v:${s.map ? 'map' : 'flat'}:${s.opacity}`, colorKey: s.color.getHexString() };
 };
 
 function spriteAt(x: number, y: number, z: number, material: SpriteMaterial, scale: [number, number] = [1, 1]): Sprite {

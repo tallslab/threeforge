@@ -13,7 +13,10 @@ export type RegisterOutcome =
 export interface MaterialDescription {
   programHash: string;
   variantHash: string;
+  /** `color.getHexString()`: display-only 8-bit sRGB hex. */
   colorHex: string;
+  /** Exact linear-float encoding of `color`. Identity/grouping key (e.g. sprite batching); never for display. */
+  colorKey: string;
   outcome: RegisterOutcome;
   description: string;
   unsupported: boolean;
@@ -50,13 +53,21 @@ interface ProgramEntry {
   materials: number;
 }
 
+/** `MaterialKeys` plus the two hashes derived from it, computed and cached together (Ruling R6). */
+type CachedKeys = MaterialKeys & { programHash: string; variantHash: string };
+
 /**
  * Every material passes through here. Identical-by-value materials collapse to one canonical instance;
  * everything else is recorded as a colour, uniform or shader variant so the ledger can attribute cost.
- * Keys are computed at registration time; a material mutated afterwards is not re-keyed.
+ *
+ * A material is immutable once registered: `register()` and `describe()` compute its keys once and cache them
+ * (this class never re-reads a material's properties after that first pass). Mutating a registered material's
+ * properties afterwards is outside the contract — anything already built from its old keys (a BatchedMesh, a
+ * sprite batch) stays built from them. `invalidate()` and `forget()` are the two ways to react to it: see their
+ * doc comments.
  */
 export class MaterialRegistry {
-  private readonly keyCache = new WeakMap<Material, MaterialKeys>();
+  private readonly keyCache = new WeakMap<Material, CachedKeys>();
   private readonly records = new Map<Material, { outcome: RegisterOutcome; canonical: Material | null }>();
   private readonly canonicalByFullKey = new Map<string, Material>();
   private readonly variantsByKey = new Map<string, string>();
@@ -77,7 +88,7 @@ export class MaterialRegistry {
       return material;
     }
 
-    const programHash = hashKey(keys.programKey);
+    const programHash = keys.programHash;
     const fullKey = `${keys.variantKey}|#${keys.colorKey}`;
     const canonical = this.canonicalByFullKey.get(fullKey);
     let program = this.programs.get(programHash);
@@ -109,9 +120,10 @@ export class MaterialRegistry {
     const keys = this.keys(material);
     const record = this.records.get(material);
     return {
-      programHash: hashKey(keys.programKey),
-      variantHash: hashKey(keys.variantKey),
-      colorHex: keys.colorKey,
+      programHash: keys.programHash,
+      variantHash: keys.variantHash,
+      colorHex: keys.colorHex,
+      colorKey: keys.colorKey,
       outcome: record?.outcome ?? 'unregistered',
       description: keys.description,
       unsupported: keys.unsupported,
@@ -122,6 +134,69 @@ export class MaterialRegistry {
   /** The material `register()` would return for this one, without registering it. */
   canonicalOf(material: Material): Material | undefined {
     return this.records.get(material)?.canonical ?? undefined;
+  }
+
+  /**
+   * Drops the cached keys for `material` so the next `keys()` / `describe()` call recomputes them from its
+   * current property values. This does not touch what `register()` already decided (its outcome, its canonical,
+   * `stats()`): anything built from the old keys stays built from them, per the immutability contract on this
+   * class. Use it to keep `describe()`'s reporting (hashes, `colorHex`/`colorKey`, `description`) accurate after
+   * code outside that contract mutates an already-registered material — for example a live material editor.
+   */
+  invalidate(material: Material): void {
+    this.keyCache.delete(material);
+  }
+
+  /**
+   * Removes `material` from the registry entirely, as if it had never been registered: its cached keys and
+   * registration record are dropped, `registered`/`merged`/`unsupported` and its program's bookkeeping are
+   * unwound, and — when it was itself a canonical — its entry in `canonicalByFullKey` and its program's
+   * `canonicals`/`variants` sets are cleared too. Not wired into disposal in this task: `World.decompile()` and
+   * `ResourceTracker` start calling it in a later phase.
+   *
+   * Forgetting a canonical that other materials were merged into does not break those materials — `records`
+   * still points them at that exact `Material` object, which keeps working — but the registry can no longer
+   * find it by key, so a future material with the same keys registers as a new canonical rather than merging
+   * into it. Forgetting an unknown material is a no-op.
+   */
+  forget(material: Material): void {
+    const record = this.records.get(material);
+    if (!record) {
+      this.keyCache.delete(material);
+      return;
+    }
+
+    const keys = this.keys(material);
+    this.keyCache.delete(material);
+    this.records.delete(material);
+    this.registered--;
+
+    if (record.outcome === 'unsupported') {
+      this.unsupported--;
+      return;
+    }
+
+    const program = this.programs.get(keys.programHash);
+
+    if (record.canonical !== material) {
+      // Merged into some other canonical, which is untouched.
+      this.merged--;
+      if (program) {
+        program.materials--;
+        if (program.materials <= 0) this.programs.delete(keys.programHash);
+      }
+      return;
+    }
+
+    const fullKey = `${keys.variantKey}|#${keys.colorKey}`;
+    if (this.canonicalByFullKey.get(fullKey) === material) this.canonicalByFullKey.delete(fullKey);
+    if (program) {
+      program.canonicals.delete(material);
+      program.materials--;
+      const variantStillUsed = [...program.canonicals].some((c) => this.keys(c).variantKey === keys.variantKey);
+      if (!variantStillUsed) program.variants.delete(keys.variantKey);
+      if (program.materials <= 0) this.programs.delete(keys.programHash);
+    }
   }
 
   stats(): RegistryStats {
@@ -145,11 +220,12 @@ export class MaterialRegistry {
     };
   }
 
-  /** The raw keys for a material (computed once and cached). */
-  keys(material: Material): MaterialKeys {
+  /** The raw keys for a material, plus their `programHash`/`variantHash` (computed once and cached; Ruling R6). */
+  keys(material: Material): CachedKeys {
     let keys = this.keyCache.get(material);
     if (!keys) {
-      keys = computeMaterialKeys(material);
+      const computed = computeMaterialKeys(material);
+      keys = { ...computed, programHash: hashKey(computed.programKey), variantHash: hashKey(computed.variantKey) };
       this.keyCache.set(material, keys);
     }
     return keys;

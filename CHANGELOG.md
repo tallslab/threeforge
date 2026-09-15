@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- `MaterialRegistry`'s colour key (`colorKey`, and every other `Color`-valued property folded into `variantKey`,
+  such as `emissive`, `sheenColor` or the base `Material.blendColor`) is now keyed by exact linear floats
+  (`color.r/g/b`) instead of 8-bit sRGB hex: two colours under 1/255 apart, and two HDR colours (a channel > 1)
+  that would otherwise both clamp to the same hex, now stay distinct instead of silently merging and rendering
+  with the first one's colour. `describe(material)` gains `colorKey` (the exact key; used for identity and
+  grouping) alongside the existing `colorHex` (`color.getHexString()`, display only). Sprite batching
+  (`groupSprites`, `src/compiler/sprites.ts`) groups by the exact `colorKey`, not `colorHex`. `variantKey` also
+  gains `visible=0` when `material.visible` is false, so the registry never merges a hidden material with an
+  otherwise-identical visible one (`programKey` is unaffected either way). Every material's `variantHash` changes
+  as a result of this encoding change (every material carries `blendColor`, inherited from the base `Material`
+  class); no `programHash` changes.
+- `MaterialRegistry` caches a material's `programHash`/`variantHash` alongside its keys, so `describe()` no longer
+  re-hashes on every call. `registry.invalidate(material)` drops the cached keys for a material so the next
+  `keys()`/`describe()` call recomputes them from its current property values, without touching what `register()`
+  already decided. `registry.forget(material)` removes a material from the registry entirely, as if it had never
+  been registered. A material is documented as immutable once registered: `docs/threeforge.md` section 5 and the
+  `MaterialRegistry`/`materialKey.ts` doc comments spell out the contract and these two escape hatches. Neither is
+  wired into disposal yet (`World.decompile()` / `ResourceTracker` start calling `forget()` in a later phase).
+
 - Compiled instance data is written in the scene's space (new `SceneSpace`, `src/compiler/space.ts`). Batch matrices, instanced masters, baked vertices, batch-sync matrices, `markDirty` writes and sprite centres and scales were world-space although every compiled object is a child of the scene, so a translated, rotated or scaled `Scene` applied its transform twice. The inverse of `scene.matrixWorld` is cached and derived again whenever the scene's world matrix changes, so a scene moved after compile is honoured; an untransformed scene copies world matrices unchanged. `BatchOptions`, `SpriteBatchOptions` and `SpriteFillOptions` gain an optional `space`, `bakeEntriesOf` an optional fourth `space` argument and `BakedGroup` a `space` field; `fillSpriteInstances` without `space` still writes world positions and scales, and `buildSpriteBatch` defaults to the space of `root`.
 - `world.markDirty()` recomputes the bounds of each touched batch and instanced group once (every LOD level) and fits their occlusion proxies to them: an instance moved outside its old bounds was culled by three's whole-object frustum test while on screen, and its proxy kept the old size. `InstanceCullingHandle` gains `refreshBounds()`, which reads the master matrices rather than the compacted rows.
 - `freezableObjects` no longer freezes a container unless its subtree holds at least one static leaf (an unbatched

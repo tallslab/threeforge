@@ -201,13 +201,34 @@ reasons by count and the hints. `formatOverlay`, `formatCostRows` and `formatHin
 `register(material)` returns the canonical material for its key without mutating the input. Three keys are computed
 (`computeMaterialKeys`): **programKey** mirrors three's `RenderObject.getMaterialCacheKey()` (type, custom program
 cache key, which texture slots are set with their mapping/channel/colour space, booleans, enums, feature gates such as
-transmission or clearcoat as on/off, defines, node cache keys); **variantKey** adds every non-colour uniform and the
-texture identities and transforms; **colorKey** is the colour. Outcomes: `new`, `merged` (same variant and colour),
-`color-variant` (batchable through per-instance colour), `uniform-variant`, `shader-variant`, `unsupported`
-(`ShaderMaterial` / `RawShaderMaterial` do not render on `WebGPURenderer`), `unregistered`. `describe(material)`
-gives the hashes and outcome; `canonicalOf`, `keys`, and `stats()` (`registered, canonical, merged, unsupported,
-programs, byProgram[]`). `programs` is checked against `renderer.info.memory.programs` in the tests: shader variants
-counted by the registry are real programs.
+transmission or clearcoat as on/off, defines, node cache keys); **variantKey** adds every non-colour uniform, the
+texture identities and transforms, and `visible=0` when `material.visible` is false (so a hidden material never
+merges with an otherwise-identical visible one; `visible` never affects programKey); **colorKey** is the `color`
+property, keyed by **exact linear floats** (`color.r/g/b`, three's working colour space), not 8-bit sRGB hex — two
+colours under 1/255 apart stay distinct, and an HDR value (a channel > 1) stays distinct from another HDR value that
+would otherwise clamp to the same hex. Every other `Color`-valued property (`emissive`, `sheenColor`, `blendColor`,
+…) is keyed the same exact way inside variantKey. `describe(material)` also returns **colorHex**
+(`color.getHexString()`, 8-bit sRGB), which exists for display only — logs, the CLI, the overlay — and must never be
+used for identity or grouping; sprite batching (section 13) groups by the exact `colorKey`, not `colorHex`, for the
+same reason. Outcomes: `new`, `merged` (same variant and colour), `color-variant` (batchable through per-instance
+colour), `uniform-variant`, `shader-variant`, `unsupported` (`ShaderMaterial` / `RawShaderMaterial` do not render on
+`WebGPURenderer`), `unregistered`. `describe(material)` gives the hashes, `colorHex`/`colorKey` and outcome;
+`canonicalOf`, `keys`, and `stats()` (`registered, canonical, merged, unsupported, programs, byProgram[]`).
+`programs` is checked against `renderer.info.memory.programs` in the tests: shader variants counted by the registry
+are real programs.
+
+**A material is immutable once registered.** `register()` and `describe()` compute a material's keys once and cache
+them (together with their `programHash`/`variantHash`, so `describe()` never re-hashes on repeated calls); nothing
+in `MaterialRegistry` re-reads a material's properties after that first pass. Mutating a registered material's
+properties afterwards is outside the contract: anything already built from its old keys (a `BatchedMesh`, a sprite
+batch) stays built from them. Two escape hatches: `invalidate(material)` drops the cached keys so the next
+`keys()`/`describe()` call recomputes them — it does not touch what `register()` already decided, only keeps
+`describe()`'s reporting accurate after such a mutation (a live material editor, say). `forget(material)` removes a
+material from the registry entirely, as if it had never been registered, unwinding `stats()` and its program's
+bookkeeping; forgetting a canonical that other materials were merged into leaves those materials working (they keep
+their direct reference) but no longer findable by key, so a later identical material registers as a new canonical.
+Neither is wired into disposal yet — `World.decompile()` and `ResourceTracker` start calling `forget()` in a later
+phase.
 
 ## 6. Tags and classification
 

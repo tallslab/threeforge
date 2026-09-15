@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  Color,
   DataTexture,
   DoubleSide,
   MeshBasicMaterial,
@@ -7,9 +8,13 @@ import {
   MeshStandardMaterial,
   RGBAFormat,
   ShaderMaterial,
+  Sprite,
+  SpriteMaterial,
   SRGBColorSpace,
 } from 'three';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
+import * as materialKeyModule from '../../src/registry/materialKey.js';
+import { groupSprites } from '../../src/compiler/sprites.js';
 
 function texture(): DataTexture {
   const t = new DataTexture(new Uint8Array(4 * 4), 2, 2, RGBAFormat);
@@ -150,5 +155,133 @@ describe('MaterialRegistry.describe / stats', () => {
     expect(stats.byProgram[0]).toMatchObject({ type: 'MeshStandardMaterial', materials: 3, colorVariants: 3, variants: 1 });
     expect(stats.byProgram[1]).toMatchObject({ type: 'MeshBasicMaterial', materials: 1 });
     expect(Object.keys(stats).sort()).toEqual(['byProgram', 'canonical', 'merged', 'programs', 'registered', 'unsupported']);
+  });
+});
+
+describe('MaterialRegistry exact colour keys', () => {
+  it('keeps HDR emissive colours distinct even though they clamp to the same 8-bit hex', () => {
+    const registry = new MaterialRegistry();
+    const dim = new MeshStandardMaterial({ emissive: new Color(2, 2, 2) });
+    const bright = new MeshStandardMaterial({ emissive: new Color(5, 5, 5) });
+    // three's Color.getHex() clamps each channel to [0, 255]; both HDR emissives round to the same hex.
+    expect(dim.emissive.getHexString()).toBe('ffffff');
+    expect(bright.emissive.getHexString()).toBe('ffffff');
+    const a = registry.register(dim);
+    const b = registry.register(bright);
+    expect(registry.describe(a).programHash).toBe(registry.describe(b).programHash);
+    expect(registry.describe(a).variantHash).not.toBe(registry.describe(b).variantHash);
+  });
+
+  it('keeps colours 0.3/255 apart as separate canonicals, not merged, even though they share an 8-bit hex', () => {
+    const registry = new MaterialRegistry();
+    const base = new Color().setRGB(0.5, 0.5, 0.5);
+    const near = new Color().setRGB(0.5 + 0.3 / 255, 0.5, 0.5);
+    const a = registry.register(new MeshStandardMaterial({ color: base }));
+    const b = registry.register(new MeshStandardMaterial({ color: near }));
+    const da = registry.describe(a);
+    const db = registry.describe(b);
+    expect(da.colorHex).toBe(db.colorHex); // same rounded 8-bit display hex
+    expect(da.colorKey).not.toBe(db.colorKey); // exact keys still differ
+    expect(a).not.toBe(b); // not merged into one canonical
+    expect(db.outcome).toBe('color-variant');
+  });
+
+  it('joins the variant key with `visible` only when it is false, so a hidden material never merges with a visible twin', () => {
+    const registry = new MaterialRegistry();
+    const visible = registry.register(new MeshStandardMaterial({ color: 0xff0000 }));
+    const invisible = registry.register(new MeshStandardMaterial({ color: 0xff0000, visible: false }));
+    expect(invisible).not.toBe(visible);
+    const dVisible = registry.describe(visible);
+    const dInvisible = registry.describe(invisible);
+    expect(dInvisible.programHash).toBe(dVisible.programHash); // visible does not affect the program
+    expect(dInvisible.variantHash).not.toBe(dVisible.variantHash);
+    // two invisible materials that are otherwise identical still merge with each other.
+    const invisibleTwin = registry.register(new MeshStandardMaterial({ color: 0xff0000, visible: false }));
+    expect(invisibleTwin).toBe(invisible);
+  });
+});
+
+describe('MaterialRegistry caching', () => {
+  it('describe() does not re-hash on repeated calls: computeMaterialKeys and hashKey each run once per material', () => {
+    const registry = new MaterialRegistry();
+    const computeSpy = vi.spyOn(materialKeyModule, 'computeMaterialKeys');
+    const hashSpy = vi.spyOn(materialKeyModule, 'hashKey');
+    const material = new MeshStandardMaterial({ roughness: 0.2 });
+    registry.register(material);
+    const computeCallsAfterRegister = computeSpy.mock.calls.length;
+    const hashCallsAfterRegister = hashSpy.mock.calls.length;
+    expect(computeCallsAfterRegister).toBeGreaterThan(0);
+    expect(hashCallsAfterRegister).toBeGreaterThan(0);
+    registry.describe(material);
+    registry.describe(material);
+    registry.describe(material);
+    expect(computeSpy.mock.calls.length).toBe(computeCallsAfterRegister);
+    expect(hashSpy.mock.calls.length).toBe(hashCallsAfterRegister); // hashKey(programKey/variantKey) must be cached too (R6)
+    computeSpy.mockRestore();
+    hashSpy.mockRestore();
+  });
+
+  it('invalidate() re-keys a mutated material: describe() keeps returning stale hashes until invalidate is called', () => {
+    const registry = new MaterialRegistry();
+    const material = new MeshStandardMaterial({ roughness: 0.2 });
+    registry.register(material);
+    const before = registry.describe(material);
+    material.roughness = 0.9; // mutation outside the immutable-once-registered contract
+    const stillStale = registry.describe(material);
+    expect(stillStale.variantHash).toBe(before.variantHash);
+    registry.invalidate(material);
+    const after = registry.describe(material);
+    expect(after.variantHash).not.toBe(before.variantHash);
+    expect(after.programHash).toBe(before.programHash); // roughness is a uniform, not a program key
+  });
+
+  it('forget() drops a canonical material: describe() reports it unregistered and stats shrink back', () => {
+    const registry = new MaterialRegistry();
+    const a = registry.register(new MeshStandardMaterial({ color: 0xff0000 }));
+    const before = registry.stats();
+    registry.forget(a);
+    expect(registry.describe(a).outcome).toBe('unregistered');
+    expect(registry.canonicalOf(a)).toBeUndefined();
+    const after = registry.stats();
+    expect(after.registered).toBe(before.registered - 1);
+    expect(after.canonical).toBe(before.canonical - 1);
+  });
+
+  it('forget() on a merged duplicate leaves its canonical untouched', () => {
+    const registry = new MaterialRegistry();
+    const a = registry.register(new MeshStandardMaterial({ color: 0xff0000, roughness: 0.5 }));
+    // register() returns the canonical for a merge, not the instance passed in: keep that instance to forget it.
+    const duplicate = new MeshStandardMaterial({ color: 0xff0000, roughness: 0.5 });
+    const b = registry.register(duplicate);
+    expect(b).toBe(a);
+    expect(registry.stats().merged).toBe(1);
+    registry.forget(duplicate);
+    expect(registry.stats().merged).toBe(0);
+    expect(registry.describe(a).outcome).toBe('new');
+    expect(registry.describe(duplicate).outcome).toBe('unregistered');
+    const c = registry.register(new MeshStandardMaterial({ color: 0xff0000, roughness: 0.5 }));
+    expect(c).toBe(a); // still findable as the canonical for that key
+  });
+});
+
+describe('sprite grouping uses the exact colorKey', () => {
+  it('does not merge sprites whose colours are 0.3/255 apart, even though they share an 8-bit display hex', () => {
+    const registry = new MaterialRegistry();
+    const base = new Color().setRGB(0.5, 0.5, 0.5);
+    const near = new Color().setRGB(0.5 + 0.3 / 255, 0.5, 0.5);
+    const a = new Sprite(new SpriteMaterial({ color: base }));
+    const b = new Sprite(new SpriteMaterial({ color: near }));
+    expect(registry.describe(a.material).colorHex).toBe(registry.describe(b.material).colorHex);
+    const { groups } = groupSprites([a, b], 1, (m) => registry.describe(m));
+    expect(groups).toHaveLength(2);
+  });
+
+  it('merges sprites with the exact same colour into one group', () => {
+    const registry = new MaterialRegistry();
+    const a = new Sprite(new SpriteMaterial({ color: 0x336699 }));
+    const b = new Sprite(new SpriteMaterial({ color: 0x336699 }));
+    const { groups } = groupSprites([a, b], 1, (m) => registry.describe(m));
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.sprites).toHaveLength(2);
   });
 });

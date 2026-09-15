@@ -1,17 +1,23 @@
-import type { Material, Texture } from 'three';
+import type { Color, Material, Texture } from 'three';
 
 /**
  * Three keys describe a material:
  * - programKey: everything that changes the generated shader or pipeline state (mirrors what
  *   three's RenderObject.getMaterialCacheKey() looks at). Same programKey = same GPU program.
- * - variantKey: programKey + uniform values + texture identity/transform/sampler. Same variantKey
- *   = drawable in one BatchedMesh (colour excluded, it is per-instance in BatchedMesh).
- * - colorKey: the `color` property alone.
+ * - variantKey: programKey + uniform values + texture identity/transform/sampler + (`visible=0` when
+ *   `material.visible` is false). Same variantKey = drawable in one BatchedMesh (colour excluded, it is
+ *   per-instance in BatchedMesh).
+ * - colorKey: the `color` property alone, as an exact linear-float encoding (not 8-bit sRGB hex): two colours
+ *   less than 1/255 apart stay distinct, and an HDR value (a channel > 1) stays distinct from another HDR value
+ *   that would otherwise clamp to the same hex. Used for registry/canonical identity and for grouping (e.g.
+ *   sprite batching) — never for display.
+ * - colorHex: `color.getHexString()`, the 8-bit sRGB hex. Display only; never used for identity or grouping.
  */
 export interface MaterialKeys {
   programKey: string;
   variantKey: string;
   colorKey: string;
+  colorHex: string;
   unsupported: boolean;
   /** Human readable summary, e.g. "MeshStandardMaterial map normalMap transparent side=Double". */
   description: string;
@@ -76,11 +82,11 @@ export function computeMaterialKeys(material: Material): MaterialKeys {
   const forgeKey: unknown = material.userData?.forgeKey;
   if (typeof forgeKey === 'string') {
     const key = `forgeKey:${forgeKey}`;
-    return { programKey: key, variantKey: key, colorKey: '', unsupported: false, description: `${material.type} forgeKey=${forgeKey}` };
+    return { programKey: key, variantKey: key, colorKey: '', colorHex: '', unsupported: false, description: `${material.type} forgeKey=${forgeKey}` };
   }
   if ((m.isShaderMaterial as boolean | undefined) || (m.isRawShaderMaterial as boolean | undefined)) {
     const key = `unsupported:${material.uuid}`;
-    return { programKey: key, variantKey: key, colorKey: '', unsupported: true, description: `${material.type} (unsupported in WebGPURenderer)` };
+    return { programKey: key, variantKey: key, colorKey: '', colorHex: '', unsupported: true, description: `${material.type} (unsupported in WebGPURenderer)` };
   }
 
   const program: string[] = [`type=${material.type}`];
@@ -88,6 +94,7 @@ export function computeMaterialKeys(material: Material): MaterialKeys {
   const maps: string[] = [];
   const flags: string[] = [];
   let colorKey = '';
+  let colorHex = '';
 
   const custom = typeof material.customProgramCacheKey === 'function' ? material.customProgramCacheKey() : '';
   if (custom) program.push(`custom=${fnv1a(String(custom))}`);
@@ -96,6 +103,10 @@ export function computeMaterialKeys(material: Material): MaterialKeys {
   program.push(`alphaTest=${alphaTest > 0 ? 1 : 0}`);
   variant.push(`alphaTest=${num(alphaTest)}`);
   if (alphaTest > 0) flags.push('alphaTest');
+  // `visible` never affects the program (it is not skipped there, it is simply never read for it); it joins the
+  // variant key only when false, so the registry never merges a hidden material with an otherwise-identical
+  // visible one. `SKIP` still excludes it from the generic property loop below.
+  if (material.visible === false) variant.push('visible=0');
 
   for (const rawKey of Object.keys(m).sort()) {
     // Feature gates such as transmission/clearcoat/sheen are accessors backed by `_name` fields; read the accessor.
@@ -140,9 +151,17 @@ export function computeMaterialKeys(material: Material): MaterialKeys {
       continue;
     }
     if (obj.isColor) {
-      const hex = (value as { getHexString(): string }).getHexString();
-      if (key === 'color') colorKey = hex;
-      else variant.push(`${key}=${hex}`);
+      // Exact linear floats, not 8-bit sRGB hex: two colours under 1/255 apart, or two HDR values (a channel > 1)
+      // that would both clamp to the same hex, must stay distinct. `color.r/g/b` are already linear (three's
+      // working colour space), so no conversion is needed here.
+      const color = value as Color;
+      const exact = `${num(color.r)},${num(color.g)},${num(color.b)}`;
+      if (key === 'color') {
+        colorKey = exact;
+        colorHex = color.getHexString();
+      } else {
+        variant.push(`${key}=${exact}`);
+      }
       continue;
     }
     if (obj.isNode) {
@@ -168,5 +187,5 @@ export function computeMaterialKeys(material: Material): MaterialKeys {
   const programKey = program.join('|');
   const variantKey = `${programKey}||${variant.join('|')}`;
   const description = [material.type, ...maps, ...flags].join(' ');
-  return { programKey, variantKey, colorKey, unsupported: false, description };
+  return { programKey, variantKey, colorKey, colorHex, unsupported: false, description };
 }
