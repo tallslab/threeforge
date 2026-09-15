@@ -186,9 +186,9 @@ Other methods: `ledger.report()` (text), `ledger.budget({ maxSubmissions })` →
 
 Hint codes (`hintsFor`, remedies in `npx threeforge explain --all`): `over-budget-submissions`,
 `over-budget-triangles`, `untagged`, `unique-materials`, `unsupported-material`, `programs`, `transparent-overdraw`,
-`skinned-vertices`, `point-light-shadow`, `shadow-texels`, `transmission`, `texture-bytes`, `static-auto-update`,
-`particles-over-budget`, `sprites-unbatched`, `js-objects`, `detach-originals`, `bones-over-budget`, `skinned-crowd`,
-`geometry-bytes`, `unreferenced-resources`.
+`skinned-vertices`, `point-light-shadow`, `shadow-texels`, `transmission`, `transparent-batch-order`, `texture-bytes`,
+`static-auto-update`, `particles-over-budget`, `sprites-unbatched`, `js-objects`, `detach-originals`,
+`bones-over-budget`, `skinned-crowd`, `geometry-bytes`, `unreferenced-resources`.
 
 ### Overlay
 
@@ -266,6 +266,14 @@ provide), `dynamic-geometry` (`DynamicDrawUsage` / `StreamDrawUsage` attributes)
 | `sprites` | `'batch'` | sprites sharing a material become one instanced billboard draw synced each frame; `'keep'` leaves them |
 | `spriteThreshold` | 4 | sprites a material needs before its group is batched |
 | `freeze` | true | `matrixAutoUpdate = false` on unbatched statics and all-static ancestors; move them with `markDirty` |
+| `transparent` | `'batch'` | transparent statics batch/bake like any other group; `'keep'` routes them aside as individual meshes, annotated `transparent-kept` |
+
+Transparent statics batch by default, but three sorts a `BatchedMesh` back-to-front by its own bounding-sphere
+centre, not per instance: a transparent batch composites in creation order relative to other transparent
+submissions in the same pass, not by true per-object depth against them. `transparent: 'keep'` opts a scene out of
+this (its transparent statics stay individual meshes, each sorted by three like any other transparent object), at
+the cost of one draw per mesh instead of one per batch; the `transparent-batch-order` hint (info) names it whenever
+a threeforge transparent batch shares the main pass with another transparent submission.
 
 ### Culling, instancing, chunks, LOD, occlusion
 

@@ -41,6 +41,8 @@ export interface BatchOptions {
   bake?: BakeOptions;
   /** Meshes that must stay in a BatchedMesh (matrix-synced dynamics): a group containing one is batched, not baked. */
   noBake?: Set<Mesh>;
+  /** `batch` (default): transparent groups batch/bake like any other. `keep` routes them aside, unbatched. */
+  transparent?: 'batch' | 'keep';
 }
 
 export interface GroupReport {
@@ -70,6 +72,8 @@ export interface BatchResult {
   originals: Map<BatchedMesh | InstancedMesh, Mesh[]>;
   /** Statics that had nothing to share a batch with. */
   singletons: Mesh[];
+  /** Transparent statics routed aside unbatched by `transparent: 'keep'`. */
+  transparentKept: Mesh[];
   /** Per batch: base geometryId -> geometryIds per LOD level (present only when lodDistances is set). */
   lodGeometryIds: Map<BatchedMesh, Map<number, number[]>>;
 }
@@ -109,7 +113,7 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
     group.meshes.push(mesh);
   }
 
-  const result: BatchResult = { batches: [], instanced: [], baked: [], groups: [], slots: new Map(), originals: new Map(), singletons: [], lodGeometryIds: new Map() };
+  const result: BatchResult = { batches: [], instanced: [], baked: [], groups: [], slots: new Map(), originals: new Map(), singletons: [], transparentKept: [], lodGeometryIds: new Map() };
   const perProgramBaked = new Map<string, number>();
   const perProgram = new Map<string, number>();
   const perProgramInstanced = new Map<string, number>();
@@ -183,6 +187,15 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
         });
       }
       group.meshes = remaining;
+    }
+
+    // Three sorts a BatchedMesh back-to-front by its own bounding-sphere centre, not per instance, so a batch of
+    // transparent objects composites in creation order relative to other transparent submissions instead of true
+    // per-object depth (docs/threeforge.md §7, the `transparent-batch-order` hint). `keep` opts out: these statics
+    // stay individual meshes, routed aside before either baking or batching.
+    if (options.transparent === 'keep' && group.canonical.transparent) {
+      result.transparentKept.push(...group.meshes);
+      continue;
     }
 
     if (group.meshes.length < 2) {

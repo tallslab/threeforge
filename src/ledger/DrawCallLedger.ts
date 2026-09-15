@@ -172,7 +172,7 @@ export class DrawCallLedger {
     let objects = 0;
     let auto = 0;
     let hidden = 0;
-    const ctx: Required<HintContext> = { staticAutoUpdated: [], pointShadowLights: [], transmissive: [] };
+    const ctx: Required<Omit<HintContext, 'items'>> = { staticAutoUpdated: [], pointShadowLights: [], transmissive: [] };
     scene.traverse((o) => {
       objects++;
       if (o.layers.mask === HIDDEN_MASK) hidden++;
@@ -196,7 +196,7 @@ export class DrawCallLedger {
     const memory = this.renderer?.info.memory;
     this.memoryStats = estimateMemory(scene, { textures: memory?.textures ?? 0, geometries: memory?.geometries ?? 0 }, this.environment.viewport);
     this.last = { ...this.last, js: { ...this.last.js, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals }, memory: this.memoryNow() };
-    this.last = { ...this.last, hints: hintsFor(this.last, this.budgets(), this.hintContext) };
+    this.last = { ...this.last, hints: hintsFor(this.last, this.budgets(), { ...this.hintContext, items: this.lastItems }) };
   }
 
   /** A RenderScheduler whose skipped ticks the js section reports; null detaches. */
@@ -363,7 +363,7 @@ export class DrawCallLedger {
         measured: this.overdraw !== null,
       },
     });
-    this.last.hints = hintsFor(this.last, this.budgets(), this.hintContext);
+    this.last.hints = hintsFor(this.last, this.budgets(), { ...this.hintContext, items: this.lastItems });
     this.current = null;
   }
 

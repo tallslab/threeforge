@@ -63,6 +63,14 @@ export interface WorldOptions {
    * instances follow the originals every frame; `keep` leaves every Sprite its own draw.
    */
   sprites?: 'batch' | 'keep';
+  /**
+   * `batch` (default): transparent statics batch/bake like any other group. Three sorts a `BatchedMesh`
+   * back-to-front by its own bounding-sphere centre, not per instance, so a transparent batch composites in
+   * creation order relative to other transparent submissions instead of true per-object depth (the
+   * `transparent-batch-order` hint names this). `keep` leaves transparent statics as individual meshes, annotated
+   * `transparent-kept`, so their draw order against other transparent objects is exact.
+   */
+  transparent?: 'batch' | 'keep';
   /** Sprites a material needs before its group is batched (default 4). */
   spriteThreshold?: number;
   /**
@@ -214,6 +222,7 @@ export class World {
   private readonly bakeOptions: BakeOptions | null;
   private readonly spriteMode: 'batch' | 'keep';
   private readonly spriteThreshold: number;
+  private readonly transparentMode: 'batch' | 'keep';
   private readonly freezeStatics: boolean;
   private frozenList: Array<{ object: Object3D; matrixAutoUpdate: boolean }> = [];
   private dirtyListeners = new Set<(event: DirtyEvent) => void>();
@@ -242,6 +251,7 @@ export class World {
     this.bakeOptions = options.bake === true ? {} : options.bake ? options.bake : null;
     this.spriteMode = options.sprites ?? 'batch';
     this.spriteThreshold = options.spriteThreshold ?? 4;
+    this.transparentMode = options.transparent ?? 'batch';
     this.freezeStatics = options.freeze ?? true;
   }
 
@@ -348,7 +358,8 @@ export class World {
       }
     }
     const noBake = new Set<Mesh>([...syncRule.entries()].filter(([, rule]) => rule === null).map(([mesh]) => mesh));
-    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem, chunkSize: this.chunkSizeOption, nestedPasses, mainCamera, ...(this.lod ? { lodDistances: this.lod.distances } : {}), ...(this.bakeOptions ? { bake: this.bakeOptions, noBake } : {}) });
+    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem, chunkSize: this.chunkSizeOption, nestedPasses, mainCamera, transparent: this.transparentMode, ...(this.lod ? { lodDistances: this.lod.distances } : {}), ...(this.bakeOptions ? { bake: this.bakeOptions, noBake } : {}) });
+    const transparentKeptSet = new Set<Mesh>(result.transparentKept);
     this.batches = result.batches;
     this.instanced = result.instanced;
     this.baked = result.baked;
@@ -411,12 +422,14 @@ export class World {
     const skipped: CompileReport['skipped'] = [...spriteSkips];
     for (const c of classifications) {
       if (result.slots.has(c.object)) continue;
-      let rule = c.kind === 'static' ? 'singleton' : c.rule;
+      const transparentKept = c.kind === 'static' && transparentKeptSet.has(c.object);
+      let rule = c.kind === 'static' ? (transparentKept ? 'transparent-kept' : 'singleton') : c.rule;
       if (c.kind === 'dynamic') rule = syncRule.get(c.object) ?? rule;
       skipped.push({ name: displayName(c.object, this.scene), rule });
       if (c.kind === 'excluded') this.ledger?.annotate(c.object, `excluded:${c.rule}`);
-      // A static with nothing to share a draw with: the ledger should say why, even under policy 'auto'.
-      if (c.kind === 'static') this.ledger?.annotate(c.object, 'unique-material');
+      // A static with nothing to share a draw with: the ledger should say why, even under policy 'auto'. A
+      // transparent static left unbatched by `transparent: 'keep'` gets its own reason, not `unique-material`.
+      if (c.kind === 'static') this.ledger?.annotate(c.object, transparentKept ? 'excluded:transparent-kept' : 'unique-material');
       // Dynamic by rule (under a bone, animated) rather than by tag: still a dynamic draw, not an untagged one.
       if (c.kind === 'dynamic') this.ledger?.annotate(c.object, 'dynamic');
       this.canonicalise(c.object);

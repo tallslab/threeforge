@@ -137,4 +137,74 @@ describe('hintsFor', () => {
     expect(hintsFor(f, budgetsFor('desktop')).some((h) => h.code === 'skinned-crowd')).toBe(false);
     expect(budgetsFor('phone-low').bones).toBe(2_000);
   });
+
+  describe('transparent-batch-order', () => {
+    it('fires when two threeforge transparent batches share the main pass (each is an "other" for the other)', () => {
+      const f = emptyFrame(env);
+      const items = [
+        { name: 'forge:batch:aa11:0', pass: 'main', reason: 'batched' as const, transparent: true },
+        { name: 'forge:batch:bb22:0', pass: 'main', reason: 'batched' as const, transparent: true },
+      ];
+      const hints = hintsFor(f, budgetsFor('desktop'), { items });
+      expect(hints.find((h) => h.code === 'transparent-batch-order')).toMatchObject({ category: 'overdraw', severity: 'info', objects: ['forge:batch:aa11:0', 'forge:batch:bb22:0'] });
+    });
+
+    it('fires when a threeforge transparent batch shares the main pass with an unbatched transparent mesh', () => {
+      const f = emptyFrame(env);
+      const items = [
+        { name: 'forge:batch:aa11:0', pass: 'main', reason: 'batched' as const, transparent: true },
+        { name: 'glass-a', pass: 'main', reason: 'transparent' as const, transparent: true },
+      ];
+      const hints = hintsFor(f, budgetsFor('desktop'), { items });
+      expect(hints.find((h) => h.code === 'transparent-batch-order')).toMatchObject({ category: 'overdraw', severity: 'info' });
+    });
+
+    it('does not fire when the transparent batch is the only transparent submission in the main pass', () => {
+      const f = emptyFrame(env);
+      const items = [{ name: 'forge:batch:aa11:0', pass: 'main', reason: 'batched' as const, transparent: true }];
+      expect(hintsFor(f, budgetsFor('desktop'), { items }).some((h) => h.code === 'transparent-batch-order')).toBe(false);
+    });
+
+    it('does not fire when nothing else in the main pass is transparent', () => {
+      const f = emptyFrame(env);
+      const items = [
+        { name: 'forge:batch:aa11:0', pass: 'main', reason: 'batched' as const, transparent: true },
+        { name: 'crate', pass: 'main', reason: 'unique-material' as const, transparent: false },
+      ];
+      expect(hintsFor(f, budgetsFor('desktop'), { items }).some((h) => h.code === 'transparent-batch-order')).toBe(false);
+    });
+
+    it('ignores a transparent submission outside the main pass (e.g. a shadow pass)', () => {
+      const f = emptyFrame(env);
+      const items = [
+        { name: 'forge:batch:aa11:0', pass: 'main', reason: 'batched' as const, transparent: true },
+        { name: 'shadow-thing', pass: 'shadow:Sun', reason: 'batched' as const, transparent: true },
+      ];
+      expect(hintsFor(f, budgetsFor('desktop'), { items }).some((h) => h.code === 'transparent-batch-order')).toBe(false);
+    });
+
+    it('does not fire without a threeforge transparent batch, even with several transparent meshes', () => {
+      const f = emptyFrame(env);
+      const items = [
+        { name: 'glass-a', pass: 'main', reason: 'transparent' as const, transparent: true },
+        { name: 'glass-b', pass: 'main', reason: 'transparent' as const, transparent: true },
+      ];
+      expect(hintsFor(f, budgetsFor('desktop'), { items }).some((h) => h.code === 'transparent-batch-order')).toBe(false);
+    });
+
+    it('does not fire for an opaque threeforge batch even alongside other transparent submissions', () => {
+      const f = emptyFrame(env);
+      const items = [
+        { name: 'forge:batch:aa11:0', pass: 'main', reason: 'batched' as const, transparent: false },
+        { name: 'glass-a', pass: 'main', reason: 'transparent' as const, transparent: true },
+      ];
+      expect(hintsFor(f, budgetsFor('desktop'), { items }).some((h) => h.code === 'transparent-batch-order')).toBe(false);
+    });
+
+    it('does not fire without items in the context', () => {
+      const f = emptyFrame(env);
+      expect(hintsFor(f, budgetsFor('desktop'), {}).some((h) => h.code === 'transparent-batch-order')).toBe(false);
+      expect(hintsFor(f, budgetsFor('desktop')).some((h) => h.code === 'transparent-batch-order')).toBe(false);
+    });
+  });
 });

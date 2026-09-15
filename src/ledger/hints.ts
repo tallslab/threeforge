@@ -1,6 +1,15 @@
 import type { Budgets } from './budgets.js';
+import type { Reason } from './reasons.js';
 import type { FrameSnapshot, Hint } from './snapshot.js';
 import { capMessage, capName } from './text.js';
+
+/** The fields a hint rule can read off a draw-call item (a subset of `SubmissionRecord`). */
+export interface HintItem {
+  name: string;
+  pass: string;
+  reason: Reason;
+  transparent: boolean;
+}
 
 /** Facts the hint rules need that are not in the snapshot itself (gathered by the ledger's periodic rescan). */
 export interface HintContext {
@@ -10,6 +19,8 @@ export interface HintContext {
   pointShadowLights?: string[];
   /** Meshes whose material uses transmission. */
   transmissive?: string[];
+  /** This frame's draw-call items, for rules that need per-submission detail (main-pass transparency ordering). */
+  items?: HintItem[];
 }
 
 const mb = (n: number): string => `${(n / (1024 * 1024)).toFixed(0)} MB`;
@@ -65,5 +76,20 @@ export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): H
   if (f.js.objects > b.objects) push('js', 'warn', 'js-objects', `${f.js.objects} objects walked by three every frame (matrices and culling), budget ${b.objects}: batch, detach originals, flatten empty groups`);
   if (f.js.hiddenOriginals >= 1000) push('js', 'info', 'detach-originals', `${f.js.hiddenOriginals} hidden originals are still walked every frame: construct World with originals: 'detach'`);
   if (ctx.staticAutoUpdated?.length) push('js', 'info', 'static-auto-update', `${ctx.staticAutoUpdated.length} static-tagged objects still auto-update their matrices every frame`, ctx.staticAutoUpdated.slice(0, 5));
+  const items = ctx.items ?? [];
+  const mainTransparent = items.filter((i) => i.pass === 'main' && i.transparent);
+  const forgeBatches = mainTransparent.filter((i) => i.reason === 'batched' && i.name.startsWith('forge:batch:'));
+  // A batch "shares the pass with other transparent submissions" whenever the main pass has more than one
+  // transparent item and at least one of them is a threeforge batch (two threeforge batches alone still qualify:
+  // each is the other's "other transparent submission").
+  if (forgeBatches.length > 0 && mainTransparent.length > 1) {
+    const names = forgeBatches.map((i) => i.name);
+    const n = names.length;
+    const message =
+      n === 1
+        ? `1 threeforge transparent batch shares the main pass with other transparent draws: three sorts a BatchedMesh by its own centre, not per instance, so draw order across them is approximate`
+        : `${n} threeforge transparent batches share the main pass with other transparent draws: three sorts each BatchedMesh by its own centre, not per instance, so draw order across them is approximate`;
+    push('overdraw', 'info', 'transparent-batch-order', `${message} — use transparent: 'keep' if exact per-object order matters here`, names);
+  }
   return hints;
 }

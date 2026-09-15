@@ -96,7 +96,11 @@ describe('explain', () => {
     f.memory.unreferenced = { geometries: 1e9, textures: 1e9 };
     f.lighting.shadowTexels = 1e9;
     f.memory.textures.bytes = 1e12;
-    const codes = hintsFor(f, budgetsFor('phone-low'), { staticAutoUpdated: ['a'], pointShadowLights: ['l'], transmissive: ['g'] }).map((h) => h.code);
+    const items = [
+      { name: 'forge:batch:aa11:0', pass: 'main', reason: 'batched' as const, transparent: true },
+      { name: 'forge:batch:bb22:0', pass: 'main', reason: 'batched' as const, transparent: true },
+    ];
+    const codes = hintsFor(f, budgetsFor('phone-low'), { staticAutoUpdated: ['a'], pointShadowLights: ['l'], transmissive: ['g'], items }).map((h) => h.code);
     for (const code of codes) expect(explain(code), code).not.toBeNull();
     expect(explain('nope')).toBeNull();
     expect(Object.keys(REMEDIES).sort()).toEqual([...new Set(codes)].sort());

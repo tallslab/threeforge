@@ -205,6 +205,43 @@ describe('World.compile', () => {
     const item = ledger.frame({ items: true }).items?.find((i) => i.name === 'mirrored');
     expect(item?.reason).toBe('excluded:mirrored');
   });
+
+  it("transparent: 'keep' leaves transparent statics unbatched and reports/annotates them transparent-kept", () => {
+    const { scene, camera } = sceneWithCamera();
+    const glassA = tag.static(new Mesh(box, solid(5, { transparent: true, opacity: 0.5 })));
+    const glassB = tag.static(new Mesh(box, solid(6, { transparent: true, opacity: 0.5 })));
+    glassA.name = 'glass-a';
+    glassB.name = 'glass-b';
+    scene.add(glassA, glassB, tag.static(new Mesh(box, solid(1))), tag.static(new Mesh(box, solid(2))));
+    const renderer = new FakeRenderer();
+    const ledger = new DrawCallLedger();
+    ledger.attach(renderer as never);
+    const report = new World(scene, { ledger, transparent: 'keep' }).compile();
+    renderer.render(scene, camera);
+
+    // Only the opaque group batches; the two transparent statics stay individual meshes.
+    const batches = batchesIn(scene);
+    expect(batches).toHaveLength(1);
+    expect((batches[0]!.material as MeshStandardMaterial).transparent).toBe(false);
+    expect(report.skipped.filter((s) => s.rule === 'transparent-kept').map((s) => s.name).sort()).toEqual(['glass-a', 'glass-b']);
+
+    const items = ledger.frame({ items: true }).items ?? [];
+    expect(items.find((i) => i.name === 'glass-a')?.reason).toBe('excluded:transparent-kept');
+    expect(items.find((i) => i.name === 'glass-b')?.reason).toBe('excluded:transparent-kept');
+  });
+
+  it("defaults transparent to 'batch': transparent statics still form a sorted batch", () => {
+    const scene = new Scene();
+    scene.add(
+      tag.static(new Mesh(box, solid(5, { transparent: true, opacity: 0.5 }))),
+      tag.static(new Mesh(box, solid(6, { transparent: true, opacity: 0.5 }))),
+    );
+    new World(scene).compile();
+    const batches = batchesIn(scene);
+    expect(batches).toHaveLength(1);
+    expect((batches[0]!.material as MeshStandardMaterial).transparent).toBe(true);
+    expect(batches[0]!.sortObjects).toBe(true);
+  });
 });
 
 describe('World.decompile', () => {
