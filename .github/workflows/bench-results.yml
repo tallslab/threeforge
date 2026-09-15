@@ -1,65 +1,213 @@
 name: bench-results
-# Ingests a device bench result posted as an issue by the bench page: validate the JSON fence, store it under
-# bench/devices/<id>.json, regenerate docs/devices.md and close the issue. The issue body reaches node only through
-# an environment variable; the shell never expands it.
+# Trust model: the bench page lets anyone with a GitHub account open an issue, and any of those fields (title,
+# body, labels, the submitting user) are attacker-controlled input to this workflow. Ingesting a result — writing
+# into bench/devices/*.json and committing to main — is a privileged action, so it happens only after a repo
+# collaborator with `write` or `admin` permission applies the `bench-accepted` label (checked live against the
+# GitHub API for the user who applied it, not merely "a label with this name exists"). Editing an already-accepted
+# issue withdraws that acceptance, so a maintainer never reviews one body and has another get committed later.
+#
+# No job here trusts issue text in a shell command: the issue body reaches `bench-ingest.mjs` only via an `env`
+# var, and every other `${{ }}` expression used inside a `run:` block below is likewise passed through `env` and
+# referenced as a shell variable ($VAR), never interpolated directly into the script text. Neither the ingest
+# script's exit status nor its message is written through `$GITHUB_OUTPUT`: status is read from the built-in
+# `steps.<id>.outcome` (set by `continue-on-error`, not by us), and the message — which can contain attacker text
+# echoed back from validation errors — stays in a file under `$RUNNER_TEMP` that later steps `cat` directly.
 on:
   issues:
-    types: [opened, edited]
-permissions:
-  contents: write
-  issues: write
-concurrency:
-  group: bench-results
+    types: [labeled, edited]
+permissions: {}
 jobs:
-  ingest:
-    if: startsWith(github.event.issue.title, 'bench:') || contains(join(github.event.issue.labels.*.name, ','), 'bench-result')
+  # An edit to an issue that currently carries `bench-accepted` means the content a maintainer approved may no
+  # longer be what's there. Pull the label and say why; a maintainer has to look again and re-apply it. Removing a
+  # label emits `unlabeled`, which this workflow does not subscribe to, and commenting emits no issue event at
+  # all — neither step here can retrigger this workflow, so there's no loop.
+  revoke:
+    name: Revoke acceptance on edit
+    if: github.event.action == 'edited' && contains(github.event.issue.labels.*.name, 'bench-accepted')
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
     steps:
+      - name: Remove bench-accepted and explain why
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -e
+          gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --remove-label bench-accepted
+          gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body \
+            "Editing this issue withdrew its \`bench-accepted\` acceptance. A maintainer needs to review the new content and re-apply the \`bench-accepted\` label before it is ingested."
+
+  # Runs only for the specific label event that grants acceptance, on an issue that's still open.
+  ingest:
+    name: Ingest an accepted result
+    if: github.event.action == 'labeled' && github.event.label.name == 'bench-accepted' && github.event.issue.state == 'open'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      issues: write
+      actions: write
+    # One concurrency slot per issue: two labelings of the *same* issue never race each other, but different
+    # issues' results still ingest in parallel. `cancel-in-progress: false` so a run already partway through a
+    # commit is never cancelled mid-push.
+    concurrency:
+      group: bench-results-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    steps:
+      # Applying a label is not itself proof of maintainer trust — anyone can apply a label they can see if the
+      # workflow doesn't check who. Ask GitHub who applied it and what access they actually have on this repo.
+      - name: Check the labeler's permission
+        id: perm
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SENDER: ${{ github.event.sender.login }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set +e
+          PERMISSION=$(gh api "repos/$REPO/collaborators/$SENDER/permission" --jq .permission 2>&1)
+          API_STATUS=$?
+          set -e
+          if [ "$API_STATUS" -ne 0 ]; then
+            echo "could not read $SENDER's permission, treating as unauthorized: $PERMISSION" >&2
+            PERMISSION="none"
+          fi
+          echo "sender=$SENDER permission=$PERMISSION"
+          if [ "$PERMISSION" = "admin" ] || [ "$PERMISSION" = "write" ]; then
+            echo "authorized=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "authorized=false" >> "$GITHUB_OUTPUT"
+            gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --remove-label bench-accepted
+            gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body \
+              "Only a maintainer with write or admin access can accept a bench result. The \`bench-accepted\` label has been removed; ask a maintainer to re-apply it if this result should be ingested."
+          fi
+        # `authorized` is a literal "true"/"false" this script writes itself — never attacker text — so a plain
+        # single-line $GITHUB_OUTPUT write is safe here; nothing below needs a heredoc or a random delimiter.
+
       - uses: actions/checkout@v4
+        if: steps.perm.outputs.authorized == 'true'
         with:
           ref: main
+        # No `pnpm install`: ingesting a result only needs `node` plus the already-checked-out scripts.
+
       - uses: actions/setup-node@v4
+        if: steps.perm.outputs.authorized == 'true'
         with:
           node-version: 22
-      - name: Validate and store the result
+
+      # Validates the issue body against the schema and, on success, writes the result file — but into a scratch
+      # directory under $RUNNER_TEMP, not the checkout, so a validation run never touches tracked files. stdout
+      # (the stored path) and stderr (validation errors, which can quote attacker-supplied key names) are captured
+      # to files instead of $GITHUB_OUTPUT: a fixed heredoc delimiter there previously let a crafted error message
+      # inject extra `key=value` lines (including a forged `status=0`) into the step's outputs.
+      - name: Validate the submitted result
         id: ingest
+        if: steps.perm.outputs.authorized == 'true'
+        continue-on-error: true
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
-          set +e
-          OUT=$(node scripts/bench-ingest.mjs 2>&1)
-          STATUS=$?
-          set -e
-          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
-          {
-            echo 'message<<EOF'
-            echo "$OUT"
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
-      - name: Regenerate the table and commit
-        if: steps.ingest.outputs.status == '0'
+          mkdir -p "$RUNNER_TEMP/ingest-scratch"
+          cd "$RUNNER_TEMP/ingest-scratch"
+          node "$GITHUB_WORKSPACE/scripts/bench-ingest.mjs" \
+            >"$RUNNER_TEMP/ingest-stdout.txt" 2>"$RUNNER_TEMP/ingest-stderr.txt"
+        # `continue-on-error: true` means `steps.ingest.outcome` still reports 'failure' for a routine rejected
+        # submission (so later steps can branch on it), while the job itself doesn't go red for something that
+        # just means "this issue's JSON didn't validate".
+
+      # Copies the already-validated file into the real checkout and commits it. Retries on a losing race against
+      # another accepted result being pushed concurrently (different issue, same target branch): re-fetch, hard
+      # reset to the new tip, redo the copy and regenerate, and try the push again, up to 3 attempts. If nothing
+      # changed (this id is already on main — the same issue accepted twice, or a duplicate webhook delivery), the
+      # loop stops without committing: the ingest script's own `wx` write already guarantees the stored file's
+      # bytes are stable for a given issue body, so re-copying it and finding `git diff --cached` empty is exactly
+      # that "already recorded" case, handled without ever attempting a second commit.
+      - name: Store the result and update the table
+        id: commit
+        if: steps.perm.outputs.authorized == 'true' && steps.ingest.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
-          node scripts/bench-devices.mjs
+          set -e
+          REL_PATH=$(cat "$RUNNER_TEMP/ingest-stdout.txt")
+          FILE_NAME=$(basename "$REL_PATH")
+          if [[ ! "$FILE_NAME" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]{8}\.json$ ]]; then
+            echo "unexpected result file name from ingest: $FILE_NAME" >&2
+            exit 1
+          fi
+          echo "$FILE_NAME" > "$RUNNER_TEMP/result-file-name.txt"
+          SRC="$RUNNER_TEMP/ingest-scratch/bench/devices/$FILE_NAME"
+
           git config user.name "threeforge-bench[bot]"
           git config user.email "threeforge-bench[bot]@users.noreply.github.com"
-          git add bench/devices docs/devices.md
-          git commit -m "bench: device result from #${{ github.event.issue.number }}"
-          git push origin main
-      - name: Close with the file name
-        if: steps.ingest.outputs.status == '0'
+
+          ATTEMPTS=3
+          ATTEMPT=1
+          COMMITTED=0
+          PUSHED=0
+          while [ "$ATTEMPT" -le "$ATTEMPTS" ]; do
+            git fetch origin main
+            git reset --hard origin/main
+            mkdir -p bench/devices
+            cp -f "$SRC" "bench/devices/$FILE_NAME"
+            node scripts/bench-devices.mjs
+            git add bench/devices docs/devices.md
+            if git diff --cached --quiet; then
+              echo "nothing to commit; $FILE_NAME is already recorded on main"
+              break
+            fi
+            git commit -m "bench: device result from #${ISSUE_NUMBER}"
+            COMMITTED=1
+            if git push origin HEAD:main; then
+              PUSHED=1
+              break
+            fi
+            echo "push rejected, retrying ($ATTEMPT/$ATTEMPTS)"
+            COMMITTED=0
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          if [ "$COMMITTED" -eq 1 ] && [ "$PUSHED" -ne 1 ]; then
+            echo "push kept failing after $ATTEMPTS attempts" >&2
+            exit 1
+          fi
+
+          if [ "$PUSHED" -eq 1 ]; then
+            # A GITHUB_TOKEN push never fires `on: push` in another workflow, so `pages.yml` (which deploys the
+            # public devices table) would otherwise never run for this change; ask for it explicitly.
+            gh workflow run pages.yml --ref main
+          fi
+
+      # Always reports back, success or failure, so a contributor (or maintainer) never has to go read Actions
+      # logs to find out what happened. Every value interpolated into a `gh` command below is a shell variable
+      # sourced from a file or an `env:`-passed built-in step field, never a raw `${{ }}` template expansion of
+      # attacker-controlled text, and the comment body is always built with `printf`/`--body-file`, never by
+      # dropping the message straight into a `run:` string.
+      - name: Report the outcome
+        if: always() && steps.perm.outputs.authorized == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          MESSAGE: ${{ steps.ingest.outputs.message }}
-          NUMBER: ${{ github.event.issue.number }}
           REPO: ${{ github.repository }}
-        run: gh issue close "$NUMBER" --repo "$REPO" --comment "Recorded as \`$MESSAGE\` and added to docs/devices.md. Thank you."
-      - name: Report a rejected result
-        if: steps.ingest.outputs.status != '0'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MESSAGE: ${{ steps.ingest.outputs.message }}
-          NUMBER: ${{ github.event.issue.number }}
-          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          INGEST_OUTCOME: ${{ steps.ingest.outcome }}
+          COMMIT_OUTCOME: ${{ steps.commit.outcome }}
         run: |
-          BODY=$(printf 'The result could not be recorded:\n\n```\n%s\n```\nEdit the issue to fix the JSON block and it will be checked again.' "$MESSAGE")
-          gh issue comment "$NUMBER" --repo "$REPO" --body "$BODY"
+          set -e
+          if [ "$INGEST_OUTCOME" != "success" ]; then
+            MESSAGE=$(cat "$RUNNER_TEMP/ingest-stderr.txt" 2>/dev/null || echo "no error output captured")
+            BODY=$(printf 'The result could not be recorded:\n\n```\n%s\n```\nEdit the issue to fix the JSON block; a maintainer can re-apply `bench-accepted` once it looks right.' "$MESSAGE")
+            gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$BODY"
+            exit 0
+          fi
+          if [ "$COMMIT_OUTCOME" != "success" ]; then
+            gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body \
+              "Validation passed but the result could not be committed to \`main\` (the push kept failing). A maintainer should check the \`bench-results\` workflow run and re-apply \`bench-accepted\` to retry."
+            exit 0
+          fi
+          FILE_NAME=$(cat "$RUNNER_TEMP/result-file-name.txt" 2>/dev/null || echo "the result")
+          BODY=$(printf 'Recorded as `%s` and added to docs/devices.md. Thank you.' "$FILE_NAME")
+          gh issue close "$ISSUE_NUMBER" --repo "$REPO" --comment "$BODY"
