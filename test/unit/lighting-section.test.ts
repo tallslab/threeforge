@@ -208,15 +208,21 @@ describe('lighting section: overdraw count renders', () => {
     renderer.render(scene, camera);
     const plain = ledger.frame();
     let pending: Promise<unknown> | null = null;
+    let started = false;
     crate.onBeforeRender = () => {
-      pending ??= ledger.measureOverdraw(scene, camera);
+      // Measure once: the count render draws the crate and calls this hook again.
+      if (started) return;
+      started = true;
+      pending = ledger.measureOverdraw(scene, camera);
     };
     renderer.render(scene, camera);
     const hooked = ledger.frame();
+    crate.onBeforeRender = () => {};
     expect(pending).not.toBeNull();
     await pending;
     expect(hooked.passes).toEqual(plain.passes);
     expect(hooked.lighting).toEqual(plain.lighting);
+    expect(hooked.totals).toEqual(plain.totals);
   });
 });
 

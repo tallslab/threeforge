@@ -548,3 +548,90 @@ describe('DrawCallLedger.measureOverdraw', () => {
     expect(disposed).toBe(2);
   });
 });
+
+describe('measureOverdraw re-entrancy', () => {
+  const geometry = new BoxGeometry(1, 1, 1);
+
+  /** The unhandled rejections Node reports while `run` runs, and one macrotask after it. */
+  async function unhandledRejections(run: () => Promise<void>): Promise<unknown[]> {
+    const reasons: unknown[] = [];
+    const listener = (reason: unknown): void => void reasons.push(reason);
+    process.on('unhandledRejection', listener);
+    try {
+      await run();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      process.off('unhandledRejection', listener);
+    }
+    return reasons;
+  }
+
+  it('a call from a hook the count render runs returns the measurement in progress and renders nothing; a call once the counts rendered measures again', async () => {
+    const renderer = new FakeRenderer();
+    const { scene, camera } = sceneWithCamera();
+    const mesh = new Mesh(geometry, new MeshBasicMaterial());
+    scene.add(mesh);
+    scene.updateMatrixWorld();
+    let renders = 0;
+    const render = renderer.render.bind(renderer);
+    renderer.render = (s, c) => {
+      renders++;
+      render(s, c);
+    };
+    const nested: Array<Promise<unknown>> = [];
+    // Counted before the call, so a measureOverdraw without the guard recurses at most 3 deep and fails these assertions
+    // instead of overflowing the stack.
+    let calls = 0;
+    mesh.onBeforeRender = () => {
+      if (calls++ < 3) nested.push(measureOverdraw(renderer as never, scene, camera));
+    };
+    const rejections = await unhandledRejections(async () => {
+      const outer = measureOverdraw(renderer as never, scene, camera);
+      expect(renders, 'the two count renders only').toBe(2);
+      expect(nested).toHaveLength(1);
+      expect(nested[0]).toBe(outer);
+      // The counts have rendered and the state is back: a call while the read-backs are pending is a measurement of its own.
+      mesh.onBeforeRender = () => {};
+      const after = measureOverdraw(renderer as never, scene, camera);
+      expect(after).not.toBe(outer);
+      expect(renders).toBe(4);
+      await Promise.all([outer, after]);
+    });
+    expect(rejections).toEqual([]);
+  });
+
+  it('a ledger measurement from a hook the count render runs again joins the one in progress: the ledger stays paused through the counts and the frame files only its own draws', async () => {
+    const renderer = new FakeRenderer();
+    const ledger = new DrawCallLedger();
+    ledger.attach(renderer as never);
+    const { scene, camera } = sceneWithCamera();
+    const mesh = new Mesh(geometry, new MeshBasicMaterial());
+    scene.add(mesh, new Mesh(geometry, new MeshBasicMaterial({ transparent: true })));
+    scene.updateMatrixWorld();
+    renderer.render(scene, camera);
+    const plain = ledger.frame();
+    const measurements: Array<Promise<unknown>> = [];
+    // The app frame's draw measures; the opaque count render draws this mesh again, and that call joins the measurement.
+    // Counted before the call: without the guard the recursion stops 3 deep instead of overflowing the stack.
+    let calls = 0;
+    mesh.onBeforeRender = () => {
+      if (calls++ < 3) measurements.push(ledger.measureOverdraw(scene, camera));
+    };
+    let hooked = plain;
+    const rejections = await unhandledRejections(async () => {
+      renderer.render(scene, camera);
+      hooked = ledger.frame();
+      mesh.onBeforeRender = () => {};
+      const results = await Promise.all(measurements);
+      expect(results[1]).toBe(results[0]);
+    });
+    expect(rejections).toEqual([]);
+    expect(measurements).toHaveLength(2);
+    expect(hooked.passes).toEqual(plain.passes);
+    expect(hooked.totals).toEqual(plain.totals);
+    expect(ledger as unknown as { paused: boolean; depth: number }).toMatchObject({ paused: false, depth: 0 });
+    renderer.render(scene, camera);
+    expect(ledger.frame().totals).toEqual(plain.totals);
+    expect(ledger.frame().overdraw.measured).toBe(true);
+  });
+});

@@ -307,7 +307,9 @@ export class DrawCallLedger {
     if (!this.renderer) throw new Error('attach a renderer first');
     // measureOverdraw() renders both counts and restores the renderer before it first awaits, so attribution pauses for that
     // synchronous part only. A render still open around the call (a render hook measuring) then exits the ledger normally,
-    // and a render made while the read-backs are pending (the app's next frame) is a frame of its own.
+    // and a render made while the read-backs are pending (the app's next frame) is a frame of its own. A call from a hook
+    // the count render runs again finds the ledger already paused and gets the measurement in progress, drawing nothing:
+    // it restores `wasPaused` (still paused) and adds a zero draw-call delta.
     let pending: Promise<OverdrawResult>;
     const wasPaused = this.paused;
     const open = this.current;

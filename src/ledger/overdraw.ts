@@ -60,6 +60,8 @@ interface CountState {
   /** Swapped in for each draw of a sprite material, whose quad SpriteNodeMaterial.setupPositionView places. */
   sprite: SpriteNodeMaterial;
   renderObject: RenderObjectFunction;
+  /** The measurement whose count renders are running on this renderer right now, else null: a nested call returns it. */
+  measuring: Promise<OverdrawResult> | null;
 }
 
 /** The fields of a drawn material the count reads; a field a material does not have counts as unset. */
@@ -102,18 +104,48 @@ const _black = new Color(0, 0, 0);
  *   World's occlusion proxies).
  * - **State:** both counts render and every scene and renderer setting is restored synchronously, before the returned
  *   promise first awaits (the read-backs). An app render during the wait sees the app's own state.
+ * - **Re-entrancy:** a call made while this renderer's count renders are running (an `onBeforeRender` or another hook
+ *   the count render calls again, as a measuring hook is) returns the measurement in progress and renders nothing. A call
+ *   made once the counts have rendered, while the read-backs are pending, is a measurement of its own.
  * - **Lifetime:** the target and the count materials are kept per renderer; `disposeOverdraw(renderer)` releases them.
  *
  * Costs two low-resolution renders: call it on demand, not every frame.
  */
-export async function measureOverdraw(renderer: OverdrawRenderer, scene: Scene, camera: Camera, options: OverdrawOptions = {}): Promise<OverdrawResult> {
+export function measureOverdraw(renderer: OverdrawRenderer, scene: Scene, camera: Camera, options: OverdrawOptions = {}): Promise<OverdrawResult> {
+  let state: CountState;
+  try {
+    state = stateOf(renderer);
+  } catch (error) {
+    return Promise.reject(error);
+  }
+  // A hook the count render runs may measure again: it joins this measurement instead of rendering the counts inside the
+  // counts (which recursed until the stack overflowed). The promise exists before the renders start, so it can.
+  if (state.measuring !== null) return state.measuring;
+  let resolve!: (result: OverdrawResult | PromiseLike<OverdrawResult>) => void;
+  let reject!: (error: unknown) => void;
+  const measurement = new Promise<OverdrawResult>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  state.measuring = measurement;
+  try {
+    resolve(countOverdraw(renderer, scene, camera, options, state));
+  } catch (error) {
+    reject(error);
+  } finally {
+    state.measuring = null;
+  }
+  return measurement;
+}
+
+/** The two count renders, run and restored synchronously; the returned promise settles with the read-backs. */
+function countOverdraw(renderer: OverdrawRenderer, scene: Scene, camera: Camera, options: OverdrawOptions, state: CountState): Promise<OverdrawResult> {
   const scale = options.scale ?? 1 / 8;
   renderer.getDrawingBufferSize(_size);
   // Width in multiples of 32 texels: 8 bytes per half-float texel makes each row a multiple of 256 bytes, so the
   // WebGPU read-back has no row padding (three returns the padded buffer as-is).
   const width = Math.max(32, Math.ceil((_size.x * scale) / 32) * 32);
   const height = Math.max(1, Math.round((width * _size.y) / Math.max(1, _size.x)));
-  const state = stateOf(renderer);
   if (!state.target || state.target.width !== width || state.target.height !== height) {
     state.target?.dispose();
     state.target = new RenderTarget(width, height, { type: HalfFloatType, depthBuffer: false, stencilBuffer: false });
@@ -177,8 +209,7 @@ export async function measureOverdraw(renderer: OverdrawRenderer, scene: Scene, 
       count.alphaMap = null;
     }
   }
-  const [opaque, transparent] = await Promise.all(reads);
-  return { opaque: averageRed(opaque!, width, height), transparent: averageRed(transparent!, width, height) };
+  return Promise.all(reads).then(([opaque, transparent]) => ({ opaque: averageRed(opaque!, width, height), transparent: averageRed(transparent!, width, height) }));
 }
 
 /** Releases the count target and materials `measureOverdraw` keeps for this renderer. `DrawCallLedger.detach()` calls it. */
@@ -205,7 +236,7 @@ function stateOf(renderer: OverdrawRenderer): CountState {
   if (!state) {
     const material = countMaterial(new MeshBasicNodeMaterial(), 'forge:overdraw-count');
     const sprite = countMaterial(new SpriteNodeMaterial(), 'forge:overdraw-count-sprite');
-    state = { target: null, material, sprite, renderObject: countObject(renderer, material, sprite) };
+    state = { target: null, material, sprite, renderObject: countObject(renderer, material, sprite), measuring: null };
     states.set(renderer, state);
   }
   return state;
