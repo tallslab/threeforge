@@ -848,3 +848,33 @@ describe('material keys for BigInt values', () => {
     expect(registry.register(Object.assign(new MeshStandardMaterial(), { serial: 1n }))).toBe(a);
   });
 });
+
+describe('computeMaterialKeys: a shared plain sub-object is walked once per key computation', () => {
+  it('keys a sub-object reached through several paths once, with the key an every-path walk produced', () => {
+    const shared = { a: 1, b: 'two', c: [3, 4], d: { e: 5 } };
+    const paths = [0, 1, 2, 3, 4, 5, 6, 7];
+    const material = new MeshStandardMaterial();
+    // A user-added own property holding plain data: keyed by value, so `stableJson` walks it (materialKey.ts).
+    (material as unknown as Record<string, unknown>).wide = Object.fromEntries(paths.map((i) => [`p${i}`, shared]));
+    const keys = vi.spyOn(Object, 'keys');
+    const computed = materialKeyModule.computeMaterialKeys(material);
+    const walks = () => keys.mock.calls.filter(([value]) => value === shared).length;
+    expect(walks(), 'the shared object is enumerated once, not once per path').toBe(1);
+    // A second computation reads the object again: the memo lives for one call, so a mutated sub-object is seen.
+    materialKeyModule.computeMaterialKeys(material);
+    expect(walks(), 'the memo does not survive the call').toBe(2);
+    keys.mockRestore();
+    const one = '{"a":1,"b":"two","c":[3,4],"d":{"e":5}}';
+    expect(computed.programKey).toContain(`wide={${paths.map((i) => `"p${i}":${one}`).join(',')}}`);
+  });
+
+  it('never caches a sub-object that keyed a cycle: `^d` is the ancestor’s depth on the path it was reached by', () => {
+    const cyclic: Record<string, unknown> = { n: 1 };
+    cyclic.self = cyclic;
+    const material = new MeshStandardMaterial();
+    (material as unknown as Record<string, unknown>).twice = { deep: { inner: cyclic }, shallow: cyclic };
+    const key = materialKeyModule.computeMaterialKeys(material).programKey;
+    // `twice` is depth 0, `deep` 1, `inner`/`shallow` the cyclic object: its back-reference names its own depth.
+    expect(key).toContain('twice={"deep":{"inner":{"n":1,"self":^2}},"shallow":{"n":1,"self":^1}}');
+  });
+});

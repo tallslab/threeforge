@@ -83,7 +83,6 @@ export class MaterialRegistry {
   private readonly keyCache = new WeakMap<Material, CachedKeys>();
   private readonly records = new Map<Material, { outcome: RegisterOutcome; canonical: Material | null }>();
   private readonly canonicalByFullKey = new Map<string, Material>();
-  private readonly variantsByKey = new Map<string, string>();
   private readonly programs = new Map<string, ProgramEntry>();
   private registered = 0;
   private merged = 0;
@@ -121,11 +120,7 @@ export class MaterialRegistry {
       return canonical;
     }
 
-    let outcome: RegisterOutcome;
-    if (program.canonicals.size === 0) outcome = this.programs.size === 1 ? 'new' : 'shader-variant';
-    else if (program.variants.has(keys.variantKey)) outcome = 'color-variant';
-    else outcome = 'uniform-variant';
-
+    const outcome = this.outcomeFor(program, keys.variantKey);
     program.variants.add(keys.variantKey);
     program.canonicals.add(material);
     this.canonicalByFullKey.set(fullKey, material);
@@ -259,9 +254,7 @@ export class MaterialRegistry {
       outcome = record.outcome;
     } else {
       this.merged--; // was merged into another canonical, now (re)becomes one itself
-      if (program.canonicals.size === 0) outcome = this.programs.size === 1 ? 'new' : 'shader-variant';
-      else if (program.variants.has(newKeys.variantKey)) outcome = 'color-variant';
-      else outcome = 'uniform-variant';
+      outcome = this.outcomeFor(program, newKeys.variantKey);
     }
 
     program.variants.add(newKeys.variantKey);
@@ -309,6 +302,18 @@ export class MaterialRegistry {
 
     if (record.canonical !== material) this.merged--;
     this.deindex(material, keys, record.canonical === material);
+  }
+
+  /**
+   * How a material that is becoming a canonical is labelled: the first canonical of the first program is `new`, the
+   * first of any later program a `shader-variant`, and inside a program a repeat of a known `variantKey` is a
+   * `color-variant` while a new one is a `uniform-variant`. Reads `program`'s state as it is, so callers must ask
+   * *before* adding the material to `canonicals`/`variants`. Shared by `register()` and `invalidate()`'s promotion
+   * branch, which has to classify a material promoted from merged exactly as a fresh registration would.
+   */
+  private outcomeFor(program: ProgramEntry, variantKey: string): RegisterOutcome {
+    if (program.canonicals.size === 0) return this.programs.size === 1 ? 'new' : 'shader-variant';
+    return program.variants.has(variantKey) ? 'color-variant' : 'uniform-variant';
   }
 
   /**

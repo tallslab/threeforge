@@ -84,6 +84,9 @@ function identityOf(value: object): number {
   return id;
 }
 
+/** Back-references (`^d`) `stableJson` has written; it compares this around a subtree to know whether it may memoise. */
+let backRefs = 0;
+
 function textureKind(texture: Texture): string {
   const t = texture as Texture & { isCubeTexture?: boolean; isDataArrayTexture?: boolean; isData3DTexture?: boolean; isVideoTexture?: boolean };
   if (t.isCubeTexture) return 'cube';
@@ -101,20 +104,39 @@ function textureKind(texture: Texture): string {
  * written `^d`, a reference to its ancestor at depth d, so a value that contains itself keys by its shape. A shared
  * (non-cyclic) reference is walked each time it is reached, so two values with the same data match however they share
  * it. `#`, `^` and a trailing `n` cannot form a JSON value, so no marker collides with plain data.
+ *
+ * `memo` holds the string of every sub-object already keyed **in this one computation**, so a shared acyclic
+ * sub-object reached through many paths is walked once instead of once per path (its string is the same however it
+ * was reached, and it is emitted at each occurrence all the same, so the key does not change). A subtree that wrote a
+ * `^d` is never memoised: `d` is the ancestor's *absolute* depth on the path the subtree was reached by, so the same
+ * object keys differently at another depth. The memo lasts one `computeMaterialKeys` call, never longer, so a value
+ * mutated between two calls is read again (`invalidate()` re-keys through the same path).
  */
-function stableJson(value: unknown, path: object[] = []): string {
+function stableJson(value: unknown, path: object[], memo: Map<object, string>): string {
   if (typeof value === 'function') return `#${identityOf(value)}`;
   if (typeof value === 'bigint') return `${value}n`;
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   const prototype = Object.getPrototypeOf(value) as unknown;
   if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return `#${identityOf(value)}`;
   const depth = path.indexOf(value);
-  if (depth !== -1) return `^${depth}`;
+  if (depth !== -1) {
+    backRefs++;
+    return `^${depth}`;
+  }
+  const cached = memo.get(value);
+  if (cached !== undefined) return cached;
   path.push(value);
+  const before = backRefs;
   try {
-    if (Array.isArray(value)) return `[${value.map((v) => stableJson(v, path)).join(',')}]`;
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record).sort().map((k) => `${JSON.stringify(k)}:${stableJson(record[k], path)}`).join(',')}}`;
+    let out: string;
+    if (Array.isArray(value)) {
+      out = `[${value.map((v) => stableJson(v, path, memo)).join(',')}]`;
+    } else {
+      const record = value as Record<string, unknown>;
+      out = `{${Object.keys(record).sort().map((k) => `${JSON.stringify(k)}:${stableJson(record[k], path, memo)}`).join(',')}}`;
+    }
+    if (backRefs === before) memo.set(value, out);
+    return out;
   } finally {
     path.pop();
   }
@@ -140,6 +162,8 @@ export function computeMaterialKeys(material: Material): MaterialKeys {
   const variant: string[] = [];
   const maps: string[] = [];
   const flags: string[] = [];
+  /** Sub-object strings already keyed in this call (see `stableJson`); never shared with another call. */
+  const json = new Map<object, string>();
   let colorKey = '';
   let colorHex = '';
 
@@ -266,13 +290,13 @@ export function computeMaterialKeys(material: Material): MaterialKeys {
         variant.push(`${key}=${(value as Plane[]).map((p) => `${num(p.normal.x)},${num(p.normal.y)},${num(p.normal.z)},${num(p.constant)}`).join(';')}`);
       } else {
         // Any other array: plain data by value, functions and class instances in it by identity (`stableJson`).
-        program.push(`${key}=${stableJson(value)}`);
+        program.push(`${key}=${stableJson(value, [], json)}`);
       }
       continue;
     }
     // Plain objects such as `defines` by value; a user-added property holding a class instance (an Object3D, a Map)
     // by identity (`stableJson`).
-    program.push(`${key}=${stableJson(value)}`);
+    program.push(`${key}=${stableJson(value, [], json)}`);
   }
 
   const programKey = program.join('|');
