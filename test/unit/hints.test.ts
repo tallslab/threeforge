@@ -206,5 +206,13 @@ describe('hintsFor', () => {
       expect(hintsFor(f, budgetsFor('desktop'), {}).some((h) => h.code === 'transparent-batch-order')).toBe(false);
       expect(hintsFor(f, budgetsFor('desktop')).some((h) => h.code === 'transparent-batch-order')).toBe(false);
     });
+
+    it('caps the objects list at 5 names even with more threeforge transparent batches sharing the main pass', () => {
+      const f = emptyFrame(env);
+      const items = Array.from({ length: 8 }, (_, i) => ({ name: `forge:batch:aa${i}:0`, pass: 'main', reason: 'batched' as const, transparent: true }));
+      const hint = hintsFor(f, budgetsFor('desktop'), { items }).find((h) => h.code === 'transparent-batch-order');
+      expect(hint?.objects).toHaveLength(5);
+      expect(hint?.objects).toEqual(items.slice(0, 5).map((i) => i.name));
+    });
   });
 });

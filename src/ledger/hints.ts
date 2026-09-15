@@ -89,7 +89,7 @@ export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): H
       n === 1
         ? `1 threeforge transparent batch shares the main pass with other transparent draws: three sorts a BatchedMesh by its own centre, not per instance, so draw order across them is approximate`
         : `${n} threeforge transparent batches share the main pass with other transparent draws: three sorts each BatchedMesh by its own centre, not per instance, so draw order across them is approximate`;
-    push('overdraw', 'info', 'transparent-batch-order', `${message} — use transparent: 'keep' if exact per-object order matters here`, names);
+    push('overdraw', 'info', 'transparent-batch-order', `${message} — use transparent: 'keep' if exact per-object order matters here`, names.slice(0, 5));
   }
   return hints;
 }

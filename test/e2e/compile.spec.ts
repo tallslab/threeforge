@@ -39,7 +39,6 @@ test('world.compile() takes the naive scene from 503 to 28 submissions with iden
 test("transparent: 'keep' leaves transparent statics unbatched: no unattributed draws, more submissions than the default 28", async ({ forge }) => {
   await forge.open('naive', { transparent: 'keep', compile: '1' });
   const after = await forge.page.evaluate(() => window.__forge.frame());
-  console.log(JSON.stringify({ submissions: after.totals.sceneSubmissions, unattributed: after.totals.unattributed, byReason: after.byReason }));
 
   expect(after.totals.unattributed).toBe(0);
   expect(after.totals.sceneSubmissions).toBeGreaterThan(28);
