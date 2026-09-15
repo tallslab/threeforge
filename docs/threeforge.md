@@ -247,6 +247,7 @@ and `custom-hook`.
    `Mesh`); a group of one mesh stays a mesh with the canonical material (`unique-material`). Batches use the
    canonical material itself when every instance is white, else a white clone with per-instance colour.
    Non-indexed geometries get an index on a clone (`ensureIndexed`); indices promote to Uint32 as needed.
+   Instance matrices, instanced masters and baked vertices are written in the scene's space (see scene space below).
 5. Attach BVH culling to every batch (`culling: 'bvh'`), with LOD ranges when `lod` is set.
 6. Install matrix sync for batch-synced dynamics and occlusion proxies when enabled.
 7. Hide the originals: moved to layer 31 with `matrixAutoUpdate = false` (`originals: 'hide'`), or removed from the
@@ -290,14 +291,24 @@ a threeforge transparent batch shares the main pass with another transparent sub
 
 ### Culling, instancing, chunks, LOD, occlusion
 
+- **Scene space** (`SceneSpace`, `src/compiler/space.ts`): batches, instanced meshes, baked meshes, sprite batches and
+  occlusion proxies are children of the scene, so three draws them with `scene.matrixWorld`. Every instance write
+  converts an original's `matrixWorld` to `inverse(scene.matrixWorld) * matrixWorld`: batch matrices and instanced
+  masters at compile, baked vertices (rebakes included), batch-sync matrices, `markDirty` writes, and sprite centres
+  and scales (divided by the scene matrix's column lengths, which three multiplies back in). The inverse is cached and
+  derived again whenever the scene's world matrix differs from the one it came from (its 16 elements are compared on
+  every use), so a scene translated, turned or scaled after compile is honoured by every later write; a scene without a
+  transform copies world matrices unchanged. Culling, LOD distances and sprite sorting already work in the object's
+  frame or in world space and are unaffected; chunk cells (`chunkSize`) stay world-space.
 - **BVH culling** (`attachBvhCulling`): a `bvh.js` tree of instance boxes replaces `BatchedMesh`'s linear
   per-instance test. The hook mirrors three's own `onBeforeRender` (fills `_multiDrawStarts/Counts`, the indirect
   texture) and is prepended with `prependRenderHook`, never overwriting the object's hook; hooks are marked with
   `FORGE_HOOK`. The handle offers `move(id)`, `insert(id)`, `remove(id)`, `detach()`.
 - **Instancing** (`createCulledInstancedMesh`): master matrices and colours are kept aside; every frame the visible
   instances are compacted to the front of `instanceMatrix`/`instanceColor` and `count` is set, so culled instances
-  cost nothing. LOD levels are separate InstancedMeshes chosen by distance. Handle: `setMatrixAt`, `setVisibleAt`,
-  `getVisibleAt`, `detach`.
+  cost nothing. LOD levels are separate InstancedMeshes chosen by distance. Handle: `setMatrixAt` (a master matrix, in
+  the mesh's parent space), `refreshBounds` (every level's box and sphere from the master matrices, drawn or not),
+  `setVisibleAt`, `getVisibleAt`, `detach`.
 - **Chunks** (`chunkSize`): groups are split by cell, which gives batches tight bounds (whole-object frustum
   culling), per-cell shadow casting and a natural unit for streaming.
 - **LOD** (`generateLods(geometry, { ratios, error, lockBorder })`, `prepareLods(root, options)`, `lodsOf`): meshoptimizer
@@ -335,7 +346,9 @@ a threeforge transparent batch shares the main pass with another transparent sub
   | end of the nested render | counts restored | counts restored | `count`, `visibleIds` restored |
 
 - **Occlusion** (`occlusion: true`): a proxy box per batch / instanced group carries `occlusionTest`; its own
-  `onAfterRender` reads `renderer.isOccluded()` and hides the target next frame.
+  `onAfterRender` reads `renderer.isOccluded()` and hides the target next frame. The proxy is a box over the target's
+  bounding box; `markDirty` fits it again (its centre moved, its corners rewritten in place) whenever it recomputes
+  those bounds. Batch-synced movers change neither (their targets skip whole-object frustum culling instead).
 
 ### Runtime API
 
@@ -401,9 +414,12 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
   `DayNight` does for the sun) are never frozen, since nothing would ever move their matrix again. `decompile()`
   restores the flags. The village drops from 310 to 34 recomposed matrices per frame with identical pixels.
 - **`world.markDirty(object)`** moves a frozen static on demand: recomposes every local matrix under `object`,
-  recomputes the world matrices, pushes each batched original in the subtree into its batch (`BatchedMesh`
-  matrix and BVH leaf, `InstancedMesh` through its culling handle, a baked group by rebaking once; sprite
-  batches follow on their own) and returns the number of instances updated. `world.onDirty(listener)` reports
+  recomputes the world matrices, pushes each batched original in the subtree into its batch in the scene's space
+  (`BatchedMesh` matrix and BVH leaf, `InstancedMesh` through its culling handle, a baked group by rebaking once;
+  sprite batches follow on their own) and returns the number of instances updated. It then recomputes the bounds of
+  each touched batch (`computeBoundingBox`, `computeBoundingSphere`) and instanced group (`refreshBounds`, every LOD
+  level) once, so three's whole-object frustum test never culls an instance moved outside its old bounds while it is
+  on screen, and fits their occlusion proxies to the new bounds. `world.onDirty(listener)` reports
   `markDirty`, `setVisible`, `compile` and `decompile` (a `RenderScheduler` subscribes to it).
 - **`RenderScheduler`** (`src/scheduler/RenderScheduler.ts`): `new RenderScheduler({ renderer, scene, camera,
   ledger?, world?, mixers?, watch?, keepAliveMs?, onRender? })`, `start()` drives `renderer.setAnimationLoop`,
@@ -664,7 +680,7 @@ gated.
   gltf&asset=<name>|biome|arena|empty|vat` (the animated-instances twin of `asset`; `vatClip`, `vatTime`) or a
   bench scene with `variant=naive|optimized`, `backend`, `compile=1`,
   `overlay=1&budget=30`, `animate=1`, `dynamics=batch-sync`, `lod=1`, `chunk=40`, `culling=linear`, `threshold=N`,
-  `occlusion=1`, `wall=1`, `shadows=0`, `freeze=1`, `materials=keep`, `nested=per-pass|reuse-main`, `bake=1|buried`, `env=0`,
+  `occlusion=1`, `wall=1`, `shadows=0`, `freeze=1`, `sceneOffset=1` (the whole scene translated, turned and scaled, the camera following), `materials=keep`, `nested=per-pass|reuse-main`, `bake=1|buried`, `env=0`,
   `bloom=1`, `assemble=1`, `fighters`, `blocky`, `vfx=0`, `t`, `density`, `count`, `tier`.
 - `pnpm test` (Vitest, 199 units against a fake renderer that mirrors the backends' draw counting), `pnpm e2e`
   (Playwright, projects `webgl2` and `webgpu`; screenshot baselines without platform suffixes), `pnpm budget` (naive
