@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { BoxGeometry, DirectionalLight, Group, Mesh, MeshStandardMaterial, Object3D, Scene, SkinnedMesh, Sprite, SpriteMaterial } from 'three';
 import { freezableObjects } from '../../src/compiler/freeze.js';
 import { tag } from '../../src/tags.js';
@@ -106,5 +106,27 @@ describe('freezableObjects', () => {
     scene.add(leaf);
     const out = freezableObjects(scene, { hidden: new Set(), synced: new Set(), animated: new Set() });
     expect(names(out)).toEqual(['leaf']);
+  });
+});
+
+describe('freezableObjects probe cost', () => {
+  it('stops probing a container at its first non-static child, with the same result', () => {
+    const scene = new Scene();
+    const mixed = new Group();
+    mixed.name = 'mixed';
+    const inner = new Group();
+    inner.name = 'inner';
+    const leaf = tag.static(mesh('leaf'));
+    inner.add(leaf);
+    // The dynamic child comes first: `mixed` cannot be frozen whatever `inner` holds, so `inner` needs no probe.
+    mixed.add(tag.dynamic(mesh('dynamic')), inner);
+    scene.add(mixed);
+    const of = vi.spyOn(tag, 'of');
+    const out = freezableObjects(scene, { hidden: new Set(), synced: new Set(), animated: new Set() });
+    const reads = (o: Object3D): number => of.mock.calls.filter(([x]) => x === o).length;
+    expect(names(out), 'mixed is not freezable, its all-static subtree is').toEqual(['inner']);
+    expect(reads(inner), 'inner is read by the collecting walk only').toBe(1);
+    expect(reads(leaf), 'and so is its leaf').toBe(1);
+    of.mockRestore();
   });
 });

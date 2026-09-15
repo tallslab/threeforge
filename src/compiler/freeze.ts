@@ -40,14 +40,16 @@ export function freezableObjects(scene: Scene, input: FreezeInput): Object3D[] {
   // Folds `o`'s children's probes into one; `ownLeaf` says whether `o` itself is a leaf (a static mesh or a hidden
   // original) rather than a plain container.
   const foldChildren = (o: Kinded, ownLeaf: boolean): Probe => {
-    let allStatic = true;
     let hasLeaf = ownLeaf;
     for (const child of o.children) {
       const r = probeStatic(child as Kinded);
-      if (!r.static) allStatic = false;
+      // One non-static child settles it: `hasLeaf` is only ever read together with `static` (`visit` freezes on
+      // `probe.static && probe.hasLeaf`), and a subtree holding this one can never be static either, so the
+      // remaining children cannot change any decision. Probing them would walk the rest of the subtree for nothing.
+      if (!r.static) return { static: false, hasLeaf };
       if (r.hasLeaf) hasLeaf = true;
     }
-    return { static: allStatic, hasLeaf };
+    return { static: true, hasLeaf };
   };
   const probeStatic = (o: Kinded): Probe => {
     const hidden = input.hidden.has(o);
