@@ -10,7 +10,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'meshoptimizer/decoder';
-import { DrawCallLedger, MaterialRegistry, World, detectTier, disposeLoader, exposeToAgents, type Tier } from 'threeforge';
+import { DrawCallLedger, MaterialRegistry, World, detectTier, disposeLoader, exposeToAgents, tierInputFromNavigator, type Tier } from 'threeforge';
 
 interface CliFacts {
   ready: boolean;
@@ -54,7 +54,7 @@ try {
   };
   const gpu = gpuName();
   const requested = params.get('tier');
-  const tier: Tier = requested && requested !== 'auto' ? (requested as Tier) : detectTier({ gpu, touch: navigator.maxTouchPoints > 0, deviceMemory: (navigator as { deviceMemory?: number }).deviceMemory, cores: navigator.hardwareConcurrency, dpr: devicePixelRatio });
+  const tier: Tier = requested && requested !== 'auto' ? (requested as Tier) : detectTier(tierInputFromNavigator(gpu, navigator));
   ledger.setEnvironment({ tier, gpu, dpr: 1, viewport: [800, 600] });
 
   const loader = new GLTFLoader();

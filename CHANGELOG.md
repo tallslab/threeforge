@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `detectTier` is GPU-first: a recognised desktop GPU (NVIDIA, Radeon, AMD, Intel, Iris, Arc, Apple M-series,
+  SwiftShader) or mobile GPU (Adreno, Mali, PowerVR, VideoCore, Xclipse, Qualcomm, Apple A-series) now decides the
+  tier before touch is considered, so a touch-capable desktop (a Windows laptop with a discrete GPU and a
+  touchscreen) is no longer given phone budgets and phone hints. The low-end regex also gains `sgx` (PowerVR SGX).
+  New `tierInputFromNavigator(gpu, nav)` builds the shared `TierInput` from `navigator` (preferring
+  `userAgentData.mobile`, then a user agent sniff, then `maxTouchPoints` as before) and is exported from the
+  package; `test/app/main.ts`, `cli-app/main.ts` and `bench-app/runner.ts` all use it now instead of each building
+  the input inline.
 - The ledger's own cost per submission fell from 1.84 to 0.3–0.5 µs, and its allocations from 11.4 to 0.8 MB per frame, at 10k submissions (flat scene, same machine); every snapshot number is unchanged. Records are pooled, material hashes are read once per material per frame, display names are cached without `children.indexOf`, a frame traverses each scene once, and the periodic rescan reads each shared material once. New `scripts/ledger-overhead.mjs` reports µs per submission and bytes per frame at 2k, 10k and 20k submissions (not a gate).
 - New `registry.hashesOf(material)`: the cached `programHash`, `variantHash`, `description` and `unsupported`, without allocating. New `registry.keysRevision` moves whenever `invalidate()` or `forget()` drops cached keys.
 - Material keys include material code by identity, not `toString()`: materials that differ only in an instance `setup*`, `onBeforeCompile` or `customProgramCacheKey` function, or in a class that is not one of three's own (a subclass keeps its base's `type`), no longer merge into one registry canonical or one batch drawn with the first material's code, even when the source text matches; they report as `shader-variant`s. An instance `onBeforeRender` keeps materials apart too, as a `uniform-variant` (same program). `clippingPlanes` key their count in the program and their values in the variant: materials with the same number of different planes merged. A user-added own property keys plain data by value (arrays and BigInts included) and any function, `Texture`, `Object3D` or class instance inside it by identity; a circular or BigInt one no longer throws in `register()` or `compile()`. A material's `dispose` listeners no longer change its key.

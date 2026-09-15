@@ -12,7 +12,7 @@ export { computeMaterialKeys, hashKey, type MaterialKeys } from './registry/mate
 export { DrawCallLedger, type DrawCallLedgerOptions, type LedgerRenderer } from './ledger/DrawCallLedger.js';
 export type { Flag, Reason, SubmissionKind } from './ledger/reasons.js';
 export type { BudgetOffender, BudgetResult, FrameEnv, FrameSnapshot, FrameTotals, Hint, HintCategory, JsSnapshot, LightingSnapshot, MemorySnapshot, OverdrawSnapshot, PassSnapshot, ProgramSnapshot, ReasonSnapshot, SkinningSnapshot, SubmissionRecord, Tier } from './ledger/snapshot.js';
-export { BUDGETS, budgetsFor, detectTier, type Budgets, type TierInput } from './ledger/budgets.js';
+export { BUDGETS, budgetsFor, detectTier, tierInputFromNavigator, type Budgets, type TierInput, type TierNavigator } from './ledger/budgets.js';
 export { hintsFor, type HintContext } from './ledger/hints.js';
 export { measureOverdraw, type OverdrawOptions, type OverdrawRenderer, type OverdrawResult } from './ledger/overdraw.js';
 export { estimateMemory, geometryBytes, textureBytes } from './ledger/memory.js';

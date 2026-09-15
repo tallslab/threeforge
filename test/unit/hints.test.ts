@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { BUDGETS, budgetsFor, detectTier } from '../../src/ledger/budgets.js';
+import { BUDGETS, budgetsFor, detectTier, tierInputFromNavigator, type TierInput } from '../../src/ledger/budgets.js';
 import { hintsFor } from '../../src/ledger/hints.js';
 import { emptyFrame } from '../../src/ledger/snapshot.js';
+import type { Tier } from '../../src/ledger/snapshot.js';
 
 const env = { three: '0.186.0', backend: 'webgl2' as const, multiDraw: true, tier: 'phone-low' as const, gpu: 'Adreno 610', dpr: 2, viewport: [390, 844] as [number, number] };
 
@@ -13,6 +14,99 @@ describe('tiers', () => {
     expect(detectTier({ gpu: 'Mali-G52', touch: true })).toBe('phone-low');
     expect(detectTier({ gpu: 'Adreno (TM) 740', touch: true, deviceMemory: 8 })).toBe('phone-mid');
     expect(detectTier({ touch: true, deviceMemory: 2 })).toBe('phone-low');
+  });
+
+  // GPU-first decision order (audit Task 36): the low-end regex, then the mobile-GPU list, then the
+  // desktop-GPU list decide the tier regardless of touch; only an unrecognised GPU falls through to
+  // the Apple/touch special case and finally the old touch-only rule.
+  const table: Array<[string, TierInput, Tier]> = [
+    // 1. low-end regex (sgx added)
+    ['PowerVR SGX 544 + touch -> phone-low (sgx)', { gpu: 'PowerVR SGX 544', touch: true }, 'phone-low'],
+    ['powervr sgx lowercase + touch -> phone-low (case-insensitive)', { gpu: 'powervr sgx 540', touch: true }, 'phone-low'],
+    ['Adreno 610 + touch -> phone-low (unchanged)', { gpu: 'Adreno (TM) 610', touch: true }, 'phone-low'],
+    ['Mali-G52 + touch -> phone-low (unchanged)', { gpu: 'Mali-G52', touch: true }, 'phone-low'],
+    // 2. mobile GPU list: decisive regardless of touch
+    ['Adreno 650 (above low-end range), no touch reported -> phone-mid', { gpu: 'Adreno (TM) 650' }, 'phone-mid'],
+    ['Mali-G78 (above low-end range) + touch -> phone-mid', { gpu: 'Mali-G78', touch: true }, 'phone-mid'],
+    ['PowerVR Rogue (not SGX), no touch reported -> phone-mid', { gpu: 'PowerVR Rogue GE8320' }, 'phone-mid'],
+    ['VideoCore + touch -> phone-low (still matches the low-end regex unconditionally, kept from before)', { gpu: 'VideoCore VI', touch: true }, 'phone-low'],
+    ['Xclipse (Samsung/Exynos) + touch -> phone-mid', { gpu: 'Xclipse 920', touch: true }, 'phone-mid'],
+    ['bare Qualcomm, no touch reported -> phone-mid', { gpu: 'Qualcomm Adreno' }, 'phone-mid'],
+    ['Apple A15 GPU, no touch reported -> phone-mid', { gpu: 'Apple A15 GPU' }, 'phone-mid'],
+    ['apple a15 lowercase + touch -> phone-mid (case-insensitive)', { gpu: 'apple a15 gpu', touch: true }, 'phone-mid'],
+    // 3. desktop GPU list: decisive whatever the touch value
+    ['RTX 3060 + touch -> desktop (the audited bug: a touch laptop is not a phone)', { gpu: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)', touch: true }, 'desktop'],
+    ['Radeon + touch -> desktop', { gpu: 'AMD Radeon RX 6800', touch: true }, 'desktop'],
+    ['Intel Iris Xe + touch -> desktop', { gpu: 'Intel(R) Iris(R) Xe Graphics', touch: true }, 'desktop'],
+    ['Intel Arc + touch -> desktop', { gpu: 'Intel(R) Arc(TM) A770', touch: true }, 'desktop'],
+    ['Apple M1 + touch -> desktop (Apple M-series, whatever touch says)', { gpu: 'Apple M1', touch: true }, 'desktop'],
+    ['apple m2 lowercase, no touch -> desktop (case-insensitive)', { gpu: 'apple m2' }, 'desktop'],
+    ['SwiftShader (software) + touch -> desktop', { gpu: 'Google SwiftShader', touch: true }, 'desktop'],
+    // 4. bare "Apple" (iPad Safari reports only this) needs touch to mean phone-mid
+    ['bare "Apple" + touch -> phone-mid (iPad Safari)', { gpu: 'Apple', touch: true }, 'phone-mid'],
+    ['bare "Apple", no touch -> desktop (a Mac)', { gpu: 'Apple' }, 'desktop'],
+    // 6. unrecognised/empty GPU: the old touch-only rule (5, userAgentData/UA, lives in tierInputFromNavigator)
+    ['unknown GPU + touch, plenty of memory -> phone-mid', { gpu: 'Unknown Renderer', touch: true, deviceMemory: 8 }, 'phone-mid'],
+    ['unknown GPU + touch, <=2GB -> phone-low', { gpu: 'Unknown Renderer', touch: true, deviceMemory: 2 }, 'phone-low'],
+    ['unknown GPU, no touch -> desktop', { gpu: 'Unknown Renderer' }, 'desktop'],
+    ['no GPU at all, no touch -> desktop', {}, 'desktop'],
+  ];
+
+  it.each(table)('%s', (_name, input, expected) => {
+    expect(detectTier(input)).toBe(expected);
+  });
+
+  describe('tierInputFromNavigator', () => {
+    it('guards every optional navigator field: no userAgentData, no deviceMemory, no maxTouchPoints', () => {
+      const input = tierInputFromNavigator('Apple M2', {});
+      expect(input).toMatchObject({ gpu: 'Apple M2', touch: false, deviceMemory: undefined, cores: undefined });
+    });
+
+    it('the audited bug: a Windows laptop with an RTX 3060 and a touchscreen still returns desktop', () => {
+      const nav = { maxTouchPoints: 10, hardwareConcurrency: 12, deviceMemory: 16, userAgentData: { mobile: false }, userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' };
+      const input = tierInputFromNavigator('ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)', nav);
+      expect(input.touch).toBe(false); // userAgentData.mobile wins over the raw touchscreen signal
+      expect(detectTier(input)).toBe('desktop'); // and the GPU-first order would have won anyway
+
+      // Same laptop on a non-Chromium browser (no userAgentData at all): the desktop UA string has no
+      // "Mobi", so step 5's sniff already gets this right without needing the GPU-first order at all.
+      const firefoxNav = { maxTouchPoints: 10, hardwareConcurrency: 12, deviceMemory: 16, userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0' };
+      const firefoxInput = tierInputFromNavigator('NVIDIA GeForce RTX 3060/PCIe/SSE2', firefoxNav);
+      expect(firefoxInput.touch).toBe(false); // the "Mobi" sniff on the UA string beats the raw touchscreen signal
+      expect(detectTier(firefoxInput)).toBe('desktop'); // and the GPU-first order would have won anyway
+    });
+
+    it('prefers userAgentData.mobile over maxTouchPoints when the GPU is unrecognised (step 5)', () => {
+      const desktopWithTouch = tierInputFromNavigator('Unknown Renderer', { maxTouchPoints: 10, userAgentData: { mobile: false } });
+      expect(desktopWithTouch.touch).toBe(false);
+      expect(detectTier(desktopWithTouch)).toBe('desktop');
+
+      const phoneNoTouchPoints = tierInputFromNavigator('Unknown Renderer', { maxTouchPoints: 0, userAgentData: { mobile: true } });
+      expect(phoneNoTouchPoints.touch).toBe(true);
+      expect(detectTier(phoneNoTouchPoints)).toBe('phone-mid');
+    });
+
+    it('falls back to the user agent string when userAgentData is unavailable (non-Chromium, step 5)', () => {
+      const mobileSafari = tierInputFromNavigator('Apple GPU', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobi/15E148' });
+      expect(mobileSafari.touch).toBe(true);
+
+      const desktopSafari = tierInputFromNavigator('Apple GPU', { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15' });
+      expect(desktopSafari.touch).toBe(false);
+    });
+
+    it('falls back to the old touch rule when neither userAgentData nor the user agent string are available (step 6)', () => {
+      const touchOnly = tierInputFromNavigator('Unknown Renderer', { maxTouchPoints: 1 });
+      expect(touchOnly.touch).toBe(true);
+
+      const noTouch = tierInputFromNavigator('Unknown Renderer', { maxTouchPoints: 0 });
+      expect(noTouch.touch).toBe(false);
+    });
+
+    it('passes deviceMemory and hardwareConcurrency through as cores/deviceMemory', () => {
+      const input = tierInputFromNavigator('Adreno 610', { deviceMemory: 3, hardwareConcurrency: 8, maxTouchPoints: 5 });
+      expect(input.deviceMemory).toBe(3);
+      expect(input.cores).toBe(8);
+    });
   });
 
   it('budgets have the spec values and accept overrides', () => {

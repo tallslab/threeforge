@@ -1,6 +1,6 @@
 import { PerspectiveCamera, REVISION, type Material, type Mesh, type Object3D, type Texture } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
-import { DrawCallLedger, MaterialRegistry, World, detectTier, type Tier } from 'threeforge';
+import { DrawCallLedger, MaterialRegistry, World, detectTier, tierInputFromNavigator, type Tier } from 'threeforge';
 import { BENCH_SCENES } from '../test/app/scenes/index.js';
 import { MEASURED, metricsOf, WARM, type BenchMetrics, type SceneId } from '../test/app/benchMetrics.js';
 import { probeFillRate } from './probe.js';
@@ -57,7 +57,7 @@ export async function createHost(want: Backend | 'auto', mount: HTMLElement): Pr
         gpu = ext ? String(b.gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : 'webgl2';
       }
       const multiDraw = backend === 'webgl2' && typeof b.hasFeature === 'function' ? b.hasFeature.call(renderer.backend, 'WEBGL_multi_draw') : false;
-      const tier = detectTier({ gpu, touch: navigator.maxTouchPoints > 0, deviceMemory: (navigator as { deviceMemory?: number }).deviceMemory, cores: navigator.hardwareConcurrency, dpr: devicePixelRatio });
+      const tier = detectTier(tierInputFromNavigator(gpu, navigator));
       return { renderer, canvas, backend, gpu, multiDraw, tier };
     } catch (error) {
       lastError = error;

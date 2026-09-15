@@ -2,7 +2,7 @@ import { AmbientLight, AnimationMixer, BatchedMesh, Box3, BoxGeometry, Color, Di
 import { WebGPURenderer } from 'three/webgpu';
 import * as THREE_WEBGPU from 'three/webgpu';
 import * as THREE from 'three';
-import { AnimatedInstances, DrawCallLedger, MaterialRegistry, ParticleBudget, RenderScheduler, ResolutionScaler, ResourceTracker, ShadowBudget, World, bakeAnimationTexture, bakeGeometries, assembleCharacter, collectResources, createLoader, detectTier, disposeLoader, exposeToAgents, prepareLods, tag, unreferencedResources, type Streamer, type AssembledCharacter, type CompileReport, type FrameSnapshot, type ParticleBudgetReport, type ShadowBudgetReport, type Tier } from 'threeforge';
+import { AnimatedInstances, DrawCallLedger, MaterialRegistry, ParticleBudget, RenderScheduler, ResolutionScaler, ResourceTracker, ShadowBudget, World, bakeAnimationTexture, bakeGeometries, assembleCharacter, collectResources, createLoader, detectTier, disposeLoader, exposeToAgents, prepareLods, tag, tierInputFromNavigator, unreferencedResources, type Streamer, type AssembledCharacter, type CompileReport, type FrameSnapshot, type ParticleBudgetReport, type ShadowBudgetReport, type Tier } from 'threeforge';
 import { createOverlay } from 'threeforge/overlay';
 import { BENCH_SCENES, type BenchScene } from './scenes/index.js';
 import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
@@ -163,7 +163,7 @@ try {
     return ext && gl ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : 'webgl2';
   };
   const gpu = gpuName();
-  const tier = (params.get('tier') as Tier | null) ?? detectTier({ gpu, touch: navigator.maxTouchPoints > 0, deviceMemory: (navigator as { deviceMemory?: number }).deviceMemory, cores: navigator.hardwareConcurrency, dpr: devicePixelRatio });
+  const tier = (params.get('tier') as Tier | null) ?? detectTier(tierInputFromNavigator(gpu, navigator));
   ledger.setEnvironment({ tier, gpu, dpr: renderer.getPixelRatio(), viewport: [800, 600] });
   const hasFeature = (renderer.backend as { hasFeature?: (name: string) => boolean }).hasFeature;
   const multiDraw = backend === 'webgl2' && typeof hasFeature === 'function' ? hasFeature.call(renderer.backend, 'WEBGL_multi_draw') : false;

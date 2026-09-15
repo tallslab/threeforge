@@ -209,9 +209,28 @@ submission grows less than 3× from 2k to 20k submissions (best of 7).
 
 ### Tiers, budgets and hints
 
-`detectTier({ gpu, deviceMemory, cores, touch, dpr })` returns `desktop` (no touch), `phone-low` (Adreno 1xx–5xx and
-60x–63x, Mali-G1x–G5x, Mali-T/4xx, PowerVR, VideoCore, or ≤ 2 GB) or `phone-mid`. Budgets per tier
-(`BUDGETS`, `budgetsFor(tier, overrides)`):
+`detectTier({ gpu, deviceMemory, cores, touch, dpr })` is GPU-first: a recognised GPU name decides the tier before
+touch is even considered, so a touch-capable desktop (a Windows laptop with a discrete GPU and a touchscreen) is
+not mistaken for a phone. In order:
+
+1. The low-end regex matches (Adreno 1xx–5xx and 60x–63x, Mali-G1x–G5x, Mali-T/4xx, PowerVR SGX, VideoCore)
+   → `phone-low`.
+2. A mobile/tablet GPU matches (higher-end Adreno/Mali, PowerVR, VideoCore, Xclipse, Qualcomm, Apple A-series)
+   → `phone-mid`, whatever `touch` says.
+3. A desktop GPU matches (NVIDIA, Radeon, AMD, Intel, Iris, Arc, Apple M-series, SwiftShader) → `desktop`,
+   whatever `touch` says.
+4. A bare `"Apple"` (an iPad on Safari reports only this) with `touch` → `phone-mid`.
+5. Otherwise the GPU string is unrecognised or empty: no touch → `desktop`; touch and `deviceMemory <= 2` →
+   `phone-low`; touch otherwise → `phone-mid`.
+
+`tierInputFromNavigator(gpu, nav)` builds the `TierInput` that feeds `detectTier` from a GPU name and `navigator`
+(passed explicitly so it is unit-testable with fake navigators) — `test/app/main.ts`, `cli-app/main.ts` and
+`bench-app/runner.ts` all call it the same way. It resolves `touch` in priority order: `navigator.userAgentData
+.mobile` (Chromium, most reliable — correctly `false` for a touch-capable desktop), then a `"Mobi"` sniff of
+`navigator.userAgent` (non-Chromium browsers), then `navigator.maxTouchPoints > 0` as a last resort when neither
+is available. Every field it reads (`userAgentData`, `deviceMemory`, `maxTouchPoints`) is optional and guarded.
+
+Budgets per tier (`BUDGETS`, `budgetsFor(tier, overrides)`):
 
 | metric | desktop | phone-mid | phone-low |
 |---|---|---|---|
