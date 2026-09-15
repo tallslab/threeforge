@@ -1,0 +1,1560 @@
+{
+  "frame1": {
+    "schemaVersion": 2,
+    "env": {
+      "three": "186",
+      "backend": "webgl2",
+      "multiDraw": true,
+      "tier": "desktop",
+      "gpu": "unknown",
+      "dpr": 1,
+      "viewport": [
+        0,
+        0
+      ]
+    },
+    "overdraw": {
+      "opaque": 0,
+      "transparent": 0,
+      "transparentSubmissions": 1,
+      "particles": 126,
+      "pixels": 45000,
+      "measured": false
+    },
+    "skinning": {
+      "submissions": 2,
+      "vertices": 64,
+      "bones": 2,
+      "skeletons": 1,
+      "maxBones": 2,
+      "morphTargets": 0,
+      "vatInstances": 0,
+      "vatVertices": 0
+    },
+    "lighting": {
+      "lights": {
+        "directional": 1,
+        "point": 0,
+        "spot": 0,
+        "hemisphere": 0,
+        "ambient": 0,
+        "other": 0
+      },
+      "shadowLights": 1,
+      "shadowPasses": 1,
+      "shadowCasters": 1,
+      "shadowTexels": 262144,
+      "shadowSubmissions": 1
+    },
+    "js": {
+      "renderMs": 12,
+      "frameMs": 0,
+      "objects": 21,
+      "autoUpdatedMatrices": 21,
+      "hiddenOriginals": 0,
+      "skipped": 0
+    },
+    "memory": {
+      "textures": {
+        "count": 2,
+        "bytes": 320
+      },
+      "geometries": {
+        "count": 7,
+        "bytes": 10612
+      },
+      "renderTargets": {
+        "count": 1,
+        "bytes": 1048576
+      },
+      "unreferenced": {
+        "geometries": 0,
+        "textures": 0
+      },
+      "chunks": {
+        "total": 0,
+        "resident": 0
+      },
+      "estimated": true
+    },
+    "hints": [
+      {
+        "category": "drawCalls",
+        "severity": "warn",
+        "code": "untagged",
+        "message": "2 untagged meshes: tag.static() or tag.dynamic() them",
+        "objects": [
+          "Mesh[2]",
+          "Mesh[2]"
+        ]
+      },
+      {
+        "category": "drawCalls",
+        "severity": "error",
+        "code": "unsupported-material",
+        "message": "2 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer",
+        "objects": [
+          "fx-panel",
+          "fx-panel"
+        ]
+      },
+      {
+        "category": "js",
+        "severity": "info",
+        "code": "static-auto-update",
+        "message": "5 static-tagged objects still auto-update their matrices every frame",
+        "objects": [
+          "crate",
+          "mirrored-prop",
+          "blob",
+          "mirror",
+          "portal"
+        ]
+      }
+    ],
+    "totals": {
+      "submissions": 37,
+      "sceneSubmissions": 34,
+      "gpuDraws": 35,
+      "reportedDrawCalls": 35,
+      "unattributed": 0,
+      "programSwitches": 10,
+      "programs": 0,
+      "triangles": 515,
+      "instances": 54,
+      "instancesDrawn": 54,
+      "drawCommands": 39
+    },
+    "passes": [
+      {
+        "id": "shadow:sun",
+        "submissions": 1,
+        "gpuDraws": 1
+      },
+      {
+        "id": "main",
+        "submissions": 18,
+        "gpuDraws": 17
+      },
+      {
+        "id": "nested:reflection",
+        "submissions": 16,
+        "gpuDraws": 15
+      },
+      {
+        "id": "scene:portal-scene",
+        "submissions": 2,
+        "gpuDraws": 2
+      }
+    ],
+    "byReason": {
+      "batched": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "batch-3",
+          "batch-3"
+        ]
+      },
+      "dynamic": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "assembly/Mesh[0]",
+          "assembly/Mesh[0]"
+        ]
+      },
+      "excluded:mirrored": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "mirrored-prop",
+          "mirrored-prop"
+        ]
+      },
+      "instanced": {
+        "submissions": 4,
+        "gpuDraws": 2,
+        "top": [
+          "debris-empty",
+          "debris",
+          "debris-empty",
+          "debris"
+        ]
+      },
+      "morph": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "blob",
+          "blob"
+        ]
+      },
+      "multi-material-group": {
+        "submissions": 4,
+        "gpuDraws": 4,
+        "top": [
+          "panel",
+          "panel",
+          "panel",
+          "panel"
+        ]
+      },
+      "points": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "dust",
+          "dust"
+        ]
+      },
+      "renderer-internal": {
+        "submissions": 3,
+        "gpuDraws": 3,
+        "top": [
+          "Output Color Transform",
+          "Output Color Transform",
+          "Output Color Transform"
+        ]
+      },
+      "skinned": {
+        "submissions": 4,
+        "gpuDraws": 4,
+        "top": [
+          "body",
+          "body-2",
+          "body",
+          "body-2"
+        ]
+      },
+      "sprite-batch": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "forge:sprites:aa11bb22:0",
+          "forge:sprites:aa11bb22:0"
+        ]
+      },
+      "unique-material": {
+        "submissions": 6,
+        "gpuDraws": 6,
+        "top": [
+          "crate",
+          "crate",
+          "crate",
+          "mirror",
+          "far-room"
+        ]
+      },
+      "unsupported-material": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "fx-panel",
+          "fx-panel"
+        ]
+      },
+      "untagged": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "Mesh[2]",
+          "Mesh[2]"
+        ]
+      }
+    },
+    "programs": {
+      "5d1b489b": {
+        "type": "ShaderMaterial",
+        "description": "ShaderMaterial (unsupported in WebGPURenderer)",
+        "submissions": 2
+      },
+      "81a90998": {
+        "type": "PointsMaterial",
+        "description": "PointsMaterial",
+        "submissions": 2
+      },
+      "9f81eb71": {
+        "type": "MeshStandardMaterial",
+        "description": "MeshStandardMaterial",
+        "submissions": 26
+      },
+      "dbf62424": {
+        "type": "MeshBasicMaterial",
+        "description": "MeshBasicMaterial",
+        "submissions": 2
+      },
+      "dfb75c13": {
+        "type": "MeshBasicMaterial",
+        "description": "MeshBasicMaterial transparent",
+        "submissions": 2
+      }
+    }
+  },
+  "frame2": {
+    "schemaVersion": 2,
+    "env": {
+      "three": "186",
+      "backend": "webgl2",
+      "multiDraw": true,
+      "tier": "desktop",
+      "gpu": "unknown",
+      "dpr": 1,
+      "viewport": [
+        0,
+        0
+      ]
+    },
+    "overdraw": {
+      "opaque": 0,
+      "transparent": 0,
+      "transparentSubmissions": 1,
+      "particles": 126,
+      "pixels": 45000,
+      "measured": false
+    },
+    "skinning": {
+      "submissions": 2,
+      "vertices": 64,
+      "bones": 2,
+      "skeletons": 1,
+      "maxBones": 2,
+      "morphTargets": 0,
+      "vatInstances": 0,
+      "vatVertices": 0
+    },
+    "lighting": {
+      "lights": {
+        "directional": 1,
+        "point": 0,
+        "spot": 0,
+        "hemisphere": 0,
+        "ambient": 0,
+        "other": 0
+      },
+      "shadowLights": 1,
+      "shadowPasses": 1,
+      "shadowCasters": 1,
+      "shadowTexels": 262144,
+      "shadowSubmissions": 1
+    },
+    "js": {
+      "renderMs": 12,
+      "frameMs": 25,
+      "objects": 21,
+      "autoUpdatedMatrices": 21,
+      "hiddenOriginals": 0,
+      "skipped": 0
+    },
+    "memory": {
+      "textures": {
+        "count": 2,
+        "bytes": 320
+      },
+      "geometries": {
+        "count": 7,
+        "bytes": 10612
+      },
+      "renderTargets": {
+        "count": 1,
+        "bytes": 1048576
+      },
+      "unreferenced": {
+        "geometries": 0,
+        "textures": 0
+      },
+      "chunks": {
+        "total": 0,
+        "resident": 0
+      },
+      "estimated": true
+    },
+    "hints": [
+      {
+        "category": "drawCalls",
+        "severity": "warn",
+        "code": "untagged",
+        "message": "2 untagged meshes: tag.static() or tag.dynamic() them",
+        "objects": [
+          "Mesh[2]",
+          "Mesh[2]"
+        ]
+      },
+      {
+        "category": "drawCalls",
+        "severity": "error",
+        "code": "unsupported-material",
+        "message": "2 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer",
+        "objects": [
+          "fx-panel",
+          "fx-panel"
+        ]
+      },
+      {
+        "category": "js",
+        "severity": "info",
+        "code": "static-auto-update",
+        "message": "5 static-tagged objects still auto-update their matrices every frame",
+        "objects": [
+          "crate",
+          "mirrored-prop",
+          "blob",
+          "mirror",
+          "portal"
+        ]
+      }
+    ],
+    "totals": {
+      "submissions": 37,
+      "sceneSubmissions": 34,
+      "gpuDraws": 35,
+      "reportedDrawCalls": 35,
+      "unattributed": 0,
+      "programSwitches": 10,
+      "programs": 0,
+      "triangles": 515,
+      "instances": 54,
+      "instancesDrawn": 54,
+      "drawCommands": 39
+    },
+    "passes": [
+      {
+        "id": "shadow:sun",
+        "submissions": 1,
+        "gpuDraws": 1
+      },
+      {
+        "id": "main",
+        "submissions": 18,
+        "gpuDraws": 17
+      },
+      {
+        "id": "nested:reflection",
+        "submissions": 16,
+        "gpuDraws": 15
+      },
+      {
+        "id": "scene:portal-scene",
+        "submissions": 2,
+        "gpuDraws": 2
+      }
+    ],
+    "byReason": {
+      "batched": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "batch-3",
+          "batch-3"
+        ]
+      },
+      "dynamic": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "assembly/Mesh[0]",
+          "assembly/Mesh[0]"
+        ]
+      },
+      "excluded:mirrored": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "mirrored-prop",
+          "mirrored-prop"
+        ]
+      },
+      "instanced": {
+        "submissions": 4,
+        "gpuDraws": 2,
+        "top": [
+          "debris-empty",
+          "debris",
+          "debris-empty",
+          "debris"
+        ]
+      },
+      "morph": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "blob",
+          "blob"
+        ]
+      },
+      "multi-material-group": {
+        "submissions": 4,
+        "gpuDraws": 4,
+        "top": [
+          "panel",
+          "panel",
+          "panel",
+          "panel"
+        ]
+      },
+      "points": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "dust",
+          "dust"
+        ]
+      },
+      "renderer-internal": {
+        "submissions": 3,
+        "gpuDraws": 3,
+        "top": [
+          "Output Color Transform",
+          "Output Color Transform",
+          "Output Color Transform"
+        ]
+      },
+      "skinned": {
+        "submissions": 4,
+        "gpuDraws": 4,
+        "top": [
+          "body",
+          "body-2",
+          "body",
+          "body-2"
+        ]
+      },
+      "sprite-batch": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "forge:sprites:aa11bb22:0",
+          "forge:sprites:aa11bb22:0"
+        ]
+      },
+      "unique-material": {
+        "submissions": 6,
+        "gpuDraws": 6,
+        "top": [
+          "crate",
+          "crate",
+          "crate",
+          "mirror",
+          "far-room"
+        ]
+      },
+      "unsupported-material": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "fx-panel",
+          "fx-panel"
+        ]
+      },
+      "untagged": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "Mesh[2]",
+          "Mesh[2]"
+        ]
+      }
+    },
+    "programs": {
+      "5d1b489b": {
+        "type": "ShaderMaterial",
+        "description": "ShaderMaterial (unsupported in WebGPURenderer)",
+        "submissions": 2
+      },
+      "81a90998": {
+        "type": "PointsMaterial",
+        "description": "PointsMaterial",
+        "submissions": 2
+      },
+      "9f81eb71": {
+        "type": "MeshStandardMaterial",
+        "description": "MeshStandardMaterial",
+        "submissions": 26
+      },
+      "dbf62424": {
+        "type": "MeshBasicMaterial",
+        "description": "MeshBasicMaterial",
+        "submissions": 2
+      },
+      "dfb75c13": {
+        "type": "MeshBasicMaterial",
+        "description": "MeshBasicMaterial transparent",
+        "submissions": 2
+      }
+    }
+  },
+  "frame3": {
+    "schemaVersion": 2,
+    "env": {
+      "three": "186",
+      "backend": "webgl2",
+      "multiDraw": true,
+      "tier": "desktop",
+      "gpu": "unknown",
+      "dpr": 1,
+      "viewport": [
+        0,
+        0
+      ]
+    },
+    "overdraw": {
+      "opaque": 0,
+      "transparent": 0,
+      "transparentSubmissions": 1,
+      "particles": 126,
+      "pixels": 45000,
+      "measured": false
+    },
+    "skinning": {
+      "submissions": 2,
+      "vertices": 64,
+      "bones": 2,
+      "skeletons": 1,
+      "maxBones": 2,
+      "morphTargets": 0,
+      "vatInstances": 0,
+      "vatVertices": 0
+    },
+    "lighting": {
+      "lights": {
+        "directional": 1,
+        "point": 0,
+        "spot": 0,
+        "hemisphere": 0,
+        "ambient": 0,
+        "other": 0
+      },
+      "shadowLights": 1,
+      "shadowPasses": 1,
+      "shadowCasters": 1,
+      "shadowTexels": 262144,
+      "shadowSubmissions": 1
+    },
+    "js": {
+      "renderMs": 12,
+      "frameMs": 25,
+      "objects": 21,
+      "autoUpdatedMatrices": 21,
+      "hiddenOriginals": 0,
+      "skipped": 0
+    },
+    "memory": {
+      "textures": {
+        "count": 2,
+        "bytes": 320
+      },
+      "geometries": {
+        "count": 7,
+        "bytes": 10612
+      },
+      "renderTargets": {
+        "count": 1,
+        "bytes": 1048576
+      },
+      "unreferenced": {
+        "geometries": 0,
+        "textures": 0
+      },
+      "chunks": {
+        "total": 0,
+        "resident": 0
+      },
+      "estimated": true
+    },
+    "hints": [
+      {
+        "category": "drawCalls",
+        "severity": "warn",
+        "code": "untagged",
+        "message": "2 untagged meshes: tag.static() or tag.dynamic() them",
+        "objects": [
+          "Mesh[2]",
+          "Mesh[2]"
+        ]
+      },
+      {
+        "category": "drawCalls",
+        "severity": "error",
+        "code": "unsupported-material",
+        "message": "2 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer",
+        "objects": [
+          "fx-panel",
+          "fx-panel"
+        ]
+      },
+      {
+        "category": "js",
+        "severity": "info",
+        "code": "static-auto-update",
+        "message": "5 static-tagged objects still auto-update their matrices every frame",
+        "objects": [
+          "crate",
+          "mirrored-prop",
+          "blob",
+          "mirror",
+          "portal"
+        ]
+      }
+    ],
+    "totals": {
+      "submissions": 37,
+      "sceneSubmissions": 34,
+      "gpuDraws": 35,
+      "reportedDrawCalls": 35,
+      "unattributed": 0,
+      "programSwitches": 10,
+      "programs": 0,
+      "triangles": 515,
+      "instances": 54,
+      "instancesDrawn": 54,
+      "drawCommands": 39
+    },
+    "passes": [
+      {
+        "id": "shadow:sun",
+        "submissions": 1,
+        "gpuDraws": 1
+      },
+      {
+        "id": "main",
+        "submissions": 18,
+        "gpuDraws": 17
+      },
+      {
+        "id": "nested:reflection",
+        "submissions": 16,
+        "gpuDraws": 15
+      },
+      {
+        "id": "scene:portal-scene",
+        "submissions": 2,
+        "gpuDraws": 2
+      }
+    ],
+    "byReason": {
+      "batched": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "batch-3",
+          "batch-3"
+        ]
+      },
+      "dynamic": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "assembly/Mesh[0]",
+          "assembly/Mesh[0]"
+        ]
+      },
+      "excluded:mirrored": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "mirrored-prop",
+          "mirrored-prop"
+        ]
+      },
+      "instanced": {
+        "submissions": 4,
+        "gpuDraws": 2,
+        "top": [
+          "debris-empty",
+          "debris",
+          "debris-empty",
+          "debris"
+        ]
+      },
+      "morph": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "blob",
+          "blob"
+        ]
+      },
+      "multi-material-group": {
+        "submissions": 4,
+        "gpuDraws": 4,
+        "top": [
+          "panel",
+          "panel",
+          "panel",
+          "panel"
+        ]
+      },
+      "points": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "dust",
+          "dust"
+        ]
+      },
+      "renderer-internal": {
+        "submissions": 3,
+        "gpuDraws": 3,
+        "top": [
+          "Output Color Transform",
+          "Output Color Transform",
+          "Output Color Transform"
+        ]
+      },
+      "skinned": {
+        "submissions": 4,
+        "gpuDraws": 4,
+        "top": [
+          "body",
+          "body-2",
+          "body",
+          "body-2"
+        ]
+      },
+      "sprite-batch": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "forge:sprites:aa11bb22:0",
+          "forge:sprites:aa11bb22:0"
+        ]
+      },
+      "unique-material": {
+        "submissions": 6,
+        "gpuDraws": 6,
+        "top": [
+          "crate",
+          "crate",
+          "crate",
+          "mirror",
+          "far-room"
+        ]
+      },
+      "unsupported-material": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "fx-panel",
+          "fx-panel"
+        ]
+      },
+      "untagged": {
+        "submissions": 2,
+        "gpuDraws": 2,
+        "top": [
+          "Mesh[2]",
+          "Mesh[2]"
+        ]
+      }
+    },
+    "programs": {
+      "5d1b489b": {
+        "type": "ShaderMaterial",
+        "description": "ShaderMaterial (unsupported in WebGPURenderer)",
+        "submissions": 2
+      },
+      "81a90998": {
+        "type": "PointsMaterial",
+        "description": "PointsMaterial",
+        "submissions": 2
+      },
+      "9f81eb71": {
+        "type": "MeshStandardMaterial",
+        "description": "MeshStandardMaterial",
+        "submissions": 26
+      },
+      "dbf62424": {
+        "type": "MeshBasicMaterial",
+        "description": "MeshBasicMaterial",
+        "submissions": 2
+      },
+      "dfb75c13": {
+        "type": "MeshBasicMaterial",
+        "description": "MeshBasicMaterial transparent",
+        "submissions": 2
+      }
+    },
+    "items": [
+      {
+        "name": "crate",
+        "kind": "mesh",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "shadow:sun",
+        "reason": "unique-material",
+        "flags": [
+          "shadow-caster"
+        ],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "crate",
+        "kind": "mesh",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "main",
+        "reason": "unique-material",
+        "flags": [
+          "shadow-caster"
+        ],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "Mesh[2]",
+        "kind": "mesh",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "main",
+        "reason": "untagged",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "assembly/Mesh[0]",
+        "kind": "mesh",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "main",
+        "reason": "dynamic",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "mirrored-prop",
+        "kind": "mesh",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "main",
+        "reason": "excluded:mirrored",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "batch-3",
+        "kind": "batched",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "main",
+        "reason": "batched",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 3,
+        "instancesDrawn": 3,
+        "vertices": 72,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "debris-empty",
+        "kind": "instanced",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "main",
+        "reason": "instanced",
+        "flags": [],
+        "expectedGpuDraws": 0,
+        "instances": 0,
+        "instancesDrawn": 0,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "debris",
+        "kind": "instanced",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "main",
+        "reason": "instanced",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 5,
+        "instancesDrawn": 5,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "body",
+        "kind": "skinned",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "167f0417",
+        "transparent": false,
+        "pass": "main",
+        "reason": "skinned",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 32,
+        "bones": 2,
+        "skeleton": 0,
+        "morphTargets": 0
+      },
+      {
+        "name": "body-2",
+        "kind": "skinned",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "167f0417",
+        "transparent": false,
+        "pass": "main",
+        "reason": "skinned",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 32,
+        "bones": 2,
+        "skeleton": 0,
+        "morphTargets": 0
+      },
+      {
+        "name": "blob",
+        "kind": "mesh",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "main",
+        "reason": "morph",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 1
+      },
+      {
+        "name": "dust",
+        "kind": "points",
+        "materialType": "PointsMaterial",
+        "programHash": "81a90998",
+        "variantHash": "9f5be467",
+        "transparent": false,
+        "pass": "main",
+        "reason": "points",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 120,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "panel",
+        "kind": "mesh",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "main",
+        "reason": "multi-material-group",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "panel",
+        "kind": "mesh",
+        "materialType": "MeshBasicMaterial",
+        "programHash": "dbf62424",
+        "variantHash": "9cf24538",
+        "transparent": false,
+        "pass": "main",
+        "reason": "multi-material-group",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "fx-panel",
+        "kind": "mesh",
+        "materialType": "ShaderMaterial",
+        "programHash": "5d1b489b",
+        "variantHash": "5d1b489b",
+        "transparent": false,
+        "pass": "main",
+        "reason": "unsupported-material",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "crate",
+        "kind": "mesh",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "nested:reflection",
+        "reason": "unique-material",
+        "flags": [
+          "shadow-caster"
+        ],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "Mesh[2]",
+        "kind": "mesh",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "nested:reflection",
+        "reason": "untagged",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "assembly/Mesh[0]",
+        "kind": "mesh",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "nested:reflection",
+        "reason": "dynamic",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "mirrored-prop",
+        "kind": "mesh",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "nested:reflection",
+        "reason": "excluded:mirrored",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "batch-3",
+        "kind": "batched",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "nested:reflection",
+        "reason": "batched",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 3,
+        "instancesDrawn": 3,
+        "vertices": 72,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "debris-empty",
+        "kind": "instanced",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "nested:reflection",
+        "reason": "instanced",
+        "flags": [],
+        "expectedGpuDraws": 0,
+        "instances": 0,
+        "instancesDrawn": 0,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "debris",
+        "kind": "instanced",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "nested:reflection",
+        "reason": "instanced",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 5,
+        "instancesDrawn": 5,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "body",
+        "kind": "skinned",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "167f0417",
+        "transparent": false,
+        "pass": "nested:reflection",
+        "reason": "skinned",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 32,
+        "bones": 2,
+        "skeleton": 0,
+        "morphTargets": 0
+      },
+      {
+        "name": "body-2",
+        "kind": "skinned",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "167f0417",
+        "transparent": false,
+        "pass": "nested:reflection",
+        "reason": "skinned",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 32,
+        "bones": 2,
+        "skeleton": 0,
+        "morphTargets": 0
+      },
+      {
+        "name": "blob",
+        "kind": "mesh",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "nested:reflection",
+        "reason": "morph",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 1
+      },
+      {
+        "name": "dust",
+        "kind": "points",
+        "materialType": "PointsMaterial",
+        "programHash": "81a90998",
+        "variantHash": "9f5be467",
+        "transparent": false,
+        "pass": "nested:reflection",
+        "reason": "points",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 120,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "panel",
+        "kind": "mesh",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "nested:reflection",
+        "reason": "multi-material-group",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "panel",
+        "kind": "mesh",
+        "materialType": "MeshBasicMaterial",
+        "programHash": "dbf62424",
+        "variantHash": "9cf24538",
+        "transparent": false,
+        "pass": "nested:reflection",
+        "reason": "multi-material-group",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "fx-panel",
+        "kind": "mesh",
+        "materialType": "ShaderMaterial",
+        "programHash": "5d1b489b",
+        "variantHash": "5d1b489b",
+        "transparent": false,
+        "pass": "nested:reflection",
+        "reason": "unsupported-material",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "forge:sprites:aa11bb22:0",
+        "kind": "mesh",
+        "materialType": "MeshBasicMaterial",
+        "programHash": "dfb75c13",
+        "variantHash": "ba1d65a9",
+        "transparent": true,
+        "pass": "nested:reflection",
+        "reason": "sprite-batch",
+        "flags": [
+          "transparent"
+        ],
+        "expectedGpuDraws": 1,
+        "instances": 6,
+        "instancesDrawn": 6,
+        "vertices": 4,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "Output Color Transform",
+        "kind": "mesh",
+        "materialType": "Material",
+        "programHash": "b51912c4",
+        "variantHash": "f26e287b",
+        "transparent": false,
+        "pass": "nested:reflection",
+        "reason": "renderer-internal",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 3,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "mirror",
+        "kind": "mesh",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "main",
+        "reason": "unique-material",
+        "flags": [
+          "custom-hook"
+        ],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "far-room",
+        "kind": "mesh",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "scene:portal-scene",
+        "reason": "unique-material",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "Output Color Transform",
+        "kind": "mesh",
+        "materialType": "Material",
+        "programHash": "b51912c4",
+        "variantHash": "f26e287b",
+        "transparent": false,
+        "pass": "scene:portal-scene",
+        "reason": "renderer-internal",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 3,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "portal",
+        "kind": "mesh",
+        "materialType": "MeshStandardMaterial",
+        "programHash": "9f81eb71",
+        "variantHash": "369276e0",
+        "transparent": false,
+        "pass": "main",
+        "reason": "unique-material",
+        "flags": [
+          "custom-hook"
+        ],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 24,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "forge:sprites:aa11bb22:0",
+        "kind": "mesh",
+        "materialType": "MeshBasicMaterial",
+        "programHash": "dfb75c13",
+        "variantHash": "ba1d65a9",
+        "transparent": true,
+        "pass": "main",
+        "reason": "sprite-batch",
+        "flags": [
+          "transparent"
+        ],
+        "expectedGpuDraws": 1,
+        "instances": 6,
+        "instancesDrawn": 6,
+        "vertices": 4,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      },
+      {
+        "name": "Output Color Transform",
+        "kind": "mesh",
+        "materialType": "Material",
+        "programHash": "b51912c4",
+        "variantHash": "f26e287b",
+        "transparent": false,
+        "pass": "main",
+        "reason": "renderer-internal",
+        "flags": [],
+        "expectedGpuDraws": 1,
+        "instances": 1,
+        "instancesDrawn": 1,
+        "vertices": 3,
+        "bones": 0,
+        "skeleton": null,
+        "morphTargets": 0
+      }
+    ]
+  }
+}
