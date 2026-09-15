@@ -674,6 +674,27 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
   resized, or `keepAliveMs` elapsed; otherwise three does nothing for that tick. Baselines are re-captured after
   each render (three recomputes the camera's projection on its first WebGPU frame). `stats`, `lastReason`,
   `skippedRecently()` (what `js.skipped` reports through `ledger.attachScheduler`), `stop()`, `dispose()`.
+  - **Running mixer:** a mixer is animating only when one of its active actions (three's private
+    `_actions[0.._nActiveActions)`, `AnimationMixer.js` r186 ~201-202) is actually `isRunning()`, or is scheduled
+    to start later (`_startTime !== null`, set by `startAt()`). `mixer.stats.actions.inUse` (~233) returns
+    `_nActiveActions` with no filtering, so on its own it keeps counting a finished `LoopOnce` action that stays
+    active — `clampWhenFinished` pauses it (`AnimationAction.js` ~771) and without clamping it is only disabled
+    (~772), neither of which removes it from `_actions`; `isRunning()` (~220) is false either way once finished.
+    The check reads these private fields through a reflection cast (pinned by a canary test in
+    `test/unit/render-scheduler.test.ts`) and falls back to `stats.actions.inUse > 0` for a mixer-like object
+    that does not expose them (a test double, or a future three version that renames them).
+  - **Matrices:** `cameraChanged()` and `watchedChanged()` (and `watch()`, for the initial baseline) call
+    `object.updateWorldMatrix(true, false)` before reading `matrixWorld`: three does not recompute it just
+    because a property changed, only a render pass or an explicit update call does, so moving `camera.position`
+    or a watched object's transform without calling `updateMatrixWorld()` is still detected.
+  - **A disposed `World`:** the scheduler holds only the disposer `World.onDirty()` returns, and calls it once
+    from `dispose()`; it never calls back into the `World` at tick time. Constructing a scheduler against an
+    already-disposed `World` throws immediately — that is `World.onDirty()`'s own fail-fast guard, not scheduler
+    code. Disposing the `World` after the scheduler is already running does not throw anywhere: `World.dispose()`
+    clears its dirty-listener set, so the scheduler's subscription is silently dropped, but a disposed `World`
+    can never legitimately emit another dirty event (every mutator throws once it is disposed), and every other
+    detector (`invalidate()`, camera, watched objects, mixers, resize, `keepAliveMs`) keeps working normally.
+    `scheduler.dispose()` is safe to call before or after `world.dispose()`.
 - **Ledger**: `js.hiddenOriginals`, `js.skipped`; budget `objects`; hints `js-objects` (over budget) and
   `detach-originals` (1 000 or more hidden originals: `originals: 'detach'`); bench metrics `objects` and
   `autoUpdatedMatrices`.

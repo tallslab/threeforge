@@ -13,6 +13,46 @@ export interface SchedulerMixer {
   stats: { actions: { inUse: number } };
 }
 
+/**
+ * Reflects three r186's private `AnimationMixer`/`AnimationAction` fields (not part of three's public types, so
+ * they are read through an `unknown` cast rather than declared on `SchedulerMixer`): `AnimationMixer.js` ~201-202
+ * (`_actions`, active actions stored first then inactive ones; `_nActiveActions`, ~271's `_isActiveAction` checks
+ * an action's cache index against it). `AnimationAction.js`'s `_startTime` is set by `startAt()` (~246) and
+ * cleared at construction (~73) and by `reset()` (~209, called from `play()`). Pinned by the canary test in
+ * test/unit/render-scheduler.test.ts.
+ */
+interface MixerInternals {
+  _actions: ActionInternals[];
+  _nActiveActions: number;
+}
+interface ActionInternals {
+  isRunning?(): boolean;
+  _startTime?: number | null;
+}
+
+/**
+ * A mixer is animating when an active action (`_actions[0.._nActiveActions)`) is actually running
+ * (`isRunning()`), or is scheduled to start later (`_startTime !== null`). `AnimationMixer.js` ~233's
+ * `stats.actions.inUse` getter returns `_nActiveActions` directly with no filtering, so it keeps counting a
+ * finished `LoopOnce` action that stays active — `clampWhenFinished` pauses it (`AnimationAction.js` ~771),
+ * without clamping it is only disabled (~772), and neither removes it from `_actions`. `isRunning()` (~220)
+ * requires enabled, not paused, `timeScale !== 0` and `_startTime === null`, so it is false in both cases: that
+ * is the bug this replaces. Falls back to `stats.actions.inUse` when `_actions` / `_nActiveActions` are absent
+ * (mixer-like test doubles that do not model three's internals).
+ */
+function isMixerAnimating(mixer: SchedulerMixer): boolean {
+  const internals = mixer as unknown as Partial<MixerInternals>;
+  const actions = internals._actions;
+  const nActive = internals._nActiveActions;
+  if (!Array.isArray(actions) || typeof nActive !== 'number') return mixer.stats.actions.inUse > 0;
+  for (let i = 0; i < nActive; i++) {
+    const action = actions[i];
+    if (!action) continue;
+    if ((typeof action.isRunning === 'function' && action.isRunning()) || (action._startTime !== null && action._startTime !== undefined)) return true;
+  }
+  return false;
+}
+
 export interface RenderSchedulerOptions {
   renderer: SchedulerRenderer;
   scene: Scene;
@@ -79,6 +119,7 @@ export class RenderScheduler {
   }
 
   watch(object: Object3D): void {
+    object.updateWorldMatrix(true, false);
     this.watched.set(object, Float64Array.from(object.matrixWorld.elements));
   }
 
@@ -111,7 +152,7 @@ export class RenderScheduler {
     let animating = false;
     for (const mixer of this.mixers) {
       mixer.update(delta);
-      if (mixer.stats.actions.inUse > 0) animating = true;
+      if (isMixerAnimating(mixer)) animating = true;
     }
     // Every detector runs every tick (no short-circuit) so each keeps its baseline current.
     const cameraChanged = this.cameraChanged();
@@ -150,6 +191,10 @@ export class RenderScheduler {
   }
 
   private cameraChanged(): boolean {
+    // Moving `camera.position` (or its parent) does not itself recompute `matrixWorld` — only a render pass or
+    // an explicit update call does. Bring it current before comparing so an app that moves the camera without
+    // calling `updateMatrixWorld()` still gets detected.
+    this.camera.updateWorldMatrix(true, false);
     const w = this.camera.matrixWorld.elements;
     const p = this.camera.projectionMatrix.elements;
     let changed = false;
@@ -166,6 +211,8 @@ export class RenderScheduler {
   private watchedChanged(): boolean {
     let changed = false;
     for (const [object, last] of this.watched) {
+      // Same reason as cameraChanged(): a watched object's matrixWorld is stale until something updates it.
+      object.updateWorldMatrix(true, false);
       const e = object.matrixWorld.elements;
       for (let i = 0; i < 16; i++) {
         if (last[i] !== e[i]) {

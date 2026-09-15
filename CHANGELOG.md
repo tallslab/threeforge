@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `RenderScheduler` no longer renders forever once a `LoopOnce` animation finishes: a mixer counts as animating only when an active action is actually running (or scheduled to start), not merely `stats.actions.inUse > 0` (which stays 1 for a finished-but-active action, clamped or not). It also updates the camera's and each watched object's world matrix before comparing them, so moving `camera.position` (or a watched object) without an explicit `updateMatrixWorld()` call is now detected and renders a frame.
 - The frame snapshot is `schemaVersion: 3` (`ledger.frame()`, `window.__threeforge.schemaVersion`, and `threeforge schema snapshot`, whose `$id` is now `frame-snapshot-v3.json`); it had stayed at 2 since 0.2 while sections and fields were added. The analyze, inspect and optimize documents and bench results keep their own `schemaVersion: 1`.
 - New `js.ledgerMs`: the milliseconds the ledger spends filing a frame after `render()` has finished (the snapshot, the hints and the rescan every 60 frames). The overlay and `ledger.report()` js row show it as `ms ledger`, and `analyze`/`inspect` report its median over the measured frames.
 - `js.renderMs` stops when the ledger starts filing the frame, so that filing no longer counts as render time (a frame with a 20 ms rescan reported 20 ms more); it still includes the ledger's per-submission attribution. Measured `renderMs` values drop slightly.
