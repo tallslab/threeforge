@@ -96,7 +96,11 @@ export async function serveStatic(roots: StaticRoot[]): Promise<{ url: string; c
       }
       res.writeHead(200, { 'content-type': TYPES[extname(resolved.file).toLowerCase()] ?? 'application/octet-stream', 'content-length': resolved.size, 'cache-control': 'no-store' });
       const stream = createReadStream(resolved.file);
+      // Both directions: a read failure (disk error) destroys the response, and a write failure (the
+      // client — Chromium/Playwright during analyze/inspect/optimize — aborting mid-download) destroys
+      // the read stream. `pipe()` only forwards source errors to the destination, never the reverse.
       stream.on('error', () => res.destroy());
+      res.on('error', () => stream.destroy());
       stream.pipe(res);
     } catch {
       if (!res.headersSent) res.writeHead(500).end();

@@ -1,5 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
+import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -28,6 +29,7 @@ describe('serveStatic hardening', () => {
   const root = join(parent, 'root');
   const literalPercentFile = join(root, '100%.jpg');
   const normalFile = join(root, 'normal.txt');
+  const bigFile = join(root, 'big.bin');
   const outsideFile = join(parent, 'secret.txt');
   const symlinkFile = join(root, 'escape.jpg');
   let server: { url: string; close(): Promise<void> };
@@ -36,6 +38,9 @@ describe('serveStatic hardening', () => {
     mkdirSync(root, { recursive: true });
     writeFileSync(literalPercentFile, 'literal-percent-jpg-bytes');
     writeFileSync(normalFile, 'hello world');
+    // Big enough that the socket-level reset below almost certainly lands mid-stream rather than
+    // after the whole response has already been flushed to the OS.
+    writeFileSync(bigFile, Buffer.alloc(20 * 1024 * 1024, 7));
     writeFileSync(outsideFile, 'top secret, outside the root');
     symlinkSync(outsideFile, symlinkFile);
     const roots: StaticRoot[] = [{ prefix: '/', dir: root }];
@@ -86,5 +91,32 @@ describe('serveStatic hardening', () => {
   it('answers 403 for an encoded path traversal', async () => {
     const res = await rawGet(server.url, '/..%2f..%2foutside.txt');
     expect(res.status).toBe(403);
+  });
+
+  it('survives the client resetting its socket mid-download, and keeps serving the next request', async () => {
+    const target = new URL(server.url);
+    // A raw socket (not the http client) so we can force a real TCP RST with resetAndDestroy(),
+    // the closest a test can get to Chromium/Playwright abruptly aborting an in-flight asset
+    // request (page navigation, a --timeout abort, a crashed tab) while the server is still writing.
+    await new Promise<void>((ok, fail) => {
+      const socket = connect(Number(target.port), target.hostname, () => {
+        socket.write('GET /big.bin HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n');
+      });
+      let received = 0;
+      socket.on('data', (chunk: Buffer) => {
+        received += chunk.length;
+        if (received > 32 * 1024 && !socket.destroyed) {
+          socket.resetAndDestroy();
+        }
+      });
+      socket.on('close', () => ok());
+      socket.on('error', () => ok()); // a local ECONNRESET on our own end is an expected side effect of the reset
+      setTimeout(fail, 4000);
+    });
+    // Give the server a tick to finish reacting to the aborted write before probing it.
+    await new Promise((wake) => setTimeout(wake, 100));
+    const after = await rawGet(server.url, '/normal.txt');
+    expect(after.status).toBe(200);
+    expect(after.body).toBe('hello world');
   });
 });
