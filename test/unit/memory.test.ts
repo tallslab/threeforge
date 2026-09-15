@@ -26,6 +26,7 @@ import {
   UnsignedInt248Type,
   UnsignedIntType,
   VideoTexture,
+  VSMShadowMap,
   type Light,
 } from 'three';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
@@ -155,7 +156,10 @@ describe('memory estimate', () => {
     scene.add(idle, point);
     allocateShadowMap(point, 256);
     // The map, the frame buffer (2), the point light's cube map and depth (2), and one texture removed without dispose().
-    expect(estimateMemory(scene, { textures: 1 + 2 + 2 + 1, geometries: 2 }, [800, 600]).unreferenced).toEqual({ geometries: 0, textures: 1 });
+    const m = estimateMemory(scene, { textures: 1 + 2 + 2 + 1, geometries: 2 }, [800, 600]);
+    expect(m.unreferenced).toEqual({ geometries: 0, textures: 1 });
+    // Render targets agree with the allowance: the point light's built cube map and the frame buffer, not the idle light's.
+    expect(m.renderTargets).toEqual({ count: 2, bytes: 512 * 512 * 4 * 6 + 800 * 600 * 8 });
   });
 
   it('allows the render targets passed in for the renderer (the overdraw count target), counting the textures three gives each', () => {
@@ -166,6 +170,39 @@ describe('memory estimate', () => {
     expect(estimateMemory(scene, info, [800, 600]).unreferenced.textures).toBe(3);
     expect(estimateMemory(scene, info, [800, 600], { renderTargets: [colourOnly, withDepth] }).unreferenced.textures).toBe(0);
     expect(estimateMemory(scene, info, [800, 600], { renderTargets: [null] }).unreferenced.textures).toBe(3);
+  });
+
+  it('allows the two blur targets of each built non-point VSM map: on the shadow node for a plain map, read off an array map', () => {
+    const { scene } = sceneWithMap();
+    const sun = new DirectionalLight();
+    sun.castShadow = true;
+    allocateShadowMap(sun, 256);
+    const point = new PointLight(); // VSM blurs no point-light map (ShadowNode.js ~383)
+    point.castShadow = true;
+    allocateShadowMap(point, 256);
+    const idle = new DirectionalLight(); // never built: no blur targets either
+    idle.castShadow = true;
+    scene.add(sun, point, idle);
+    // The map, the frame buffer, the sun's map and depth plus its two RG half-float blur targets (ShadowNode.js ~409-410,
+    // colour only), the point light's cube map and depth.
+    const info = { textures: 1 + 2 + 2 + 2 + 2, geometries: 2 };
+    expect(estimateMemory(scene, info, [800, 600], { shadowMapType: VSMShadowMap }).unreferenced.textures).toBe(0);
+    expect(estimateMemory(scene, info, [800, 600]).unreferenced.textures).toBe(2);
+    // An array map keeps its blur targets on the map itself (ShadowNode.js ~389-403): counted from them, once.
+    const { scene: arrayScene } = sceneWithMap();
+    const tiles = new DirectionalLight();
+    tiles.castShadow = true;
+    const blur = { format: RGFormat, type: HalfFloatType, depthBuffer: false };
+    Object.assign(allocateShadowMap(tiles, 256), { _vsmShadowMapVertical: new RenderTarget(256, 256, blur), _vsmShadowMapHorizontal: new RenderTarget(256, 256, blur) });
+    arrayScene.add(tiles);
+    expect(estimateMemory(arrayScene, { textures: 1 + 2 + 2 + 2, geometries: 2 }, [800, 600], { shadowMapType: VSMShadowMap }).unreferenced.textures).toBe(0);
+  });
+
+  it('allows the textures the caller counts for the renderer itself (options.internalTextures)', () => {
+    const { scene } = sceneWithMap();
+    const info = { textures: 1 + 2 + 1, geometries: 2 };
+    expect(estimateMemory(scene, info, [800, 600]).unreferenced.textures).toBe(1);
+    expect(estimateMemory(scene, info, [800, 600], { internalTextures: 1 }).unreferenced.textures).toBe(0);
   });
 
   it("memory.measured copies renderer.info.memory's counts and byte sizes, and is null without them", () => {
@@ -191,6 +228,48 @@ describe('the ledger memory section', () => {
     Object.assign(renderer.info.memory, { textures: 1 + 2 + 1, geometries: 1 + 1 });
     expect(ledger.measureMemory().unreferenced).toEqual({ geometries: 0, textures: 0 });
     ledger.detach();
+  });
+
+  it("allows three's DFG_LUT while the attached renderer holds it, counted through info.createTexture and destroyTexture, which detach() restores", () => {
+    const renderer = new FakeRenderer();
+    const memory = Object.assign(renderer.info.memory, { textures: 0, geometries: 0 });
+    const calls: unknown[] = [];
+    // Info.createTexture and destroyTexture (renderers/common/Info.js ~230-252), which Textures calls for every texture it uploads and destroys.
+    const info = Object.assign(renderer.info, {
+      createTexture(this: unknown, texture: unknown) {
+        calls.push(this, texture);
+        memory.textures++;
+      },
+      destroyTexture(this: unknown, texture: unknown) {
+        calls.push(this, texture);
+        memory.textures--;
+      },
+    });
+    const { createTexture, destroyTexture } = info;
+    const ledger = new DrawCallLedger();
+    ledger.attach(renderer as never);
+    const { scene, camera } = sceneWithCamera();
+    scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial({ map: new DataTexture(new Uint8Array(4), 1, 1) })));
+    scene.updateMatrixWorld();
+    renderer.render(scene, camera);
+    Object.assign(memory, { textures: 1 + 2, geometries: 1 + 1 }); // the map, and the frame buffer's colour and depth
+    // three r186 nodes/functions/BSDF/DFGLUT.js: a module-private 16 x 16 RG half-float DataTexture named DFG_LUT.
+    const lut = new DataTexture(new Uint16Array(16 * 16 * 2), 16, 16, RGFormat, HalfFloatType);
+    lut.name = 'DFG_LUT';
+    info.createTexture(lut);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toBe(info);
+    expect(calls[1]).toBe(lut);
+    expect(ledger.measureMemory().unreferenced).toEqual({ geometries: 0, textures: 0 });
+    info.createTexture(new DataTexture(new Uint8Array(4), 1, 1)); // removed without dispose(): not the LUT
+    expect(ledger.measureMemory().unreferenced.textures).toBe(1);
+    info.destroyTexture(lut); // no longer held: nothing is allowed for it
+    expect(calls[4]).toBe(info);
+    expect(calls[5]).toBe(lut);
+    expect(ledger.measureMemory().unreferenced.textures).toBe(1);
+    ledger.detach();
+    expect(info.createTexture).toBe(createTexture);
+    expect(info.destroyTexture).toBe(destroyTexture);
   });
 
   it('overdrawTargetOf(renderer) is the count target measureOverdraw keeps for that renderer, until disposeOverdraw()', async () => {

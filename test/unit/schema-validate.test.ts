@@ -138,6 +138,22 @@ describe('schema-validate: every exported schema compiles standalone in ajv and 
     expect(validate(frame), JSON.stringify(validate.errors)).toBe(true);
   });
 
+  it("SNAPSHOT_SCHEMA validates a frame whose memory.measured carries three's counts, and rejects a malformed one", () => {
+    const validate = compile(SNAPSHOT_SCHEMA);
+    const renderer = new FakeRenderer();
+    Object.assign(renderer.info.memory, { textures: 5, texturesSize: 5_592_409, geometries: 3, attributesSize: 4096, indexAttributesSize: 1024, renderTargets: 1, total: 5_600_000 });
+    const ledger = new DrawCallLedger({ registry: new MaterialRegistry() });
+    ledger.attach(renderer as never);
+    const { scene, camera } = sceneWithCamera();
+    scene.add(new Mesh(new BoxGeometry(), new MeshStandardMaterial()));
+    renderer.render(scene, camera);
+    ledger.measureMemory();
+    const frame = ledger.frame({ items: true });
+    expect(frame.memory.measured).toEqual({ textures: { count: 5, bytes: 5_592_409 }, geometries: { count: 3, bytes: 5120 }, renderTargets: { count: 1 }, bytes: 5_600_000 });
+    expect(validate(frame), JSON.stringify(validate.errors)).toBe(true);
+    expect(validate({ ...frame, memory: { ...frame.memory, measured: { textures: { count: 5 } } } })).toBe(false);
+  });
+
   it('ANALYZE_SCHEMA compiles alone (its embedded FrameSnapshot resolves with no addSchema) and validates a fixture analyze document', () => {
     const validate = compile(ANALYZE_SCHEMA);
     const doc = analyzeFixture();

@@ -19,6 +19,7 @@ import {
   UnsignedShort4444Type,
   UnsignedShort5551Type,
   UnsignedShortType,
+  VSMShadowMap,
   type BufferGeometry,
   type Object3D,
   type Texture,
@@ -149,9 +150,14 @@ function renderTargetTextures(target: AllowedRenderTarget): number {
   return (Array.isArray(target.textures) ? target.textures.length : 1) + (target.depthTexture || target.depthBuffer || target.stencilBuffer ? 1 : 0);
 }
 
+/** A built shadow map: an array map carries its VSM blur targets (ShadowNode.js ~389-403). */
+type ShadowMapTarget = AllowedRenderTarget & { _vsmShadowMapVertical?: AllowedRenderTarget | null; _vsmShadowMapHorizontal?: AllowedRenderTarget | null };
+
 /** Renderer-internal allocations present on an empty scene: the output pass's quad, the frame-buffer target's colour and depth. */
 const INTERNAL_GEOMETRIES = 1;
 const FRAME_BUFFER_TEXTURES = 2;
+/** A non-point VSM map's two colour-only RG half-float blur targets, kept on its shadow node (ShadowNode.js ~409-410). */
+const VSM_BLUR_TEXTURES = 2;
 
 export function geometryBytes(geometry: BufferGeometry): number {
   let bytes = geometry.index?.array.byteLength ?? 0;
@@ -176,6 +182,13 @@ export interface MemoryEstimateOptions {
    * maps (null entries are skipped). The ledger passes its overdraw count target, `overdrawTargetOf(renderer)`.
    */
   renderTargets?: ReadonlyArray<AllowedRenderTarget | null>;
+  /**
+   * Textures the renderer created for itself that nothing in the scene reaches, counted by the caller. The ledger counts
+   * three's `DFG_LUT` through `renderer.info.createTexture` and `destroyTexture` while it is attached.
+   */
+  internalTextures?: number;
+  /** `renderer.shadowMap.type`: under `VSMShadowMap` each built non-point shadow map also holds two blur targets. */
+  shadowMapType?: number;
 }
 
 /** three's own counts and byte sizes, null when `info` does not carry them. */
@@ -186,25 +199,36 @@ function measuredOf(info: RendererMemoryInfo): MeasuredMemory | null {
 }
 
 /**
- * Estimated GPU memory held by a scene: unique textures (materials, background, environment), unique geometries,
- * shadow maps of shadow-casting lights, and the renderer's half-float frame-buffer target for the viewport. `measured`
- * is three's own count when `info` carries its byte sizes.
+ * Estimated GPU memory held by a scene: unique textures (materials, background, environment), unique geometries, the
+ * shadow maps three has built for casting lights, and the renderer's half-float frame-buffer target for the viewport.
+ * `measured` is three's own count when `info` carries its byte sizes.
  */
 export function estimateMemory(scene: Object3D, info: RendererMemoryInfo, viewport: [number, number], options: MemoryEstimateOptions = {}): MemorySnapshot {
   const { textures, geometries } = collectResources(scene);
   let rtCount = 0;
   let rtBytes = 0;
   // What the renderer allocates for itself counts in info.memory without being in the scene (measured on both backends):
-  // the frame-buffer target's colour and depth whatever the viewport, and the textures of every shadow map three has
-  // built. ShadowNode.setupShadow creates a light's map when a receiver's lighting first builds and sets `shadow.map`
-  // (ShadowNode.js ~529): a casting light whose map three never built (shadow maps disabled, never lit) holds none.
-  let allowedTextures = FRAME_BUFFER_TEXTURES;
+  // the frame-buffer target's colour and depth whatever the viewport, the textures of every shadow map three has built
+  // with a VSM map's two blur targets, and what the caller counts for the renderer. ShadowNode.setupShadow creates a
+  // light's map when a receiver's lighting first builds and sets `shadow.map` (ShadowNode.js ~529): a casting light whose
+  // map three never built (shadow maps disabled, never lit) holds none, and counts as no render target either. A map
+  // built but not rendered yet is allowed textures three creates on its first render, so the count reads low until then.
+  let allowedTextures = FRAME_BUFFER_TEXTURES + (options.internalTextures ?? 0);
   scene.traverse((o) => {
-    const light = o as Object3D & { isLight?: boolean; isPointLight?: boolean; castShadow: boolean; shadow?: { mapSize: { x: number; y: number }; map?: AllowedRenderTarget | null } };
-    if (!light.isLight || !light.castShadow || !light.shadow) return;
+    const light = o as Object3D & { isLight?: boolean; isPointLight?: boolean; castShadow: boolean; shadow?: { mapSize: { x: number; y: number }; isPointLightShadow?: boolean; map?: ShadowMapTarget | null } };
+    const map = light.isLight && light.castShadow ? light.shadow?.map : null;
+    if (!map || !light.shadow) return;
     rtCount++;
     rtBytes += light.shadow.mapSize.x * light.shadow.mapSize.y * 4 * (light.isPointLight ? 6 : 1);
-    if (light.shadow.map) allowedTextures += renderTargetTextures(light.shadow.map);
+    allowedTextures += renderTargetTextures(map);
+    // VSM blurs every map but a point light's (ShadowNode.js ~383): an array map keeps its two blur targets on the map
+    // (~389-403), a plain one on its shadow node (~409-410), where only the renderer's shadow-map type tells.
+    if (light.shadow.isPointLightShadow === true) return;
+    if (map._vsmShadowMapVertical || map._vsmShadowMapHorizontal) {
+      for (const blur of [map._vsmShadowMapVertical, map._vsmShadowMapHorizontal]) if (blur) allowedTextures += renderTargetTextures(blur);
+    } else if (options.shadowMapType === VSMShadowMap) {
+      allowedTextures += VSM_BLUR_TEXTURES;
+    }
   });
   for (const target of options.renderTargets ?? []) if (target) allowedTextures += renderTargetTextures(target);
   let textureTotal = 0;

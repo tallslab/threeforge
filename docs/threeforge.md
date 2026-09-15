@@ -231,7 +231,8 @@ items?:    per-submission records with ledger.frame({ items: true })
   byte), the size is the one `Textures.getSize` allocates (a cube's first face, a video's frame; three's `Info` reads 1
   for a cube's image array), and explicit mipmaps are the levels three uploads (every level in a 2D texture's
   `mipmaps`, the base plus the levels in a cube's). Geometries are Σ attribute and index bytes, render targets the
-  shadow maps of casting lights and the renderer's half-float frame-buffer target for the viewport.
+  shadow maps three has built for casting lights (none for a light whose map three never built) and the renderer's
+  half-float frame-buffer target for the viewport.
   `ledger.measureMemory()` recounts now.
 - **memory.measured** is three's own `renderer.info.memory` when the estimate was made: `textures` (count and
   `texturesSize`), `geometries` (count and `attributesSize + indexAttributesSize`), `renderTargets` (count) and `bytes`
@@ -241,10 +242,12 @@ items?:    per-submission records with ledger.frame({ items: true })
   scene no longer reaches, minus what three allocates for itself, whatever the viewport: one geometry, the frame-buffer
   target's colour and depth, the textures of every shadow map three has built (a colour and a depth texture, read off
   each casting light's `shadow.map`; a casting light whose map three never built, with shadow maps disabled or never
-  lit, holds none), and the overdraw count target once `measureOverdraw()` has run. Not allowed: a VSM map's two blur
-  targets, which three keeps on its shadow node (2 textures per non-point VSM light), and three's 16 × 16 `DFG_LUT`,
-  which it creates once a Standard or Physical material is lit and keeps private (1 texture on any such scene);
-  reachable includes BatchedMesh and skeleton textures and `material.userData.forgeTextures`. Recounted
+  lit, holds none) with a non-point VSM map's two blur targets (read off an array map, else counted from
+  `renderer.shadowMap.type`), the overdraw count target once `measureOverdraw()` has run, and three's 16 × 16 `DFG_LUT`
+  (created once a Standard or Physical material is lit, and held with nothing in the scene reaching it), which the
+  ledger counts through `renderer.info.createTexture` and `destroyTexture` while attached. Limits: a LUT three created
+  before `ledger.attach()` is not seen and reads as one unreferenced texture; a map built but not rendered yet is
+  allowed the textures three creates on its first render, so the count reads low until then; reachable includes BatchedMesh and skeleton textures and `material.userData.forgeTextures`. Recounted
   with the graph statistics; `measureMemory()` recounts now. **memory.chunks** is the attached Streamer's residency,
   read live.
 - **hints** are recomputed every frame from the snapshot and the budgets of the environment's tier.

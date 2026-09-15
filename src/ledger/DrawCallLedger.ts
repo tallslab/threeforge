@@ -17,7 +17,15 @@ import { buildFrame, emptyFrame, emptySections, type BudgetResult, type FrameEnv
 export interface LedgerRenderer {
   render(scene: Scene, camera: Camera): unknown;
   renderObject(...args: unknown[]): unknown;
-  info: { render: { drawCalls: number; triangles: number }; memory: { programs: number; textures?: number; geometries?: number; texturesSize?: number; attributesSize?: number; indexAttributesSize?: number; renderTargets?: number; total?: number } };
+  info: {
+    render: { drawCalls: number; triangles: number };
+    memory: { programs: number; textures?: number; geometries?: number; texturesSize?: number; attributesSize?: number; indexAttributesSize?: number; renderTargets?: number; total?: number };
+    /** Info.createTexture and destroyTexture: wrapped while attached to count three's DFG_LUT (see `attach`). */
+    createTexture?(texture: unknown): void;
+    destroyTexture?(texture: unknown): void;
+  };
+  /** `renderer.shadowMap`: its type tells the memory section whether built maps hold VSM blur targets. */
+  shadowMap?: { type?: number };
   backend?: unknown;
   getRenderTarget?(): { name?: string; texture?: { name?: string } } | null;
   /** Drawing-buffer size in pixels; `overdraw.pixels` stays 0 without it. */
@@ -185,6 +193,9 @@ export class DrawCallLedger {
   private scheduler: { skippedRecently(): number } | null = null;
   private streamer: { stats(): { chunks: number; resident: number } } | null = null;
   private memoryStats: MemorySnapshot = emptySections().memory;
+  /** Live DFG_LUT textures three created on the attached renderer (see `wrapTextureInfo`). */
+  private readonly internalTextures = new Set<object>();
+  private textureInfo: { info: LedgerRenderer['info']; create: (texture: unknown) => void; destroy: (texture: unknown) => void; own: { create: boolean; destroy: boolean } } | null = null;
   private hintContext: HintContext = {};
   private overdraw: OverdrawResult | null = null;
   private paused = false;
@@ -197,6 +208,12 @@ export class DrawCallLedger {
     this.last = emptyFrame(this.env());
   }
 
+  /**
+   * Patches `render` and `renderObject` to attribute every draw, and wraps `renderer.info.createTexture` and
+   * `destroyTexture` (calling three's own with the same `this` and arguments) to count three's `DFG_LUT` texture for the
+   * memory section: three r186 creates it the first time a lit Standard or Physical material builds and holds it with
+   * nothing in the scene reaching it. A LUT three created before `attach()` is not seen. `detach()` restores all four.
+   */
   attach(renderer: LedgerRenderer): void {
     if (this.renderer) this.detach();
     this.renderer = renderer;
@@ -231,6 +248,7 @@ export class DrawCallLedger {
         ledger.exit();
       }
     };
+    this.wrapTextureInfo(renderer);
     // `renderAsync` stays three's own. r186's is `await this.init(); this.render(scene, camera);`, so its frame enters the
     // wrapper above once, after the await, and every enter() is paired with an exit() inside one synchronous call. A wrapper
     // of its own opened the frame before the await: the render inside became a nested pass, and any render() made during
@@ -241,6 +259,7 @@ export class DrawCallLedger {
     if (!this.renderer || !this.originals) return;
     this.renderer.render = this.originals.render;
     this.renderer.renderObject = this.originals.renderObject;
+    this.unwrapTextureInfo();
     disposeOverdraw(this.renderer);
     this.renderer = null;
     this.originals = null;
@@ -248,6 +267,44 @@ export class DrawCallLedger {
     this.current = null;
     this.contexts.length = 0;
     this.clearHashes();
+  }
+
+  /**
+   * three r186 nodes/functions/BSDF/DFGLUT.js keeps its 16 x 16 RG half-float lookup texture in a module variable that
+   * nothing exports (`three/tsl` exports the TSL function only), creates it on the first shader build that samples it and
+   * never disposes it. Info.createTexture and destroyTexture see every texture three uploads and destroys, so the live
+   * LUTs are counted by three's name for it, `DFG_LUT`, on a DataTexture.
+   */
+  private wrapTextureInfo(renderer: LedgerRenderer): void {
+    const info = renderer.info;
+    const create = info.createTexture;
+    const destroy = info.destroyTexture;
+    this.internalTextures.clear();
+    if (typeof create !== 'function' || typeof destroy !== 'function') return;
+    const internal = this.internalTextures;
+    const own = { create: Object.prototype.hasOwnProperty.call(info, 'createTexture'), destroy: Object.prototype.hasOwnProperty.call(info, 'destroyTexture') };
+    info.createTexture = function (this: unknown, texture: unknown) {
+      const t = texture as { name?: string; isDataTexture?: boolean } | null;
+      if (t && t.isDataTexture === true && t.name === 'DFG_LUT') internal.add(t);
+      return create.apply(this, arguments as unknown as [unknown]);
+    };
+    info.destroyTexture = function (this: unknown, texture: unknown) {
+      internal.delete(texture as object);
+      return destroy.apply(this, arguments as unknown as [unknown]);
+    };
+    this.textureInfo = { info, create, destroy, own };
+  }
+
+  private unwrapTextureInfo(): void {
+    const wrapped = this.textureInfo;
+    this.textureInfo = null;
+    this.internalTextures.clear();
+    if (!wrapped) return;
+    // three's own are prototype methods: removing the wrappers exposes them again; a renderer's own methods are put back.
+    if (wrapped.own.create) wrapped.info.createTexture = wrapped.create;
+    else delete wrapped.info.createTexture;
+    if (wrapped.own.destroy) wrapped.info.destroyTexture = wrapped.destroy;
+    else delete wrapped.info.destroyTexture;
   }
 
   /** Describe the device and canvas for the snapshot's `env` (the harness and the bench page call this once). */
@@ -291,7 +348,11 @@ export class DrawCallLedger {
     const memory = this.renderer?.info.memory;
     const info = { textures: memory?.textures ?? 0, geometries: memory?.geometries ?? 0, texturesSize: memory?.texturesSize, attributesSize: memory?.attributesSize, indexAttributesSize: memory?.indexAttributesSize, renderTargets: memory?.renderTargets, total: memory?.total };
     // The overdraw count target is the renderer's own, held while nothing in the scene reaches it.
-    this.memoryStats = estimateMemory(scene, info, this.environment.viewport, { renderTargets: [this.renderer ? overdrawTargetOf(this.renderer) : null] });
+    this.memoryStats = estimateMemory(scene, info, this.environment.viewport, {
+      renderTargets: [this.renderer ? overdrawTargetOf(this.renderer) : null],
+      internalTextures: this.internalTextures.size,
+      shadowMapType: this.renderer?.shadowMap?.type,
+    });
     this.last = { ...this.last, js: { ...this.last.js, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals }, memory: this.memoryNow() };
     this.last = { ...this.last, hints: hintsFor(this.last, this.budgets(), { ...this.hintContext, items: this.lastItems }) };
   }

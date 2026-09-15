@@ -49,9 +49,12 @@ the geometries and textures the renderer holds that nothing in the scene reaches
 
 The ledger reports that count as `memory.unreferenced` and warns with `unreferenced-resources` at eight or more.
 The count is renderer counts minus reachable resources minus what three allocates for itself (one geometry, two
-frame-buffer textures, two textures per shadow map three has built, and the overdraw count target once the ledger
-has measured overdraw; measured on both backends). A lit Standard or Physical material makes three create a private
-16 × 16 lookup texture (`DFG_LUT`) that nothing in the scene reaches, so such a scene reads one unreferenced texture. Reachable includes material
+frame-buffer textures, two textures per shadow map three has built and two more per non-point VSM map, the overdraw
+count target once the ledger has measured overdraw, and three's 16 × 16 `DFG_LUT` lookup texture, which three creates
+once a Standard or Physical material is lit and the ledger counts through `renderer.info` while attached; measured on
+both backends). A LUT three created before `ledger.attach()` is not seen and reads as one unreferenced texture; a
+shadow map built but not rendered yet is allowed textures three has not created yet, so the count reads low until it
+renders. Reachable includes material
 textures, a BatchedMesh's matrix, indirect and colour textures, a skeleton's bone texture, the scene background and
 environment, and textures a node material lists in `material.userData.forgeTextures` (AnimatedInstances lists its
 animation texture; do the same for your own TSL materials). three uploads a texture only when it renders, so a
