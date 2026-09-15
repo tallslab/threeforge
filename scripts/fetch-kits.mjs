@@ -3,9 +3,11 @@
  * models (heavy realistic props via their API, 1k textures), and a few single files (three.js car, water normals).
  * Writes test/assets/files/kits-index.json. Usage: node scripts/fetch-kits.mjs
  */
-import { execSync } from 'node:child_process';
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { mkdir, readdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { safeLocalPath } from './fetch-safe.mjs';
 
 const root = 'test/assets/files';
 const kits = [
@@ -57,75 +59,99 @@ async function walk(dir, out = []) {
   return out;
 }
 
-const index = [];
-for (const kit of kits) {
-  try {
-    const zip = join(root, '_zips', `${kit.name}.zip`);
-    const bytes = await download(kit.url, zip);
-    const dir = join(root, kit.name);
-    if ((await size(join(dir, '.extracted'))) === 0) {
-      await mkdir(dir, { recursive: true });
-      execSync(`unzip -o -q "${zip}" -d "${dir}"`);
-      await writeFile(join(dir, '.extracted'), 'ok');
-    }
-    const all = await walk(dir);
-    const glbs = all.filter((p) => p.toLowerCase().endsWith('.glb')).map((p) => relative(root, p));
-    const textures = kit.textures ? all.filter((p) => /\.(png|jpg)$/i.test(p)).map((p) => relative(root, p)) : [];
-    index.push({ name: kit.name, kind: 'kit', source: 'kenney.nl (CC0)', bytes, glbs, textures, tags: ['kit', 'low-poly', 'shared-palette'] });
-    console.log(`${kit.name.padEnd(30)} ${(bytes / 1e6).toFixed(1).padStart(6)} MB  ${glbs.length} glb  ${textures.length} textures`);
-  } catch (e) {
-    console.log(`${kit.name.padEnd(30)} FAILED ${e.message}`);
-    index.push({ name: kit.name, kind: 'kit', error: e.message });
+/** Lists `zip`'s entries with `unzip -Z1` and runs each through `safeLocalPath(dir, entry)` before extraction, so a
+ * hostile entry (zip-slip: `../../x`, an absolute path) is refused by this script rather than relying on `unzip`'s
+ * own `-o` behaviour. Directory entries (trailing `/`) are skipped; `safeLocalPath` throws, naming the entry, on
+ * anything that would land outside `dir`. */
+function checkZipEntries(zip, dir) {
+  const listing = execFileSync('unzip', ['-Z1', zip], { encoding: 'utf8' });
+  for (const rawEntry of listing.split('\n')) {
+    const entry = rawEntry.trim();
+    if (!entry || entry.endsWith('/')) continue;
+    safeLocalPath(dir, entry);
   }
 }
 
-// Poly Haven models are the hi-poly corpus for the asset report; the benchmark scenes only need the kits and
-// singles, so CI sets FORGE_KITS_ONLY=1 to skip this section.
-if (!process.env.FORGE_KITS_ONLY) {
-  // Poly Haven: explicit picks plus a few from the trees and vehicles categories.
-  let ids = [...polyhavenExplicit];
-  try {
-    const all = await (await fetch('https://api.polyhaven.com/assets?t=models')).json();
-    const pick = (cat, n) => Object.entries(all).filter(([, v]) => (v.categories ?? []).includes(cat)).map(([k]) => k).slice(0, n);
-    ids = [...new Set([...ids, ...pick('trees', 4), ...pick('vehicles', 4)])];
-  } catch (e) {
-    console.log(`polyhaven list FAILED ${e.message}`);
-  }
-  for (const id of ids) {
+/** Downloads every kit, Poly Haven model and single file into `root`. The only top-level side effect is the entry
+ * guard below, so importing this module (e.g. from a test) does no network or filesystem writes. */
+export async function main() {
+  const index = [];
+  for (const kit of kits) {
     try {
-      const files = await (await fetch(`https://api.polyhaven.com/files/${id}`)).json();
-      const res = files.gltf?.['1k'] ?? files.gltf?.[Object.keys(files.gltf ?? {})[0]];
-      if (!res?.gltf?.url) throw new Error('no gltf variant');
-      const dir = join(root, `polyhaven-${id}`);
-      const entryUrl = res.gltf.url;
-      const entryName = decodeURIComponent(entryUrl.split('/').pop());
-      let bytes = await download(entryUrl, join(dir, entryName));
-      for (const [rel, info] of Object.entries(res.gltf.include ?? {})) bytes += await download(info.url, join(dir, rel));
-      index.push({ name: `polyhaven-${id}`, entry: `polyhaven-${id}/${entryName}`, source: 'polyhaven.com (CC0)', bytes, tags: ['polyhaven', 'pbr', 'hi-poly'] });
-      console.log(`${('polyhaven-' + id).padEnd(30)} ${(bytes / 1e6).toFixed(1).padStart(6)} MB`);
+      const zip = join(root, '_zips', `${kit.name}.zip`);
+      const bytes = await download(kit.url, zip);
+      const dir = join(root, kit.name);
+      if ((await size(join(dir, '.extracted'))) === 0) {
+        await mkdir(dir, { recursive: true });
+        checkZipEntries(zip, dir);
+        execFileSync('unzip', ['-o', '-q', zip, '-d', dir]);
+        await writeFile(join(dir, '.extracted'), 'ok');
+      }
+      const all = await walk(dir);
+      const glbs = all.filter((p) => p.toLowerCase().endsWith('.glb')).map((p) => relative(root, p));
+      const textures = kit.textures ? all.filter((p) => /\.(png|jpg)$/i.test(p)).map((p) => relative(root, p)) : [];
+      index.push({ name: kit.name, kind: 'kit', source: 'kenney.nl (CC0)', bytes, glbs, textures, tags: ['kit', 'low-poly', 'shared-palette'] });
+      console.log(`${kit.name.padEnd(30)} ${(bytes / 1e6).toFixed(1).padStart(6)} MB  ${glbs.length} glb  ${textures.length} textures`);
     } catch (e) {
-      console.log(`${('polyhaven-' + id).padEnd(30)} FAILED ${e.message}`);
-      index.push({ name: `polyhaven-${id}`, error: e.message });
+      console.log(`${kit.name.padEnd(30)} FAILED ${e.message}`);
+      index.push({ name: kit.name, kind: 'kit', error: e.message });
     }
   }
+
+  // Poly Haven models are the hi-poly corpus for the asset report; the benchmark scenes only need the kits and
+  // singles, so CI sets FORGE_KITS_ONLY=1 to skip this section.
+  if (!process.env.FORGE_KITS_ONLY) {
+    // Poly Haven: explicit picks plus a few from the trees and vehicles categories.
+    let ids = [...polyhavenExplicit];
+    try {
+      const all = await (await fetch('https://api.polyhaven.com/assets?t=models')).json();
+      const pick = (cat, n) => Object.entries(all).filter(([, v]) => (v.categories ?? []).includes(cat)).map(([k]) => k).slice(0, n);
+      ids = [...new Set([...ids, ...pick('trees', 4), ...pick('vehicles', 4)])];
+    } catch (e) {
+      console.log(`polyhaven list FAILED ${e.message}`);
+    }
+    for (const id of ids) {
+      try {
+        const files = await (await fetch(`https://api.polyhaven.com/files/${id}`)).json();
+        const res = files.gltf?.['1k'] ?? files.gltf?.[Object.keys(files.gltf ?? {})[0]];
+        if (!res?.gltf?.url) throw new Error('no gltf variant');
+        const dir = join(root, `polyhaven-${id}`);
+        const entryUrl = res.gltf.url;
+        const rawEntryName = entryUrl.split('/').pop();
+        const entryName = decodeURIComponent(rawEntryName);
+        // safeLocalPath decodes internally; pass the raw (still-encoded) name so it isn't decoded twice.
+        let bytes = await download(entryUrl, safeLocalPath(dir, rawEntryName));
+        for (const [rel, info] of Object.entries(res.gltf.include ?? {})) bytes += await download(info.url, safeLocalPath(dir, rel));
+        index.push({ name: `polyhaven-${id}`, entry: `polyhaven-${id}/${entryName}`, source: 'polyhaven.com (CC0)', bytes, tags: ['polyhaven', 'pbr', 'hi-poly'] });
+        console.log(`${('polyhaven-' + id).padEnd(30)} ${(bytes / 1e6).toFixed(1).padStart(6)} MB`);
+      } catch (e) {
+        console.log(`${('polyhaven-' + id).padEnd(30)} FAILED ${e.message}`);
+        index.push({ name: `polyhaven-${id}`, error: e.message });
+      }
+    }
+  }
+
+  for (const single of singles) {
+    try {
+      const name = single.url.split('/').pop();
+      const bytes = await download(single.url, safeLocalPath(join(root, single.name), name));
+      if (single.name === 'three-textures') {
+        const existing = index.find((e) => e.name === 'three-textures') ?? (index.push({ name: 'three-textures', kind: 'kit', textures: [], glbs: [], source: 'mrdoob/three.js examples', bytes: 0, tags: ['texture'] }), index[index.length - 1]);
+        existing.textures.push(`three-textures/${name}`);
+        existing.bytes += bytes;
+        continue;
+      }
+      index.push({ name: single.name, entry: `${single.name}/${name}`, source: single.url, bytes, tags: single.tags });
+      console.log(`${single.name.padEnd(30)} ${(bytes / 1e6).toFixed(1).padStart(6)} MB`);
+    } catch (e) {
+      console.log(`${single.name.padEnd(30)} FAILED ${e.message}`);
+      index.push({ name: single.name, error: e.message });
+    }
+  }
+  await writeFile(join(root, 'kits-index.json'), JSON.stringify(index, null, 2));
+  console.log(`\nkits-index.json: ${index.filter((a) => !a.error).length}/${index.length} ok`);
 }
 
-for (const single of singles) {
-  try {
-    const name = single.url.split('/').pop();
-    const bytes = await download(single.url, join(root, single.name, name));
-    if (single.name === 'three-textures') {
-      const existing = index.find((e) => e.name === 'three-textures') ?? (index.push({ name: 'three-textures', kind: 'kit', textures: [], glbs: [], source: 'mrdoob/three.js examples', bytes: 0, tags: ['texture'] }), index[index.length - 1]);
-      existing.textures.push(`three-textures/${name}`);
-      existing.bytes += bytes;
-      continue;
-    }
-    index.push({ name: single.name, entry: `${single.name}/${name}`, source: single.url, bytes, tags: single.tags });
-    console.log(`${single.name.padEnd(30)} ${(bytes / 1e6).toFixed(1).padStart(6)} MB`);
-  } catch (e) {
-    console.log(`${single.name.padEnd(30)} FAILED ${e.message}`);
-    index.push({ name: single.name, error: e.message });
-  }
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  await main();
 }
-await writeFile(join(root, 'kits-index.json'), JSON.stringify(index, null, 2));
-console.log(`\nkits-index.json: ${index.filter((a) => !a.error).length}/${index.length} ok`);
