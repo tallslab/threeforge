@@ -152,7 +152,8 @@ What to do with effects so this stays cheap: [docs/vfx.md](docs/vfx.md).
 ## Bake: one mesh per finished group
 
 `new World(scene, { bake: true })` turns each finished static group into one world-space mesh instead of a
-`BatchedMesh`: seams between touching modules (coplanar faces with the same outline and opposite winding) and
+`BatchedMesh`: seams between touching modules (coplanar faces with the same outline and opposite winding, between
+different closed, manifold, outward, opaque, front-side modules; any other such pair is kept and counted) and
 duplicated faces are removed, and vertices are welded only where position, normal, uv and colour agree, so
 shading never changes. Originals stay editable: hiding a module (`world.setVisible`) rebakes its group,
 `resolve()` maps a hit face back to its module, `decompile()` restores everything.
@@ -162,9 +163,11 @@ inspectable:
 
 - `bake: { removeBuried: true }` (off by default) also drops faces with solid geometry right in front of them:
   every sampled ray from the face must be blocked within `distance` (default 0.1 units along the normal), so
-  room interiors and open backsides survive; double-sided materials must be blocked on both sides.
+  room interiors and open backsides survive; only faces of opaque, front-side modules are removed, and back-side
+  faces block no ray.
 - `mesh.userData.forgeBake = false` passes a module through untouched.
-- The compile report's `bake` block counts seams, duplicates, buried faces and welded vertices per run, and
+- The compile report's `bake` block counts seams, coincident faces kept (`keptCoincidentFaces`), duplicates, buried
+  faces and welded vertices per run, and
   `world.bakeDebug()` returns the removed faces as red meshes you can add to the scene to look at them.
 - `npx threeforge analyze scene.glb --bake --views 6` bakes, then compares screenshots from the default framing
   plus six orbit views; the verdict fails if any view changed. Agents should run this before trusting a bake.

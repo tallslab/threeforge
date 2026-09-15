@@ -599,23 +599,33 @@ is carried and compared by the weld):
    shared edges; an island whose boundary edges equal an island's on the other side is a coincident, opposite-winding
    pair, whatever the triangulation. Both islands go as a seam between touching solids only when all four hold:
    1. the two islands come from disjoint sets of modules (entries);
-   2. every module involved is a closed, outward shell: each edge is used equally often in both directions, and every
-      connected component encloses a positive signed volume (computed once per module in the baked space, after the
-      winding flip for a mirrored matrix, so a mirrored outward shell stays outward);
-   3. no module involved is double-sided;
-   4. every module involved is opaque (`BakeEntry.opaque`, set by `bakeEntriesOf`: not transparent, normal or no
-      blending, no `alphaTest`, `alphaHash`, `alphaToCoverage`, `transmission`, `maskNode`, `alphaTestNode` or custom
-      fragment stage (`ShaderMaterial`, `fragmentNode`), and depth write and depth test on).
+   2. every module involved is a closed, manifold, outward shell: every edge (by position) is used exactly once in
+      each direction, and every connected component encloses a positive signed volume (computed once per module in
+      the baked space, after the winding flip for a mirrored matrix, so a mirrored outward shell stays outward). An
+      edge shared by two parts of one module, used four times, fails this test;
+   3. every module involved draws front faces only (`BakeEntry.side` is `FrontSide`, set by `bakeEntriesOf`): a
+      `BackSide` material draws exactly the faces a seam hides (from inside a modular room the shared wall is the
+      nearest drawn surface), and a `DoubleSide` one draws both;
+   4. every module involved is opaque and draws its faces where the geometry puts them (`BakeEntry.opaque`, set by
+      `bakeEntriesOf`): not transparent; normal or no blending; no `alphaTest`, `alphaHash`, `alphaToCoverage`,
+      `transmission`, `maskNode`, `alphaTestNode` or custom fragment stage (`ShaderMaterial`, `fragmentNode`); no
+      vertex change (`displacementMap`, `positionNode`, `vertexNode`, `geometryNode`) or `depthNode`; no material
+      `clippingPlanes`; `depthFunc` is `LessEqualDepth`; depth write and depth test on; no `wireframe` or
+      `stencilWrite`. Renderer-level clipping (`renderer.clippingPlanes`) is outside what the bake can see.
 
-   Every other coincident, opposite pair stays and is counted in `keptCoincidentFaces`: back-to-back sign cards, a
-   floor lying on a ceiling, a pair inside one module, a double-sided or translucent pair, a face against a flat
-   slab, an open box, an inside-out box. Partial overlaps stay too.
-3. **Duplicates**: exact same triangle twice (a module placed twice) keeps one.
+   Every other coincident, opposite pair stays and is counted in `keptCoincidentFaces` (only faces the bake does not
+   remove otherwise, so a kept face that is later buried is not counted): back-to-back sign cards, a floor lying on a
+   ceiling, a pair inside one module, a back-side, double-sided or translucent pair, a face against a flat slab, an
+   open box, an inside-out box, a shell joined to another part by a shared edge. Partial overlaps stay too.
+3. **Duplicates**: the exact same triangle twice (same points, same winding: a module placed twice) keeps one. Two
+   islands on the same side of a plane never share an outline (shared outline edges fuse them into one island), and a
+   region covered twice with different triangulations fuses into one island with no outline at all: it is skipped and
+   stays doubled, an invisible cost.
 4. **Buried faces** (opt-in `removeBuried`): 24 rays over the front hemisphere from each face, cast against a BVH of
-   the group's opaque faces (three-mesh-bvh); the face is buried only if every ray is blocked within `distance`
-   measured along the face normal (default 0.1 units): solid right in front of it. Room interiors and open backsides
-   survive; double-sided materials must be blocked on both sides; faces of modules that are not opaque are never
-   removed and never block a ray.
+   the group's opaque faces of front-side or double-sided modules (three-mesh-bvh); the face is buried only if every
+   ray is blocked within `distance` measured along the face normal (default 0.1 units): solid right in front of it.
+   Only faces of opaque, front-side modules are removed; room interiors and open backsides survive; back-side faces
+   never block a ray (a back-side shell draws its far wall behind whatever is inside it).
 5. **Weld**: vertices merge only when position (`tolerance`, default 1e-4), normal and tangent xyz (`normalAngle`,
    default 0.5°), tangent `w` (exact), uv (exact) and colour (`colorTolerance`, default 1/255) agree, so shading
    never changes.
@@ -623,16 +633,18 @@ is carried and compared by the weld):
 **Direct `bakeGeometries` callers**: `bakeEntriesOf` (and so `World`) sets every entry flag from the material. An
 entry without `opaque` counts as not opaque, so it gets no seam and no buried-face removal (a missed deletion is
 invisible, a wrong one is visible); an entry without `vertexColors` keeps multiplying its geometry's colour attribute
-by the tint, as before; an entry without `doubleSided` is single-sided.
+by the tint, as before; an entry without `side` counts as not front-side, so it loses no faces either
+(`doubleSided: true` has the same effect).
 
 Control and inspection: `mesh.userData.forgeBake = false` passes a module through untouched; the compile report's
-`bake` block counts seams, coincident faces the seam guard kept (`keptCoincidentFaces`), duplicates, buried faces,
+`bake` block counts seams, coincident faces the seam guard kept and the bake left in place (`keptCoincidentFaces`),
+duplicates, buried faces,
 welded vertices and excluded entries (the CLI prints the kept count next to the seams); `world.bakeDebug()`
 returns the removed faces as red unlit meshes; hiding a module rebakes its group; `decompile()` restores. Instanced
 groups and batch-synced dynamics are never baked. The CLI's `analyze --bake --views N` bakes and checks pixel parity
 from N+1 camera angles. Verified: the village bake is pixel-identical; a 6×3 modular wall loses exactly its 27
 seams, also under a mirrored scene; back-to-back sign cards and a floor lying on a ceiling keep both faces, seen from
-both sides; a mirrored, normal-mapped mesh baked by `bakeGeometries` keeps its tangents and its pixels; a block 5 cm
+both sides; touching back-side rooms keep their shared wall, seen from inside and from outside; a mirrored, normal-mapped mesh baked by `bakeGeometries` keeps its tangents and its pixels; a block 5 cm
 inside a solid goes only with `removeBuried`; the 2CylinderEngine assembly stays identical over four views on both
 backends.
 
@@ -859,7 +871,7 @@ section 11. Specs live in `docs/superpowers/specs`, plans in
 - **unattributed**: reported draw calls the ledger's model did not predict; always 0 in the tests.
 - **program**: a compiled shader variant, as counted by `renderer.info.memory.programs`.
 - **tier**: `desktop`, `phone-mid`, `phone-low`; drives budgets and hints.
-- **seam**: two coincident faces with opposite winding between touching solid modules (different, closed, outward,
-  opaque and single-sided); removed by the bake. Any other coincident, opposite pair is kept and counted
+- **seam**: two coincident faces with opposite winding between touching solid modules (different, closed and
+  manifold, outward, opaque and front-side); removed by the bake. Any other coincident, opposite pair is kept and counted
   (`keptCoincidentFaces`).
 - **buried face**: a face with solid geometry right in front of it in every direction; removed only on request.
