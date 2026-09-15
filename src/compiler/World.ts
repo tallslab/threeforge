@@ -142,7 +142,8 @@ export interface CompileReport {
 
 export interface WarmupRenderer {
   render(scene: Object3D, camera: Camera): unknown;
-  renderAsync?(scene: Object3D, camera: Camera): Promise<unknown>;
+  /** Awaited before warm-up changes any state (three's `Renderer.init`; it returns the same promise once started). */
+  init?(): Promise<unknown>;
   compileAsync?(scene: Object3D, camera: Camera): Promise<unknown>;
   initTexture?(texture: Texture): void;
   getScissor(target: Vector4): Vector4;
@@ -800,9 +801,13 @@ export class World {
    */
   async warmup(renderer: WarmupRenderer, camera: Camera, options: WarmupOptions = {}): Promise<WarmupResult> {
     this.assertLive();
-    // A proxy parked by a depth-0 render earlier in this task waits for its queued re-enable, which `renderAsync` would let
-    // run (it awaits `init()` before rendering) after the suspension list below was built without it. Resume now, so
-    // the list holds every proxy; the queued call then finds nothing parked.
+    // three r186 deprecates `renderAsync` (r181), which is `await this.init()` then `render()`. Awaiting init here, before
+    // any state is read or changed, leaves no yield between the suspension and scissor below and the render: a queued
+    // re-enable (or any other microtask) cannot run in between.
+    if (renderer.init) await renderer.init();
+    // A proxy parked by a depth-0 render waits for its queued re-enable, which would re-enable it after the suspension
+    // list below was built without it if anything yielded before the render. Resume now, so the list holds every proxy;
+    // the queued call then finds nothing parked.
     this.resumeParkedProxies();
     const textures = new Set<Texture>();
     const materials = new Set<Material>();
@@ -850,8 +855,7 @@ export class World {
     renderer.setScissor(0, 0, 1, 1);
     renderer.setScissorTest(true);
     try {
-      if (renderer.renderAsync) await renderer.renderAsync(this.scene, camera);
-      else renderer.render(this.scene, camera);
+      renderer.render(this.scene, camera);
     } finally {
       for (const proxy of suspended) proxy.occlusionTest = true;
       renderer.setScissorTest(scissorTest);

@@ -310,7 +310,7 @@ describe('World occlusion with queries as three runs them', () => {
     expect(left.visible, 'hidden again by its own renders').toBe(false);
   });
 
-  it('frame-mode warmup issues no query from a proxy parked by a depth-0 render in the same task: renderAsync yields before its render, which would let the queued re-enable run first', async () => {
+  it('frame-mode warmup issues no query from a proxy parked by a depth-0 render in the same task: a yield between building the suspension list and the render would let the queued re-enable run first', async () => {
     const scene = twoChunkScene();
     const world = new World(scene, { chunkSize: 50, occlusion: true });
     world.compile();

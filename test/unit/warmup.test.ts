@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { BoxGeometry, DataTexture, DoubleSide, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, PerspectiveCamera, RGBAFormat, Scene, Vector4, WebGLCoordinateSystem } from 'three';
 import type { Camera, Material } from 'three';
 import { World } from '../../src/compiler/World.js';
+import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
+import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 import { tag } from '../../src/tags.js';
-import { FakeRenderer } from './helpers/fakeRenderer.js';
+import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
 
 const box = new BoxGeometry();
 
@@ -11,7 +13,7 @@ const box = new BoxGeometry();
  * Mirrors the parts of three's common Renderer that warm-up touches: scissor state, `render`/`renderAsync`,
  * `compileAsync`, `initTexture`. Every call is logged with the scissor state it saw.
  */
-function fakeRenderer(options: { compileAsync?: boolean; renderAsync?: boolean } = {}) {
+function fakeRenderer(options: { compileAsync?: boolean; renderAsync?: boolean; init?: boolean } = {}) {
   const calls: string[] = [];
   const scissor = new Vector4(0, 0, 800, 600);
   let scissorTest = false;
@@ -39,6 +41,13 @@ function fakeRenderer(options: { compileAsync?: boolean; renderAsync?: boolean }
       calls.push('initTexture');
     },
   } as Record<string, unknown> & { calls: string[] };
+  if (options.init) {
+    renderer.init = async () => {
+      calls.push('init');
+      await Promise.resolve();
+      calls.push('init resolved');
+    };
+  }
   if (options.compileAsync !== false) renderer.compileAsync = async () => void calls.push('compileAsync');
   if (options.renderAsync) renderer.renderAsync = async () => void calls.push(`renderAsync scissor=${scissorTest ? scissor.toArray().join(',') : 'off'}`);
   return renderer;
@@ -62,15 +71,50 @@ describe('World.warmup', () => {
     expect(result).toEqual({ mode: 'frame', textures: 1, repaired: 0 });
   });
 
-  it('prefers renderAsync for the warm-up frame when the renderer has it', async () => {
-    const scene = new Scene();
-    scene.add(tag.static(new Mesh(box, new MeshStandardMaterial())));
-    const world = new World(scene);
-    world.compile();
-    const renderer = fakeRenderer({ renderAsync: true });
-    await world.warmup(renderer as never, new PerspectiveCamera());
-    expect(renderer.calls).toContain('renderAsync scissor=0,0,1,1');
-    expect(renderer.calls.some((c) => c.startsWith('render '))).toBe(false);
+  it('awaits renderer.init() before it changes any state, then renders with render(), never the deprecated renderAsync (both modes)', async () => {
+    // three r186's renderAsync logs a deprecation warning and is `await this.init(); this.render(...)`: its await would sit
+    // between the 1x1 scissor (and the occlusion suspension) and the render.
+    const calls: Record<string, string[]> = {};
+    for (const mode of ['frame', 'async'] as const) {
+      const scene = new Scene();
+      scene.add(tag.static(new Mesh(box, new MeshStandardMaterial())));
+      const world = new World(scene);
+      world.compile();
+      const renderer = fakeRenderer({ init: true, renderAsync: true });
+      await world.warmup(renderer as never, new PerspectiveCamera(), { mode });
+      calls[mode] = renderer.calls;
+    }
+    const frame = ['setScissor(0,0,1,1)', 'setScissorTest(true)', 'render scissor=0,0,1,1', 'setScissorTest(false)', 'setScissor(0,0,800,600)'];
+    expect(calls).toEqual({ frame: ['init', 'init resolved', ...frame], async: ['init', 'init resolved', 'compileAsync', ...frame] });
+  });
+
+  it('with a ledger attached, the warm-up frame is one main frame, the same as the render after it (both modes)', async () => {
+    const outcome: string[] = [];
+    for (const mode of ['frame', 'async'] as const) {
+      const { scene, camera } = sceneWithCamera();
+      for (let i = 0; i < 3; i++) scene.add(tag.static(new Mesh(box, new MeshStandardMaterial({ name: `m${i}` }))));
+      const registry = new MaterialRegistry();
+      const ledger = new DrawCallLedger({ registry });
+      const world = new World(scene, { registry, ledger });
+      world.compile();
+      // FakeRenderer's renderAsync is three's: `await this.init(); this.render(scene, camera);`.
+      const renderer = Object.assign(new FakeRenderer(), {
+        getScissor: (target: Vector4) => target.set(0, 0, 300, 150),
+        setScissor: () => undefined,
+        getScissorTest: () => false,
+        setScissorTest: () => undefined,
+        async compileAsync() {},
+      });
+      ledger.attach(renderer as never);
+      const result = await world.warmup(renderer as never, camera, { mode });
+      const warm = ledger.frame();
+      renderer.render(scene, camera);
+      const next = ledger.frame();
+      outcome.push(`${result.mode}: warm-up passes ${warm.passes.map((p) => p.id).join(',')}, ${warm.totals.sceneSubmissions} scene submissions`);
+      outcome.push(`${result.mode}: next passes ${next.passes.map((p) => p.id).join(',')}, ${next.totals.sceneSubmissions} scene submissions`);
+      expect(warm.totals, `${mode}: warm-up totals`).toEqual(next.totals);
+    }
+    expect(outcome).toEqual(['frame', 'async'].flatMap((mode) => [`${mode}: warm-up passes main, 1 scene submissions`, `${mode}: next passes main, 1 scene submissions`]));
   });
 
   it('async mode pre-compiles with compileAsync, then rebuilds the materials three renders in two passes or through a viewport texture', async () => {

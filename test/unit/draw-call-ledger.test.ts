@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 import {
+  Bone,
   BoxGeometry,
   BufferGeometry,
   DirectionalLight,
@@ -15,7 +18,9 @@ import {
   PlaneGeometry,
   Points,
   PointsMaterial,
+  Scene,
   ShaderMaterial,
+  Skeleton,
   SkinnedMesh,
   Sprite,
   SpriteMaterial,
@@ -286,6 +291,122 @@ describe('DrawCallLedger frames and passes', () => {
     scene.add(new Mesh(box, new MeshStandardMaterial()));
     renderer.render(scene, camera);
     expect(ledger.frame().totals.submissions).toBe(0);
+  });
+});
+
+/** The ledger's private render depth: 0 between frames. */
+const depthOf = (ledger: DrawCallLedger): number => (ledger as unknown as { depth: number }).depth;
+
+describe('DrawCallLedger and renderAsync', () => {
+  it("relies on three's renderAsync awaiting init() and then calling this.render() (Renderer.js, r186), so it does not patch renderAsync", () => {
+    const source = readFileSync(createRequire(import.meta.url).resolve('three/src/renderers/common/Renderer.js'), 'utf8');
+    const start = source.indexOf('\tasync renderAsync( scene, camera ) {');
+    expect(start, 'Renderer.renderAsync( scene, camera ) is defined').toBeGreaterThan(-1);
+    const body = source.slice(start, source.indexOf('\n\t}\n', start));
+    expect(body).toContain('this.render(');
+    expect(body.indexOf('await this.init()'), 'init() is awaited before the render').toBeGreaterThan(-1);
+    expect(body.indexOf('await this.init()')).toBeLessThan(body.indexOf('this.render('));
+  });
+
+  it('a frame rendered through renderAsync is one main frame: its shadow pass and skinning count as they do through render()', async () => {
+    const setup = () => {
+      const light = new DirectionalLight();
+      light.name = 'sun';
+      light.castShadow = true;
+      const pair = attached({ shadowLight: light });
+      const caster = tag.static(new Mesh(box, new MeshStandardMaterial()));
+      caster.castShadow = true;
+      const bones = [new Bone(), new Bone()];
+      bones[0]!.add(bones[1]!);
+      const skinned = new SkinnedMesh(box, new MeshStandardMaterial());
+      skinned.name = 'skinned';
+      skinned.castShadow = true;
+      skinned.add(bones[0]!);
+      skinned.bind(new Skeleton(bones));
+      pair.scene.add(light, caster, skinned);
+      return pair;
+    };
+    const viaRender = setup();
+    viaRender.renderer.render(viaRender.scene, viaRender.camera);
+    const expected = viaRender.ledger.frame();
+    const viaAsync = setup();
+    await viaAsync.renderer.renderAsync(viaAsync.scene, viaAsync.camera);
+    const frame = viaAsync.ledger.frame();
+    expect(frame.passes.map((p) => p.id)).toEqual(['shadow:sun', 'main']);
+    expect(frame.skinning).toMatchObject({ submissions: 1, bones: 2, skeletons: 1 });
+    expect(frame.lighting.shadowPasses).toBe(1);
+    expect(frame.passes).toEqual(expected.passes);
+    expect(frame.totals).toEqual(expected.totals);
+    expect(frame.skinning).toEqual(expected.skinning);
+    expect(frame.lighting).toEqual(expected.lighting);
+  });
+
+  it('a render() while renderAsync awaits init() is a frame of its own, and so is the render renderAsync then makes: two main frames', async () => {
+    const { renderer, ledger, scene, camera } = attached();
+    scene.add(tag.static(new Mesh(box, new MeshStandardMaterial())), tag.static(new Mesh(box, new MeshStandardMaterial())));
+    const other = new Scene();
+    other.add(tag.static(new Mesh(box, new MeshStandardMaterial())));
+    const pending = renderer.renderAsync(scene, camera); // suspended at `await this.init()`
+    // No pass kind is pending in the fake here (only a shadow or VSM pass sets one, right before its own render), so this
+    // render cannot take another render's kind.
+    renderer.render(other, camera);
+    const between = ledger.frame();
+    await pending;
+    const after = ledger.frame();
+    expect([between.passes.map((p) => p.id), between.totals.sceneSubmissions], 'the frame the interleaved render() completed').toEqual([['main'], 1]);
+    expect([after.passes.map((p) => p.id), after.totals.sceneSubmissions], 'the frame renderAsync completed').toEqual([['main'], 2]);
+  });
+
+  it('depth is back at 0 after renderAsync, after an interleaved render() and after a render or renderAsync that throws', async () => {
+    const { renderer, ledger, scene, camera } = attached();
+    scene.add(tag.static(new Mesh(box, new MeshStandardMaterial())));
+    const pending = renderer.renderAsync(scene, camera);
+    expect.soft(depthOf(ledger), 'while renderAsync awaits init()').toBe(0);
+    renderer.render(scene, camera);
+    expect.soft(depthOf(ledger), 'after a render() interleaved with renderAsync').toBe(0);
+    await pending;
+    expect.soft(depthOf(ledger), 'after renderAsync').toBe(0);
+
+    const throwing = tag.static(new Mesh(box, new MeshStandardMaterial()));
+    throwing.onBeforeRender = () => {
+      throw new Error('hook failed');
+    };
+    scene.add(throwing);
+    expect(() => renderer.render(scene, camera)).toThrow('hook failed');
+    expect.soft(depthOf(ledger), 'after a render() that throws').toBe(0);
+    await expect(renderer.renderAsync(scene, camera)).rejects.toThrow('hook failed');
+    expect.soft(depthOf(ledger), 'after a renderAsync that rejects').toBe(0);
+    scene.remove(throwing);
+    renderer.render(scene, camera);
+    expect([ledger.frame().passes.map((p) => p.id), ledger.frame().totals.sceneSubmissions], 'the next render() is a frame of its own').toEqual([['main'], 1]);
+  });
+
+  it('attach() and detach() leave renderAsync untouched: no own property shadows the prototype method', () => {
+    const renderer = new FakeRenderer();
+    const original = renderer.renderAsync;
+    const own = () => Object.prototype.hasOwnProperty.call(renderer, 'renderAsync');
+    const ledger = new DrawCallLedger();
+    ledger.attach(renderer as never);
+    expect([renderer.renderAsync === original, own()], 'attached').toEqual([true, false]);
+    ledger.detach();
+    expect([renderer.renderAsync === original, own()], 'detached').toEqual([true, false]);
+  });
+
+  it('attach() after a detach() from inside a draw starts from depth 0, so the next render is a main frame', () => {
+    const { renderer, ledger, scene, camera } = attached();
+    let detachNext = true;
+    const mesh = tag.static(new Mesh(box, new MeshStandardMaterial()));
+    mesh.onBeforeRender = () => {
+      if (!detachNext) return;
+      detachNext = false;
+      ledger.detach(); // the running render wrapper still calls exit() in its finally
+    };
+    scene.add(mesh);
+    renderer.render(scene, camera);
+    ledger.attach(renderer as never);
+    expect.soft(depthOf(ledger), 'depth after attach()').toBe(0);
+    renderer.render(scene, camera);
+    expect([ledger.frame().passes.map((p) => p.id), ledger.frame().totals.sceneSubmissions]).toEqual([['main'], 1]);
   });
 });
 

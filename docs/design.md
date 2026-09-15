@@ -37,8 +37,10 @@ Keys are computed at registration; a material mutated later is not re-keyed.
 ## Ledger mechanics (three r186 facts this depends on)
 
 - Every render-object function three installs, including `ShadowNode`'s, ends in `renderer.renderObject(...)`.
-  The ledger replaces `renderObject`, `render` and `renderAsync` on the renderer **instance** and never touches
+  The ledger replaces `renderObject` and `render` on the renderer **instance** and never touches
   `setRenderObjectFunction`, which `ShadowNode` swaps and restores every shadow pass.
+- `renderAsync` (deprecated since r181) is `await this.init()` followed by `this.render(scene, camera)`, so its frame
+  enters the patched `render` once, after the await; the ledger leaves it alone (a unit test checks three's source).
 - The outermost `render()` is a frame; nested `render()` calls are passes. A pass is `shadow:<light>` when its
   camera is a light's shadow camera, `override` under `scene.overrideMaterial`, `fullscreen` for non-Scene roots
   (post-processing quads), `main` for the frame's first Scene, `scene:<name>` for further scenes.

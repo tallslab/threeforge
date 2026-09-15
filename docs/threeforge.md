@@ -89,10 +89,15 @@ outermost `render()` → the overlay, the CLI, the bench runner and agents read 
 
 ### How it hooks in
 
-`ledger.attach(renderer)` replaces three instance methods on the renderer: `renderObject` (called once per render
-item after culling and sorting, in every pass, including shadow maps and post-processing), `render` and
-`renderAsync` (frame boundaries). The outermost `render()` call is one frame; nested calls are passes of it.
-`detach()` restores the originals. Nothing global is patched.
+`ledger.attach(renderer)` replaces two instance methods on the renderer: `renderObject` (called once per render
+item after culling and sorting, in every pass, including shadow maps and post-processing) and `render` (frame
+boundaries). The outermost `render()` call is one frame; nested calls are passes of it. `detach()` restores the
+originals. Nothing global is patched.
+
+`renderAsync` works without a patch of its own. three r186's `renderAsync` (deprecated since r181) awaits `init()` and
+then calls `this.render(scene, camera)`, so a frame rendered through it enters the patched `render` once, after the
+await, and reports a `main` pass with its shadow passes and skinning, exactly like `render()`. A `render()` made while
+`renderAsync` awaits `init()` is a frame of its own. A unit test checks three's source for that call.
 
 ### Passes
 
@@ -176,8 +181,7 @@ The ledger runs inside `render()`, so its own cost is part of `js.renderMs`. In 
 allocates nothing, and none of the following changes a number in the snapshot:
 
 - **Pooled records.** Two record buffers alternate: the frame in progress writes one while the last completed frame's
-  items stay intact in the other, so a read between frames or inside one (a hook, an agent's `evaluate` during
-  `renderAsync`) sees whole frames. `frame({ items: true })` returns copies, valid however long they are held.
+  items stay intact in the other, so a read between frames or inside one (a hook) sees whole frames. `frame({ items: true })` returns copies, valid however long they are held.
 - **Material hashes** come from `registry.hashesOf()` (the registry's key cache, section 5), read at most once per
   material per frame, and again after `invalidate()` or `forget()` (`registry.keysRevision`), even within a frame.
 - **Display names** come from a cache checked against the live graph on every read: the object's name, type and
@@ -524,9 +528,10 @@ a threeforge transparent batch shares the main pass with another transparent sub
     attachments, such as an RGBA `HalfFloatType` target with the same samples, depth and stencil as the frame-buffer
     target three draws the canvas pass into (`RGBAFormat`, `outputBufferType`, `HalfFloatType` by default).
   - **Warm-up.** `world.warmup()` issues no occlusion query, in either mode. Its frame is scissored to one pixel, so
-    every query would count no samples and, once published, hide visible targets. It first resumes any proxy a depth-0
-    render parked earlier in the same task, so that proxy is suspended with the rest instead of being re-enabled by
-    its queued microtask while `renderAsync` awaits `init()`.
+    every query would count no samples and, once published, hide visible targets. It awaits `renderer.init()` before
+    it changes anything, then suspends the proxies, sets the scissor, renders and restores without yielding, so no
+    queued re-enable runs in between. It also resumes any proxy a depth-0 render parked, so that proxy is suspended
+    with the rest.
   - **Camera at the box.** A query cannot see the target when the camera is inside the box, because every face is
     back-facing. It also misses when the near plane cuts into the box, because a front face in front of the near
     plane is clipped. So in the outermost render the proxy issues no query (its `occlusionTest` is off until that
@@ -571,6 +576,10 @@ uses. `async` runs `renderer.compileAsync()` (yields between objects) and then d
 three compiles wrong that way (transparent double-sided and transmissive ones; see section 13). Result:
 `{ mode, textures, repaired }`. Neither mode issues occlusion queries: under the 1×1 scissor every proxy would report
 occluded (see Occlusion).
+
+Both modes first await `renderer.init()` when the renderer has it, then render the frame with `render()`, not the
+deprecated `renderAsync()`: three logs no deprecation warning, nothing yields between setting the scissor and the
+render, and an attached ledger records the warm-up frame as one `main` frame.
 
 ### Overdraw modules: sprite batching, ParticleBudget, ResolutionScaler
 

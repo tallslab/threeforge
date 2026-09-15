@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Frames rendered through `renderer.renderAsync()` now report a `main` pass, with their shadow passes and skinning counted as through `render()`: the ledger no longer patches `renderAsync` (three r186's awaits `init()` and then calls the patched `render()`), which filed such a frame's only pass as `nested:1`, and a `render()` made during that await is now a frame of its own instead of merging into it. `LedgerRenderer` drops `renderAsync`.
+- `world.warmup()` awaits `renderer.init()` (when present) before it changes any state and renders its frame with `render()` instead of the deprecated `renderAsync()`, so three no longer logs its deprecation warning and nothing yields between the 1×1 scissor and occlusion suspension and the render. `WarmupRenderer` gains `init?` and drops `renderAsync?`.
+- `ledger.attach()` resets the render depth: after a `detach()` from inside a draw, the next render on a re-attached ledger threw a `TypeError`.
 - `detectTier` is GPU-first: a recognised desktop GPU (NVIDIA, Radeon, AMD, Intel, Iris, Arc, Apple M-series,
   SwiftShader) or mobile GPU (Adreno, Mali, PowerVR, VideoCore, Xclipse, Qualcomm, Apple A-series) now decides the
   tier before touch is considered, so a touch-capable desktop (a Windows laptop with a discrete GPU and a

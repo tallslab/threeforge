@@ -16,7 +16,6 @@ import { buildFrame, emptyFrame, emptySections, type BudgetResult, type FrameEnv
 /** The slice of three's common Renderer the ledger patches and reads. Structural so tests can fake it. */
 export interface LedgerRenderer {
   render(scene: Scene, camera: Camera): unknown;
-  renderAsync?(scene: Scene, camera: Camera): Promise<unknown>;
   renderObject(...args: unknown[]): unknown;
   info: { render: { drawCalls: number; triangles: number }; memory: { programs: number; textures?: number; geometries?: number } };
   backend?: unknown;
@@ -93,10 +92,11 @@ function acquire(buffer: RecordBuffer): SubmissionRecord {
 }
 
 /**
- * Attributes every render item to a reason. Patches `renderObject`, `render` and `renderAsync` on the renderer
- * instance: every render-object function three installs (including ShadowNode's) ends in `renderer.renderObject`,
- * so this sees main, shadow and post-processing passes without composing `setRenderObjectFunction`.
- * The outermost `render()` call is a frame; nested calls are passes of it.
+ * Attributes every render item to a reason. Patches `renderObject` and `render` on the renderer instance: every
+ * render-object function three installs (including ShadowNode's) ends in `renderer.renderObject`, so this sees main,
+ * shadow and post-processing passes without composing `setRenderObjectFunction`.
+ * The outermost `render()` call is a frame; nested calls are passes of it. `renderAsync` needs no patch: three r186's
+ * awaits `init()` and then calls `this.render()`.
  *
  * The per-submission path allocates nothing in a steady scene: records are pooled, material hashes are read from the
  * registry's key cache once per material per frame, display names come from a validated cache, and a frame walks
@@ -105,7 +105,7 @@ function acquire(buffer: RecordBuffer): SubmissionRecord {
 export class DrawCallLedger {
   readonly registry: MaterialRegistry;
   private renderer: LedgerRenderer | null = null;
-  private originals: { render: LedgerRenderer['render']; renderAsync: LedgerRenderer['renderAsync']; renderObject: LedgerRenderer['renderObject'] } | null = null;
+  private originals: { render: LedgerRenderer['render']; renderObject: LedgerRenderer['renderObject'] } | null = null;
   private depth = 0;
   private current: FrameState | null = null;
   private readonly contexts: RenderContext[] = [];
@@ -151,7 +151,9 @@ export class DrawCallLedger {
     this.renderer = renderer;
     this.backendInfo = detectBackend(renderer);
     this.last = emptyFrame(this.env());
-    const originals = { render: renderer.render, renderAsync: renderer.renderAsync, renderObject: renderer.renderObject };
+    // A detach() from inside a draw leaves the running render wrapper's exit() to take depth below 0.
+    this.depth = 0;
+    const originals = { render: renderer.render, renderObject: renderer.renderObject };
     this.originals = originals;
     const ledger = this;
 
@@ -174,23 +176,16 @@ export class DrawCallLedger {
         ledger.exit();
       }
     };
-    if (originals.renderAsync) {
-      renderer.renderAsync = async function (this: LedgerRenderer, scene: Scene, camera: Camera) {
-        ledger.enter(scene, camera);
-        try {
-          return await originals.renderAsync!.call(this, scene, camera);
-        } finally {
-          ledger.exit();
-        }
-      };
-    }
+    // `renderAsync` stays three's own. r186's is `await this.init(); this.render(scene, camera);`, so its frame enters the
+    // wrapper above once, after the await, and every enter() is paired with an exit() inside one synchronous call. A wrapper
+    // of its own opened the frame before the await: the render inside became a nested pass, and any render() made during
+    // the await merged into that frame.
   }
 
   detach(): void {
     if (!this.renderer || !this.originals) return;
     this.renderer.render = this.originals.render;
     this.renderer.renderObject = this.originals.renderObject;
-    if (this.originals.renderAsync) this.renderer.renderAsync = this.originals.renderAsync;
     this.renderer = null;
     this.originals = null;
     this.depth = 0;
