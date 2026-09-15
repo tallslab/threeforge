@@ -32,6 +32,56 @@ test('occlusion proxies hide chunk batches behind a wall after the query results
  */
 const FRAMES = 12;
 
+/**
+ * Runs in the page (it must not use anything outside itself). A solid 10 x 10 slab of cubes at z = 0; four corner cubes
+ * stand out at z = 1, so the box's front face (z = 1.5) is ahead of the slab and its back face (z = -0.5) behind it. A
+ * black wall at z = 5 with a 6 x 6 window shows only the middle of the slab and covers the box's edges. Behind the wall's
+ * solid part, `hidden-*` cubes with another material form the control group. The camera looks through the window.
+ */
+function windowScene(mirror: boolean): void {
+  const f = window.__forge;
+  const T = f.three;
+  const cube = new T.BoxGeometry(1, 1, 1);
+  const colours = [new T.MeshBasicMaterial({ color: 0xe0a040 }), new T.MeshBasicMaterial({ color: 0x40a0e0 })];
+  for (let x = 0; x < 10; x++) {
+    for (let y = 0; y < 10; y++) {
+      const m = new T.Mesh(cube, colours[(x + y) % 2]!);
+      m.name = `slab-${x}-${y}`;
+      m.position.set(x - 4.5, y - 4.5, 0);
+      m.userData.forge = 'static';
+      f.scene.add(m);
+    }
+  }
+  for (const [x, y] of [[-4.5, -4.5], [4.5, -4.5], [-4.5, 4.5], [4.5, 4.5]] as const) {
+    const m = new T.Mesh(cube, colours[0]!);
+    m.name = `corner-${x}-${y}`;
+    m.position.set(x, y, 1);
+    m.userData.forge = 'static';
+    f.scene.add(m);
+  }
+  const black = new T.MeshLambertMaterial({ color: 0x000000 });
+  for (const [w, h, x, y] of [[80, 40, 0, 23], [80, 40, 0, -23], [37, 6, -21.5, 0], [37, 6, 21.5, 0]] as const) {
+    const m = new T.Mesh(new T.BoxGeometry(w, h, 0.5), black);
+    m.name = `wall-${x}-${y}`;
+    m.position.set(x, y, 5);
+    m.userData.forge = 'static';
+    f.scene.add(m);
+  }
+  const normal = new T.MeshNormalMaterial();
+  for (let i = 0; i < 4; i++) {
+    const m = new T.Mesh(cube, normal);
+    m.name = `hidden-${i}`;
+    m.position.set(12 + i * 1.5, 0, 0);
+    m.userData.forge = 'static';
+    f.scene.add(m);
+  }
+  f.camera.position.set(0, 0, 20);
+  f.camera.lookAt(0, 0, 0);
+  f.camera.updateMatrixWorld();
+  if (mirror) f.scene.scale.x = -1;
+  f.scene.updateMatrixWorld(true);
+}
+
 test('the camera inside a batch box keeps the batch visible, and queries issued from inside never hide it after the camera leaves', async ({ forge }) => {
   await forge.open('empty', { occlusion: '1' });
   await forge.page.evaluate(() => {
@@ -130,52 +180,7 @@ test('the camera inside a batch box keeps the batch visible, and queries issued 
 for (const mirrored of [false, true] as const) {
   test(`a batch seen through a window stays visible in ${mirrored ? 'a mirrored' : 'an unmirrored'} scene`, async ({ forge }) => {
     await forge.open('empty', { occlusion: '1' });
-    await forge.page.evaluate((mirror) => {
-      const f = window.__forge;
-      const T = f.three;
-      const cube = new T.BoxGeometry(1, 1, 1);
-      const colours = [new T.MeshBasicMaterial({ color: 0xe0a040 }), new T.MeshBasicMaterial({ color: 0x40a0e0 })];
-      // A solid 10 x 10 slab of cubes at z = 0. Four corner cubes stand out at z = 1, so the box's front face (z = 1.5)
-      // is ahead of the slab and its back face (z = -0.5) behind it.
-      for (let x = 0; x < 10; x++) {
-        for (let y = 0; y < 10; y++) {
-          const m = new T.Mesh(cube, colours[(x + y) % 2]!);
-          m.name = `slab-${x}-${y}`;
-          m.position.set(x - 4.5, y - 4.5, 0);
-          m.userData.forge = 'static';
-          f.scene.add(m);
-        }
-      }
-      for (const [x, y] of [[-4.5, -4.5], [4.5, -4.5], [-4.5, 4.5], [4.5, 4.5]] as const) {
-        const m = new T.Mesh(cube, colours[0]!);
-        m.name = `corner-${x}-${y}`;
-        m.position.set(x, y, 1);
-        m.userData.forge = 'static';
-        f.scene.add(m);
-      }
-      // A black wall at z = 5 with a 6 x 6 window: only the middle of the slab shows, its box's edges are covered.
-      const black = new T.MeshLambertMaterial({ color: 0x000000 });
-      for (const [w, h, x, y] of [[80, 40, 0, 23], [80, 40, 0, -23], [37, 6, -21.5, 0], [37, 6, 21.5, 0]] as const) {
-        const m = new T.Mesh(new T.BoxGeometry(w, h, 0.5), black);
-        m.name = `wall-${x}-${y}`;
-        m.position.set(x, y, 5);
-        m.userData.forge = 'static';
-        f.scene.add(m);
-      }
-      const normal = new T.MeshNormalMaterial();
-      for (let i = 0; i < 4; i++) {
-        const m = new T.Mesh(cube, normal);
-        m.name = `hidden-${i}`;
-        m.position.set(12 + i * 1.5, 0, 0);
-        m.userData.forge = 'static';
-        f.scene.add(m);
-      }
-      f.camera.position.set(0, 0, 20);
-      f.camera.lookAt(0, 0, 0);
-      f.camera.updateMatrixWorld();
-      if (mirror) f.scene.scale.x = -1;
-      f.scene.updateMatrixWorld(true);
-    }, mirrored);
+    await forge.page.evaluate(windowScene, mirrored);
     const r = await forge.page.evaluate(async (frames) => {
       const f = window.__forge;
       const report = f.compile();
@@ -203,6 +208,50 @@ for (const mirrored of [false, true] as const) {
     if (forge.pixelChecks) {
       const diff = pixelDiff(naive, compiled, { threshold: 4 });
       console.log(`slab through a window, mirrored=${mirrored}: pixel diff ${(diff * 100).toFixed(4)}%`);
+      expect(diff).toBeLessThan(0.0005);
+    }
+  });
+}
+
+for (const mode of ['frame', 'async'] as const) {
+  test(`warmup (${mode}) issues no occlusion queries: a batch seen through a window stays visible in the frames after it`, async ({ forge }) => {
+    await forge.open('empty', { occlusion: '1' });
+    await forge.page.evaluate(windowScene, false);
+    const r = await forge.page.evaluate(
+      async ({ frames, warmupMode }) => {
+        const f = window.__forge;
+        const report = f.compile();
+        const slab = f.world.slotOf(f.scene.getObjectByName('slab-0-0') as never)!.batch;
+        const hidden = f.world.slotOf(f.scene.getObjectByName('hidden-0') as never)!.batch;
+        // The documented step after compile(): its frame renders under a 1x1 scissor.
+        const warm = await f.world.warmup(f.renderer, f.camera, { mode: warmupMode });
+        const proxies = f.scene.children.filter((o) => (o.userData.forge as { kind?: string } | undefined)?.kind === 'occlusion-proxy');
+        const proxiesOn = proxies.every((o) => (o as unknown as { occlusionTest: boolean }).occlusionTest === true);
+        const visible: boolean[] = [];
+        for (let i = 0; i < frames; i++) {
+          await f.frameAsync();
+          visible.push(slab.visible);
+        }
+        return { mode: warm.mode, proxies: report.occlusion?.proxies ?? 0, proxiesOn, visible, hiddenVisible: hidden.visible };
+      },
+      { frames: FRAMES, warmupMode: mode },
+    );
+    const compiled = await forge.page.screenshot({ type: 'png' });
+    await forge.page.evaluate(async () => {
+      const f = window.__forge;
+      f.decompile();
+      for (let i = 0; i < 3; i++) await f.frameAsync();
+    });
+    const naive = await forge.page.screenshot({ type: 'png' });
+
+    expect(r.mode).toBe(mode);
+    expect(r.proxies, 'slab, wall and the hidden group').toBe(3);
+    expect(r.proxiesOn, 'every proxy queries again after warmup').toBe(true);
+    expect(r.hiddenVisible, 'the group behind the wall is culled: queries run on this backend').toBe(false);
+    expect(r.visible, 'the slab seen through the window, frame by frame after warmup').toEqual(new Array(FRAMES).fill(true));
+    if (forge.pixelChecks) {
+      const diff = pixelDiff(naive, compiled, { threshold: 4 });
+      console.log(`slab through a window after warmup (${mode}): pixel diff ${(diff * 100).toFixed(4)}%`);
       expect(diff).toBeLessThan(0.0005);
     }
   });
@@ -261,7 +310,7 @@ test('a batch-synced mover that leaves its batch box stays visible: batches hold
       await f.frameAsync();
       visible.push(holder.visible);
     }
-    return { synced: report.synced, proxies: report.occlusion?.proxies ?? 0, sameBatch: holder === group, visible, hiddenVisible: hidden.visible };
+    return { synced: report.synced, occlusion: report.occlusion, sameBatch: holder === group, visible, hiddenVisible: hidden.visible };
   }, FRAMES);
   const compiled = await forge.page.screenshot({ type: 'png' });
   await forge.page.evaluate(async () => {
@@ -280,5 +329,5 @@ test('a batch-synced mover that leaves its batch box stays visible: batches hold
     console.log(`synced mover out of its box: pixel diff ${(diff * 100).toFixed(4)}%`);
     expect(diff).toBeLessThan(0.0005);
   }
-  expect(r.proxies, 'only the group without movers has a proxy').toBe(1);
+  expect(r.occlusion, 'only the group without movers has a proxy; the mover batch is counted as skipped').toEqual({ proxies: 1, skippedSynced: 1 });
 });

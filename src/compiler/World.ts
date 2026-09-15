@@ -48,8 +48,9 @@ export interface WorldOptions {
    * Occlusion culling per batch / instanced group through three's occlusion queries: an invisible proxy box per
    * target carries `occlusionTest`; a target whose proxy was reported fully occluded (two or more renders late) is
    * skipped. Only the outermost render of the scene decides, and a proxy the camera is inside of, or whose box the near
-   * plane reaches into, issues no query and shows its target. A batch or instanced group holding batch-synced movers
-   * gets no proxy. Costs one cheap submission per target. Needs a renderer with `isOccluded()` (WebGPURenderer, either
+   * plane reaches into, issues no query and shows its target; so does `warmup()`'s scissored frame. A batch or instanced
+   * group holding batch-synced movers gets no proxy (`report.occlusion.skippedSynced`). One outermost camera per frame
+   * is assumed. Costs one cheap submission per target. Needs a renderer with `isOccluded()` (WebGPURenderer, either
    * backend).
    */
   occlusion?: boolean;
@@ -134,7 +135,8 @@ export interface CompileReport {
   /** Dynamics folded into batches with matrix sync (0 unless `dynamics: 'batch-sync'`). */
   synced: number;
   lod: { distances: number[] } | null;
-  occlusion: { proxies: number } | null;
+  /** Occlusion proxies installed, and batches / instanced groups given none because they hold batch-synced movers; null without `occlusion`. */
+  occlusion: { proxies: number; skippedSynced: number } | null;
   nestedPasses: NestedPassPolicy;
 }
 
@@ -206,6 +208,8 @@ interface SyncEntry {
 interface OcclusionEntry {
   proxy: Mesh;
   targets: Object3D[];
+  /** Its query was turned off in a render at tracker depth 0; a microtask turns it back on. */
+  parked: boolean;
 }
 
 /**
@@ -233,6 +237,18 @@ export class World {
   private readonly space: SceneSpace;
   private sceneHookRestores: (() => void)[] = [];
   private occluders: OcclusionEntry[] = [];
+  /** Batches and instanced groups `installOcclusion` gave no proxy because they hold batch-synced movers. */
+  private occlusionSkippedSynced = 0;
+  private occlusionResumeQueued = false;
+  /** Turns the query of proxies parked at tracker depth 0 back on. Queued as a microtask, so it never runs inside a render. */
+  private readonly resumeParkedProxies = (): void => {
+    this.occlusionResumeQueued = false;
+    for (const entry of this.occluders) {
+      if (!entry.parked) continue;
+      entry.parked = false;
+      entry.proxy.occlusionTest = true;
+    }
+  };
   private occlusionRestores: (() => void)[] = [];
   private cullingHandles = new Map<BatchedMesh, CullingHandle>();
   private syncRestores: (() => void)[] = [];
@@ -467,7 +483,7 @@ export class World {
       culling: { mode: this.cullingMode, coordinateSystem },
       synced: this.syncedSet.size,
       lod: this.lod,
-      occlusion: this.occlusion ? { proxies: this.occluders.length } : null,
+      occlusion: this.occlusion ? { proxies: this.occluders.length, skippedSynced: this.occlusionSkippedSynced } : null,
       nestedPasses,
     };
   }
@@ -482,10 +498,14 @@ export class World {
       if (slot) synced.add(slot.batch);
     }
     const groups: Object3D[][] = this.batches.filter((b) => !synced.has(b)).map((b) => [b]);
+    let skippedSynced = this.batches.length - groups.length;
     for (const mesh of this.instanced) {
       const levels = (mesh as CulledInstancedMesh).levels ?? [mesh];
-      if (levels[0] === mesh && !levels.some((level) => synced.has(level))) groups.push(levels);
+      if (levels[0] !== mesh) continue;
+      if (levels.some((level) => synced.has(level))) skippedSynced++;
+      else groups.push(levels);
     }
+    this.occlusionSkippedSynced = skippedSynced;
     const passes = this.passes;
     const space = this.space;
     const size = new Vector3();
@@ -510,7 +530,8 @@ export class World {
       proxy.raycast = () => {};
       proxy.userData.forge = { kind: 'occlusion-proxy' };
       this.scene.add(proxy);
-      this.occluders.push({ proxy, targets });
+      const entry: OcclusionEntry = { proxy, targets, parked: false };
+      this.occluders.push(entry);
       const resume = (): void => {
         proxy.occlusionTest = true;
       };
@@ -523,16 +544,31 @@ export class World {
         // list has already counted the proxy; its unused query slot is skipped when the results are read. A result set
         // without the proxy never reports it occluded, so no late answer from this render can hide the targets.
         prependRenderHook(proxy, (_renderer, _scene, camera) => {
-          if (passes.depth !== 1 || !proxy.occlusionTest || !cameraNearProxy(camera, proxy, space)) return;
+          if (!proxy.occlusionTest) return;
+          if (passes.depth === 0) {
+            // Drawn without the scene's own hooks (the scene is a child of another root passed to render()): no pass to
+            // tell the outermost render by, and no end-of-render hook. Fail safe: issue no query, and the after-render hook
+            // shows the targets. The flag comes back in a microtask, once render() has returned: never inside a render,
+            // where three reads it again to end the query.
+            proxy.occlusionTest = false;
+            entry.parked = true;
+            if (!this.occlusionResumeQueued) {
+              this.occlusionResumeQueued = true;
+              queueMicrotask(this.resumeParkedProxies);
+            }
+            return;
+          }
+          if (passes.depth !== 1 || !cameraNearProxy(camera, proxy, space)) return;
           proxy.occlusionTest = false;
           passes.atEnd(resume);
         }),
         // Ask inside the proxy's own after-render hook: that runs within renderObject(), while the render context is
         // current (the scene-level hook runs after three has restored the outer context and would see nothing), and
         // returns the last result set published for that context, from a render at least two renders back. Only the
-        // outermost render decides: a nested pass (a reflection, a portal) reads its own context's results.
+        // outermost render decides: a nested pass (a reflection, a portal) reads its own context's results. At depth 0 the
+        // query was parked above, so the targets are shown.
         prependAfterRenderHook(proxy, (renderer) => {
-          if (passes.depth !== 1) return;
+          if (passes.depth > 1) return;
           const query = (renderer as { isOccluded?: (object: Object3D) => boolean }).isOccluded;
           if (typeof query !== 'function') return;
           const occluded = proxy.occlusionTest && query.call(renderer, proxy) === true;
@@ -771,12 +807,23 @@ export class World {
     // One real frame, clipped to a single pixel: builds (or rebuilds) every pipeline the way `render()` does.
     const scissor = renderer.getScissor(new Vector4());
     const scissorTest = renderer.getScissorTest();
+    // No occlusion query from this frame: the scissor discards every fragment, so each query would count no samples and,
+    // once three publishes that answer a render or more later, hide every target whose proxy was drawn. A render whose
+    // list counts no query publishes nothing (the `else` branch of both backends' beginRender), and render() has
+    // returned by the `finally`, so no query is open when the flags come back.
+    const suspended: Mesh[] = [];
+    for (const { proxy } of this.occluders) {
+      if (!proxy.occlusionTest) continue;
+      proxy.occlusionTest = false;
+      suspended.push(proxy);
+    }
     renderer.setScissor(0, 0, 1, 1);
     renderer.setScissorTest(true);
     try {
       if (renderer.renderAsync) await renderer.renderAsync(this.scene, camera);
       else renderer.render(this.scene, camera);
     } finally {
+      for (const proxy of suspended) proxy.occlusionTest = true;
       renderer.setScissorTest(scissorTest);
       renderer.setScissor(scissor.x, scissor.y, scissor.z, scissor.w);
     }
@@ -797,6 +844,7 @@ export class World {
       for (const t of targets) t.visible = true;
     }
     this.occluders = [];
+    this.occlusionSkippedSynced = 0;
     for (const restore of this.syncRestores.reverse()) restore();
     this.syncRestores = [];
     this.syncedSet = new Set();

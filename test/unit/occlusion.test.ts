@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { BackSide, BatchedMesh, Box3, BoxGeometry, DodecahedronGeometry, DoubleSide, FrontSide, InstancedMesh, Matrix3, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, OrthographicCamera, PerspectiveCamera, PlaneGeometry, Scene, Vector3, type Camera, type Material } from 'three';
+import { BatchedMesh, Box3, BoxGeometry, DodecahedronGeometry, FrontSide, InstancedMesh, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, OrthographicCamera, PerspectiveCamera, PlaneGeometry, Scene, type Camera, type Material } from 'three';
 import { World } from '../../src/compiler/World.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { tag } from '../../src/tags.js';
 import { FakeRenderer, sceneWithCamera, type FakeRendererOptions } from './helpers/fakeRenderer.js';
+import { QueryRenderer } from './helpers/queryRenderer.js';
 
 const box = new BoxGeometry(1, 1, 1);
 const solid = (color: number) => new MeshStandardMaterial({ color, roughness: 0.7, metalness: 0 });
@@ -57,128 +58,6 @@ class OcclusionRenderer extends FakeRenderer {
   }
 }
 
-interface QueryContext {
-  renders: number;
-  pending: { render: number; occluded: Set<Object3D> }[];
-  delivered: Set<Object3D>;
-}
-
-interface OpenRender {
-  camera: Camera;
-  context: QueryContext;
-  /** The objects the render list counted (`occlusionTest` when the list was built). */
-  counted: Set<Object3D>;
-  occluded: Set<Object3D>;
-  last: { object: Object3D; began: boolean } | null;
-}
-
-/**
- * three r186's occlusion queries (`WebGPUBackend`, `WebGLBackend`), with the scene hooks three always calls:
- * - `RenderList.push` counts the objects with `occlusionTest` when the list is built (after the scene's
- *   `onBeforeRender`, before any object hook). A render whose count is not zero issues a query at each draw of such an
- *   object and yields one result set, in its render context (`RenderContexts.get(renderTarget, mrt, callDepth)`: here
- *   one per nesting depth).
- * - A draw ends the previous object's query and begins its own, reading `occlusionTest` at that moment; the end of the
- *   render ends the last one the same way. The fake throws when `occlusionTest` changed between an object's draw and the
- *   end of its query (an unbalanced begin/end), or when a draw would begin a query the list did not count (an index
- *   beyond the query set).
- * - The result set of render k of a context becomes what `isOccluded()` reads in that context from its render
- *   k + `lag` on, replacing the one before: three maps the buffer after the next render of that context ends and
- *   assigns the set asynchronously, so `lag` is at least 2 and has no upper bound.
- * - What the GPU counts is decided at the draw. A proxy's far faces lie behind its target, so a query counts samples
- *   only when a triangle three rasterises faces the eye (`facesEye`) and `wall(object, camera)` does not cover it.
- */
-class QueryRenderer extends FakeRenderer {
-  lag = 2;
-  wall: (object: Object3D, camera: Camera) => boolean = () => false;
-  /** Every query issued: the object, the nesting depth (0 outermost) and the frame. */
-  readonly queries: { object: Object3D; depth: number; frame: number }[] = [];
-  private readonly contexts: QueryContext[] = [];
-  private readonly open: OpenRender[] = [];
-
-  constructor(options: FakeRendererOptions = {}) {
-    super({ sceneHooks: true, ...options });
-    // The backend's draw runs between an object's onBeforeRender and onAfterRender (Renderer.renderObject).
-    const self = this as unknown as { drawObject(object: Object3D, material: Material, ...rest: unknown[]): void };
-    const draw = self.drawObject.bind(this);
-    self.drawObject = (object, material, ...rest) => {
-      this.query(object, material);
-      draw(object, material, ...rest);
-    };
-  }
-
-  override render(scene: Object3D, camera: Camera): void {
-    const depth = this.open.length;
-    const context = (this.contexts[depth] ??= { renders: 0, pending: [], delivered: new Set() });
-    context.renders++;
-    while (context.pending.length > 0 && context.pending[0]!.render + this.lag <= context.renders) context.delivered = context.pending.shift()!.occluded;
-    // threeforge's scene hooks never change occlusionTest, so counting before them is counting when the list is built.
-    const counted = new Set<Object3D>();
-    scene.traverse((o) => {
-      if (o.visible && o.layers.test(camera.layers) && o.occlusionTest) counted.add(o);
-    });
-    const call: OpenRender = { camera, context, counted, occluded: new Set(), last: null };
-    this.open.push(call);
-    try {
-      super.render(scene, camera);
-    } finally {
-      this.open.pop();
-    }
-    if (counted.size > 0) context.pending.push({ render: context.renders, occluded: call.occluded });
-  }
-
-  isOccluded(object: Object3D): boolean {
-    return this.open[this.open.length - 1]?.context.delivered.has(object) === true;
-  }
-
-  private query(object: Object3D, material: Material): void {
-    const call = this.open[this.open.length - 1];
-    if (!call || call.counted.size === 0) return; // no query set: three issues no query in this render
-    const last = call.last;
-    if (last !== null && last.object === object) return;
-    // Every scene render ends with the output quad's draw, which ends the last query like finishRender does.
-    if (last !== null && (last.object.occlusionTest === true) !== last.began) throw new Error(`${last.object.name}: occlusionTest changed between its draw and the end of its query`);
-    const began = object.occlusionTest === true;
-    if (began) {
-      if (!call.counted.has(object)) throw new Error(`${object.name}: begins a query the render list did not count`);
-      this.queries.push({ object, depth: this.open.length - 1, frame: this.frameId });
-      if (this.wall(object, call.camera) || !facesEye(object as Mesh, material, call.camera)) call.occluded.add(object);
-    }
-    call.last = { object, began };
-  }
-}
-
-/**
- * Whether a triangle three rasterises for this draw faces the eye. The front face is decided by the winding on screen,
- * flipped when `side === BackSide` and again when the object's world matrix mirrors, and `Back` is culled unless
- * DoubleSide (`WebGPUPipelineUtils._getPrimitiveState`; `WebGLBackend.draw` -> `WebGLState.setMaterial`). From inside
- * a box no face faces the eye.
- */
-function facesEye(mesh: Mesh, material: Material, camera: Camera): boolean {
-  const geometry = mesh.geometry;
-  const position = geometry.getAttribute('position');
-  const normal = geometry.getAttribute('normal');
-  const index = geometry.getIndex()!;
-  const normalMatrix = new Matrix3().getNormalMatrix(mesh.matrixWorld);
-  const flip = (material.side === BackSide) !== mesh.matrixWorld.determinant() < 0;
-  const eye = new Vector3().setFromMatrixPosition(camera.matrixWorld);
-  const world = [new Vector3(), new Vector3(), new Vector3()];
-  const screen = [new Vector3(), new Vector3(), new Vector3()];
-  for (let t = 0; t < index.count; t += 3) {
-    for (let k = 0; k < 3; k++) {
-      world[k]!.fromBufferAttribute(position, index.getX(t + k)).applyMatrix4(mesh.matrixWorld);
-      screen[k]!.copy(world[k]!).project(camera);
-    }
-    const outward = new Vector3().fromBufferAttribute(normal, index.getX(t)).applyMatrix3(normalMatrix);
-    if (outward.dot(eye.clone().sub(world[0]!)) <= 0) continue;
-    if (material.side === DoubleSide) return true;
-    const [a, b, c] = screen as [Vector3, Vector3, Vector3];
-    const area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y); // > 0: counter-clockwise on screen
-    if (flip ? area < 0 : area > 0) return true;
-  }
-  return false;
-}
-
 describe('World occlusion', () => {
   it('adds one invisible proxy per batch that carries the occlusion test', () => {
     const scene = twoChunkScene();
@@ -194,7 +73,7 @@ describe('World occlusion', () => {
       expect(proxy.name).toMatch(/^forge:occluder:forge:batch:/);
       expect(proxy.geometry.boundingBox).not.toBeNull();
     }
-    expect(report.occlusion).toEqual({ proxies: 2 });
+    expect(report.occlusion).toEqual({ proxies: 2, skippedSynced: 0 });
   });
 
   it('hides a batch whose proxy was reported occluded and shows it again when it is not', () => {
@@ -372,6 +251,65 @@ describe('World occlusion with queries as three runs them', () => {
     expect(left.visible, 'hidden for the main camera').toBe(false);
   });
 
+  it('warmup issues no occlusion query: its scissored render would count no samples and hide visible targets in the renders after it (frame and async modes)', async () => {
+    const outcome: string[] = [];
+    for (const mode of ['frame', 'async'] as const) {
+      for (const lag of [2, 3]) {
+        const scene = twoChunkScene();
+        const world = new World(scene, { chunkSize: 50, occlusion: true });
+        world.compile();
+        scene.updateMatrixWorld();
+        const batches = leftAndRight(scene);
+        const renderer = new QueryRenderer();
+        renderer.lag = lag;
+        // warmup's 1x1 scissor discards every fragment: a query issued under it counts no samples.
+        renderer.wall = () => renderer.getScissorTest();
+        const camera = lookFrom(new PerspectiveCamera(60, 2, 0.1, 500), [50, 10, 120], [50, 0, 0]);
+        const result = await world.warmup(renderer, camera, { mode });
+        const label = `${result.mode} lag ${lag}`;
+        outcome.push(`${label}: ${renderer.queries.length} queries in warmup, proxies ${proxiesIn(scene).every((p) => p.occlusionTest) ? 'on' : 'off'} after it`);
+        for (let frame = 0; frame < 6; frame++) {
+          renderer.render(scene, camera);
+          batches.forEach((batch, i) => {
+            if (!batch.visible) outcome.push(`${label}: batch ${i} hidden after frame ${frame}`);
+          });
+        }
+        outcome.push(`${label}: ${renderer.queries.length > 0 ? 'queries resume' : 'no queries after warmup'}`);
+      }
+    }
+    expect(outcome).toEqual(['frame lag 2', 'frame lag 3', 'async lag 2', 'async lag 3'].flatMap((label) => [`${label}: 0 queries in warmup, proxies on after it`, `${label}: queries resume`]));
+  });
+
+  it('shows the targets and issues no query when the scene is rendered without its own hooks (under another root), and resumes once the scene is rendered itself', async () => {
+    const scene = twoChunkScene();
+    new World(scene, { chunkSize: 50, occlusion: true }).compile();
+    scene.updateMatrixWorld();
+    const [left] = leftAndRight(scene);
+    const leftProxy = proxyOf(scene, left);
+    const renderer = new QueryRenderer();
+    renderer.wall = (object) => object === leftProxy;
+    const camera = lookFrom(new PerspectiveCamera(60, 1, 0.1, 500), [3, 1, 12], [3, 0, 0]);
+    for (let frame = 0; frame < 4; frame++) renderer.render(scene, camera);
+    expect(left.visible, 'hidden by the wall in its own renders').toBe(false);
+    // three calls onBeforeRender and onAfterRender only on the root it renders: the pass tracker sees no render (depth 0).
+    const root = new Scene();
+    root.add(scene);
+    root.updateMatrixWorld();
+    const before = renderer.queries.length;
+    const shown: boolean[] = [];
+    for (let frame = 0; frame < 4; frame++) {
+      renderer.render(root, camera);
+      shown.push(left.visible);
+    }
+    expect(shown, 'shown after each render under the other root').toEqual([true, true, true, true]);
+    expect(renderer.queries.length - before, 'queries issued under the other root').toBe(0);
+    await Promise.resolve();
+    expect(proxiesIn(scene).every((p) => p.occlusionTest), 'on again once that render is over').toBe(true);
+    root.remove(scene);
+    for (let frame = 0; frame < 4; frame++) renderer.render(scene, camera);
+    expect(left.visible, 'hidden again by its own renders').toBe(false);
+  });
+
   it('gives no proxy to a batch holding a batch-synced mover, so a mover that leaves the box stays visible, also when the scene moves', () => {
     const scene = twoChunkScene();
     const mover = tag.dynamic(new Mesh(box, solid(0x336699)));
@@ -403,7 +341,7 @@ describe('World occlusion with queries as three runs them', () => {
     }
     expect(shown).toEqual(new Array(12).fill(true));
     expect(right.visible, 'a batch without movers is still culled').toBe(false);
-    expect(report.occlusion).toEqual({ proxies: 1 });
+    expect(report.occlusion).toEqual({ proxies: 1, skippedSynced: 1 });
   });
 
   it('keeps a visible target visible under a mirrored scene: three flips the front face with the mirror, so the FrontSide proxy still rasterises the faces toward the eye', () => {
