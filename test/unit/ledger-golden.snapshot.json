@@ -1,6 +1,6 @@
 {
   "frame1": {
-    "schemaVersion": 2,
+    "schemaVersion": 3,
     "env": {
       "three": "186",
       "backend": "webgl2",
@@ -48,6 +48,7 @@
     },
     "js": {
       "renderMs": 12,
+      "ledgerMs": 0,
       "frameMs": 0,
       "objects": 21,
       "autoUpdatedMatrices": 21,
@@ -292,7 +293,7 @@
     }
   },
   "frame2": {
-    "schemaVersion": 2,
+    "schemaVersion": 3,
     "env": {
       "three": "186",
       "backend": "webgl2",
@@ -340,6 +341,7 @@
     },
     "js": {
       "renderMs": 12,
+      "ledgerMs": 0,
       "frameMs": 25,
       "objects": 21,
       "autoUpdatedMatrices": 21,
@@ -584,7 +586,7 @@
     }
   },
   "frame3": {
-    "schemaVersion": 2,
+    "schemaVersion": 3,
     "env": {
       "three": "186",
       "backend": "webgl2",
@@ -632,6 +634,7 @@
     },
     "js": {
       "renderMs": 12,
+      "ledgerMs": 0,
       "frameMs": 25,
       "objects": 21,
       "autoUpdatedMatrices": 21,

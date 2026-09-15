@@ -49,7 +49,7 @@ await world.warmup(renderer, camera);        // build every pipeline now, not on
 if (import.meta.env.DEV) exposeToAgents({ ledger, world, renderer, scene, camera }); // window.__threeforge, development only
 
 renderer.render(scene, camera);
-const frame = ledger.frame();                // FrameSnapshot v2: six cost sections + hints
+const frame = ledger.frame();                // FrameSnapshot v3: six cost sections + hints
 ```
 
 ```bash
@@ -123,10 +123,10 @@ For each submission the ledger predicts the GPU draw commands it will issue on t
 change in `renderer.info.render.drawCalls` inside the frame; `unattributed = reportedDrawCalls − gpuDraws` and is
 asserted to be 0 in every test. `drawCommands` counts multi-draw ranges individually.
 
-### The snapshot (`ledger.frame()`), schema version 2
+### The snapshot (`ledger.frame()`), schema version 3
 
 ```
-schemaVersion: 2
+schemaVersion: 3
 env:       three, backend (webgl2|webgpu), multiDraw, tier, gpu, dpr, viewport
 totals:    submissions, sceneSubmissions, gpuDraws, reportedDrawCalls, unattributed, programSwitches, programs,
            triangles, instances, instancesDrawn, drawCommands
@@ -137,7 +137,7 @@ overdraw:  opaque, transparent (fragments per pixel, measured), transparentSubmi
 skinning:  submissions, vertices, bones, skeletons, maxBones, morphTargets, vatInstances, vatVertices
 lighting:  lights { directional, point, spot, hemisphere, ambient, other }, shadowLights, shadowPasses,
            shadowCasters, shadowTexels, shadowSubmissions
-js:        renderMs, frameMs, objects, autoUpdatedMatrices
+js:        renderMs, ledgerMs, frameMs, objects, autoUpdatedMatrices, hiddenOriginals, skipped
 memory:    textures { count, bytes }, geometries { count, bytes }, renderTargets { count, bytes },
            unreferenced { geometries, textures }, chunks { total, resident }, estimated: true
 hints:     [{ category, severity, code, message, objects }]
@@ -154,10 +154,12 @@ items?:    per-submission records with ledger.frame({ items: true })
   characters drawn as animated instances (`kind: 'vat'`, reason `vat-instanced`), which need no CPU bones.
 - **lighting** scans the main scene's visible lights; `shadowTexels` = Σ `mapSize.x · mapSize.y · faces` with 6
   faces for point lights (a cube target); casters are the unique objects in `shadow:*` passes.
-- **js**: `renderMs` is the outermost `render()` duration, `frameMs` the median interval between the last 60 outermost
-  renders, `objects`, `autoUpdatedMatrices` and `hiddenOriginals` (batched originals parked on layer 31) come from a
-  traversal repeated at most every 60 frames; `skipped` is the ticks a `RenderScheduler` skipped among its last 60
-  (`ledger.rescan()` forces it).
+- **js**: `renderMs` is the outermost `render()` call's duration until the ledger starts filing the frame (it includes
+  the ledger's per-submission attribution, which runs inside the renderer's calls); `ledgerMs` is that filing, after
+  `render()` has finished: the snapshot, the hints and, every 60 frames, the rescan. `frameMs` is the median interval
+  between the last 60 outermost renders, `objects`, `autoUpdatedMatrices` and `hiddenOriginals` (batched originals
+  parked on layer 31) come from a traversal repeated at most every 60 frames; `skipped` is the ticks a
+  `RenderScheduler` skipped among its last 60 (`ledger.rescan()` forces it).
 - **memory** estimates bytes: textures `w · h · 4 · bytesPerChannel · (mipmaps ? 4/3 : 1) · (cube ? 6 : 1)`, compressed
   textures Σ mip bytes, geometries Σ attribute and index bytes, render targets from shadow maps and the renderer's
   half-float frame-buffer target. `ledger.measureMemory()` recounts now.
@@ -177,8 +179,9 @@ Other methods: `ledger.report()` (text), `ledger.budget({ maxSubmissions })` →
 
 ### Overhead
 
-The ledger runs inside `render()`, so its own cost is part of `js.renderMs`. In a steady scene its per-submission path
-allocates nothing, and none of the following changes a number in the snapshot:
+The ledger's per-submission path runs inside the renderer's calls, so its cost is part of `js.renderMs`; filing the frame
+once `render()` has finished (the snapshot, the hints and the periodic rescan) is `js.ledgerMs`. In a steady scene the
+per-submission path allocates nothing, and none of the following changes a number in the snapshot:
 
 - **Pooled records.** Two record buffers alternate: the frame in progress writes one while the last completed frame's
   items stay intact in the other, so a read between frames or inside one (a hook) sees whole frames. `frame({ items: true })` returns copies, valid however long they are held.
@@ -844,8 +847,9 @@ swaps change data, not draw calls.
 ## 10. For AI agents: hook, CLI, MCP
 
 - **Hook**: `exposeToAgents({ ledger, world, renderer, scene, camera })` publishes `window.__threeforge` with
-  `version`, `schemaVersion`, `frame()`, `frameAsync()` (waits one animation frame so shadow maps update, renders if it
-  can), `compile()` / `decompile()`, `measureOverdraw()`, `measureMemory()`, `hints()`, `report()`. Returns a disposer.
+  `version`, `schemaVersion` (3, the frame snapshot's), `frame()`, `frameAsync()` (waits one animation frame so shadow
+  maps update, renders if it can), `compile()` / `decompile()`, `measureOverdraw()`, `measureMemory()`, `hints()`,
+  `report()`. Returns a disposer.
   It lets any script on the page call `compile()`/`decompile()` and read the ledger, so call it as
   `if (import.meta.env.DEV) exposeToAgents(...)` (Vite) or behind your own flag, never unconditionally in a shipped
   build; bundlers other than Vite need their own dev check.
@@ -862,7 +866,9 @@ swaps change data, not draw calls.
   - `inspect <url> [--backend webgl2|webgpu] [--budget N] [--frames N] [--no-compile] [--timeout ms] [--headed]
     [--json]`: drives the agent's own dev server through the hook, compiling through it unless `--no-compile`
     (`--compile` is accepted and is the default); same document without asset facts and parity. There is no
-    `--tier`: the app measures itself at the tier its own ledger detects.
+    `--tier`: the app measures itself at the tier its own ledger detects. The app's hook must publish
+    `schemaVersion: 3` (threeforge 0.9.0 or later): any other version exits 4 with `unsupported schemaVersion N`
+    before anything is measured.
   - `optimize <file.glb|.gltf> [--out out.glb] [--preset safe|balanced|aggressive] [--no-<step>|--<step>]
     [--simplify [ratio]] [--simplify-error e] [--compress none|meshopt] [--textures [webp|avif|none]]
     [--texture-size N] [--texture-quality Q] [--no-verify] [--parity pct] [--views N] [--budget N] [--backend …]
@@ -896,6 +902,8 @@ swaps change data, not draw calls.
   does not judge its app's page errors). Exit codes: 0 pass, 1 verdict failed, 2 usage/input, 3 environment (install command in the message),
   4 page error/timeout. `--json` writes the JSON document to stdout before the human summary is built
   (`printDocument`), then the summary to stderr; a summary that throws leaves a note on stderr and the document intact.
+  `before` and `after` are frame snapshots with their own `schemaVersion: 3`; their `js.renderMs`, `js.ledgerMs` and
+  `js.frameMs` are medians over the measured frames.
 - **Programmatic**: `import { analyzeAsset, inspectApp, optimizeAsset, explain } from 'threeforge/cli'`.
 - Playwright, `@modelcontextprotocol/sdk` and `zod` are optional peers imported lazily; game code never pays for them.
 

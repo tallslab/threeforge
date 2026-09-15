@@ -2,7 +2,7 @@ import type { CompileReport } from '../compiler/World.js';
 import { VERSION } from '../version.js';
 import { launchBrowser } from './browser.js';
 import { Resources, type CliDeps } from './lifecycle.js';
-import { evaluateWithin, measureViaHook, waitFor } from './measure.js';
+import { assertHookVersion, evaluateWithin, measureViaHook, waitFor } from './measure.js';
 import type { AgentDocument, InspectInput } from './types.js';
 import { formatPageErrors } from './untrusted.js';
 import { verdictOf } from './verdict.js';
@@ -20,7 +20,9 @@ export async function inspectApp(input: InspectInput, log: (line: string) => voi
     page.on('pageerror', (error) => pageErrors.push(error.message));
     log(`opening ${input.url} on ${input.backend}`);
     await page.goto(input.url, { timeout: input.timeout, waitUntil: 'domcontentloaded' });
-    await waitFor(page, `!!(window.__threeforge && window.__threeforge.schemaVersion === 2)`, input.timeout, 'no window.__threeforge hook appeared: call exposeToAgents({ ledger, world, renderer, scene, camera }) in the app');
+    await waitFor(page, `!!window.__threeforge`, input.timeout, 'no window.__threeforge hook appeared: call exposeToAgents({ ledger, world, renderer, scene, camera }) in the app');
+    // Before anything is measured or formatted: an older app's snapshot lacks fields this CLI reads.
+    await assertHookVersion(page, input.timeout);
     log(`hook found; measuring ${input.frames} frames`);
     const before = await measureViaHook(page, input.frames, input.timeout);
     let after: AgentDocument['after'] = null;

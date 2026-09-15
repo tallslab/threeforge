@@ -19,7 +19,8 @@ describe('exposeToAgents', () => {
     const target: { __threeforge?: AgentHook } = {};
     const dispose = exposeToAgents({ ledger, world, renderer: renderer as never, scene, camera, target, requestFrame: (cb) => cb() });
     const hook = target.__threeforge!;
-    expect(hook.schemaVersion).toBe(2);
+    expect(hook.schemaVersion).toBe(3);
+    expect(hook.schemaVersion).toBe(ledger.frame().schemaVersion);
     expect(typeof hook.version).toBe('string');
     const frame = await hook.frameAsync();
     expect(frame.totals.sceneSubmissions).toBe(3);

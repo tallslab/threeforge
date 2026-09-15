@@ -43,10 +43,12 @@ test('renders the same number of programs as distinct registry programs (shader 
   expect(memoryPrograms).toBeGreaterThanOrEqual(programs);
 });
 
-test('the snapshot carries schema v2 environment and sections', async ({ forge }) => {
+test('the snapshot carries schema v3 environment and sections', async ({ forge }) => {
   await forge.open('naive');
   const f = await forge.page.evaluate(() => window.__forge.frame());
-  expect(f.schemaVersion).toBe(2);
+  expect(f.schemaVersion).toBe(3);
+  expect(f.js.renderMs).toBeGreaterThanOrEqual(0);
+  expect(f.js.ledgerMs).toBeGreaterThanOrEqual(0);
   expect(f.env.tier).toBe('desktop');
   expect(f.env.viewport).toEqual([800, 600]);
   expect(f.env.gpu.length).toBeGreaterThan(0);

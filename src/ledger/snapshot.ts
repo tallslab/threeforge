@@ -108,8 +108,13 @@ export interface LightingSnapshot {
 }
 
 export interface JsSnapshot {
-  /** Milliseconds inside the outermost render() call. */
+  /**
+   * Milliseconds inside the outermost render() call, until the ledger starts filing the frame. It includes the ledger's
+   * per-submission attribution (it runs inside the renderer's calls), not `ledgerMs`.
+   */
   renderMs: number;
+  /** Milliseconds the ledger spent filing the frame after render() finished: the snapshot, hints and the periodic rescan. */
+  ledgerMs: number;
   /** Median interval between the last outermost render() starts. */
   frameMs: number;
   objects: number;
@@ -153,7 +158,7 @@ export interface FrameEnv {
 }
 
 export interface FrameSnapshot {
-  schemaVersion: 2;
+  schemaVersion: 3;
   env: FrameEnv;
   totals: FrameTotals;
   passes: PassSnapshot[];
@@ -175,7 +180,7 @@ export function emptySections(): FrameSections {
     overdraw: { opaque: 0, transparent: 0, transparentSubmissions: 0, particles: 0, pixels: 0, measured: false },
     skinning: { submissions: 0, vertices: 0, bones: 0, skeletons: 0, maxBones: 0, morphTargets: 0, vatInstances: 0, vatVertices: 0 },
     lighting: { lights: { directional: 0, point: 0, spot: 0, hemisphere: 0, ambient: 0, other: 0 }, shadowLights: 0, shadowPasses: 0, shadowCasters: 0, shadowTexels: 0, shadowSubmissions: 0 },
-    js: { renderMs: 0, frameMs: 0, objects: 0, autoUpdatedMatrices: 0, hiddenOriginals: 0, skipped: 0 },
+    js: { renderMs: 0, ledgerMs: 0, frameMs: 0, objects: 0, autoUpdatedMatrices: 0, hiddenOriginals: 0, skipped: 0 },
     memory: { textures: { count: 0, bytes: 0 }, geometries: { count: 0, bytes: 0 }, renderTargets: { count: 0, bytes: 0 }, unreferenced: { geometries: 0, textures: 0 }, chunks: { total: 0, resident: 0 }, estimated: true },
     hints: [],
   };
@@ -198,7 +203,7 @@ export const TOP_NAMES = 5;
 
 export function emptyFrame(env: FrameSnapshot['env']): FrameSnapshot {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     env,
     totals: { submissions: 0, sceneSubmissions: 0, gpuDraws: 0, reportedDrawCalls: 0, unattributed: 0, programSwitches: 0, programs: 0, triangles: 0, instances: 0, instancesDrawn: 0, drawCommands: 0 },
     passes: [],
@@ -274,7 +279,7 @@ export function buildFrame({ env, items, reportedDrawCalls, triangles, programs,
     Object.fromEntries([...map.entries()].sort(([a], [b]) => a.localeCompare(b)));
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     env,
     ...emptySections(),
     skinning: skinningOf(items),

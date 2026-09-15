@@ -11,8 +11,8 @@ import { VERSION } from '../version.js';
 export interface AgentHook {
   /** threeforge version. */
   version: string;
-  /** Snapshot schema version (`ledger.frame()`). */
-  schemaVersion: 2;
+  /** Frame snapshot schema version (`ledger.frame().schemaVersion`); `threeforge inspect` requires 3. */
+  schemaVersion: 3;
   /** The last frame's snapshot; does not render. */
   frame(): FrameSnapshot;
   /** Waits one animation frame (shadow maps update once per tick), renders if it can, returns the snapshot. Rejects when the render throws. */
@@ -55,7 +55,7 @@ export function exposeToAgents(options: ExposeOptions): () => void {
   const canRender = Boolean(renderer && scene && camera);
   const hook: AgentHook = {
     version: VERSION,
-    schemaVersion: 2,
+    schemaVersion: 3,
     frame: () => ledger.frame(),
     frameAsync: () =>
       new Promise((resolve, reject) => {

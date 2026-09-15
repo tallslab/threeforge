@@ -32,12 +32,25 @@ export function evaluateWithin<R>(page: PlaywrightPage, what: string, timeout: n
 export interface Measurement {
   snapshot: FrameSnapshot;
   renderMs: number;
+  ledgerMs: number;
   frameMs: number;
+}
+
+/** The frame snapshot `schemaVersion` this CLI reads from `window.__threeforge` (what `exposeToAgents` publishes). */
+export const HOOK_SCHEMA_VERSION = 3;
+
+const unsupported = (version: string): string => `window.__threeforge has unsupported schemaVersion ${version}: this threeforge reads schemaVersion ${HOOK_SCHEMA_VERSION}`;
+
+/** Fails with a PageError unless the page's hook publishes the snapshot version this CLI reads. */
+export async function assertHookVersion(page: PlaywrightPage, timeout: number): Promise<void> {
+  const version = await evaluateWithin<unknown>(page, 'reading window.__threeforge.schemaVersion', timeout, `window.__threeforge.schemaVersion`);
+  if (version !== HOOK_SCHEMA_VERSION) throw new PageError(unsupported(JSON.stringify(version) ?? 'undefined'));
 }
 
 /**
  * Drives `window.__threeforge`: N frames through `frameAsync` (one per animation frame, so shadow maps update),
- * then an overdraw and a memory measurement, then the snapshot. Timings are medians over the frames. The whole
+ * then an overdraw and a memory measurement, then the snapshot. Its `js.renderMs`, `js.ledgerMs` and `js.frameMs` are
+ * medians over the N frames. A hook with another `schemaVersion` is a PageError. The whole
  * measurement is bounded by `timeout` ms (a hook whose frameAsync never settles becomes a PageError).
  */
 export async function measureViaHook(page: PlaywrightPage, frames: number, timeout = 60_000): Promise<Measurement> {
@@ -48,21 +61,23 @@ export async function measureViaHook(page: PlaywrightPage, frames: number, timeo
     timeout,
     `(async () => {
       const hook = window.__threeforge;
-      if (!hook || hook.schemaVersion !== 2) return { error: 'window.__threeforge is missing: call exposeToAgents({ ledger, world, renderer, scene, camera }) in the app' };
-      const render = []; const intervals = []; let last = performance.now();
+      if (!hook) return { error: 'window.__threeforge is missing: call exposeToAgents({ ledger, world, renderer, scene, camera }) in the app' };
+      if (hook.schemaVersion !== ${HOOK_SCHEMA_VERSION}) return { error: ${JSON.stringify(unsupported('@'))}.replace('@', String(JSON.stringify(hook.schemaVersion))) };
+      const render = []; const ledger = []; const intervals = []; let last = performance.now();
       for (let i = 0; i < ${count}; i++) {
         const f = await hook.frameAsync();
-        const now = performance.now(); render.push(f.js.renderMs); intervals.push(now - last); last = now;
+        const now = performance.now(); render.push(f.js.renderMs); ledger.push(f.js.ledgerMs); intervals.push(now - last); last = now;
       }
       if (hook.measureOverdraw) await hook.measureOverdraw();
       hook.measureMemory();
       const snapshot = await hook.frameAsync();
       const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
-      return { snapshot, renderMs: median(render), frameMs: median(intervals) };
+      return { snapshot, renderMs: median(render), ledgerMs: median(ledger), frameMs: median(intervals) };
     })()`,
   );
   if ('error' in result) throw new PageError(result.error);
   result.snapshot.js.renderMs = result.renderMs;
+  result.snapshot.js.ledgerMs = result.ledgerMs;
   result.snapshot.js.frameMs = result.frameMs;
   return result;
 }

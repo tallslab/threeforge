@@ -118,6 +118,16 @@ describe('schema', () => {
     for (const s of [ANALYZE_SCHEMA, INSPECT_SCHEMA]) expect(Object.keys(s.properties)).toEqual(docKeys);
     expect(SNAPSHOT_SCHEMA.$schema).toBe('https://json-schema.org/draft/2020-12/schema');
   });
+
+  it('describes the frame snapshot schemaVersion 3, with every js key the ledger emits', () => {
+    expect(SNAPSHOT_SCHEMA.properties.schemaVersion).toEqual({ const: 3 });
+    expect(SNAPSHOT_SCHEMA.properties.schemaVersion).toEqual({ const: emptyFrame(env).schemaVersion });
+    expect(SNAPSHOT_SCHEMA.$id).toBe('https://threeforge.dev/schema/frame-snapshot-v3.json');
+    expect(SNAPSHOT_SCHEMA.title).toBe('threeforge FrameSnapshot v3');
+    expect((SNAPSHOT_SCHEMA.properties.js as { required: string[] }).required).toEqual(Object.keys(emptyFrame(env).js));
+    // The analyze, inspect and optimize documents keep their own schemaVersion 1.
+    for (const s of [ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA]) expect(s.properties.schemaVersion).toEqual({ const: 1 });
+  });
 });
 
 describe('summarize', () => {

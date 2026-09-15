@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The frame snapshot is `schemaVersion: 3` (`ledger.frame()`, `window.__threeforge.schemaVersion`, and `threeforge schema snapshot`, whose `$id` is now `frame-snapshot-v3.json`); it had stayed at 2 since 0.2 while sections and fields were added. The analyze, inspect and optimize documents and bench results keep their own `schemaVersion: 1`.
+- New `js.ledgerMs`: the milliseconds the ledger spends filing a frame after `render()` has finished (the snapshot, the hints and the rescan every 60 frames). The overlay and `ledger.report()` js row show it as `ms ledger`, and `analyze`/`inspect` report its median over the measured frames.
+- `js.renderMs` stops when the ledger starts filing the frame, so that filing no longer counts as render time (a frame with a 20 ms rescan reported 20 ms more); it still includes the ledger's per-submission attribution. Measured `renderMs` values drop slightly.
+- `threeforge inspect` (and the MCP `inspect_app`) requires an app whose hook publishes `schemaVersion: 3`: it waits for `window.__threeforge`, then exits 4 with `unsupported schemaVersion N` for any other version instead of measuring it; `analyze`'s measurement rejects a hook of another version the same way.
 - Frames rendered through `renderer.renderAsync()` now report a `main` pass, with their shadow passes and skinning counted as through `render()`: the ledger no longer patches `renderAsync` (three r186's awaits `init()` and then calls the patched `render()`), which filed such a frame's only pass as `nested:1`, and a `render()` made during that await is now a frame of its own instead of merging into it. `LedgerRenderer` drops `renderAsync`.
 - `world.warmup()` awaits `renderer.init()` (when present) before it changes any state and renders its frame with `render()` instead of the deprecated `renderAsync()`, so three no longer logs its deprecation warning and nothing yields between the 1×1 scissor and occlusion suspension and the render. `WarmupRenderer` gains `init?` and drops `renderAsync?`.
 - `ledger.attach()` resets the render depth: after a `detach()` from inside a draw, the next render on a re-attached ledger threw a `TypeError`.

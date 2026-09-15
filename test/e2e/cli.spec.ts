@@ -94,6 +94,8 @@ test('inspect drives a page that exposes window.__threeforge', async ({ forge })
   expect(doc.after.totals.sceneSubmissions).toBeLessThan(60);
   expect(doc.before.overdraw.measured).toBe(true);
   expect(doc.before.totals.unattributed).toBe(0);
+  expect(doc.before.schemaVersion).toBe(3);
+  expect(doc.before.js.ledgerMs).toBeGreaterThanOrEqual(0);
 });
 
 test('inspect reports a page without the hook as a page error (exit 4)', () => {
@@ -115,7 +117,7 @@ test('analyze exits 3 promptly when Chromium cannot launch', ({ backend }) => {
 
 test('inspect exits 4 when the hook never resolves a frame, bounded by --timeout', async ({ backend }) => {
   test.setTimeout(60_000);
-  const hook = `window.__threeforge = { version: 'stuck', schemaVersion: 2, frame: () => ({}), frameAsync: () => new Promise(() => {}), measureMemory: () => ({}), hints: () => [], report: () => '' };`;
+  const hook = `window.__threeforge = { version: 'stuck', schemaVersion: 3, frame: () => ({}), frameAsync: () => new Promise(() => {}), measureMemory: () => ({}), hints: () => [], report: () => '' };`;
   const server = createServer((_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(`<!doctype html><title>stuck</title><script>${hook}</script>`));
   await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
   try {
@@ -127,6 +129,26 @@ test('inspect exits 4 when the hook never resolves a frame, bounded by --timeout
     expect(r.stderr).toMatch(/page: .*timed out after 3000 ms/);
     expect(r.stdout).toBe('');
     expect(ms).toBeLessThan(20_000);
+  } finally {
+    await new Promise<void>((ok) => server.close(() => ok()));
+  }
+});
+
+test('inspect exits 4 at once for an app whose hook exposes schemaVersion 2 (threeforge 0.8.0)', async ({ backend }) => {
+  test.setTimeout(60_000);
+  const hook = `window.__threeforge = { version: '0.8.0', schemaVersion: 2, frame: () => ({}), frameAsync: () => Promise.resolve({}), measureMemory: () => ({}), hints: () => [], report: () => '' };`;
+  const server = createServer((_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(`<!doctype html><title>v2</title><script>${hook}</script>`));
+  await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
+  try {
+    const { port } = server.address() as AddressInfo;
+    const started = Date.now();
+    const r = await runAsync(['inspect', `http://127.0.0.1:${port}/`, '--backend', backend, '--frames', '2', '--timeout', '20000', '--json'], 40_000);
+    const ms = Date.now() - started;
+    expect(r.status, `${r.stderr}\n(signal ${r.signal} after ${ms} ms)`).toBe(4);
+    expect(r.stderr).toMatch(/unsupported schemaVersion 2/);
+    expect(r.stderr).not.toMatch(/timed out/);
+    expect(r.stdout).toBe('');
+    expect(ms).toBeLessThan(15_000);
   } finally {
     await new Promise<void>((ok) => server.close(() => ok()));
   }

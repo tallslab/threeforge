@@ -11,7 +11,7 @@ import { measureOverdraw, type OverdrawRenderer, type OverdrawResult } from './o
 import { formatCostRows, formatHints } from '../overlay/index.js';
 import { FORGE_TAG_KEY } from '../tags.js';
 import { lightInfoOf, type LightInfo } from './sections.js';
-import { buildFrame, emptyFrame, emptySections, type BudgetResult, type FrameEnv, type FrameSnapshot, type MemorySnapshot, type SubmissionRecord, type Tier } from './snapshot.js';
+import { buildFrame, emptyFrame, emptySections, type BudgetResult, type FrameEnv, type FrameSnapshot, type JsSnapshot, type MemorySnapshot, type SubmissionRecord, type Tier } from './snapshot.js';
 
 /** The slice of three's common Renderer the ledger patches and reads. Structural so tests can fake it. */
 export interface LedgerRenderer {
@@ -382,6 +382,8 @@ export class DrawCallLedger {
     this.depth--;
     this.contexts.pop();
     if (this.depth > 0 || !this.current || !this.renderer) return;
+    // The frame's render() is over: from here on the time is the ledger's own filing work (js.ledgerMs), not render time.
+    const renderEnd = this.now();
     const state = this.current;
     const items = state.buffer.items;
     if (items.length !== state.count) items.length = state.count;
@@ -402,6 +404,7 @@ export class DrawCallLedger {
       if (i.transparent && i.reason !== 'renderer-internal') transparentSubmissions++;
       particles += i.kind === 'points' ? i.vertices : i.reason === 'sprite-batch' ? i.instances : i.kind === 'sprite' ? 1 : 0;
     }
+    const js: JsSnapshot = { renderMs: renderEnd - state.startedAt, ledgerMs: 0, frameMs, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals, skipped: this.scheduler?.skippedRecently() ?? 0 };
     this.last = buildFrame({
       env: this.env(),
       items,
@@ -410,7 +413,7 @@ export class DrawCallLedger {
       programs: this.renderer.info.memory.programs,
       descriptions: state.descriptions,
       lights: state.lights,
-      js: { renderMs: this.now() - state.startedAt, frameMs, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals, skipped: this.scheduler?.skippedRecently() ?? 0 },
+      js,
       memory: this.memoryNow(),
       overdraw: {
         opaque: this.overdraw?.opaque ?? 0,
@@ -423,6 +426,8 @@ export class DrawCallLedger {
     });
     this.last.hints = hintsFor(this.last, this.budgets(), { ...this.hintContext, items });
     this.current = null;
+    // `js` is this frame's own object (buildFrame keeps it): no earlier snapshot shares it.
+    js.ledgerMs = this.now() - renderEnd;
   }
 
   /** The registry's cached hashes for `material`, read at most once per material per frame (`hashesOf`, R6). */

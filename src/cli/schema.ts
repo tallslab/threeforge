@@ -13,11 +13,11 @@ const hint = obj({ category: { enum: ['drawCalls', 'overdraw', 'skinning', 'ligh
 
 export const SNAPSHOT_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
-  $id: 'https://threeforge.dev/schema/frame-snapshot-v2.json',
-  title: 'threeforge FrameSnapshot v2',
+  $id: 'https://threeforge.dev/schema/frame-snapshot-v3.json',
+  title: 'threeforge FrameSnapshot v3',
   type: 'object',
   properties: {
-    schemaVersion: { const: 2 },
+    schemaVersion: { const: 3 },
     env: obj({ three: string, backend: { enum: ['webgl2', 'webgpu', 'unknown'] }, multiDraw: boolean, tier: { enum: ['desktop', 'phone-mid', 'phone-low'] }, gpu: string, dpr: number, viewport: { type: 'array', items: number, minItems: 2, maxItems: 2 } }),
     totals: obj({ submissions: integer, sceneSubmissions: integer, gpuDraws: integer, reportedDrawCalls: integer, unattributed: integer, programSwitches: integer, programs: integer, triangles: integer, instances: integer, instancesDrawn: integer, drawCommands: integer }),
     passes: arr(obj({ id: string, submissions: integer, gpuDraws: integer })),
@@ -26,7 +26,7 @@ export const SNAPSHOT_SCHEMA = {
     overdraw: obj({ opaque: number, transparent: number, transparentSubmissions: integer, particles: integer, pixels: integer, measured: boolean }),
     skinning: obj({ submissions: integer, vertices: integer, bones: integer, skeletons: integer, maxBones: integer, morphTargets: integer, vatInstances: integer, vatVertices: integer }),
     lighting: obj({ lights: obj({ directional: integer, point: integer, spot: integer, hemisphere: integer, ambient: integer, other: integer }), shadowLights: integer, shadowPasses: integer, shadowCasters: integer, shadowTexels: integer, shadowSubmissions: integer }),
-    js: obj({ renderMs: number, frameMs: number, objects: integer, autoUpdatedMatrices: integer, hiddenOriginals: integer, skipped: integer }),
+    js: obj({ renderMs: number, ledgerMs: number, frameMs: number, objects: integer, autoUpdatedMatrices: integer, hiddenOriginals: integer, skipped: integer }),
     memory: obj({ textures: obj({ count: integer, bytes: integer }), geometries: obj({ count: integer, bytes: integer }), renderTargets: obj({ count: integer, bytes: integer }), unreferenced: obj({ geometries: integer, textures: integer }), chunks: obj({ total: integer, resident: integer }), estimated: { const: true } }),
     hints: arr(hint),
     items: arr(obj({ name: string, kind: string, materialType: string, programHash: string, variantHash: string, transparent: boolean, pass: string, reason: string, flags: arr(string), expectedGpuDraws: integer, instances: integer, instancesDrawn: integer, vertices: integer, bones: integer, skeleton: nullable(integer), morphTargets: integer })),
