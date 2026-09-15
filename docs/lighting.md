@@ -56,7 +56,10 @@ and keep one small map for the dynamics.
 
 | number | means | act with |
 |---|---|---|
-| `shadowTexels` above the tier budget | maps too large for the device | `ShadowBudget` |
+| `shadowTexels` above the tier budget | the maps rendered this frame are too large for the device (a frozen map counts only on frames it refreshes) | `ShadowBudget` |
 | `shadowPasses` = shadow lights every frame while nothing moves | maps re-render needlessly | `ShadowBudget.freeze`, `DayNight` with `everyDegrees` |
 | `point-light-shadow` hint | six faces per frame for one light | a spot light, or `ShadowBudget` on phones |
-| `shadowCasters` high after `compile()` | casters are not batched | tag statics, check the compile report |
+| `shadowCasters` high after `compile()` | casters are not batched (it counts objects: a batch is one) | tag statics, check the compile report |
+
+Shadow pass ids are `shadow:<light name>`; lights that share a name get `shadow:<name>#1`, `#2`, …, so name lights
+you want to find in `passes`. With `VSMShadowMap`, `shadow:<id>:vsm` holds the map's two blur quads (renderer-internal).

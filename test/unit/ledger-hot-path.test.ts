@@ -22,12 +22,14 @@ import {
   MeshStandardMaterial,
   Object3D,
   PerspectiveCamera,
+  PointLight,
   Scene,
   WebGLCoordinateSystem,
   WebGPUCoordinateSystem,
   type BufferGeometry,
   type Camera,
   type CoordinateSystem,
+  type Light,
   type Material,
 } from 'three';
 import { World } from '../../src/compiler/World.js';
@@ -52,22 +54,24 @@ class ListRenderer implements LedgerRenderer {
   internal: Object3D[] = [];
   expectNames = false;
   expectedNames: string[] = [];
+  /** renderObject's argument 7 for scene objects (three's lights node); internal objects get null. */
+  lightsNode: { getLights(): Light[] } | null = null;
 
   render(scene: Scene, camera: Camera): unknown {
-    const draw = (object: Object3D): void => {
+    const draw = (object: Object3D, lightsNode: { getLights(): Light[] } | null): void => {
       const name = this.expectNames ? displayName(object, scene) : '';
       const mesh = object as Mesh;
-      this.renderObject(object, scene, camera, mesh.geometry, mesh.material, null, null, null, null);
+      this.renderObject(object, scene, camera, mesh.geometry, mesh.material, null, lightsNode, null, null);
       if (this.expectNames) this.expectedNames.push(name);
     };
     const visit = (object: Object3D): void => {
       if (!object.visible) return;
-      if ((object as Mesh).isMesh) draw(object);
+      if ((object as Mesh).isMesh) draw(object, this.lightsNode);
       const children = object.children;
       for (let i = 0; i < children.length; i++) visit(children[i]!);
     };
     visit(scene);
-    if (scene.isScene) for (const object of this.internal) draw(object);
+    if (scene.isScene) for (const object of this.internal) draw(object, null);
     return undefined;
   }
 
@@ -80,24 +84,32 @@ class ListRenderer implements LedgerRenderer {
   }
 }
 
-/** Counts outermost `Object3D.prototype.traverse` calls (three's traverse recurses through the prototype) while `run` runs. */
+/**
+ * Counts outermost `Object3D.prototype.traverse` and `traverseVisible` calls while `run` runs (three's recurse through
+ * the prototype, so a nested call of either kind is part of the outermost walk).
+ */
 function countTraversals(run: () => void): number {
-  const original = Object3D.prototype.traverse;
+  const proto = Object3D.prototype;
+  const originals = { traverse: proto.traverse, traverseVisible: proto.traverseVisible };
   let depth = 0;
   let outermost = 0;
-  Object3D.prototype.traverse = function (this: Object3D, callback: (object: Object3D) => unknown) {
-    if (depth === 0) outermost++;
-    depth++;
-    try {
-      return original.call(this, callback);
-    } finally {
-      depth--;
-    }
-  };
+  for (const key of ['traverse', 'traverseVisible'] as const) {
+    const original = originals[key];
+    proto[key] = function (this: Object3D, callback: (object: Object3D) => unknown) {
+      if (depth === 0) outermost++;
+      depth++;
+      try {
+        return original.call(this, callback);
+      } finally {
+        depth--;
+      }
+    };
+  }
   try {
     run();
   } finally {
-    Object3D.prototype.traverse = original;
+    proto.traverse = originals.traverse;
+    proto.traverseVisible = originals.traverseVisible;
   }
   return outermost;
 }
@@ -205,6 +217,32 @@ describe('DrawCallLedger scene walks', () => {
     expect(countTraversals(() => renderer.render(scene, camera))).toBeLessThanOrEqual(1);
     expect(ledger.frame().totals.sceneSubmissions).toBe(20);
     expect(ledger.frame().lighting).toMatchObject({ lights: { directional: 1 }, shadowLights: 1 });
+  });
+
+  it('reads the lights three projected from the first scene submission, once per frame, without another walk', () => {
+    const { scene, camera } = sceneWithCamera();
+    const sun = new DirectionalLight(0xffffff, 1);
+    sun.castShadow = true;
+    scene.add(sun);
+    for (let i = 0; i < 20; i++) scene.add(tag.static(new Mesh(box, new MeshBasicMaterial())));
+    const renderer = new ListRenderer();
+    // Not the lights in the scene graph: the section must come from the lights node.
+    const projected: Light[] = [sun, new PointLight()];
+    let reads = 0;
+    renderer.lightsNode = {
+      getLights: () => {
+        reads++;
+        return projected;
+      },
+    };
+    const ledger = new DrawCallLedger();
+    ledger.attach(renderer);
+    renderer.render(scene, camera); // the first frame rescans
+    reads = 0;
+
+    expect(countTraversals(() => renderer.render(scene, camera))).toBeLessThanOrEqual(1);
+    expect(reads).toBe(1);
+    expect(ledger.frame().lighting).toMatchObject({ lights: { directional: 1, point: 1 }, shadowLights: 1 });
   });
 
   it('never calls children.indexOf for display names, in frames or rescans, and names match displayName()', () => {

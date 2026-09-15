@@ -1,7 +1,7 @@
 import { REVISION, type Camera, type Light, type Material, type Object3D, type Scene } from 'three';
 import { MaterialRegistry, type MaterialHashes } from '../registry/MaterialRegistry.js';
 import { expectedGpuDraws, sideFactor, writeInstanceCounts, type BackendInfo } from './expectedDraws.js';
-import { flagsInto, kindOf, reasonOf, type Reason } from './reasons.js';
+import { flagsInto, isVsmBlur, kindOf, reasonOf, type Reason } from './reasons.js';
 import { DisplayNames, type PathCache } from './names.js';
 import { budgetsFor, type Budgets } from './budgets.js';
 import { Vector2 } from 'three';
@@ -50,6 +50,17 @@ interface RenderContext {
   pass: string;
   /** The display-name cache of `root`. */
   paths: PathCache;
+  /** A shadow-map render: its scene submissions are shadow casters. */
+  shadow: boolean;
+}
+
+/** A light as the ledger's walk reads it. */
+type WalkedLight = Light & { isPointLight?: boolean; shadow?: { camera?: Camera; mapSize: { x: number; y: number } } };
+
+/** A shadow-casting light walked this frame, and the pass id its shadow map renders under. */
+interface ShadowPass {
+  light: WalkedLight;
+  id: string;
 }
 
 /**
@@ -73,11 +84,25 @@ interface FrameState {
   descriptions: Map<string, { type: string; description: string }>;
   drawCallsStart: number;
   trianglesStart: number;
-  shadowCameras: Map<Camera, Light>;
+  /** Shadow camera → its light and pass id, for every world-visible shadow-casting light this frame's walks found. */
+  shadowCameras: Map<Camera, ShadowPass>;
+  /** The shadow pass ids given out this frame, across scenes. */
+  shadowIds: Set<string>;
+  /** Σ mapSize.x · mapSize.y · faces over the lights whose shadow map rendered this frame, each light once. */
+  shadowTexels: number;
+  /** Distinct objects drawn into a shadow map this frame. */
+  shadowCasters: number;
+  /** The last shadow-map pass entered: three renders a map's VSM blur quads right after the map. */
+  lastShadowPass: string | null;
   scannedScenes: Set<Object3D>;
   nestedScenes: number;
   skeletons: Map<unknown, number>;
-  lights: LightInfo[];
+  /** The main scene's world-visible lights from this frame's walk: the lighting section's fallback. */
+  visibleLights: Light[];
+  /** The lights three projected for the main pass (`lightsNode.getLights()`), or null when none was read. */
+  lights: LightInfo[] | null;
+  /** The first main-pass scene submission was seen: its lights node read, or found missing. */
+  lightsRead: boolean;
   startedAt: number;
 }
 
@@ -124,6 +149,12 @@ export class DrawCallLedger {
   private lastMaterial: Material | null = null;
   private lastHashes: MaterialHashes | null = null;
   private readonly annotations = new WeakMap<Object3D, Reason>();
+  /** Frames entered: the marks below compare against it, so nothing is cleared between frames. */
+  private frameStamp = 0;
+  /** The frame each object was last counted as a shadow caster in. */
+  private readonly casterFrames = new WeakMap<Object3D, number>();
+  /** The frame each light's shadow-map texels were last counted in. */
+  private readonly shadowMapFrames = new WeakMap<Light, number>();
   private backendInfo: BackendInfo = { backend: 'unknown', multiDraw: false };
   private environment: { tier: Tier; gpu: string; dpr: number; viewport: [number, number] } = { tier: 'desktop', gpu: 'unknown', dpr: 1, viewport: [0, 0] };
   private readonly now: () => number;
@@ -158,13 +189,13 @@ export class DrawCallLedger {
     const ledger = this;
 
     // `arguments` forwards exactly what three passed without copying it into a rest array on every call.
-    renderer.renderObject = function (this: LedgerRenderer, object: Object3D, scene: Scene, _camera: Camera, _geometry: unknown, material: Material, group: unknown) {
+    renderer.renderObject = function (this: LedgerRenderer, object: Object3D, scene: Scene, _camera: Camera, _geometry: unknown, material: Material, group: unknown, lightsNode: unknown) {
       // Paused: an overdraw count render, possibly inside a draw of the open frame (a measurement from a render hook).
       if (ledger.depth === 0 || ledger.current === null || ledger.paused) return originals.renderObject.apply(this, arguments as unknown as unknown[]);
       const hashes = ledger.hashesOf(material);
       // Read before the call: three puts the override material's side back as renderObject returns.
       const sides = sideFactor(material, scene);
-      const record = ledger.begin(object, material, group, hashes, sides);
+      const record = ledger.begin(object, material, group, hashes, sides, lightsNode);
       const result = originals.renderObject.apply(this, arguments as unknown as unknown[]);
       // Draw state is read after the call returns: BatchedMesh fills `_multiDrawCount` in its onBeforeRender (a sprite
       // batch its `instanceCount`), and a pass nested inside this draw (the shadow map a receiver triggers) restores the
@@ -356,12 +387,19 @@ export class DrawCallLedger {
         drawCallsStart: this.renderer.info.render.drawCalls,
         trianglesStart: this.renderer.info.render.triangles,
         shadowCameras: new Map(),
+        shadowIds: new Set(),
+        shadowTexels: 0,
+        shadowCasters: 0,
+        lastShadowPass: null,
         scannedScenes: new Set(),
         nestedScenes: 0,
         skeletons: new Map(),
-        lights: [],
+        visibleLights: [],
+        lights: null,
+        lightsRead: false,
         startedAt: this.now(),
       };
+      this.frameStamp++;
       this.frameStarts.push(this.current.startedAt);
       if (this.frameStarts.length > FRAME_WINDOW + 1) this.frameStarts.shift();
     }
@@ -369,21 +407,26 @@ export class DrawCallLedger {
     const isScene = (scene as Scene).isScene === true;
     if (isScene && !state.scannedScenes.has(scene)) {
       state.scannedScenes.add(scene);
-      // One traversal per scene per frame: every light's shadow camera, and the first scene's visible lights for the
-      // lighting section (what `scanLights` returns).
-      const lights: LightInfo[] | null = state.mainScene === null ? [] : null;
-      scene.traverse((o) => {
-        const light = o as Light & { shadow?: { camera?: Camera } };
-        if (!light.isLight) return;
-        if (light.shadow?.camera) state.shadowCameras.set(light.shadow.camera, light);
-        if (lights !== null && light.visible) lights.push(lightInfoOf(light));
-      });
-      if (lights !== null) state.lights = lights;
+      this.walkLights(state, scene);
     }
     let pass: string;
-    const light = state.shadowCameras.get(camera);
-    if (light) pass = `shadow:${light.name || light.type}`;
-    else if ((scene as Scene).overrideMaterial) pass = 'override';
+    let shadow = false;
+    const shadowPass = state.shadowCameras.get(camera);
+    if (shadowPass) {
+      pass = shadowPass.id;
+      shadow = true;
+      state.lastShadowPass = pass;
+      const light = shadowPass.light;
+      // A light's texels count once per frame: a point light renders its six faces with one camera, and three renders a
+      // map again for each other camera of the frame (ShadowNode keys its once-per-frame check by camera).
+      if (light.shadow && this.shadowMapFrames.get(light) !== this.frameStamp) {
+        this.shadowMapFrames.set(light, this.frameStamp);
+        state.shadowTexels += light.shadow.mapSize.x * light.shadow.mapSize.y * (light.isPointLight ? 6 : 1);
+      }
+    } else if (state.lastShadowPass !== null && isVsmBlur(scene)) {
+      // ShadowNode.vsmPass blurs the map it just rendered with two quads, each its own render() call.
+      pass = `${state.lastShadowPass}:vsm`;
+    } else if ((scene as Scene).overrideMaterial) pass = 'override';
     else if (!isScene) pass = 'fullscreen';
     else if (state.mainScene === null) {
       state.mainScene = scene;
@@ -394,7 +437,7 @@ export class DrawCallLedger {
       const name = target?.texture?.name || target?.name;
       pass = `nested:${name || ++state.nestedScenes}`;
     } else pass = `scene:${scene.name || ++state.nestedScenes}`;
-    this.contexts.push({ root: scene, pass, paths: this.names.forRoot(scene) });
+    this.contexts.push({ root: scene, pass, paths: this.names.forRoot(scene), shadow });
     this.depth++;
   }
 
@@ -433,7 +476,9 @@ export class DrawCallLedger {
       triangles: this.renderer.info.render.triangles - state.trianglesStart,
       programs: this.renderer.info.memory.programs,
       descriptions: state.descriptions,
-      lights: state.lights,
+      // What three projected for the main pass, else the main scene's world-visible lights.
+      lights: state.lights ?? state.visibleLights.map((light) => lightInfoOf(light)),
+      shadows: { texels: state.shadowTexels, casters: state.shadowCasters },
       js,
       memory: this.memoryNow(),
       overdraw: {
@@ -449,6 +494,57 @@ export class DrawCallLedger {
     this.current = null;
     // `js` is this frame's own object (buildFrame keeps it): no earlier snapshot shares it.
     js.ledgerMs = this.now() - renderEnd;
+  }
+
+  /**
+   * The frame's one walk of a scene, over world-visible objects only (three's render lists skip a hidden subtree, lights
+   * included). It gives every shadow-casting light's shadow camera a pass id, and keeps the main scene's lights for the
+   * lighting section in case no renderObject call brings a lights node.
+   */
+  private walkLights(state: FrameState, scene: Object3D): void {
+    const main = state.mainScene === null;
+    let casting: WalkedLight[] | null = null;
+    scene.traverseVisible((o) => {
+      const light = o as WalkedLight;
+      if (!light.isLight) return;
+      if (main) state.visibleLights.push(light);
+      if (light.castShadow && light.shadow?.camera) (casting ??= []).push(light);
+    });
+    if (casting === null) return;
+    const lights: WalkedLight[] = casting;
+    // `shadow:<name>` (the type when unnamed) for a name no other shadow-casting light of the scene has, `shadow:<name>#k`
+    // (k from 1, in scene order) for a shared one. An id another scene took this frame moves on to the next free k.
+    const shared = new Map<string, number>();
+    for (const light of lights) {
+      const key = light.name || light.type;
+      shared.set(key, (shared.get(key) ?? 0) + 1);
+    }
+    const numbered = new Map<string, number>();
+    for (const light of lights) {
+      const key = light.name || light.type;
+      const base = `shadow:${key}`;
+      const duplicate = shared.get(key)! > 1;
+      let k = duplicate ? (numbered.get(key) ?? 0) + 1 : 1;
+      let id = duplicate ? `${base}#${k}` : base;
+      while (state.shadowIds.has(id)) id = `${base}#${++k}`;
+      numbered.set(key, k);
+      state.shadowIds.add(id);
+      state.shadowCameras.set(light.shadow!.camera!, { light, id });
+    }
+  }
+
+  /**
+   * The lights three projected for the main pass: renderObject's lights node (argument 7), filled by RenderList.finish
+   * before the first draw. Read once per frame; without a `getLights()` the frame keeps the walk's world-visible lights.
+   */
+  private readLights(state: FrameState, lightsNode: unknown): void {
+    state.lightsRead = true;
+    const lights = (lightsNode as { getLights?(): Light[] } | null | undefined)?.getLights?.();
+    if (!Array.isArray(lights)) return;
+    // Copied now: three reuses the array for the next render of this scene and camera.
+    const infos: LightInfo[] = [];
+    for (let i = 0; i < lights.length; i++) infos.push(lightInfoOf(lights[i]!));
+    state.lights = infos;
   }
 
   /** The registry's cached hashes for `material`, read at most once per material per frame (`hashesOf`, R6). */
@@ -479,10 +575,17 @@ export class DrawCallLedger {
   }
 
   /** Fills a pooled record with everything known before the renderer processes the object; `sides` is `sideFactor()`. */
-  private begin(object: Object3D, material: Material, group: unknown, hashes: MaterialHashes, sides: number): SubmissionRecord {
+  private begin(object: Object3D, material: Material, group: unknown, hashes: MaterialHashes, sides: number, lightsNode: unknown): SubmissionRecord {
     const state = this.current!;
     const context = this.contexts[this.contexts.length - 1]!;
     const reason = reasonOf(object, material, group, context.root, hashes.unsupported, this.annotations.get(object));
+    // A scene submission's lights node: three draws the output quad with an empty default one.
+    if (!state.lightsRead && context.pass === 'main' && reason !== 'renderer-internal') this.readLights(state, lightsNode);
+    if (context.shadow && reason !== 'renderer-internal' && this.casterFrames.get(object) !== this.frameStamp) {
+      // One caster per object per frame, across every shadow map: a batch or an instanced mesh is one, whatever it draws.
+      this.casterFrames.set(object, this.frameStamp);
+      state.shadowCasters++;
+    }
     const geometry = (object as { geometry?: { attributes?: { position?: { count: number } }; morphAttributes?: { position?: unknown[] }; drawRange?: { start: number; count: number } } }).geometry;
     const positionCount = geometry?.attributes?.position?.count ?? 0;
     const range = geometry?.drawRange;

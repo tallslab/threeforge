@@ -141,6 +141,7 @@ async function runOne(host: Host, id: SceneId, variant: 'naive' | 'optimized', m
     const render: number[] = [];
     const frames: number[] = [];
     const shadowPasses: number[] = [];
+    const shadowTexels: number[] = [];
     let last = performance.now();
     for (let i = 0; i < measured; i++) {
       bench.setTime?.((WARM + i) / 60);
@@ -149,13 +150,14 @@ async function runOne(host: Host, id: SceneId, variant: 'naive' | 'optimized', m
       render.push(f.js.renderMs);
       frames.push(now - last);
       shadowPasses.push(f.lighting.shadowPasses);
+      shadowTexels.push(f.lighting.shadowTexels);
       last = now;
       if (i % 10 === 0) onProgress(`${id} ${variant} · frame ${i + 1}/${measured}`);
     }
     const overdraw = await ledger.measureOverdraw(scene, camera);
     ledger.rescan();
     const frame = await frameAsync();
-    return metricsOf({ ...frame, overdraw: { ...frame.overdraw, ...overdraw, measured: true } }, median(render), median(frames), shadowPasses.reduce((a, b) => a + b, 0) / Math.max(1, shadowPasses.length));
+    return metricsOf({ ...frame, overdraw: { ...frame.overdraw, ...overdraw, measured: true } }, median(render), median(frames), shadowPasses.reduce((a, b) => a + b, 0) / Math.max(1, shadowPasses.length), shadowTexels);
   } finally {
     world.decompile();
     disposeScene(scene);

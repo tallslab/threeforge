@@ -12,13 +12,16 @@ test('daynight: the optimized variant renders the shadow map every second frame 
         await f.frameAsync();
       }
       const passes: number[] = [];
+      // Texels count only the frames the map renders on: summed over the steps.
+      let texels = 0;
       let last = await f.frameAsync();
       for (let i = 0; i < 10; i++) {
         f.bench!.setTime!(10 + (4 + i) / 60);
         last = await f.frameAsync();
         passes.push(last.lighting.shadowPasses);
+        texels += last.lighting.shadowTexels;
       }
-      return { passes, submissions: last.totals.sceneSubmissions, unattributed: last.totals.unattributed, texels: last.lighting.shadowTexels, directional: last.lighting.lights.directional, hemisphere: last.lighting.lights.hemisphere, unique: last.byReason['unique-material']?.top ?? [] };
+      return { passes, submissions: last.totals.sceneSubmissions, unattributed: last.totals.unattributed, texels, directional: last.lighting.lights.directional, hemisphere: last.lighting.lights.hemisphere, unique: last.byReason['unique-material']?.top ?? [] };
     });
   };
   const naive = await stepped('naive');
@@ -28,7 +31,9 @@ test('daynight: the optimized variant renders the shadow map every second frame 
   expect(optimized.directional).toBe(1);
   expect(optimized.hemisphere).toBe(1);
   expect(optimized.unique).toContain('sky-dome');
-  expect(optimized.texels).toBe(naive.texels);
+  // The 2048² sun map: every step naive, every second step optimized.
+  expect(naive.texels).toBe(10 * 2048 * 2048);
+  expect(optimized.texels).toBe(5 * 2048 * 2048);
   expect(optimized.submissions).toBeLessThan(naive.submissions / 5);
   expect(optimized.unattributed).toBe(0);
   expect(naive.unattributed).toBe(0);

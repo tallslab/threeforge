@@ -17,6 +17,7 @@ export interface BenchMetrics {
   overdrawTransparent: number;
   skinnedVertices: number;
   shadowCasters: number;
+  /** Mean shadow-map texels rendered per measured frame, rounded (a map counts on the frames it renders on). */
   shadowTexels: number;
   textureBytes: number;
   geometryBytes: number;
@@ -36,8 +37,14 @@ export interface BenchMetrics {
   unattributed: number;
 }
 
-/** Shared by the CI runner (test/e2e/bench.spec.ts) and the device bench page so the two cannot drift. */
-export function metricsOf(f: FrameSnapshot, renderMs: number, frameMs: number, shadowPassesPerFrame: number): BenchMetrics {
+/**
+ * Shared by the CI runner (test/e2e/bench.spec.ts) and the device bench page so the two cannot drift. `shadowTexels` is
+ * `lighting.shadowTexels` of every measured frame: the metric is their mean, rounded, over the same fixed frame window
+ * each run (a frozen or quantized map renders on a fixed share of those frames).
+ */
+export function metricsOf(f: FrameSnapshot, renderMs: number, frameMs: number, shadowPassesPerFrame: number, shadowTexels: readonly number[]): BenchMetrics {
+  let texels = 0;
+  for (const t of shadowTexels) texels += t;
   return {
     sceneSubmissions: f.totals.sceneSubmissions,
     gpuDraws: f.totals.gpuDraws,
@@ -47,7 +54,7 @@ export function metricsOf(f: FrameSnapshot, renderMs: number, frameMs: number, s
     overdrawTransparent: f.overdraw.transparent,
     skinnedVertices: f.skinning.vertices,
     shadowCasters: f.lighting.shadowCasters,
-    shadowTexels: f.lighting.shadowTexels,
+    shadowTexels: Math.round(texels / Math.max(1, shadowTexels.length)),
     textureBytes: f.memory.textures.bytes,
     geometryBytes: f.memory.geometries.bytes,
     renderTargetBytes: f.memory.renderTargets.bytes,

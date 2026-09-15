@@ -1,0 +1,244 @@
+/**
+ * The ledger's lighting section and shadow pass ids (Task 32), through the fake renderer's model of three r186:
+ *
+ * - Lights: the lights three projected for the main pass (`lightsNode.getLights()`, renderObject's argument 7, set by
+ *   RenderList.finish before the first draw), else a walk of the main scene's world-visible lights.
+ * - Pass ids: `shadow:<name>` for a unique shadow-casting light name (the type for an unnamed light), `shadow:<name>#k`
+ *   for lights that share one, unique across the scenes of a frame.
+ * - `shadowTexels`: Σ mapSize.x · mapSize.y · faces over the lights whose map rendered this frame, each light once.
+ * - `shadowCasters`: distinct objects drawn into any shadow map this frame (a batch is one object).
+ * - VSM blur quads: `shadow:<id>:vsm`, renderer-internal.
+ */
+import { describe, expect, it } from 'vitest';
+import { AmbientLight, BoxGeometry, DirectionalLight, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PointLight, Scene, SpotLight, VSMShadowMap, type Object3D } from 'three';
+import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
+import { tag } from '../../src/tags.js';
+import { FakeRenderer, batchedOf, sceneWithCamera } from './helpers/fakeRenderer.js';
+
+const box = new BoxGeometry(1, 1, 1);
+
+function attached(options: ConstructorParameters<typeof FakeRenderer>[0] = {}) {
+  const renderer = new FakeRenderer(options);
+  const ledger = new DrawCallLedger();
+  ledger.attach(renderer as never);
+  const { scene, camera } = sceneWithCamera();
+  return { renderer, ledger, scene, camera };
+}
+
+/** A shadow-casting light with a square map. */
+function casting<T extends DirectionalLight | SpotLight | PointLight>(light: T, name: string, size = 512): T {
+  light.name = name;
+  light.castShadow = true;
+  light.shadow.mapSize.set(size, size);
+  return light;
+}
+
+function caster(name: string): Mesh {
+  const mesh = tag.static(new Mesh(box, new MeshStandardMaterial()));
+  mesh.name = name;
+  mesh.castShadow = true;
+  return mesh;
+}
+
+/** Makes `render` from the object's outermost onBeforeRender (a mirror or a portal); the nested one does nothing. */
+function renderFromHook(object: Object3D, render: (renderer: FakeRenderer) => void): void {
+  let inside = false;
+  object.onBeforeRender = ((renderer: unknown) => {
+    if (inside) return;
+    inside = true;
+    try {
+      render(renderer as FakeRenderer);
+    } finally {
+      inside = false;
+    }
+  }) as Object3D['onBeforeRender'];
+}
+
+describe('lighting section: shadow pass ids', () => {
+  it('keeps shadow:<name> for a unique shadow-casting light name and numbers lights that share one shadow:<name>#k, in scene order', () => {
+    const sun = casting(new DirectionalLight(), 'sun');
+    // Casts no shadow, so it does not make "sun" a duplicate.
+    const moon = new SpotLight();
+    moon.name = 'sun';
+    const lamps = [casting(new SpotLight(), 'lamp'), casting(new SpotLight(), 'lamp')];
+    const unnamed = [casting(new DirectionalLight(), ''), casting(new DirectionalLight(), '')];
+    const { renderer, ledger, scene, camera } = attached({ shadowLights: [sun, ...lamps, ...unnamed] });
+    scene.add(sun, moon, ...lamps, ...unnamed, caster('crate'));
+    renderer.render(scene, camera);
+    const frame = ledger.frame();
+    expect(frame.passes.map((p) => [p.id, p.submissions])).toEqual([
+      ['shadow:sun', 1],
+      ['shadow:lamp#1', 1],
+      ['shadow:lamp#2', 1],
+      ['shadow:DirectionalLight#1', 1],
+      ['shadow:DirectionalLight#2', 1],
+      ['main', 2],
+    ]);
+    expect(frame.lighting).toMatchObject({ shadowLights: 5, shadowPasses: 5, shadowSubmissions: 5, shadowCasters: 1 });
+    expect(frame.totals.unattributed).toBe(0);
+  });
+
+  it("keeps ids unique across the scenes of one frame: a nested scene's light named like a main-scene light gets the next number", () => {
+    const sun = casting(new DirectionalLight(), 'sun');
+    const farSun = casting(new DirectionalLight(), 'sun');
+    const { renderer, ledger, scene, camera } = attached({ shadowLights: [sun, farSun] });
+    const far = new Scene();
+    far.name = 'far';
+    far.add(farSun, caster('far-crate'));
+    const portal = tag.static(new Mesh(box, new MeshBasicMaterial()));
+    portal.name = 'portal';
+    renderFromHook(portal, (r) => r.render(far, camera));
+    scene.add(sun, caster('crate'), portal);
+    for (let i = 0; i < 2; i++) {
+      renderer.render(scene, camera);
+      const frame = ledger.frame();
+      expect(frame.passes.map((p) => p.id).sort()).toEqual(['main', 'scene:far', 'shadow:sun', 'shadow:sun#2']);
+      expect(frame.lighting).toMatchObject({ shadowPasses: 2, shadowCasters: 2 });
+      expect(frame.totals.unattributed).toBe(0);
+    }
+  });
+});
+
+describe('lighting section: lights', () => {
+  it('counts the lights three projected for the main pass, not every light in the graph', () => {
+    const { renderer, ledger, scene, camera } = attached();
+    const hidden = new Group();
+    hidden.visible = false;
+    hidden.add(new PointLight());
+    const otherLayer = new SpotLight();
+    otherLayer.layers.set(2);
+    scene.add(new DirectionalLight(), new AmbientLight(), hidden, otherLayer, tag.static(new Mesh(box, new MeshBasicMaterial())));
+    renderer.render(scene, camera);
+    expect(ledger.frame().lighting.lights).toEqual({ directional: 1, point: 0, spot: 0, hemisphere: 0, ambient: 1, other: 0 });
+  });
+
+  it('without a lights node on renderObject, walks the main scene for its world-visible lights', () => {
+    const { renderer, ledger, scene, camera } = attached();
+    // Wraps the ledger's wrapper, so the ledger sees renderObject calls without argument 7.
+    const withLights = renderer.renderObject as (...args: unknown[]) => void;
+    renderer.renderObject = function (this: FakeRenderer, ...args: unknown[]) {
+      args[6] = null;
+      withLights.apply(this, args);
+    } as FakeRenderer['renderObject'];
+    const hidden = new Group();
+    hidden.visible = false;
+    hidden.add(new PointLight());
+    // The walk has no camera: a light on another layer counts.
+    const otherLayer = new SpotLight();
+    otherLayer.layers.set(2);
+    scene.add(new DirectionalLight(), hidden, otherLayer, tag.static(new Mesh(box, new MeshBasicMaterial())));
+    renderer.render(scene, camera);
+    expect(ledger.frame().lighting.lights).toEqual({ directional: 1, point: 0, spot: 1, hemisphere: 0, ambient: 0, other: 0 });
+  });
+
+  it("does not read the output quad's lights node: a main pass that draws only the quad reports the scene's lights", () => {
+    const { renderer, ledger, scene, camera } = attached();
+    scene.add(new DirectionalLight(), new AmbientLight());
+    renderer.render(scene, camera);
+    expect(ledger.frame().lighting.lights).toMatchObject({ directional: 1, ambient: 1 });
+  });
+});
+
+describe('lighting section: shadow texels', () => {
+  it('counts only the maps rendered this frame: a frozen map on the frames it refreshes, a disabled shadow map never', () => {
+    const sun = casting(new DirectionalLight(), 'sun', 1024);
+    const spot = casting(new SpotLight(), 'spot', 512);
+    spot.shadow.autoUpdate = false;
+    spot.shadow.needsUpdate = true;
+    const { renderer, ledger, scene, camera } = attached({ shadowLights: [sun, spot] });
+    scene.add(sun, spot, caster('crate'));
+    const texels = (): number => {
+      renderer.render(scene, camera);
+      return ledger.frame().lighting.shadowTexels;
+    };
+    expect(texels(), 'first frame: the frozen map renders once').toBe(1024 * 1024 + 512 * 512);
+    expect(texels(), 'frozen').toBe(1024 * 1024);
+    spot.shadow.needsUpdate = true;
+    expect(texels(), 'refreshed').toBe(1024 * 1024 + 512 * 512);
+    renderer.shadowMap.enabled = false;
+    expect(texels(), 'shadow map disabled').toBe(0);
+    expect(ledger.frame().lighting).toMatchObject({ shadowLights: 2, shadowPasses: 0, shadowCasters: 0 });
+  });
+
+  it("counts a point light's six faces, and a map rendered again for a second camera in the same frame once", () => {
+    const lamp = casting(new PointLight(), 'lamp', 256);
+    const sun = casting(new DirectionalLight(), 'sun', 1024);
+    const { renderer, ledger, scene, camera } = attached({ shadowLights: [lamp, sun], record: true });
+    const mirrorCamera = camera.clone();
+    const mirror = tag.static(new Mesh(box, new MeshBasicMaterial()));
+    mirror.name = 'mirror';
+    renderFromHook(mirror, (r) => r.render(scene, mirrorCamera));
+    scene.add(lamp, sun, caster('crate'), mirror);
+    renderer.render(scene, camera);
+    // ShadowNode keys its once-per-frame check by camera, so both maps render for each camera: 7 renders twice.
+    expect(renderer.passes.filter((p) => p.kind === 'shadow')).toHaveLength(14);
+    expect(ledger.frame().lighting).toMatchObject({ shadowTexels: 256 * 256 * 6 + 1024 * 1024, shadowCasters: 1, shadowPasses: 2 });
+  });
+});
+
+describe('lighting section: shadow casters', () => {
+  it('counts casters per object: same-named casters apart, an object once across a point light and a sun, a batch once', () => {
+    const lamp = casting(new PointLight(), 'lamp', 256);
+    const sun = casting(new DirectionalLight(), 'sun');
+    const { renderer, ledger, scene, camera } = attached({ shadowLights: [lamp, sun] });
+    // Two unnamed casters with the same path, car/Mesh[0].
+    const cars = ['car', 'car'].map((name) => {
+      const group = new Group();
+      group.name = name;
+      group.add(caster(''));
+      return group;
+    });
+    const batch = batchedOf(5, new MeshStandardMaterial(), box);
+    batch.castShadow = true;
+    scene.add(lamp, sun, caster('crate'), caster('crate'), ...cars, batch);
+    renderer.render(scene, camera);
+    const frame = ledger.frame();
+    // crate, crate, two car/Mesh[0] and the batch: 5 objects, each drawn into 6 lamp faces and the sun's map.
+    expect(frame.lighting).toMatchObject({ shadowCasters: 5, shadowSubmissions: 5 * 7, shadowPasses: 2 });
+    expect(frame.totals.unattributed).toBe(0);
+  });
+});
+
+describe('lighting section: overdraw count renders', () => {
+  it('a measurement from a shadow caster’s hook adds no pass, light, caster or texel to the frame around it', async () => {
+    const sun = casting(new DirectionalLight(), 'sun', 1024);
+    const { renderer, ledger, scene, camera } = attached({ shadowLights: [sun] });
+    const crate = caster('crate');
+    scene.add(sun, crate);
+    renderer.render(scene, camera);
+    const plain = ledger.frame();
+    let pending: Promise<unknown> | null = null;
+    crate.onBeforeRender = () => {
+      pending ??= ledger.measureOverdraw(scene, camera);
+    };
+    renderer.render(scene, camera);
+    const hooked = ledger.frame();
+    expect(pending).not.toBeNull();
+    await pending;
+    expect(hooked.passes).toEqual(plain.passes);
+    expect(hooked.lighting).toEqual(plain.lighting);
+  });
+});
+
+describe('lighting section: VSM blur quads', () => {
+  it('files the blur quads after each non-point map into shadow:<id>:vsm as renderer-internal, outside scene submissions, shadow passes, casters and texels', () => {
+    const sun = casting(new DirectionalLight(), 'sun', 1024);
+    const lamp = casting(new PointLight(), 'lamp', 256);
+    const { renderer, ledger, scene, camera } = attached({ shadowLights: [sun, lamp], vsmQuad: true });
+    renderer.shadowMap.type = VSMShadowMap;
+    scene.add(sun, lamp, caster('crate'));
+    renderer.render(scene, camera);
+    const frame = ledger.frame();
+    expect(frame.passes.map((p) => [p.id, p.submissions])).toEqual([
+      ['shadow:sun', 1],
+      ['shadow:sun:vsm', 2],
+      ['shadow:lamp', 6],
+      ['main', 2],
+    ]);
+    // The two blur quads and the output quad.
+    expect(frame.byReason['renderer-internal']?.submissions).toBe(3);
+    expect(frame.byReason['fullscreen-pass']).toBeUndefined();
+    expect(frame.totals).toMatchObject({ sceneSubmissions: 1 + 6 + 1, unattributed: 0 });
+    expect(frame.lighting).toMatchObject({ shadowPasses: 2, shadowSubmissions: 7, shadowCasters: 1, shadowTexels: 1024 * 1024 + 256 * 256 * 6 });
+  });
+});

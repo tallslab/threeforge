@@ -106,6 +106,16 @@ export function flagsInto(object: Object3D, material: Material, sides: number, f
   return flags;
 }
 
+/** The materials three r186's ShadowNode.vsmPass blurs a VSM shadow map with (ShadowNode.js, `material.name`). */
+const VSM_BLUR_MATERIALS = new Set(['VSMVertical', 'VSMHorizontal']);
+
+/** A VSM blur quad: the QuadMesh three renders with a `VSMVertical` or `VSMHorizontal` material right after a VSM shadow map. */
+export function isVsmBlur(object: Object3D): boolean {
+  const quad = object as Object3D & { isQuadMesh?: boolean; material?: Material | Material[] };
+  const material = quad.material;
+  return quad.isQuadMesh === true && material !== undefined && !Array.isArray(material) && VSM_BLUR_MATERIALS.has(material.name);
+}
+
 /**
  * One primary reason per submission. A single walk up the ancestors answers both questions that need them: whether
  * `root` is among them (`isDescendantOf`) and the nearest tag (`effectiveTag`, which may sit above the root).
@@ -120,7 +130,7 @@ export function reasonOf(object: Object3D, material: Material, group: unknown, r
     if (underRoot && nearestTag !== undefined) break;
   }
   if (!underRoot) return 'renderer-internal';
-  if ((root as { isScene?: boolean }).isScene !== true) return 'fullscreen-pass';
+  if ((root as { isScene?: boolean }).isScene !== true) return isVsmBlur(object) ? 'renderer-internal' : 'fullscreen-pass';
   const forgeKind = (object.userData.forge as { kind?: string } | undefined)?.kind;
   if (forgeKind === 'occlusion-proxy') return 'occlusion-proxy';
   if (forgeKind === 'bake') return 'baked';

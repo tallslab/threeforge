@@ -101,11 +101,14 @@ await, and reports a `main` pass with its shadow passes and skinning, exactly li
 
 ### Passes
 
-Each submission carries a pass id: `main`, `shadow:<light name>` (the camera matches a light's shadow camera),
-`override` (a scene with `overrideMaterial`), `fullscreen` (a non-scene root, for example a post-processing quad),
-`nested:<render target name>` (a nested render of the main scene, for example a reflector), `scene:<name>` (a
-different scene). Renderer-internal work (three's output colour transform quad) is attributed as
-`renderer-internal` and excluded from `sceneSubmissions`.
+Each submission carries a pass id: `main`, `shadow:<light name>` (the camera is the shadow camera of a world-visible
+shadow-casting light; its type when it has no name; `shadow:<name>#k`, k from 1 in scene order, when shadow-casting
+lights of a scene share a name, and an id another scene of the frame already took moves on to the next free k),
+`shadow:<id>:vsm` (the two VSM blur quads three renders right after that map), `override` (a scene with
+`overrideMaterial`), `fullscreen` (a non-scene root, for example a post-processing quad), `nested:<render target name>`
+(a nested render of the main scene, for example a reflector), `scene:<name>` (a different scene). Renderer-internal
+work (three's output colour transform quad, the VSM blur quads) is attributed as `renderer-internal` and excluded from
+`sceneSubmissions`.
 
 ### Reasons and flags
 
@@ -187,8 +190,16 @@ items?:    per-submission records with ledger.frame({ items: true })
 - **skinning** sums the main pass's skinned submissions: vertices, bones per unique skeleton (indexed per frame, no
   uuids in the snapshot), the largest bone count, morph targets; `vatInstances` and `vatVertices` count the
   characters drawn as animated instances (`kind: 'vat'`, reason `vat-instanced`), which need no CPU bones.
-- **lighting** scans the main scene's visible lights; `shadowTexels` = Σ `mapSize.x · mapSize.y · faces` with 6
-  faces for point lights (a cube target); casters are the unique objects in `shadow:*` passes.
+- **lighting** counts the lights three projected for the main pass (`lightsNode.getLights()`, read from the first
+  scene submission's `renderObject` call; a light under a hidden group, on a layer the camera does not see, or with
+  `renderer.lighting.enabled = false` is not lit), else the main scene's world-visible lights (hidden subtrees skipped,
+  as `scanLights` does). `shadowLights` counts those set to cast. `shadowPasses` and `shadowSubmissions` count the scene
+  submissions of `shadow:*` passes, not the renderer-internal `:vsm` quads. `shadowTexels` = Σ `mapSize.x · mapSize.y ·
+  faces` (6 faces for a point light, a cube target) over the lights whose shadow map rendered this frame, each light
+  once: a frozen map (`autoUpdate` off and no `needsUpdate`) or a disabled `renderer.shadowMap` adds 0, and a map three
+  renders again for another camera of the frame counts once. `shadowCasters` counts the distinct objects drawn into any
+  shadow map this frame: a `BatchedMesh` or `InstancedMesh` is one object whatever slots or instances it draws, and an
+  object casting for several lights (or a point light's six faces) counts once.
 - **js**: `renderMs` is the outermost `render()` call's duration until the ledger starts filing the frame (it includes
   the ledger's per-submission attribution, which runs inside the renderer's calls); `ledgerMs` is that filing, after
   `render()` has finished: the snapshot, the hints and, every 60 frames, the rescan. `frameMs` is the median interval
@@ -233,8 +244,11 @@ per-submission path allocates nothing, and none of the following changes a numbe
   before three puts an override material's side back. `writeInstanceCounts` loops over every multi-draw slot of a
   batched submission to count the non-zero ones, without allocating; `scripts/ledger-overhead.mjs` renders plain
   meshes only, so it does not measure that loop.
-- **One traversal per scene per frame** collects shadow cameras and the lighting section's lights. The rescan every 60
-  frames reads each shared material's texture properties once (`collectResources`).
+- **One walk per scene per frame** (`traverseVisible`) gives the shadow cameras of world-visible shadow-casting lights
+  their pass ids and keeps the main scene's lights as the lighting section's fallback; the section's lights come from
+  the first scene submission's lights node, read once per frame. Casters and shadow texels are marked per object and per
+  light with the frame's number, so nothing is cleared between frames. The rescan every 60 frames reads each shared
+  material's texture properties once (`collectResources`).
 
 `pnpm build:lib && node scripts/ledger-overhead.mjs [submissions…]` reports the µs added per submission, the bytes
 allocated per frame and the rescan time, at 2k, 10k and 20k submissions by default. It renders a flat scene (unnamed
@@ -758,7 +772,7 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
 - **Lightmaps**: the registry keys `lightMap` and its channel, `attributeSignature` includes `uv1`, and the bake
   carries and welds every UV set, so lightmapped statics batch and bake without losing their coordinates.
   Authoring notes: `docs/lighting.md`.
-- **Bench**: `shadowPassesPerFrame` (mean over the measured frames) is gated; the optimized day/night and boss
+- **Bench**: `shadowPassesPerFrame` and `shadowTexels` (means over the measured frames, texels rounded) are gated; the optimized day/night and boss
   fight apply `ShadowBudget` for the detected tier.
 
 ### Skinning: `bakeAnimationTexture`, `AnimatedInstances`

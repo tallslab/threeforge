@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AmbientLight, DirectionalLight, PointLight, Scene, SpotLight } from 'three';
+import { AmbientLight, DirectionalLight, Group, PointLight, Scene, SpotLight } from 'three';
 import { lightingOf, scanLights, skinningOf } from '../../src/ledger/sections.js';
 import type { SubmissionRecord } from '../../src/ledger/snapshot.js';
 
@@ -22,7 +22,7 @@ describe('skinningOf', () => {
 });
 
 describe('lighting', () => {
-  it('scans visible lights by type and shadow settings', () => {
+  it('scans world-visible lights by type and shadow settings', () => {
     const scene = new Scene();
     const sun = new DirectionalLight();
     sun.castShadow = true;
@@ -33,26 +33,44 @@ describe('lighting', () => {
     const spot = new SpotLight();
     const hidden = new SpotLight();
     hidden.visible = false;
-    scene.add(sun, lamp, spot, hidden, new AmbientLight());
+    // A visible light under a hidden group: three does not light with it.
+    const hiddenGroup = new Group();
+    hiddenGroup.visible = false;
+    hiddenGroup.add(new PointLight());
+    scene.add(sun, lamp, spot, hidden, hiddenGroup, new AmbientLight());
     const lights = scanLights(scene);
     expect(lights.map((l) => l.type)).toEqual(['DirectionalLight', 'PointLight', 'SpotLight', 'AmbientLight']);
     expect(lights.find((l) => l.type === 'PointLight')).toEqual({ type: 'PointLight', name: '', castShadow: true, mapSize: [512, 512], faces: 6 });
   });
 
-  it('lightingOf counts shadow passes, unique casters and texels', () => {
-    const lights = [
-      { type: 'DirectionalLight', name: 'sun', castShadow: true, mapSize: [2048, 2048] as [number, number], faces: 1 },
-      { type: 'PointLight', name: 'lamp', castShadow: true, mapSize: [512, 512] as [number, number], faces: 6 },
-      { type: 'AmbientLight', name: '', castShadow: false, mapSize: [0, 0] as [number, number], faces: 1 },
-    ];
-    const items = [rec({ pass: 'shadow:sun', name: 'a' }), rec({ pass: 'shadow:sun', name: 'b' }), rec({ pass: 'shadow:lamp', name: 'a' }), rec({ pass: 'main', name: 'a' })];
-    expect(lightingOf(lights, items)).toEqual({
-      lights: { directional: 1, point: 1, spot: 0, hemisphere: 0, ambient: 1, other: 0 },
-      shadowLights: 2,
+  const lights = [
+    { type: 'DirectionalLight', name: 'sun', castShadow: true, mapSize: [2048, 2048] as [number, number], faces: 1 },
+    { type: 'PointLight', name: 'lamp', castShadow: true, mapSize: [512, 512] as [number, number], faces: 6 },
+    { type: 'PointLight', name: 'lamp', castShadow: true, mapSize: [512, 512] as [number, number], faces: 6 },
+    { type: 'AmbientLight', name: '', castShadow: false, mapSize: [0, 0] as [number, number], faces: 1 },
+  ];
+  // Two lamps share a name (their passes are numbered); the first lamp's VSM blur quads are renderer-internal.
+  const items = [
+    rec({ pass: 'shadow:lamp#1', name: 'a' }),
+    rec({ pass: 'shadow:lamp#1', name: 'b' }),
+    rec({ pass: 'shadow:lamp#2', name: 'a' }),
+    rec({ pass: 'shadow:lamp#1:vsm', name: '', reason: 'renderer-internal' }),
+    rec({ pass: 'shadow:lamp#1:vsm', name: '', reason: 'renderer-internal' }),
+    rec({ pass: 'main', name: 'a' }),
+  ];
+
+  it('lightingOf counts shadow-map passes and submissions from the items, and takes texels and casters from the shadow work the ledger saw', () => {
+    expect(lightingOf(lights, items, { texels: 512 * 512 * 6, casters: 3 })).toEqual({
+      lights: { directional: 1, point: 2, spot: 0, hemisphere: 0, ambient: 1, other: 0 },
+      shadowLights: 3,
       shadowPasses: 2,
-      shadowCasters: 2,
-      shadowTexels: 2048 * 2048 + 512 * 512 * 6,
+      shadowCasters: 3,
+      shadowTexels: 512 * 512 * 6,
       shadowSubmissions: 3,
     });
+  });
+
+  it('lightingOf without shadow work reports no texels and no casters, whatever the lights are configured to', () => {
+    expect(lightingOf(lights, items)).toMatchObject({ shadowLights: 3, shadowPasses: 2, shadowCasters: 0, shadowTexels: 0, shadowSubmissions: 3 });
   });
 });

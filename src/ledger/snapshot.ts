@@ -1,5 +1,5 @@
 import type { Flag, Reason, SubmissionKind } from './reasons.js';
-import { lightingOf, skinningOf, type LightInfo } from './sections.js';
+import { lightingOf, skinningOf, type LightInfo, type ShadowWork } from './sections.js';
 import { capName } from './text.js';
 
 export interface SubmissionRecord {
@@ -100,11 +100,18 @@ export interface SkinningSnapshot {
 
 export interface LightingSnapshot {
   lights: { directional: number; point: number; spot: number; hemisphere: number; ambient: number; other: number };
+  /** Lights of the frame configured to cast shadows. */
   shadowLights: number;
+  /** Distinct shadow pass ids with scene submissions this frame (`shadow:<name>`, `shadow:<name>#k`; not `:vsm`). */
   shadowPasses: number;
+  /** Distinct objects drawn into any shadow map this frame: a batch or an instanced mesh is one. */
   shadowCasters: number;
-  /** Shadow-map texels rendered per frame: Σ mapSize.x · mapSize.y · faces (6 for point lights). */
+  /**
+   * Shadow-map texels rendered this frame: Σ mapSize.x · mapSize.y · faces (6 for point lights) over the lights whose map
+   * rendered, each light once. A frozen map that did not refresh, or a disabled shadow map, adds 0.
+   */
   shadowTexels: number;
+  /** Scene submissions in shadow passes (VSM blur quads are renderer-internal and not counted). */
   shadowSubmissions: number;
 }
 
@@ -221,14 +228,16 @@ export interface FrameInput {
   triangles: number;
   programs: number;
   descriptions: Map<string, { type: string; description: string }>;
-  /** Visible lights of the main scene (see `scanLights`). */
+  /** Lights of the main pass: what three projected for it, else the main scene's world-visible lights (see `scanLights`). */
   lights?: LightInfo[];
+  /** Shadow texels and casters the ledger saw render this frame (see `ShadowWork`); none when absent. */
+  shadows?: ShadowWork;
   js?: JsSnapshot;
   memory?: MemorySnapshot;
   overdraw?: OverdrawSnapshot;
 }
 
-export function buildFrame({ env, items, reportedDrawCalls, triangles, programs, descriptions, lights = [], js, memory, overdraw }: FrameInput): FrameSnapshot {
+export function buildFrame({ env, items, reportedDrawCalls, triangles, programs, descriptions, lights = [], shadows, js, memory, overdraw }: FrameInput): FrameSnapshot {
   const passes = new Map<string, PassSnapshot>();
   const byReason = new Map<string, ReasonSnapshot>();
   const programMap = new Map<string, ProgramSnapshot>();
@@ -284,7 +293,7 @@ export function buildFrame({ env, items, reportedDrawCalls, triangles, programs,
     env,
     ...emptySections(),
     skinning: skinningOf(items),
-    lighting: lightingOf(lights, items),
+    lighting: lightingOf(lights, items, shadows),
     ...(js ? { js } : {}),
     ...(memory ? { memory } : {}),
     ...(overdraw ? { overdraw } : {}),
