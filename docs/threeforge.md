@@ -408,10 +408,16 @@ a threeforge transparent batch shares the main pass with another transparent sub
       back in a microtask, once that `render()` call has returned.
   - **One outermost camera per frame.** Occlusion assumes the scene has one outermost render per frame. A second one
     with another camera also sets the shared `target.visible` from its own answers. Examples: a rear-view mirror or a
-    minimap into its own `RenderTarget`, or split screen. Drawn to the same target, it also shares the render context,
-    so the answers mix. Targets visible to the main camera can flicker.
+    minimap into its own `RenderTarget`, or split screen. When it also shares the main render's render context, the
+    answers mix and targets visible to the main camera can flicker. three keys a render context by attachment state (the
+    target's texture count, format, type, samples, depth and stencil buffers), MRT and call depth (`RenderContexts.get`),
+    not by which target it is. Split screen on one target shares it, and so does a separate target with the same
+    attachments, such as an RGBA `HalfFloatType` target with the same samples, depth and stencil as the frame-buffer
+    target three draws the canvas pass into (`RGBAFormat`, `outputBufferType`, `HalfFloatType` by default).
   - **Warm-up.** `world.warmup()` issues no occlusion query, in either mode. Its frame is scissored to one pixel, so
-    every query would count no samples and, once published, hide visible targets.
+    every query would count no samples and, once published, hide visible targets. It first resumes any proxy a depth-0
+    render parked earlier in the same task, so that proxy is suspended with the rest instead of being re-enabled by
+    its queued microtask while `renderAsync` awaits `init()`.
   - **Camera at the box.** A query cannot see the target when the camera is inside the box, because every face is
     back-facing. It also misses when the near plane cuts into the box, because a front face in front of the near
     plane is clipped. So in the outermost render the proxy issues no query (its `occlusionTest` is off until that
@@ -435,8 +441,18 @@ a threeforge transparent batch shares the main pass with another transparent sub
 compaction table) or a baked mesh (`faceIndex` through per-triangle origins) back to the original mesh.
 `world.setVisible(original, visible)` hides an instance wherever it went (a baked module rebakes its group).
 `world.slotOf(mesh)`, `world.batchedMeshes`, `world.instancedMeshes`, `world.bakedMeshes`, `world.cullingOf(batch)`,
-`world.mainCamera`, `world.bakeDebug()`. `world.decompile()` removes everything it built, disposes what it owns,
-restores layers, matrices, materials and parent order, and allows `compile()` again.
+`world.mainCamera`, `world.bakeDebug()`. `world.decompile()` removes everything it built, disposes what it created
+(the white clones batches and instanced groups draw with, occlusion proxies, baked geometry and bake clones, sprite
+batches), restores layers, matrices, materials and parent order, and allows `compile()` again. A batch or instanced
+group whose instances are all white draws with the registry's canonical material itself: that material is the app's,
+so `decompile()` never disposes it and it stays usable.
+
+`world.dispose()` tears the World down for good:
+- **Decompiles first** when compiled, so `onDirty` listeners still hear `decompile`. That uninstalls the pass tracker's
+  scene hooks and removes and disposes the occlusion proxies; a re-enable a depth-0 render queued finds no proxy.
+- **Drops every `onDirty` listener.** The registry and the ledger stay the app's, and so do registered materials.
+- **Afterwards** a second `dispose()` and `decompile()` do nothing; `compile`, `markDirty`, `setVisible`, `onDirty` and
+  `warmup` throw `World is disposed`.
 
 ### Warm-up
 
@@ -451,8 +467,11 @@ occluded (see Occlusion).
 
 - **Sprite batching** (`src/compiler/sprites.ts`, `src/compiler/spriteBatch.ts`): `compile()` collects every
   `Sprite`, groups them by material keys (`variantHash` and colour), and for each group of at least
-  `spriteThreshold` builds one `Mesh` over an `InstancedBufferGeometry` unit quad with a `SpriteNodeMaterial` copied
-  from the group's `SpriteMaterial`; `positionNode` and `scaleNode` read per-instance attributes. Under a mirrored
+  `spriteThreshold` builds one `Mesh` over an `InstancedBufferGeometry` unit quad with a `SpriteNodeMaterial` that
+  takes every field of the group's material through `material.copy()` (`alphaMap`, stencil, clipping planes and the
+  rest, and a node material's node slots). `alphaTest` is set by hand, because three r186's `NodeMaterial.copy` misses
+  Material's accessor. The batch's own `positionNode` and `scaleNode` read per-instance attributes, so a source node
+  material's position, scale and vertex nodes are not carried. Under a mirrored
   scene the batch swaps `FrontSide` and `BackSide` (checked every render): three flips a mesh's front face under a
   negative world determinant, never a sprite's. The originals go
   to the hidden layer and keep auto-updating; a `FORGE_HOOK` render hook on the batch copies their world
@@ -511,6 +530,10 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
     freshly recomposed local matrix, instead of the parentless value `updateMatrixWorld` would give. `markDirty` on a
     former parent also reaches its detached descendants (recursively, for a detached original that itself has
     children), even though they are no longer its children in the graph.
+  - **The composed matrix and `updateMatrixWorld()`.** `markDirty` clears `matrixWorldNeedsUpdate` after composing, so
+    an unforced `updateMatrixWorld()` on a detached original with `matrixAutoUpdate` off keeps the composed matrix. With
+    `matrixAutoUpdate` on, three recomposes the local matrix and, with no parent, copies it into `matrixWorld`; call
+    `markDirty` on it again after such an update.
 - **`RenderScheduler`** (`src/scheduler/RenderScheduler.ts`): `new RenderScheduler({ renderer, scene, camera,
   ledger?, world?, mixers?, watch?, keepAliveMs?, onRender? })`, `start()` drives `renderer.setAnimationLoop`,
   `tick(time)` renders only when `invalidate()` was called, the camera's world or projection matrix changed, a
@@ -640,7 +663,8 @@ Control and inspection: `mesh.userData.forgeBake = false` passes a module throug
 `bake` block counts seams, coincident faces the seam guard kept and the bake left in place (`keptCoincidentFaces`),
 duplicates, buried faces,
 welded vertices and excluded entries (the CLI prints the kept count next to the seams); `world.bakeDebug()`
-returns the removed faces as red unlit meshes; hiding a module rebakes its group; `decompile()` restores. Instanced
+returns a copy of the removed faces as red unlit meshes, a snapshot the caller owns and disposes (a later rebake or
+`decompile()` never touches it); hiding a module rebakes its group; `decompile()` restores. Instanced
 groups and batch-synced dynamics are never baked. The CLI's `analyze --bake --views N` bakes and checks pixel parity
 from N+1 camera angles. Verified: the village bake is pixel-identical; a 6×3 modular wall loses exactly its 27
 seams, also under a mirrored scene; back-to-back sign cards and a floor lying on a ceiling keep both faces, seen from
