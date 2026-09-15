@@ -71,7 +71,7 @@ export async function optimizeAsset(input: OptimizeInput, log: (line: string) =>
   log(`${basename(file)}: ${before.meshes} meshes, ${before.materials} materials, ${before.triangles} triangles, ${before.bytes} bytes; ${steps.map((s) => s.name).join(' → ') || 'no steps'}`);
   const transformStarted = Date.now();
   const stepReports = await applySteps(doc, steps, deps, log);
-  await writeOutput(io, out, doc, inputFiles);
+  await writeOutput(io, out, doc, inputFiles, input.overwrite);
   const transformMs = Date.now() - transformStarted;
   const after = statsOf(doc, statSync(out).size);
   const requires = requirementsOf(after.extensions);
@@ -104,6 +104,17 @@ interface InputFiles {
 }
 
 /**
+ * Refuses to replace an existing file at `path` unless `overwrite` — the general rule (Ruling R21) behind both the
+ * `out` file itself and every resource target `writeOutput` is about to write. Runs before any write, so it must be
+ * called for every target (`out`, then each resource) before any of them is touched: a clash discovered on the
+ * third resource must not have let the first two through already. `overwrite` defaults to `true` (`OptimizeInput`'s
+ * own default) so the CLI keeps replacing; only an explicit `false` (MCP's `optimize_asset.overwrite`) enforces it.
+ */
+function assertNotClobbering(path: string, overwrite: boolean): void {
+  if (!overwrite && existsSync(path)) throw new UsageError(`${cleanText(path, 300)} already exists; pass overwrite: true to replace it`);
+}
+
+/**
  * `io.write` picks GLB only for a lower-case `.glb` and writes anything else as `.gltf` plus resource files, so every
  * `.glb` (any case) goes through `writeBinary` here. For a `.gltf`, glTF-Transform names each resource after its
  * existing URI (`createURI` returns `getURI()`, so a `.gltf` input's `scene.bin` stays `scene.bin`) or after the
@@ -112,9 +123,18 @@ interface InputFiles {
  * every resource target (inside the output's directory, and not the input file or one of its resources, by path or by
  * device and inode), and only then writes the same JSON and resources itself, the way `_writeGLTF` does. Its skip of
  * `http:` resource URIs never applies: `assertConfinedUri` refuses any scheme first.
+ *
+ * `overwrite` (Ruling R21) is checked last, after the input-clash checks above and before any write, for `out`
+ * itself and every resource target: an unrelated pre-existing file whose name happens to match a resource this run
+ * would write (resource names derive from the out basename, e.g. a single buffer becomes `<basename>.bin`) is
+ * refused exactly like `out` already existing, not silently replaced. `resolveOptimizeOut` (`src/cli/mcp.ts`)
+ * already refuses an existing `out` early, before any of this runs, for the MCP caller; this is the one place that
+ * rule is enforced for every caller (including a direct `optimizeAsset` call with no MCP layer in front of it) and
+ * the only place resource targets are checked at all.
  */
-async function writeOutput(io: NodeIO, out: string, doc: Document, input: InputFiles): Promise<void> {
+async function writeOutput(io: NodeIO, out: string, doc: Document, input: InputFiles, overwrite: boolean = true): Promise<void> {
   if (/\.glb$/i.test(out)) {
+    assertNotClobbering(out, overwrite);
     writeFileSync(out, await io.writeBinary(doc));
     return;
   }
@@ -132,6 +152,8 @@ async function writeOutput(io: NodeIO, out: string, doc: Document, input: InputF
     const what = clash === 'file' ? 'the input file' : `the input's ${clash}`;
     throw new UsageError(`the .gltf output's resource ${JSON.stringify(cleanText(target.uri, 200))} would overwrite ${what} (${cleanText(target.path, 300)}); write the output to another directory, or as .glb`);
   }
+  assertNotClobbering(out, overwrite);
+  for (const target of targets) assertNotClobbering(target.path, overwrite);
   writeFileSync(out, JSON.stringify(json, null, 2));
   for (const target of targets) {
     mkdirSync(dirname(target.path), { recursive: true });

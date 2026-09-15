@@ -241,6 +241,7 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
         const input: OptimizeInput = {
           file: String(args.file),
           out,
+          overwrite,
           preset: (args.preset as OptimizeInput['preset']) ?? 'safe',
           steps: {},
           simplify: typeof args.simplify === 'number' ? args.simplify : null,

@@ -195,6 +195,80 @@ describe('optimize --out', () => {
   });
 });
 
+/**
+ * Ruling R21 (Task 10 re-review): a `.gltf` out also writes resource files (`.bin`, textures) next to it, named
+ * after the out's own basename (`UniqueURIGenerator`, `@gltf-transform/core`: a single buffer becomes
+ * `<basename>.bin`). Task 10 already refuses a resource target that is the *input's own* file or resource; this
+ * covers every other pre-existing file that name happens to collide with. `optimizeAsset`'s `overwrite` (default
+ * `true`, unset by `inputFor`/the CLI parser) must refuse before writing anything when `false`.
+ */
+describe("optimize --out overwrite (protects resource files, not just the input's own)", () => {
+  async function inputGlb(name = 'fox.glb'): Promise<string> {
+    const file = join(dir, name);
+    writeFileSync(file, await new NodeIO().writeBinary(texturedTriangle()));
+    return file;
+  }
+
+  it("refuses a .gltf out whose single-buffer resource (<basename>.bin) clashes with an unrelated pre-existing file, leaving it byte-identical", async () => {
+    const file = await inputGlb();
+    const out = join(dir, 'x.gltf');
+    const clashing = join(dir, 'x.bin');
+    const original = Buffer.from('UNRELATED PRE-EXISTING BYTES, NOT WRITTEN BY THIS RUN');
+    writeFileSync(clashing, original);
+    const input: OptimizeInput = { ...inputFor(file, '--out', out), overwrite: false };
+    const error = await rejection(optimizeAsset(input));
+    expect(error).toBeInstanceOf(UsageError);
+    expect(error.message).toMatch(/x\.bin/);
+    expect(error.message).toMatch(/overwrite: true/);
+    expect(readFileSync(clashing).equals(original)).toBe(true);
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it('the same call with overwrite: true succeeds and replaces the clashing resource', async () => {
+    const file = await inputGlb();
+    const out = join(dir, 'x.gltf');
+    const clashing = join(dir, 'x.bin');
+    writeFileSync(clashing, 'stale bytes');
+    const input: OptimizeInput = { ...inputFor(file, '--out', out), overwrite: true };
+    const doc = await optimizeAsset(input);
+    expect(doc.output.file).toBe(out);
+    expect(readFileSync(clashing, 'utf8')).not.toBe('stale bytes');
+  });
+
+  it('the CLI default (overwrite left unset) still replaces, unchanged from before this task', async () => {
+    const file = await inputGlb();
+    const out = join(dir, 'x.gltf');
+    const clashing = join(dir, 'x.bin');
+    writeFileSync(clashing, 'stale bytes');
+    const input = inputFor(file, '--out', out);
+    expect(input.overwrite).toBeUndefined();
+    const doc = await optimizeAsset(input);
+    expect(doc.output.file).toBe(out);
+    expect(readFileSync(clashing, 'utf8')).not.toBe('stale bytes');
+  });
+
+  it('refuses a .glb out that already exists with overwrite: false — one consistent rule for .glb and .gltf', async () => {
+    const file = await inputGlb();
+    const out = join(dir, 'existing.glb');
+    writeFileSync(out, 'stale glb bytes');
+    const input: OptimizeInput = { ...inputFor(file, '--out', out), overwrite: false };
+    const error = await rejection(optimizeAsset(input));
+    expect(error).toBeInstanceOf(UsageError);
+    expect(error.message).toMatch(/exists/);
+    expect(error.message).toMatch(/overwrite: true/);
+    expect(readFileSync(out, 'utf8')).toBe('stale glb bytes');
+  });
+
+  it('a .glb out that already exists still replaces when overwrite is left unset (CLI default)', async () => {
+    const file = await inputGlb();
+    const out = join(dir, 'existing2.glb');
+    writeFileSync(out, 'stale glb bytes');
+    const doc = await optimizeAsset(inputFor(file, '--out', out));
+    expect(doc.output.file).toBe(out);
+    expect(readFileSync(out, 'utf8')).not.toBe('stale glb bytes');
+  });
+});
+
 /** Every file under `base`, recursively, mapped to its SHA-256: proves a run left a directory byte-identical. */
 function snapshotOf(base: string): Record<string, string> {
   const hashes: Record<string, string> = {};

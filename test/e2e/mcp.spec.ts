@@ -133,6 +133,51 @@ test('optimize_asset refuses to silently overwrite an existing out file, matchin
   }
 });
 
+test('optimize_asset refuses a .gltf out whose resource file (not the out path itself) already exists, matching /exists/ with code 2 (Ruling R21)', async () => {
+  test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
+  await ready();
+  // Fox.glb has one buffer and one baseColor texture; glTF-Transform names a lone buffer "<out-basename>.bin"
+  // (UniqueURIGenerator, @gltf-transform/core), so this is the exact resource path the run would write.
+  const target = join(dirname(fox()), 'mcp-resource-clash.gltf');
+  const clashing = join(dirname(fox()), 'mcp-resource-clash.bin');
+  const original = 'UNRELATED PRE-EXISTING BYTES, NOT WRITTEN BY THIS RUN';
+  writeFileSync(clashing, original);
+  const { client, close } = await connect();
+  try {
+    const result = await client.callTool({ name: 'optimize_asset', arguments: { file: fox(), out: target, verify: false } });
+    expect(result.isError).toBe(true);
+    const body = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
+    expect(body.code).toBe(2);
+    expect(body.error).toMatch(/exists/);
+    expect(body.error).toMatch(/mcp-resource-clash\.bin/);
+    expect(readFileSync(clashing, 'utf8')).toBe(original);
+    expect(existsSync(target)).toBe(false);
+  } finally {
+    await close();
+    rmSync(clashing, { force: true });
+    rmSync(target, { force: true });
+  }
+});
+
+test('optimize_asset with overwrite: true replaces both the out file and a pre-existing resource clash', async () => {
+  test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
+  await ready();
+  const target = join(dirname(fox()), 'mcp-resource-overwrite.gltf');
+  const clashing = join(dirname(fox()), 'mcp-resource-overwrite.bin');
+  writeFileSync(clashing, 'stale bytes');
+  const { client, close } = await connect();
+  try {
+    const result = await client.callTool({ name: 'optimize_asset', arguments: { file: fox(), out: target, verify: false, overwrite: true } });
+    expect(result.isError).toBeFalsy();
+    expect(existsSync(target)).toBe(true);
+    expect(readFileSync(clashing, 'utf8')).not.toBe('stale bytes');
+  } finally {
+    await close();
+    rmSync(clashing, { force: true });
+    rmSync(target, { force: true });
+  }
+});
+
 test('a spawned mcp process exits within 5 s when stdin closes', async () => {
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
   await ready();

@@ -110,6 +110,12 @@ export interface OptimizeInput {
   compile: boolean;
   timeout: number;
   headed: boolean;
+  /**
+   * Replace an existing `out` file, or an existing file at any resource target a `.gltf` output is about to write
+   * (`writeOutput`, `src/cli/optimize.ts`). Optional and defaults to `true` (replace) so CLI behaviour is
+   * unchanged; the MCP `optimize_asset` tool always sets this explicitly from its own `overwrite` argument.
+   */
+  overwrite?: boolean;
 }
 
 /** Cheap per-step tally of a glTF document. */
