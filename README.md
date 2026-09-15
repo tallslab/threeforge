@@ -245,11 +245,13 @@ rebuilds them in a scissored frame. The result reports `{ mode, textures, repair
 - **submissions**: render items three processed (one per mesh, per material group, per pass). The cost that
   batching removes: pipeline and bind-group changes.
 - **gpuDraws**: draw commands those submissions issue on this backend. A `BatchedMesh` is one submission but
-  N draws on WebGPU (or on WebGL without `WEBGL_multi_draw`); double-sided transparent materials draw twice.
+  N draws on WebGPU (or on WebGL without `WEBGL_multi_draw`); double-sided transparent materials draw twice, judged
+  on the material three draws in each pass (a shadow pass uses `shadowSide`); an instanced draw of 0 instances is 0.
 - **reportedDrawCalls / unattributed**: what `renderer.info` counted during the frame, and the part the ledger
   could not explain. Tests hold this at 0.
 - **instances / instancesDrawn / drawCommands**: scene instances submitted, instances left after per-instance
   culling, and GPU draw commands regardless of API packaging (a multi-draw of N ranges is N, an instanced draw is 1).
+  Neither counts a multi-draw range a nested pass zeroed.
 - **reasons**: `batched`, `instanced`, `dynamic`, `skinned`, `morph`, `transparent`, `unique-material`, `untagged`,
   `multi-material-group`, `points`, `sprite`, `sprite-batch`, `line`, `excluded:<rule>`, `unsupported-material`,
   `renderer-internal`, `fullscreen-pass`, `occlusion-proxy`.

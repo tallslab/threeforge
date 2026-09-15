@@ -493,12 +493,14 @@ interface NestedObservation {
  * The rig's second frame (camera moved to x = 90) as the ledger reported it before the restructure, at 63daa89. Items
  * in filing order: the unlit batch's main draw, then the shadow pass the lit batch's draw triggers (both batches, the
  * main prefix zeroed and the shadow camera's rows appended), then the lit batch's main draw, filed once it returns.
- * The first frame (camera at x = 0) drew more of each row, so a count read before a draw would differ.
+ * The first frame (camera at x = 0) drew more of each row, so a count read before a draw would differ. Since Task 31 a
+ * shadow batch's `instancesDrawn` counts only its slots with a non-zero count (the 51 cubes the shadow camera sees);
+ * 63daa89 reported every slot there (68 and 66, the zeroed main-list slots included), which `expectedGpuDraws` still counts.
  */
 const BATCHES: NestedObservation['batches'] = [
   { pass: 'main', instances: 101, instancesDrawn: 17, expectedGpuDraws: 17 },
-  { pass: 'shadow:sun', instances: 101, instancesDrawn: 68, expectedGpuDraws: 68 },
-  { pass: 'shadow:sun', instances: 101, instancesDrawn: 66, expectedGpuDraws: 66 },
+  { pass: 'shadow:sun', instances: 101, instancesDrawn: 51, expectedGpuDraws: 68 },
+  { pass: 'shadow:sun', instances: 101, instancesDrawn: 51, expectedGpuDraws: 66 },
   { pass: 'main', instances: 101, instancesDrawn: 15, expectedGpuDraws: 15 },
 ];
 const NESTED_EXPECTED: Record<'webgl2' | 'webgpu', NestedObservation> = {
@@ -553,8 +555,8 @@ describe('DrawCallLedger reads draw state after renderObject returns', () => {
         const batchItems = items.filter((i) => i.kind === 'batched' && i.pass.startsWith('shadow:') === (kind === 'shadow'));
         expect(draws.length, `${backend} ${kind}: batch draws`).toBe(2);
         expect(batchItems.map((i) => i.expectedGpuDraws), `${backend} ${kind}: draw calls`).toEqual(draws.map((d) => d.drawCalls));
-        // Main-pass slots are never zeroed: every slot is one drawn instance.
-        if (kind === 'render') expect(batchItems.map((i) => i.instancesDrawn), `${backend} main: instances drawn`).toEqual(draws.map((d) => d.batchIds!.length));
+        // Drawn instances are the slots with a non-zero count, in every pass (the shadow pass zeroes main-list slots).
+        expect(batchItems.map((i) => i.instancesDrawn), `${backend} ${kind}: instances drawn`).toEqual(draws.map((d) => d.batchIds!.length));
       }
       const observed: NestedObservation = {
         passes: frame.passes,

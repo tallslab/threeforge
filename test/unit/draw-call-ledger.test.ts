@@ -8,13 +8,16 @@ import {
   DirectionalLight,
   DoubleSide,
   Float32BufferAttribute,
+  FrontSide,
   Group,
   InstancedBufferGeometry,
   InstancedMesh,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
+  PerspectiveCamera,
   PlaneGeometry,
   Points,
   PointsMaterial,
@@ -25,11 +28,20 @@ import {
   Sprite,
   SpriteMaterial,
   Vector2,
+  VSMShadowMap,
+  WebGLCoordinateSystem,
+  WebGPUCoordinateSystem,
+  type CoordinateSystem,
+  type Material,
 } from 'three';
+import { World } from '../../src/compiler/World.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
+import { AnimatedInstances } from '../../src/skinning/AnimatedInstances.js';
+import { bakeAnimationTexture } from '../../src/skinning/bakeAnimationTexture.js';
 import { tag } from '../../src/tags.js';
-import { FakeRenderer, batchedOf, sceneWithCamera } from './helpers/fakeRenderer.js';
+import { FakeRenderer, batchedOf, sceneWithCamera, type FakeDraw } from './helpers/fakeRenderer.js';
+import { buildRig } from './helpers/rig.js';
 
 const box = new BoxGeometry(1, 1, 1);
 
@@ -183,6 +195,122 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     renderer.render(scene, camera);
     expect(ledger.frame().totals.unattributed).toBe(2);
   });
+
+  it('expects no GPU draw for an empty sprite batch or VAT batch: an InstancedBufferGeometry with instanceCount 0', () => {
+    const { renderer, registry, ledger, scene, camera } = attached();
+    const rain = new SpriteMaterial({ color: 0xffffff, transparent: true });
+    for (let i = 0; i < 6; i++) {
+      const sprite = new Sprite(rain);
+      sprite.position.set(i - 3, 0, -5 - i);
+      scene.add(sprite);
+    }
+    scene.updateMatrixWorld(true);
+    const world = new World(scene, { registry, ledger });
+    expect(world.compile().after.spriteBatches).toBe(1);
+    // Added after compile, so World leaves them alone: animated instances with no characters yet.
+    const { root, clip } = buildRig();
+    const crowd = new AnimatedInstances({ animation: bakeAnimationTexture(root, [clip], { fps: 10 }), count: 0 });
+    scene.add(...crowd.meshes);
+    renderer.render(scene, camera);
+    expect(ledger.frame({ items: true }).items?.find((i) => i.reason === 'sprite-batch')).toMatchObject({ instancesDrawn: 6, expectedGpuDraws: 1 });
+    // Turned away from the rain: the batch's hook writes instanceCount 0 inside renderObject, and three draws nothing.
+    camera.lookAt(0, 0, 100);
+    camera.updateMatrixWorld();
+    renderer.render(scene, camera);
+    const frame = ledger.frame({ items: true });
+    expect((world.spriteBatches[0]!.geometry as InstancedBufferGeometry).instanceCount).toBe(0);
+    expect(frame.items?.find((i) => i.reason === 'sprite-batch')).toMatchObject({ instances: 0, instancesDrawn: 0, expectedGpuDraws: 0 });
+    expect(frame.items?.find((i) => i.reason === 'vat-instanced')).toMatchObject({ instances: 0, instancesDrawn: 0, expectedGpuDraws: 0 });
+    expect(frame.totals).toMatchObject({ sceneSubmissions: 2, unattributed: 0 });
+  });
+
+  it('predicts each shadow pass with the material three draws (shadowSide, else the side; its own for allowOverride = false) and flags double-sided transparency per pass, under PCF and VSM', () => {
+    for (const vsm of [false, true]) {
+      const light = new DirectionalLight();
+      light.name = 'sun';
+      light.castShadow = true;
+      const { renderer, ledger, scene, camera } = attached({ shadowLight: light });
+      if (vsm) renderer.shadowMap.type = VSMShadowMap;
+      const materials: Record<string, Material> = {
+        'double-sided': new MeshStandardMaterial({ transparent: true, side: DoubleSide }),
+        'shadow-side-double': Object.assign(new MeshStandardMaterial({ transparent: true, side: FrontSide }), { shadowSide: DoubleSide }),
+        'shadow-side-front': Object.assign(new MeshStandardMaterial({ transparent: true, side: DoubleSide }), { shadowSide: FrontSide }),
+        'no-override': Object.assign(new MeshStandardMaterial({ transparent: true, side: DoubleSide }), { allowOverride: false }),
+        'opaque-double-sided': new MeshStandardMaterial({ side: DoubleSide }),
+      };
+      scene.add(light);
+      for (const [name, material] of Object.entries(materials)) {
+        const mesh = tag.static(new Mesh(box, material));
+        mesh.name = name;
+        mesh.castShadow = true;
+        scene.add(mesh);
+      }
+      renderer.render(scene, camera);
+      const frame = ledger.frame({ items: true });
+      const seen = Object.fromEntries(frame.items!.filter((i) => i.reason !== 'renderer-internal').map((i) => [`${i.pass} ${i.name}`, [i.expectedGpuDraws, i.flags.includes('double-sided-transparent')]]));
+      expect(seen, vsm ? 'VSM' : 'PCF').toEqual({
+        'shadow:sun double-sided': [2, true],
+        'shadow:sun shadow-side-double': [2, true],
+        'shadow:sun shadow-side-front': [1, false],
+        'shadow:sun no-override': [2, true],
+        'shadow:sun opaque-double-sided': [1, false],
+        'main double-sided': [2, true],
+        'main shadow-side-double': [1, false],
+        'main shadow-side-front': [2, true],
+        'main no-override': [2, true],
+        'main opaque-double-sided': [1, false],
+      });
+      expect(frame.totals.unattributed, vsm ? 'VSM' : 'PCF').toBe(0);
+    }
+  });
+
+  it('predicts a scene override material with its own side and the source transparency, and flags it per submission', () => {
+    const { renderer, ledger, scene, camera } = attached();
+    scene.overrideMaterial = new MeshBasicMaterial({ side: DoubleSide });
+    const materials: Record<string, Material> = {
+      opaque: new MeshStandardMaterial({ side: FrontSide }),
+      transparent: new MeshStandardMaterial({ transparent: true, side: FrontSide }),
+      'no-override': Object.assign(new MeshStandardMaterial({ transparent: true, side: FrontSide }), { allowOverride: false }),
+    };
+    for (const [name, material] of Object.entries(materials)) {
+      const mesh = tag.static(new Mesh(box, material));
+      mesh.name = name;
+      scene.add(mesh);
+    }
+    renderer.render(scene, camera);
+    const frame = ledger.frame({ items: true });
+    const seen = Object.fromEntries(frame.items!.map((i) => [`${i.pass} ${i.name}`, [i.expectedGpuDraws, i.flags.includes('double-sided-transparent')]]));
+    expect(seen).toEqual({ 'override opaque': [1, false], 'override transparent': [2, true], 'override no-override': [1, false] });
+    expect(frame.totals).toMatchObject({ sceneSubmissions: 3, unattributed: 0 });
+  });
+
+  it('predicts a double-sided transmissive material as two single-draw submissions, the back-side pass then the front, in its shadow pass too', () => {
+    const light = new DirectionalLight();
+    light.name = 'sun';
+    light.castShadow = true;
+    const { renderer, ledger, scene, camera } = attached({ shadowLight: light });
+    const glass = tag.static(new Mesh(box, new MeshPhysicalMaterial({ transmission: 1, side: DoubleSide })));
+    glass.name = 'glass';
+    const clear = tag.static(new Mesh(box, new MeshPhysicalMaterial({ transmission: 1, transparent: true, side: DoubleSide })));
+    clear.name = 'clear-glass';
+    glass.castShadow = true;
+    clear.castShadow = true;
+    scene.add(light, glass, clear);
+    renderer.render(scene, camera);
+    const frame = ledger.frame({ items: true });
+    const items = frame.items!.filter((i) => i.reason !== 'renderer-internal').map((i) => [i.pass, i.name, i.expectedGpuDraws, i.flags.includes('double-sided-transparent')]);
+    expect(items).toEqual([
+      ['shadow:sun', 'glass', 1, false],
+      ['shadow:sun', 'clear-glass', 1, false],
+      ['shadow:sun', 'glass', 1, false],
+      ['shadow:sun', 'clear-glass', 1, false],
+      ['main', 'glass', 1, false],
+      ['main', 'clear-glass', 1, false],
+      ['main', 'glass', 1, false],
+      ['main', 'clear-glass', 1, false],
+    ]);
+    expect(frame.totals).toMatchObject({ sceneSubmissions: 8, unattributed: 0 });
+  });
 });
 
 describe('DrawCallLedger culling stats', () => {
@@ -200,6 +328,82 @@ describe('DrawCallLedger culling stats', () => {
     expect(frame.totals.drawCommands).toBe(5); // 3 ranges of the batch + 1 mesh + 1 output quad
     const item = frame.items?.find((i) => i.kind === 'batched');
     expect(item).toMatchObject({ instances: 5, instancesDrawn: 3, expectedGpuDraws: 1 });
+  });
+});
+
+describe('DrawCallLedger and multi-draw slots a nested pass zeroed', () => {
+  /** Two rows of 101 static cubes, one batch each; the lit row receives shadows, so its draw renders the shadow map. */
+  function rows(cs: CoordinateSystem): { scene: Scene; light: DirectionalLight; camera: PerspectiveCamera } {
+    const scene = new Scene();
+    const light = new DirectionalLight();
+    light.name = 'sun';
+    light.castShadow = true;
+    light.position.set(0, 60, 10);
+    const shadowCamera = light.shadow.camera;
+    shadowCamera.coordinateSystem = cs;
+    Object.assign(shadowCamera, { left: -50, right: 50, top: 20, bottom: -20, near: 1, far: 200 });
+    shadowCamera.updateProjectionMatrix();
+    scene.add(light, light.target);
+    const lit = new MeshStandardMaterial({ roughness: 0.8 });
+    const unlit = new MeshBasicMaterial();
+    for (let i = 0; i < 202; i++) {
+      const receiveShadow = i >= 101;
+      const mesh = tag.static(new Mesh(box, receiveShadow ? lit : unlit));
+      mesh.name = `${receiveShadow ? 'lit' : 'unlit'}-${i % 101}`;
+      mesh.position.set(-100 + 2 * (i % 101), 0.5, receiveShadow ? 3 : -3);
+      mesh.castShadow = true;
+      mesh.receiveShadow = receiveShadow;
+      scene.add(mesh);
+    }
+    scene.updateMatrixWorld(true);
+    // The main camera sees x in about [70, 110] and the shadow camera [-50, 50]: the shadow pass keeps the main list's
+    // slots, zeroes their counts and appends its own ids.
+    const camera = new PerspectiveCamera(60, 1, 0.1, 200);
+    camera.coordinateSystem = cs;
+    camera.updateProjectionMatrix();
+    camera.position.set(90, 6, 35);
+    camera.lookAt(90, 0, 0);
+    camera.updateMatrixWorld();
+    return { scene, light, camera };
+  }
+
+  it("expects every slot as a GPU draw, as three's Info counts them, and counts only slots with a non-zero index count as drawn instances and draw commands", () => {
+    const variants = [
+      { label: 'webgl2 multi-draw', webgpu: false, multiDraw: true },
+      { label: 'webgl2', webgpu: false, multiDraw: false },
+      { label: 'webgpu', webgpu: true, multiDraw: false },
+    ];
+    const isBatch = (draw: FakeDraw): boolean => (draw.object as { isBatchedMesh?: boolean }).isBatchedMesh === true;
+    const drawn: Record<string, number[]> = {};
+    for (const { label, webgpu, multiDraw } of variants) {
+      const cs = webgpu ? WebGPUCoordinateSystem : WebGLCoordinateSystem;
+      const { scene, light, camera } = rows(cs);
+      const ledger = new DrawCallLedger();
+      new World(scene, { instanceThreshold: 1000, ledger }).compile({ coordinateSystem: cs });
+      const renderer = new FakeRenderer({ webgpu, multiDraw, sceneHooks: true, shadowTrigger: 'first-receiver', record: true, shadowLights: [light] });
+      ledger.attach(renderer as never);
+      renderer.render(scene, camera);
+      const frame = ledger.frame({ items: true });
+      const batches = frame.items!.filter((i) => i.kind === 'batched');
+      for (const kind of ['render', 'shadow'] as const) {
+        const draws = renderer.passes.filter((p) => p.kind === kind).flatMap((p) => p.draws.filter(isBatch));
+        const items = batches.filter((i) => i.pass.startsWith('shadow:') === (kind === 'shadow'));
+        expect(draws.length, `${label} ${kind}: batch draws`).toBe(2);
+        expect(items.map((i) => i.expectedGpuDraws), `${label} ${kind}: GPU draws`).toEqual(draws.map((d) => d.drawCalls));
+        expect(items.map((i) => i.instancesDrawn), `${label} ${kind}: drawn instances`).toEqual(draws.map((d) => d.batchIds!.length));
+      }
+      const commands = renderer.passes.flatMap((p) => p.draws).reduce((n, d) => n + (isBatch(d) ? d.batchIds!.length : d.drawCalls), 0);
+      expect(frame.totals.drawCommands, `${label}: draw commands`).toBe(commands);
+      expect(frame.totals.unattributed, `${label}: unattributed`).toBe(0);
+      if (!multiDraw) {
+        // One call per slot: each shadow draw issued more calls than it drew instances, so the pass did zero slots.
+        const shadow = batches.filter((i) => i.pass.startsWith('shadow:'));
+        expect(shadow.every((i) => i.expectedGpuDraws > i.instancesDrawn), `${label}: zeroed slots`).toBe(true);
+      }
+      drawn[label] = batches.map((i) => i.instancesDrawn);
+    }
+    // WEBGL_multi_draw packs the same slots into one call: the drawn instances do not depend on the packaging.
+    expect(drawn['webgl2 multi-draw']).toEqual(drawn.webgl2);
   });
 });
 

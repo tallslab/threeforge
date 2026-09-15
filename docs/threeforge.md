@@ -114,14 +114,30 @@ Every submission gets one reason: `batched`, `baked`, `instanced`, `unique-mater
 `fullscreen-pass`, `occlusion-proxy`, `points`, `sprite`, `line`, `unclassified`, or `excluded:<rule>`. The compiler
 annotates objects it left alone (`ledger.annotate(object, reason)`) so the ledger says why. Flags add detail:
 `shadow-caster`, `double-sided-transparent`, `custom-hook`, `render-order`, `layers`, `transparent`.
+`double-sided-transparent` describes the material three draws in that pass (see Reconciliation), so a shadow caster can
+carry it in its shadow pass and not in the main pass, or the other way round.
 
 ### Reconciliation
 
-For each submission the ledger predicts the GPU draw commands it will issue on this backend: 1 for a mesh, N for a
-`BatchedMesh` on WebGPU or on WebGL without `WEBGL_multi_draw` (1 with multi-draw), 0 for an `InstancedMesh` with
-`count = 0`, ×2 for double-sided transparent materials that are not `forceSinglePass`. `reportedDrawCalls` is the
-change in `renderer.info.render.drawCalls` inside the frame; `unattributed = reportedDrawCalls − gpuDraws` and is
-asserted to be 0 in every test. `drawCommands` counts multi-draw ranges individually.
+For each submission the ledger predicts the draw calls three r186's `renderer.info` counts for it on this backend:
+
+- 1 for a mesh.
+- N for a `BatchedMesh` with N multi-draw slots on WebGPU or on WebGL without `WEBGL_multi_draw` (1 with multi-draw, 0
+  for an empty list). A slot whose count a nested pass zeroed (stable-prefix culling, `attachBvhCulling`) is counted:
+  three's `Info` counts every slot.
+- 0 when the instance count is 0: an `InstancedMesh` with `count = 0`, or a mesh over an `InstancedBufferGeometry` with
+  `instanceCount = 0` (an empty sprite batch or VAT part).
+- ×2 when the material three draws is transparent, `DoubleSide` and not `forceSinglePass`. That material is the source
+  material, or `scene.overrideMaterial` for a source with `allowOverride`: transparent when the source is transparent,
+  transmissive or has a backdrop node, with the override's own side, except in a shadow pass, where the side is the
+  source's `shadowSide`, else its side (flipped, which keeps `DoubleSide`). The factor is read before `renderObject`
+  runs, because three puts the override material's side back as it returns. A double-sided transmissive material is
+  two submissions of one draw each: its back-side pass, then its front.
+
+`reportedDrawCalls` is the change in `renderer.info.render.drawCalls` inside the frame;
+`unattributed = reportedDrawCalls − gpuDraws` and is asserted to be 0 in every test. `drawCommands` counts multi-draw
+ranges individually. It and `instancesDrawn` count only the slots with a non-zero index count: a zeroed slot adds a
+draw call but draws no instance.
 
 ### The snapshot (`ledger.frame()`), schema version 3
 
@@ -202,7 +218,8 @@ per-submission path allocates nothing, and none of the following changes a numbe
 - **One ancestor walk** per submission finds both the root and the nearest tag.
 - **Draw state** (`expectedGpuDraws`, `instances`, `instancesDrawn`) is copied into the record as soon as
   `renderObject` returns, after a pass nested inside that draw (a receiver's shadow map) has restored the counts it
-  changed.
+  changed. The side factor of `expectedGpuDraws` and the `double-sided-transparent` flag are read as the call starts,
+  before three puts an override material's side back.
 - **One traversal per scene per frame** collects shadow cameras and the lighting section's lights. The rescan every 60
   frames reads each shared material's texture properties once (`collectResources`).
 
@@ -1104,7 +1121,8 @@ section 11. Specs live in `docs/superpowers/specs`, plans in
 
 - **submission**: one render item three processed (a mesh, a material group of a mesh, a batch, a sprite) in one pass.
 - **sceneSubmissions**: submissions attributable to the user's scene; the budgeted number.
-- **gpuDraws**: draw commands those submissions issue on this backend; **drawCommands** counts multi-draw ranges.
+- **gpuDraws**: draw calls those submissions add to `renderer.info` on this backend; **drawCommands** counts multi-draw
+  ranges with a non-zero index count.
 - **unattributed**: reported draw calls the ledger's model did not predict; always 0 in the tests.
 - **program**: a compiled shader variant, as counted by `renderer.info.memory.programs`.
 - **tier**: `desktop`, `phone-mid`, `phone-low`; drives budgets and hints.

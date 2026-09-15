@@ -86,14 +86,18 @@ function isUserHook(object: Object3D, name: 'onBeforeRender' | 'onAfterRender'):
   return fn[FORGE_HOOK] !== true;
 }
 
+/** The flags of a submission drawn with `material` itself (no override material). */
 export function flagsOf(object: Object3D, material: Material): Flag[] {
-  return flagsInto(object, material, []);
+  return flagsInto(object, material, isDoubleSidedTransparent(material) ? 2 : 1, []);
 }
 
-/** `flagsOf`, pushed onto `flags` (the ledger reuses one array per pooled record). */
-export function flagsInto(object: Object3D, material: Material, flags: Flag[]): Flag[] {
+/**
+ * `flagsOf`, pushed onto `flags` (the ledger reuses one array per pooled record). `sides` is the pass's draws per call
+ * (`sideFactor()` in expectedDraws.ts), so `double-sided-transparent` follows the material three draws in that pass.
+ */
+export function flagsInto(object: Object3D, material: Material, sides: number, flags: Flag[]): Flag[] {
   if (object.castShadow) flags.push('shadow-caster');
-  if (isDoubleSidedTransparent(material)) flags.push('double-sided-transparent');
+  if (sides === 2) flags.push('double-sided-transparent');
   // Own-property hooks are user-installed; BatchedMesh defines its own on the prototype and threeforge marks its hooks.
   if (isUserHook(object, 'onBeforeRender') || isUserHook(object, 'onAfterRender')) flags.push('custom-hook');
   if (object.renderOrder !== 0) flags.push('render-order');

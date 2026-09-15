@@ -1,6 +1,6 @@
 import { REVISION, type Camera, type Light, type Material, type Object3D, type Scene } from 'three';
 import { MaterialRegistry, type MaterialHashes } from '../registry/MaterialRegistry.js';
-import { expectedGpuDraws, writeInstanceCounts, type BackendInfo } from './expectedDraws.js';
+import { expectedGpuDraws, sideFactor, writeInstanceCounts, type BackendInfo } from './expectedDraws.js';
 import { flagsInto, kindOf, reasonOf, type Reason } from './reasons.js';
 import { DisplayNames, type PathCache } from './names.js';
 import { budgetsFor, type Budgets } from './budgets.js';
@@ -162,11 +162,14 @@ export class DrawCallLedger {
       // Paused: an overdraw count render, possibly inside a draw of the open frame (a measurement from a render hook).
       if (ledger.depth === 0 || ledger.current === null || ledger.paused) return originals.renderObject.apply(this, arguments as unknown as unknown[]);
       const hashes = ledger.hashesOf(material);
-      const record = ledger.begin(object, material, group, hashes);
+      // Read before the call: three puts the override material's side back as renderObject returns.
+      const sides = sideFactor(material, scene);
+      const record = ledger.begin(object, material, group, hashes, sides);
       const result = originals.renderObject.apply(this, arguments as unknown as unknown[]);
-      // Draw state is read after the call returns: BatchedMesh fills `_multiDrawCount` in its onBeforeRender, and a
-      // pass nested inside this draw (the shadow map a receiver triggers) restores the counts it changed as it ends.
-      ledger.file(record, object, material, scene, hashes);
+      // Draw state is read after the call returns: BatchedMesh fills `_multiDrawCount` in its onBeforeRender (a sprite
+      // batch its `instanceCount`), and a pass nested inside this draw (the shadow map a receiver triggers) restores the
+      // counts it changed as it ends.
+      ledger.file(record, object, sides, hashes);
       return result;
     };
     renderer.render = function (this: LedgerRenderer, scene: Scene, camera: Camera) {
@@ -475,8 +478,8 @@ export class DrawCallLedger {
     this.lastHashes = null;
   }
 
-  /** Fills a pooled record with everything known before the renderer processes the object. */
-  private begin(object: Object3D, material: Material, group: unknown, hashes: MaterialHashes): SubmissionRecord {
+  /** Fills a pooled record with everything known before the renderer processes the object; `sides` is `sideFactor()`. */
+  private begin(object: Object3D, material: Material, group: unknown, hashes: MaterialHashes, sides: number): SubmissionRecord {
     const state = this.current!;
     const context = this.contexts[this.contexts.length - 1]!;
     const reason = reasonOf(object, material, group, context.root, hashes.unsupported, this.annotations.get(object));
@@ -502,7 +505,7 @@ export class DrawCallLedger {
     record.pass = context.pass;
     record.reason = reason;
     record.flags.length = 0;
-    if (reason !== 'renderer-internal') flagsInto(object, material, record.flags);
+    if (reason !== 'renderer-internal') flagsInto(object, material, sides, record.flags);
     record.expectedGpuDraws = 0;
     record.instances = 0;
     record.instancesDrawn = 0;
@@ -514,8 +517,8 @@ export class DrawCallLedger {
   }
 
   /** Snapshots the draw state into the record once the renderer returned, then files it as this frame's next item. */
-  private file(record: SubmissionRecord, object: Object3D, material: Material, scene: Scene, hashes: MaterialHashes): void {
-    record.expectedGpuDraws = expectedGpuDraws(object, material, scene, this.backendInfo);
+  private file(record: SubmissionRecord, object: Object3D, sides: number, hashes: MaterialHashes): void {
+    record.expectedGpuDraws = expectedGpuDraws(object, sides, this.backendInfo);
     writeInstanceCounts(object, record);
     const state = this.current;
     if (state === null) return; // detached inside the draw

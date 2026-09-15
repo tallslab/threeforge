@@ -12,10 +12,11 @@ export interface SubmissionRecord {
   pass: string;
   reason: Reason;
   flags: Flag[];
+  /** Draw calls three's `renderer.info` counts for this submission (`expectedGpuDraws` in expectedDraws.ts). */
   expectedGpuDraws: number;
   /** Instances this submission covers (BatchedMesh/InstancedMesh count, else 1). */
   instances: number;
-  /** Instances that survived per-instance culling and were actually drawn. */
+  /** Instances that survived per-instance culling and were actually drawn; for a BatchedMesh, its multi-draw slots with a non-zero index count. */
   instancesDrawn: number;
   /** Vertices of the submitted geometry (position attribute count). */
   vertices: number;
