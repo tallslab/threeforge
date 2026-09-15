@@ -145,10 +145,18 @@ items?:    per-submission records with ledger.frame({ items: true })
 ```
 
 - **overdraw** is measured, not estimated: `ledger.measureOverdraw(scene, camera)` renders the scene twice into a
-  1/8-resolution half-float target with an additive count material (no depth test, both faces), once for the opaque
-  render list (`renderer.transparent = false`) and once for the transparent list, reads the target back and averages
-  the red channel: fragments per pixel. three copies `alphaTest` and `alphaMap` onto override materials, so cutouts
-  count only their visible texels. Attribution is paused during the measurement. Call it on demand.
+  1/8-resolution half-float target, once for the opaque render list (`renderer.transparent = false`) and once for the
+  transparent lists, reads each render back and averages the red channel: fragments per pixel. The count material (a
+  `MeshBasicNodeMaterial` with a constant `outputNode`, One/One blending, no depth test or write, one pass) adds exactly
+  1 per fragment, so material, vertex, instance and batch colours do not change the count and a batched scene measures
+  like its naive original. A render-object function draws each object with its own material's `side`, `map`, `opacity`
+  and `alphaHash`, and three's override copies `alphaTest`, `alphaMap` and `positionNode`: closed meshes count their
+  front faces, cutouts count their kept texels, animated instances count their animated pose. Not counted: the
+  background (the target clears to 0), materials with `allowOverride = false` or `colorWrite = false`, and occlusion
+  proxies. Every scene and renderer setting it changes is restored before the read-backs are awaited, so frames
+  rendered meanwhile are unaffected; attribution pauses for the two count renders only, which never become part of a
+  frame (not even when measured from a render hook). The target and material are kept per renderer until
+  `ledger.detach()` or `disposeOverdraw(renderer)`. Call it on demand.
 - **skinning** sums the main pass's skinned submissions: vertices, bones per unique skeleton (indexed per frame, no
   uuids in the snapshot), the largest bone count, morph targets; `vatInstances` and `vatVertices` count the
   characters drawn as animated instances (`kind: 'vat'`, reason `vat-instanced`), which need no CPU bones.

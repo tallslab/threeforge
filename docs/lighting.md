@@ -22,7 +22,7 @@ sky.setTime(hours); // 0..24 every frame or whenever your clock advances
 One `DirectionalLight` sun on a circle (rise at 6, set at 18; a faint moon below the horizon), a gradient sky
 dome (an inverted sphere with vertex colours, `sky-dome`, tagged static so the compiler freezes it and draws it
 once; it is one full-screen opaque layer, about +1 `overdraw.opaque`, so pass `dome: false` on `phone-low` and
-let the background colour carry the sky), a `HemisphereLight`, and `scene.fog` and `scene.background` following the horizon colour. The shadow map
+let the background colour carry the sky: the measured overdraw never counts the background), a `HemisphereLight`, and `scene.fog` and `scene.background` following the horizon colour. The shadow map
 re-renders only when the sun moved `everyDegrees` since the last render (0 = every frame): a 24-minute day cycle
 moves 0.25° per second, so the map renders every two seconds instead of sixty times a second. Call
 `refreshShadow()` after `world.markDirty()` moved a caster. `dispose()` removes everything it added and restores

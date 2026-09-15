@@ -49,9 +49,9 @@ that marker. Skinned parts sharing a skeleton or not both work (each part reads 
 
 What it does not do: per-instance clip blending (one clip per instance, switch with `setClipAt`), root motion,
 and frustum culling per instance (`frustumCulled = false`; use it for crowds that stay mostly on screen or split
-large crowds by region). The measured overdraw (`ledger.measureOverdraw`) renders through an override material,
-which has no skinning node, so animated instances are counted in their bind pose (the crowd benchmark reads
-0.87 → 0.89 opaque fragments per pixel).
+large crowds by region). The measured overdraw (`ledger.measureOverdraw`) counts animated instances in their animated
+pose: its count material is a node material, and three's override copies each material's `positionNode` onto it, so
+an instance covers the pixels its current frame covers, as a skinned original at the same time does.
 
 ## Reading the section
 

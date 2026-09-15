@@ -7,7 +7,7 @@ import { budgetsFor, type Budgets } from './budgets.js';
 import { Vector2 } from 'three';
 import { hintsFor, type HintContext } from './hints.js';
 import { estimateMemory } from './memory.js';
-import { measureOverdraw, type OverdrawRenderer, type OverdrawResult } from './overdraw.js';
+import { disposeOverdraw, measureOverdraw, type OverdrawRenderer, type OverdrawResult } from './overdraw.js';
 import { formatCostRows, formatHints } from '../overlay/index.js';
 import { FORGE_TAG_KEY } from '../tags.js';
 import { lightInfoOf, type LightInfo } from './sections.js';
@@ -159,7 +159,8 @@ export class DrawCallLedger {
 
     // `arguments` forwards exactly what three passed without copying it into a rest array on every call.
     renderer.renderObject = function (this: LedgerRenderer, object: Object3D, scene: Scene, _camera: Camera, _geometry: unknown, material: Material, group: unknown) {
-      if (ledger.depth === 0 || ledger.current === null) return originals.renderObject.apply(this, arguments as unknown as unknown[]);
+      // Paused: an overdraw count render, possibly inside a draw of the open frame (a measurement from a render hook).
+      if (ledger.depth === 0 || ledger.current === null || ledger.paused) return originals.renderObject.apply(this, arguments as unknown as unknown[]);
       const hashes = ledger.hashesOf(material);
       const record = ledger.begin(object, material, group, hashes);
       const result = originals.renderObject.apply(this, arguments as unknown as unknown[]);
@@ -186,6 +187,7 @@ export class DrawCallLedger {
     if (!this.renderer || !this.originals) return;
     this.renderer.render = this.originals.render;
     this.renderer.renderObject = this.originals.renderObject;
+    disposeOverdraw(this.renderer);
     this.renderer = null;
     this.originals = null;
     this.depth = 0;
@@ -262,16 +264,32 @@ export class DrawCallLedger {
 
   /**
    * Measure overdraw (fragments per pixel, opaque and transparent) with two low-resolution count renders; the
-   * result rides along in every following `frame()` until the next measurement. Not counted as a frame.
+   * result rides along in every following `frame()` until the next measurement. The count renders are not frames, nor
+   * passes of a frame still open around the call. The count target and material are released by `detach()`.
    */
   async measureOverdraw(scene: Scene, camera: Camera, options: { scale?: number } = {}): Promise<OverdrawResult> {
     if (!this.renderer) throw new Error('attach a renderer first');
+    // measureOverdraw() renders both counts and restores the renderer before it first awaits, so attribution pauses for that
+    // synchronous part only. A render still open around the call (a render hook measuring) then exits the ledger normally,
+    // and a render made while the read-backs are pending (the app's next frame) is a frame of its own.
+    let pending: Promise<OverdrawResult>;
+    const wasPaused = this.paused;
+    const open = this.current;
+    const info = this.renderer.info.render;
+    const drawCalls = info.drawCalls;
+    const triangles = info.triangles;
     this.paused = true;
     try {
-      this.overdraw = await measureOverdraw(this.renderer as unknown as OverdrawRenderer, scene, camera, options);
+      pending = measureOverdraw(this.renderer as unknown as OverdrawRenderer, scene, camera, options);
     } finally {
-      this.paused = false;
+      this.paused = wasPaused;
+      // three's info counted the count draws: keep them out of the open frame's reportedDrawCalls, triangles and unattributed.
+      if (open !== null && this.current === open) {
+        open.drawCallsStart += info.drawCalls - drawCalls;
+        open.trianglesStart += info.triangles - triangles;
+      }
     }
+    this.overdraw = await pending;
     this.last = { ...this.last, overdraw: { ...this.last.overdraw, ...this.overdraw, measured: true } };
     return this.overdraw;
   }

@@ -1,7 +1,9 @@
 /**
  * A stand-in for three r186's common Renderer (`three/webgpu`) for node unit tests. It exposes the surface the ledger
  * patches and reads (render, renderAsync, renderObject, info, backend, shadowMap, getRenderTarget,
- * getDrawingBufferSize) and follows three's source where it decides what is drawn:
+ * getDrawingBufferSize), the state the overdraw measurement saves and sets (render target, MRT, render-object function,
+ * clear colour, `autoClear`, `opaque`/`transparent`, a zero read-back), and follows three's source where it decides what
+ * is drawn:
  * - Renderer._renderScene: the render list in traversal order, opaque items first, then a back-side pass of transmissive
  *   double-sided items, then transparent items (three also sorts each list; tests control order by insertion); the
  *   lights node of the projected lights as renderObject's argument 7; `scene.onAfterRender`, plus
@@ -19,6 +21,7 @@ import {
   BackSide,
   BatchedMesh,
   BufferGeometry,
+  Color,
   DoubleSide,
   Float32BufferAttribute,
   FrontSide,
@@ -231,6 +234,12 @@ export class FakeRenderer {
   /** +1 at the start of every outermost render(): the fake's NodeFrame.frameId (three advances it once per animation frame). */
   frameId = 0;
   renderTarget: object | null = null;
+  /** Renderer.opaque and Renderer.transparent: whether render() draws the opaque list and the transparent lists. */
+  opaque = true;
+  transparent = true;
+  /** Renderer.autoClear and autoClearColor: stored only (the fake draws no pixels). */
+  autoClear = true;
+  autoClearColor = true;
   /**
    * Renderer._getFrameBufferTarget: the target a render with no render target draws into (three's defaults, an sRGB
    * output colour space, need one) and that the scene hooks receive. The output quad then resolves it to the canvas.
@@ -255,6 +264,11 @@ export class FakeRenderer {
   private readonly vsmCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private readonly vsmMaterials: Material[];
   private renderObjectFunction: RenderObjectFunction | null = null;
+  private activeCubeFace = 0;
+  private activeMipmapLevel = 0;
+  private mrt: unknown = null;
+  private readonly clearColor = new Color(0, 0, 0);
+  private clearAlpha = 1;
   private nextPass: PassKind | null = null;
   private readonly calls: RenderCall[] = [];
 
@@ -281,6 +295,57 @@ export class FakeRenderer {
 
   getRenderTarget(): object | null {
     return this.renderTarget;
+  }
+
+  setRenderTarget(target: object | null, activeCubeFace = 0, activeMipmapLevel = 0): void {
+    this.renderTarget = target;
+    this.activeCubeFace = activeCubeFace;
+    this.activeMipmapLevel = activeMipmapLevel;
+  }
+
+  getActiveCubeFace(): number {
+    return this.activeCubeFace;
+  }
+
+  getActiveMipmapLevel(): number {
+    return this.activeMipmapLevel;
+  }
+
+  /** Renderer.setMRT / getMRT: stored only. */
+  setMRT(mrt: unknown): this {
+    this.mrt = mrt;
+    return this;
+  }
+
+  getMRT(): unknown {
+    return this.mrt;
+  }
+
+  /** Renderer.setRenderObjectFunction: render() calls it for every item of its lists instead of renderObject. */
+  setRenderObjectFunction(fn: RenderObjectFunction | null): void {
+    this.renderObjectFunction = fn;
+  }
+
+  getRenderObjectFunction(): RenderObjectFunction | null {
+    return this.renderObjectFunction;
+  }
+
+  getClearColor(target: Color): Color {
+    return target.copy(this.clearColor);
+  }
+
+  setClearColor(color: Color, alpha = 1): void {
+    this.clearColor.copy(color);
+    this.clearAlpha = alpha;
+  }
+
+  getClearAlpha(): number {
+    return this.clearAlpha;
+  }
+
+  /** Renderer.readRenderTargetPixelsAsync on a half-float target: raw halves, all zero (the fake draws no pixels). */
+  async readRenderTargetPixelsAsync(_target: object, _x: number, _y: number, width: number, height: number): Promise<Uint16Array> {
+    return new Uint16Array(width * height * 4);
   }
 
   getDrawingBufferSize(target: Vector2): Vector2 {
@@ -367,8 +432,10 @@ export class FakeRenderer {
         else this.renderObject(object, sceneRef, camera, geometry, material, group, lightsNode, null, passId);
       }
     };
-    renderList(opaque, null);
-    if (doublePass.length > 0) {
+    if (this.opaque) renderList(opaque, null);
+    if (!this.transparent) {
+      // Renderer._renderScene skips _renderTransparents, the back-side pass included.
+    } else if (doublePass.length > 0) {
       // Renderer._renderTransparents: the side is set on the material before each renderObject call.
       for (const { material } of doublePass) material.side = BackSide;
       renderList(doublePass, 'backSide');
