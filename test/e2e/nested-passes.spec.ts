@@ -259,71 +259,7 @@ for (const nested of POLICIES) {
       test.skip(!forge.pixelChecks, 'pixel checks need a native WebGPU adapter');
       test.setTimeout(180_000);
       await forge.open('empty', nestedQuery(nested));
-      const built = await forge.page.evaluate(async (groundFirst) => {
-        const f = window.__forge;
-        const T = f.three;
-        const { scene, camera, renderer } = f;
-        renderer.shadowMap.enabled = true;
-        scene.add(new T.AmbientLight(0xffffff, 0.3));
-        // A low sun from +x: a 6-unit box throws an 18-unit shadow toward -x, so boxes right of the view shadow it. Narrow
-        // across z (|z| <= 12), so its list misses boxes in view and a pass that draws it in the main pass shows.
-        const sun = new T.DirectionalLight(0xffffff, 2);
-        sun.name = 'sun';
-        sun.position.set(150, 50, 0);
-        sun.castShadow = true;
-        sun.shadow.mapSize.set(2048, 2048);
-        Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 40, bottom: -40, near: 1, far: 400 }).updateProjectionMatrix();
-        // A narrow spot light low on the left: boxes left of the view shadow it toward +x.
-        const spot = new T.SpotLight(0xffe8d0, 4000, 0, Math.PI / 12, 0.2, 2);
-        spot.name = 'spot';
-        spot.position.set(-90, 22, 0);
-        spot.castShadow = true;
-        spot.shadow.mapSize.set(1024, 1024);
-        spot.shadow.camera.near = 1;
-        spot.shadow.camera.far = 300;
-        scene.add(sun, sun.target, spot, spot.target);
-        // A lit ground that receives and does not cast. Its renderOrder decides which receiver three draws first, and so
-        // which draw renders the shadow maps: the boxes (just culled for the main camera) or the ground (before that cull).
-        const ground = new T.Mesh(new T.PlaneGeometry(400, 400), new T.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 1 }));
-        ground.name = 'ground';
-        ground.rotation.x = -Math.PI / 2;
-        ground.receiveShadow = true;
-        ground.renderOrder = groundFirst ? -1 : 1;
-        ground.userData.forge = 'static';
-        scene.add(ground);
-        // One geometry and one material: a single InstancedMesh (instanceThreshold 64) whose 1,500 x 64 bytes of matrices
-        // exceed the 65,536-byte uniform buffer, so three uploads them to one vertex buffer shared by every pass.
-        const geometry = new T.BoxGeometry(1.2, 6, 1.2);
-        const material = new T.MeshStandardMaterial({ color: 0xc8ccd2, roughness: 0.85, metalness: 0 });
-        const boxes: InstanceType<typeof T.Mesh>[] = [];
-        for (let i = 0; i < 50; i++) {
-          for (let j = 0; j < 30; j++) {
-            const b = new T.Mesh(geometry, material);
-            b.name = `box-${boxes.length}`;
-            b.position.set(-98 + 4 * i, 3, -29 + 2 * j);
-            b.castShadow = b.receiveShadow = true;
-            b.userData.forge = 'static';
-            boxes.push(b);
-            scene.add(b);
-          }
-        }
-        camera.position.set(0, 16, 40);
-        camera.lookAt(0, 0, 0);
-        camera.updateMatrixWorld();
-        scene.updateMatrixWorld(true);
-        await f.frameAsync(); // places the shadow cameras and gives them this backend's coordinate system
-        const frustumOf = (c: typeof camera | typeof sun.shadow.camera | typeof spot.shadow.camera) =>
-          new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(c.projectionMatrix, c.matrixWorldInverse), c.coordinateSystem, c.reversedDepth);
-        const view = frustumOf(camera);
-        const sunView = frustumOf(sun.shadow.camera);
-        const spotView = frustumOf(spot.shadow.camera);
-        return {
-          boxes: boxes.length,
-          inView: boxes.filter((b) => view.intersectsObject(b)).length,
-          sunOutOfView: boxes.filter((b) => sunView.intersectsObject(b) && !view.intersectsObject(b)).length,
-          spotOutOfView: boxes.filter((b) => spotView.intersectsObject(b) && !view.intersectsObject(b)).length,
-        };
-      }, receiver === 'ground');
+      const built = await forge.page.evaluate(buildInstancedField, { groundFirst: receiver === 'ground', spot: true });
       expect(built.boxes).toBe(1500);
       expect(built.inView).toBeGreaterThan(100);
       expect(built.sunOutOfView, 'boxes the sun sees outside the view').toBeGreaterThan(50);
@@ -332,71 +268,8 @@ for (const nested of POLICIES) {
       expect(naive.map(([id]) => id)).toEqual(expect.arrayContaining(['shadow:sun', 'shadow:spot', 'main']));
       await settle(forge.page, 2);
       const before = await forge.page.screenshot({ type: 'png' });
-
-      const compiled = await forge.page.evaluate(async () => {
-        const f = window.__forge;
-        const T = f.three;
-        const report = f.compile();
-        await f.world.warmup(f.renderer, f.camera);
-        await f.frameAsync();
-        const cameras = {
-          main: f.camera as InstanceType<typeof T.Camera>,
-          sun: (f.scene.getObjectByName('sun') as InstanceType<typeof T.DirectionalLight>).shadow.camera as InstanceType<typeof T.Camera>,
-          spot: (f.scene.getObjectByName('spot') as InstanceType<typeof T.SpotLight>).shadow.camera as InstanceType<typeof T.Camera>,
-        };
-        const keys = ['main', 'sun', 'spot'] as const;
-        // The ids each instanced mesh draws in each pass, read once three has issued the draw (onAfterRender, composed with
-        // whatever hook the mesh has and put back afterwards): the rows [0, count) of its compaction table.
-        type Spied = { onAfterRender: (...args: unknown[]) => void; count: number; visibleIds: number[] };
-        const drawn = { main: new Set<number>(), sun: new Set<number>(), spot: new Set<number>() };
-        const restores: (() => void)[] = [];
-        for (const mesh of f.world.instancedMeshes) {
-          const m = mesh as unknown as Spied;
-          const hadOwn = Object.prototype.hasOwnProperty.call(m, 'onAfterRender');
-          const original = m.onAfterRender;
-          m.onAfterRender = function (this: unknown, ...args: unknown[]) {
-            for (const key of keys) if (args[2] === cameras[key]) for (let k = 0; k < m.count; k++) drawn[key].add(m.visibleIds[k]!);
-            original.apply(this, args);
-          };
-          restores.push(() => {
-            if (hadOwn) m.onAfterRender = original;
-            else delete (m as Partial<Spied>).onAfterRender;
-          });
-        }
-        const frame = await f.frameAsync();
-        for (const restore of restores) restore();
-        // Every instance whose box meets a pass's frustum must be among the ids that pass drew.
-        const frusta = Object.fromEntries(
-          keys.map((key) => {
-            const c = cameras[key];
-            return [key, new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(c.projectionMatrix, c.matrixWorldInverse), c.coordinateSystem, c.reversedDepth)];
-          }),
-        ) as Record<(typeof keys)[number], InstanceType<typeof T.Frustum>>;
-        const needed = { main: 0, sun: 0, spot: 0 };
-        const missing = { main: [] as string[], sun: [] as string[], spot: [] as string[] };
-        f.scene.traverse((o) => {
-          const mesh = o as InstanceType<typeof T.Mesh>;
-          if (!mesh.isMesh || !mesh.name.startsWith('box-')) return;
-          const slot = f.world.slotOf(mesh);
-          if (!slot || !(slot.batch as { isInstancedMesh?: boolean }).isInstancedMesh) return;
-          if (mesh.geometry.boundingBox === null) mesh.geometry.computeBoundingBox();
-          const bounds = mesh.geometry.boundingBox!.clone().applyMatrix4(mesh.matrixWorld);
-          for (const key of keys) {
-            if (!frusta[key].intersectsBox(bounds)) continue;
-            needed[key]++;
-            if (!drawn[key].has(slot.instanceId)) missing[key].push(mesh.name);
-          }
-        });
-        return {
-          after: report.after,
-          nestedPasses: report.nestedPasses,
-          passes: frame.passes.map((p) => [p.id, p.submissions, p.gpuDraws]),
-          unattributed: frame.totals.unattributed,
-          needed,
-          missing: { main: missing.main.length, sun: missing.sun.length, spot: missing.spot.length },
-          sample: { main: missing.main.slice(0, 5), sun: missing.sun.slice(0, 5), spot: missing.spot.slice(0, 5) },
-        };
-      });
+      const report = await forge.page.evaluate(compileInstancedField);
+      const compiled = await forge.page.evaluate(spyInstancedField);
       await settle(forge.page, 2);
       const after = await forge.page.screenshot({ type: 'png' });
       mkdirSync(OUT, { recursive: true });
@@ -404,9 +277,9 @@ for (const nested of POLICIES) {
       writeFileSync(`${OUT}/${tag}-naive.png`, before);
       writeFileSync(`${OUT}/${tag}-compiled.png`, after);
       const diff = pixelDiff(before, after, { threshold: 4, diffPath: `${OUT}/${tag}-diff.png` });
-      await attachNumbers('instanced-field', { backend: forge.backend, receiver, built, naive, compiled, diffPct: (diff * 100).toFixed(4) });
-      expect(compiled.nestedPasses).toBe(policyOf(nested));
-      expect(compiled.after).toMatchObject({ batches: 0, instanced: 1 });
+      await attachNumbers('instanced-field', { backend: forge.backend, receiver, built, naive, compiled: { ...report, ...compiled }, diffPct: (diff * 100).toFixed(4) });
+      expect(report.nestedPasses).toBe(policyOf(nested));
+      expect(report.after).toMatchObject({ batches: 0, instanced: 1 });
       expect(compiled.unattributed).toBe(0);
       expect(compiled.needed.sun, 'instances inside the sun frustum').toBeGreaterThan(100);
       expect(compiled.needed.spot, 'instances inside the spot frustum').toBeGreaterThan(100);
@@ -414,4 +287,198 @@ for (const nested of POLICIES) {
       expect(diff).toBeLessThan(0.0005);
     });
   }
+
+  test(`1,500 tall instanced boxes stay exact when the camera moves after the first compiled frame, the boxes receiving the sun's shadows first (nestedPasses: ${nested})`, async ({ forge }) => {
+    test.skip(!forge.pixelChecks, 'pixel checks need a native WebGPU adapter');
+    test.setTimeout(180_000);
+    await forge.open('empty', nestedQuery(nested));
+    // The sun only. In three r186 Attributes.update keeps a version per attribute object, and every render object builds its
+    // own attributes over the shared instance buffer: a second shadow light's render object would upload the whole buffer
+    // again (its ranges already consumed) and hide rows a lost update range left stale on the GPU.
+    const built = await forge.page.evaluate(buildInstancedField, { groundFirst: false, spot: false });
+    expect(built.boxes).toBe(1500);
+    // The naive scene at the second view: the view the compiled scene is compared at.
+    await forge.page.evaluate(aimCamera, MOVED_VIEW);
+    await forge.page.evaluate(async () => void (await window.__forge.frameAsync()));
+    await settle(forge.page, 2);
+    const before = await forge.page.screenshot({ type: 'png' });
+    // Compile and render at the first view: that frame creates the instance buffers with whole-array uploads. The first
+    // frame at the second view then changes the main rows and the appended casters together: the update-range path.
+    await forge.page.evaluate(aimCamera, FIELD_VIEW);
+    const report = await forge.page.evaluate(compileInstancedField);
+    await forge.page.evaluate(aimCamera, MOVED_VIEW);
+    const moved = await forge.page.evaluate(spyInstancedField);
+    await settle(forge.page, 2);
+    const after = await forge.page.screenshot({ type: 'png' });
+    mkdirSync(OUT, { recursive: true });
+    const tag = `field-moved-${nested}-${forge.backend}`;
+    writeFileSync(`${OUT}/${tag}-naive.png`, before);
+    writeFileSync(`${OUT}/${tag}-compiled.png`, after);
+    const diff = pixelDiff(before, after, { threshold: 4, diffPath: `${OUT}/${tag}-diff.png` });
+    await attachNumbers('instanced-field-moved', { backend: forge.backend, built, compiled: { ...report, ...moved }, diffPct: (diff * 100).toFixed(4) });
+    expect(report.nestedPasses).toBe(policyOf(nested));
+    expect(report.after).toMatchObject({ batches: 0, instanced: 1 });
+    expect(moved.unattributed).toBe(0);
+    expect(moved.needed.main, 'instances in the moved view').toBeGreaterThan(100);
+    expect(moved.needed.sun, 'instances inside the sun frustum').toBeGreaterThan(100);
+    expect(moved.sample, 'instances missing from the pass that needs them').toEqual({ main: [], sun: [] });
+    expect(diff).toBeLessThan(0.0005);
+  });
+}
+
+/** Where the instanced field is first seen from, and a second view to move to: [position, target]. */
+const FIELD_VIEW = [0, 16, 40, 0, 0, 0];
+const MOVED_VIEW = [-36, 14, 34, -50, 0, -4];
+
+/** In the page: points the harness camera from `view[0..2]` at `view[3..5]`. */
+function aimCamera(view: number[]): void {
+  const camera = window.__forge.camera;
+  camera.position.set(view[0]!, view[1]!, view[2]!);
+  camera.lookAt(view[3]!, view[4]!, view[5]!);
+  camera.updateMatrixWorld();
+}
+
+/** In the page: compiles, warms up and renders one frame; returns the compile report's numbers. */
+async function compileInstancedField() {
+  const f = window.__forge;
+  const report = f.compile();
+  await f.world.warmup(f.renderer, f.camera);
+  await f.frameAsync();
+  return { after: report.after, nestedPasses: report.nestedPasses };
+}
+
+/**
+ * In the page: renders one frame recording the ids each instanced mesh draws in the main, sun and spot passes (read once
+ * three has issued the draw: onAfterRender, composed with whatever hook the mesh has and put back afterwards, the rows
+ * [0, count) of its compaction table), and counts the instances each pass needs (box meets its frustum) but did not draw.
+ */
+async function spyInstancedField() {
+  const f = window.__forge;
+  const T = f.three;
+  type Key = 'main' | 'sun' | 'spot';
+  const cameras: Partial<Record<Key, InstanceType<typeof T.Camera>>> = { main: f.camera };
+  for (const name of ['sun', 'spot'] as const) {
+    const light = f.scene.getObjectByName(name) as InstanceType<typeof T.DirectionalLight> | undefined;
+    if (light) cameras[name] = light.shadow.camera;
+  }
+  const keys = Object.keys(cameras) as Key[];
+  type Spied = { onAfterRender: (...args: unknown[]) => void; count: number; visibleIds: number[] };
+  const drawn: Record<Key, Set<number>> = { main: new Set<number>(), sun: new Set<number>(), spot: new Set<number>() };
+  const restores: (() => void)[] = [];
+  for (const mesh of f.world.instancedMeshes) {
+    const m = mesh as unknown as Spied;
+    const hadOwn = Object.prototype.hasOwnProperty.call(m, 'onAfterRender');
+    const original = m.onAfterRender;
+    m.onAfterRender = function (this: unknown, ...args: unknown[]) {
+      for (const key of keys) if (args[2] === cameras[key]) for (let k = 0; k < m.count; k++) drawn[key].add(m.visibleIds[k]!);
+      original.apply(this, args);
+    };
+    restores.push(() => {
+      if (hadOwn) m.onAfterRender = original;
+      else delete (m as Partial<Spied>).onAfterRender;
+    });
+  }
+  const frame = await f.frameAsync();
+  for (const restore of restores) restore();
+  const frusta = Object.fromEntries(
+    keys.map((key) => {
+      const c = cameras[key]!;
+      return [key, new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(c.projectionMatrix, c.matrixWorldInverse), c.coordinateSystem, c.reversedDepth)];
+    }),
+  ) as Record<Key, InstanceType<typeof T.Frustum>>;
+  const needed: Record<string, number> = Object.fromEntries(keys.map((key) => [key, 0]));
+  const missing: Record<string, string[]> = Object.fromEntries(keys.map((key) => [key, [] as string[]]));
+  f.scene.traverse((o) => {
+    const mesh = o as InstanceType<typeof T.Mesh>;
+    if (!mesh.isMesh || !mesh.name.startsWith('box-')) return;
+    const slot = f.world.slotOf(mesh);
+    if (!slot || !(slot.batch as { isInstancedMesh?: boolean }).isInstancedMesh) return;
+    if (mesh.geometry.boundingBox === null) mesh.geometry.computeBoundingBox();
+    const bounds = mesh.geometry.boundingBox!.clone().applyMatrix4(mesh.matrixWorld);
+    for (const key of keys) {
+      if (!frusta[key].intersectsBox(bounds)) continue;
+      needed[key]!++;
+      if (!drawn[key].has(slot.instanceId)) missing[key]!.push(mesh.name);
+    }
+  });
+  return {
+    passes: frame.passes.map((p) => [p.id, p.submissions, p.gpuDraws]),
+    unattributed: frame.totals.unattributed,
+    needed,
+    missing: Object.fromEntries(keys.map((key) => [key, missing[key]!.length])),
+    sample: Object.fromEntries(keys.map((key) => [key, missing[key]!.slice(0, 5)])),
+  };
+}
+
+/**
+ * In the page: 1,500 tall boxes (one geometry and one material: a single InstancedMesh at instanceThreshold 64, whose
+ * 1,500 x 64 bytes of matrices exceed the 65,536-byte uniform buffer, so three uploads them to one vertex buffer shared by
+ * every pass), a narrow sun and (with `spot`) a narrow spot light with casters outside the view, and a lit ground whose renderOrder
+ * decides whether the boxes or the ground receive shadows first. Returns counts from three's own frusta.
+ */
+async function buildInstancedField({ groundFirst, spot: withSpot }: { groundFirst: boolean; spot: boolean }) {
+  const f = window.__forge;
+  const T = f.three;
+  const { scene, camera, renderer } = f;
+  renderer.shadowMap.enabled = true;
+  scene.add(new T.AmbientLight(0xffffff, 0.3));
+  // A low sun from +x: a 6-unit box throws an 18-unit shadow toward -x, so boxes right of the view shadow it. Narrow
+  // across z (|z| <= 12), so its list misses boxes in view and a pass that draws it in the main pass shows.
+  const sun = new T.DirectionalLight(0xffffff, 2);
+  sun.name = 'sun';
+  sun.position.set(150, 50, 0);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 40, bottom: -40, near: 1, far: 400 }).updateProjectionMatrix();
+  // A narrow spot light low on the left: boxes left of the view shadow it toward +x.
+  const spot = new T.SpotLight(0xffe8d0, 4000, 0, Math.PI / 12, 0.2, 2);
+  spot.name = 'spot';
+  spot.position.set(-90, 22, 0);
+  spot.castShadow = true;
+  spot.shadow.mapSize.set(1024, 1024);
+  spot.shadow.camera.near = 1;
+  spot.shadow.camera.far = 300;
+  scene.add(sun, sun.target);
+  if (withSpot) scene.add(spot, spot.target);
+  // A lit ground that receives and does not cast. Its renderOrder decides which receiver three draws first, and so
+  // which draw renders the shadow maps: the boxes (just culled for the main camera) or the ground (before that cull).
+  const ground = new T.Mesh(new T.PlaneGeometry(400, 400), new T.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 1 }));
+  ground.name = 'ground';
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  ground.renderOrder = groundFirst ? -1 : 1;
+  ground.userData.forge = 'static';
+  scene.add(ground);
+  // One geometry and one material: a single InstancedMesh (instanceThreshold 64) whose 1,500 x 64 bytes of matrices
+  // exceed the 65,536-byte uniform buffer, so three uploads them to one vertex buffer shared by every pass.
+  const geometry = new T.BoxGeometry(1.2, 6, 1.2);
+  const material = new T.MeshStandardMaterial({ color: 0xc8ccd2, roughness: 0.85, metalness: 0 });
+  const boxes: InstanceType<typeof T.Mesh>[] = [];
+  for (let i = 0; i < 50; i++) {
+    for (let j = 0; j < 30; j++) {
+      const b = new T.Mesh(geometry, material);
+      b.name = `box-${boxes.length}`;
+      b.position.set(-98 + 4 * i, 3, -29 + 2 * j);
+      b.castShadow = b.receiveShadow = true;
+      b.userData.forge = 'static';
+      boxes.push(b);
+      scene.add(b);
+    }
+  }
+  camera.position.set(0, 16, 40);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld();
+  scene.updateMatrixWorld(true);
+  await f.frameAsync(); // places the shadow cameras and gives them this backend's coordinate system
+  const frustumOf = (c: typeof camera | typeof sun.shadow.camera | typeof spot.shadow.camera) =>
+    new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(c.projectionMatrix, c.matrixWorldInverse), c.coordinateSystem, c.reversedDepth);
+  const view = frustumOf(camera);
+  const sunView = frustumOf(sun.shadow.camera);
+  const spotView = frustumOf(spot.shadow.camera);
+  return {
+    boxes: boxes.length,
+    inView: boxes.filter((b) => view.intersectsObject(b)).length,
+    sunOutOfView: boxes.filter((b) => sunView.intersectsObject(b) && !view.intersectsObject(b)).length,
+    spotOutOfView: withSpot ? boxes.filter((b) => spotView.intersectsObject(b) && !view.intersectsObject(b)).length : 0,
+  };
 }

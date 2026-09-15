@@ -115,6 +115,27 @@ describe('World.warmup', () => {
     expect(world.mainCamera).toBe(main);
   });
 
+  it('async mode forgets the render compileAsync opened even when compileAsync rejects', async () => {
+    const scene = new Scene();
+    for (let i = 0; i < 4; i++) scene.add(tag.static(new Mesh(box, new MeshStandardMaterial({ name: `m${i}` }))));
+    const world = new World(scene);
+    world.compile();
+    const renderer = Object.assign(new FakeRenderer({ sceneHooks: true }), {
+      getScissor: (target: Vector4) => target.set(0, 0, 300, 150),
+      setScissor: () => undefined,
+      getScissorTest: () => false,
+      setScissorTest: () => undefined,
+      async compileAsync(this: FakeRenderer, target: Scene, camera: Camera) {
+        target.onBeforeRender(this as never, target, camera, null as never, null as never, null as never);
+        throw new Error('compile failed');
+      },
+    });
+    await expect(world.warmup(renderer as never, new PerspectiveCamera(), { mode: 'async' })).rejects.toThrow('compile failed');
+    const main = new PerspectiveCamera();
+    renderer.render(scene, main);
+    expect(world.mainCamera, 'the next render is an outermost render').toBe(main);
+  });
+
   it('async mode falls back to the frame when the renderer has no compileAsync', async () => {
     const scene = new Scene();
     scene.add(tag.static(new Mesh(box, new MeshStandardMaterial())));

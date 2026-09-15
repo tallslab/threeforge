@@ -111,6 +111,8 @@ export interface FakeDraw {
    * when its render() call ends on WebGPU (queue writes land at once; the pass is submitted then).
    */
   instanceRows: Float32Array | null;
+  /** InstancedMesh draws with `instanceColor` only (with `record`), else null: the colour rows `[0, instanceCount)`, 3 floats per row, read like `instanceRows`. */
+  instanceColorRows: Float32Array | null;
 }
 
 /** One render() call of the last frame. */
@@ -179,13 +181,20 @@ interface RenderCall {
   /** WebGPU batch draws whose ids resolve when the call ends. */
   pending: Array<{ draw: FakeDraw; texture: IndexTexture; counts: number[] }>;
   /** WebGPU instanced draws whose rows resolve when the call ends. */
-  pendingInstances: Array<{ draw: FakeDraw; read: () => Float32Array; count: number }>;
+  pendingInstances: Array<{ draw: FakeDraw; read: InstanceReads; count: number }>;
 }
-type Instanced = Object3D & { isInstancedMesh?: boolean; count: number; instanceMatrix: BufferAttribute };
+type Instanced = Object3D & { isInstancedMesh?: boolean; count: number; instanceMatrix: BufferAttribute; instanceColor: BufferAttribute | null };
+/** How to read the matrix rows and colour rows a draw binds, at draw time (WebGL) or when its render() call ends (WebGPU). */
+interface InstanceReads {
+  rows: () => Float32Array;
+  colors: (() => Float32Array) | null;
+}
 /** A RenderObject of an InstancedMesh with its NodeBuilderState (three keys both by object, material and render context). */
 interface InstanceRenderObject {
   /** `instanceMatrix.version` at the last refresh (NodeMaterialObserver). */
   version: number;
+  /** `instanceColor.version` at the last refresh, null without colours. */
+  colorVersion: number | null;
   /** frameId when its OnBeforeFrameUpdate event last ran. */
   frame: number;
   /** The uniform buffer of the uniform path. */
@@ -193,7 +202,7 @@ interface InstanceRenderObject {
   /** Whether Geometries.updateAttribute has checked its attribute once (the first check is not keyed by the render call). */
   checked: boolean;
 }
-/** Instance.js's InstancedInterleavedBuffer over an `instanceMatrix` array, and its GPU buffer. */
+/** Instance.js's InstancedInterleavedBuffer over `instanceMatrix` (or its InstancedBufferAttribute over `instanceColor`), and its GPU buffer. */
 interface InstanceVertexBuffer {
   version: number;
   ranges: { start: number; count: number }[];
@@ -375,7 +384,10 @@ export class FakeRenderer {
 
     // Backend.finishRender: WebGPU submits the pass now, so its batch draws read the index textures as uploaded by now.
     for (const { draw, texture, counts } of call.pending) draw.batchIds = slotIds(counts, this.uploads.get(texture)!.data);
-    for (const { draw, read, count } of call.pendingInstances) draw.instanceRows = read().slice(0, count * 16);
+    for (const { draw, read, count } of call.pendingInstances) {
+      draw.instanceRows = read.rows().slice(0, count * 16);
+      if (read.colors !== null) draw.instanceColorRows = read.colors().slice(0, count * 3);
+    }
     lightsNode.setLights(previousLights);
     this.calls.pop();
     (sceneRef.onAfterRender as (...args: unknown[]) => void)(this, scene, camera, hookTarget);
@@ -421,13 +433,17 @@ export class FakeRenderer {
     const call = this.calls[this.calls.length - 1];
     // NodeMaterialObserver.needsRefresh decides the refresh before any updateBefore node runs.
     const instances = this.options.record && (object as Instanced).isInstancedMesh === true && call ? this.instanceRenderObject(object as Instanced, material, call) : null;
-    // NodeManager.updateBefore: a receiver's ShadowNode renders its map before this object draws.
+    // NodeManager.updateBefore runs the render object's updateBeforeNodes in order. The instance OnBeforeFrameUpdate event
+    // sits in the position stack, which NodeBuilder.build flows before its fragment/vertex loop (NodeBuilder.js ~3193)
+    // and Node.build registers in the setup branch, so it runs before a receiver's ShadowNode (dumped from three r186 on
+    // both backends: ['EventNode:beforeFrame', 'ShadowNode']).
+    if (instances) this.syncInstances(object as Instanced, instances.state);
+    // Then a receiver's ShadowNode renders its map before this object draws.
     const shadowPass = (material as Material & { isShadowPassMaterial?: boolean }).isShadowPassMaterial === true;
     if (this.options.shadowTrigger === 'first-receiver' && object.receiveShadow && lightsNode !== null && !shadowPass) {
       this.updateShadows(scene, camera, lightsNode);
     }
-    // Then the instance event (a vertex-stage node: NodeBuilder analyzes defaultShaderStages ['fragment', 'vertex'] in
-    // order, so updateBeforeNodes lists the lighting's shadow nodes first), geometries and bindings.
+    // Then Geometries.updateForRender and Bindings.updateForRender.
     const readInstances = instances ? this.uploadInstances(object as Instanced, instances.state, instances.full) : null;
     const params = drawParameters(object, material, group);
     if (params === null) return;
@@ -444,11 +460,15 @@ export class FakeRenderer {
     this.info.render.drawCalls += drawCalls;
     this.info.render.triangles += triangles;
     if (!call?.pass) return;
-    const draw: FakeDraw = { object, material, side: material.side, drawCalls, triangles, instanceCount: params.instanceCount, batchIds: null, instanceRows: null };
+    const draw: FakeDraw = { object, material, side: material.side, drawCalls, triangles, instanceCount: params.instanceCount, batchIds: null, instanceRows: null, instanceColorRows: null };
     call.pass.draws.push(draw);
     if (readInstances !== null) {
-      if (this.backend.isWebGPUBackend) call.pendingInstances.push({ draw, read: readInstances, count: params.instanceCount });
-      else draw.instanceRows = readInstances().slice(0, params.instanceCount * 16);
+      if (this.backend.isWebGPUBackend) {
+        call.pendingInstances.push({ draw, read: readInstances, count: params.instanceCount });
+      } else {
+        draw.instanceRows = readInstances.rows().slice(0, params.instanceCount * 16);
+        if (readInstances.colors !== null) draw.instanceColorRows = readInstances.colors().slice(0, params.instanceCount * 3);
+      }
       return;
     }
     if (counts === null) return;
@@ -473,61 +493,107 @@ export class FakeRenderer {
     const target = this.renderTarget as { texture?: { name?: string } } | null;
     const key = `${mesh.uuid}|${material.uuid}|${call.kind.light?.uuid ?? ''}|${this.calls.length - 1}|${target?.texture?.name ?? 'default'}`;
     let state = this.instanceObjects.get(key);
-    const full = state === undefined || state.version !== mesh.instanceMatrix.version;
+    const colorVersion = mesh.instanceColor === null ? null : mesh.instanceColor.version;
+    const full = state === undefined || state.version !== mesh.instanceMatrix.version || state.colorVersion !== colorVersion;
     if (state === undefined) {
-      state = { version: 0, frame: -1, buffer: null, checked: false };
+      state = { version: 0, colorVersion: null, frame: -1, buffer: null, checked: false };
       this.instanceObjects.set(key, state);
     }
     state.version = mesh.instanceMatrix.version;
+    state.colorVersion = colorVersion;
     return { state, full };
   }
 
-  /**
-   * The rest of Renderer._renderObjectDirect for instance matrices (`nodes/accessors/Instance.js`); returns how to read the
-   * buffer the draw binds.
-   * - Up to `uniformBufferLimit` bytes: a uniform buffer per render object (objectGroup bindings are cloned per render
-   *   object, NodeBuilderState.createBindings), written from the array by Bindings.updateForRender on a full refresh.
-   * - Above: an InstancedInterleavedBuffer over the same array, one GPU buffer for every render object. Its
-   *   OnBeforeFrameUpdate event copies the version and update ranges once per frame per node builder; on a full refresh
-   *   Geometries.updateAttribute uploads when the GPU copy is older: the ranges, or the whole array when there are none
-   *   (WebGPUAttributeUtils.updateAttribute). After a render object's first check it checks the shared buffer at most
-   *   once per `info.render.calls`, which every render() advances and nothing restores after a nested one.
-   */
-  private uploadInstances(mesh: Instanced, state: InstanceRenderObject, full: boolean): () => Float32Array {
-    const matrices = mesh.instanceMatrix;
-    const array = matrices.array as Float32Array;
-    if (matrices.count * 64 <= (this.options.uniformBufferLimit ?? 65536)) {
-      if (full || state.buffer === null) state.buffer = array.slice();
-      return () => state.buffer!;
-    }
-    let gpu = this.instanceBuffers.get(matrices);
+  /** Instance.js: matrices above `uniformBufferLimit` bytes go to the shared vertex buffer instead of a uniform buffer per render object. */
+  private instanceVertexPath(mesh: Instanced): boolean {
+    return mesh.instanceMatrix.count * 64 > (this.options.uniformBufferLimit ?? 65536);
+  }
+
+  private instanceBuffer(attribute: BufferAttribute): InstanceVertexBuffer {
+    let gpu = this.instanceBuffers.get(attribute);
     if (gpu === undefined) {
-      gpu = { version: 0, ranges: [], uploaded: -1, call: -1, data: new Float32Array(array.length) };
-      this.instanceBuffers.set(matrices, gpu);
+      gpu = { version: 0, ranges: [], uploaded: -1, call: -1, data: new Float32Array(attribute.array.length) };
+      this.instanceBuffers.set(attribute, gpu);
     }
-    if (state.frame !== this.frameId) {
-      state.frame = this.frameId;
-      if (gpu.version !== matrices.version) {
-        gpu.ranges = matrices.updateRanges.map((range) => ({ start: range.start, count: range.count }));
-        matrices.clearUpdateRanges();
-        gpu.version = matrices.version;
+    return gpu;
+  }
+
+  /**
+   * Instance.js's OnBeforeFrameUpdate event, which exists when the matrices use the vertex buffer or the mesh has
+   * colours: once per frame per node builder it copies each shared buffer's version and update ranges from its source
+   * attribute (replacing the ranges the buffer held) and clears the source's ranges.
+   */
+  private syncInstances(mesh: Instanced, state: InstanceRenderObject): void {
+    const vertexPath = this.instanceVertexPath(mesh);
+    if ((!vertexPath && mesh.instanceColor === null) || state.frame === this.frameId) return;
+    state.frame = this.frameId;
+    for (const attribute of [vertexPath ? mesh.instanceMatrix : null, mesh.instanceColor]) {
+      if (attribute === null) continue;
+      const gpu = this.instanceBuffer(attribute);
+      if (gpu.version === attribute.version) continue;
+      gpu.ranges = attribute.updateRanges.map((range) => ({ start: range.start, count: range.count }));
+      attribute.clearUpdateRanges();
+      gpu.version = attribute.version;
+    }
+  }
+
+  /**
+   * Geometries.updateForRender and Bindings.updateForRender for the instance attributes (`nodes/accessors/Instance.js`);
+   * returns how to read the buffers the draw binds.
+   * - Matrices up to `uniformBufferLimit` bytes: a uniform buffer per render object (objectGroup bindings are cloned per
+   *   render object, NodeBuilderState.createBindings), written from the array on a full refresh.
+   * - Matrices above it: the InstancedInterleavedBuffer, one GPU buffer for every render object. On a full refresh
+   *   Geometries.updateAttribute uploads when the GPU copy is older than the synced version: the ranges, or the whole
+   *   array when there are none (WebGPUAttributeUtils.updateAttribute). After a render object's first check of its
+   *   interleaved attribute, the shared buffer is checked at most once per `info.render.calls`, which every render()
+   *   advances and nothing restores after a nested one.
+   * - Divergence, on the strict side: three's Attributes.update keeps `data.version` per attribute object, and each render
+   *   object builds its own interleaved attributes over the shared buffer, so another render object that refreshes
+   *   later uploads again, with the ranges already consumed: the whole array (a second shadow light does). The fake keeps
+   *   one uploaded version per buffer, so it never re-uploads rows that way and never hides a lost range.
+   * - Colours: one InstancedBufferAttribute shared by every render object, checked at most once per render call.
+   */
+  private uploadInstances(mesh: Instanced, state: InstanceRenderObject, full: boolean): InstanceReads {
+    const matrices = mesh.instanceMatrix;
+    let rows: () => Float32Array;
+    if (!this.instanceVertexPath(mesh)) {
+      if (full || state.buffer === null) state.buffer = (matrices.array as Float32Array).slice();
+      rows = () => state.buffer!;
+    } else {
+      const gpu = this.instanceBuffer(matrices);
+      if (full && (!state.checked || gpu.call !== this.info.render.calls)) {
+        if (state.checked) gpu.call = this.info.render.calls;
+        state.checked = true;
+        this.uploadInstanceBuffer(gpu, matrices);
       }
+      const data = gpu.data;
+      rows = () => data;
     }
-    if (full && (!state.checked || gpu.call !== this.info.render.calls)) {
-      if (state.checked) gpu.call = this.info.render.calls;
-      state.checked = true;
-      if (gpu.uploaded < 0) {
-        gpu.data.set(array); // Attributes.update: createAttribute uploads the whole array
-        gpu.uploaded = gpu.version;
-      } else if (gpu.uploaded < gpu.version) {
-        if (gpu.ranges.length === 0) gpu.data.set(array);
-        else for (const range of gpu.ranges) gpu.data.set(array.subarray(range.start, range.start + range.count), range.start);
-        gpu.ranges = [];
-        gpu.uploaded = gpu.version;
+    let colors: (() => Float32Array) | null = null;
+    if (mesh.instanceColor !== null) {
+      const gpu = this.instanceBuffer(mesh.instanceColor);
+      if (full && gpu.call !== this.info.render.calls) {
+        gpu.call = this.info.render.calls;
+        this.uploadInstanceBuffer(gpu, mesh.instanceColor);
       }
+      const data = gpu.data;
+      colors = () => data;
     }
-    const data = gpu.data;
-    return () => data;
+    return { rows, colors };
+  }
+
+  /** Attributes.update: creation uploads the whole array; later, a synced version newer than the upload writes the ranges, or everything without ranges. */
+  private uploadInstanceBuffer(gpu: InstanceVertexBuffer, attribute: BufferAttribute): void {
+    const array = attribute.array as Float32Array;
+    if (gpu.uploaded < 0) {
+      gpu.data.set(array);
+      gpu.uploaded = gpu.version;
+    } else if (gpu.uploaded < gpu.version) {
+      if (gpu.ranges.length === 0) gpu.data.set(array);
+      else for (const range of gpu.ranges) gpu.data.set(array.subarray(range.start, range.start + range.count), range.start);
+      gpu.ranges = [];
+      gpu.uploaded = gpu.version;
+    }
   }
 
   /** Lighting.getNode: one lights node per Scene or Group root; other roots share a default node. */

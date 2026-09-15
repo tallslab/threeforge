@@ -47,9 +47,8 @@ export interface InstancingOptions {
   lods?: BufferGeometry[];
   distances?: number[];
   /**
-   * Accepted for symmetry with `CullingOptions`. A compacted instanced mesh behaves the same under both policies: a
-   * nested pass that reaches it before the outermost render did culls it for the main camera first (see
-   * `createCulledInstancedMesh`).
+   * @deprecated Ignored. A compacted instanced mesh behaves the same under both policies: a nested pass that reaches it
+   * before the outermost render did compacts it for the main camera first (see `createCulledInstancedMesh`).
    */
   nestedPasses?: NestedPassPolicy;
   /**
@@ -61,6 +60,11 @@ export interface InstancingOptions {
 
 /** Past this many pending update ranges an attribute's list is replaced by one range over the whole buffer. */
 const MAX_UPDATE_RANGES = 32;
+
+/** How a write marks an instance attribute for upload. */
+const MARK_ALL = 0; // needsUpdate without ranges: a uniform buffer per render object is written whole anyway
+const MARK_ROWS = 1; // a range over the rows written
+const MARK_WHOLE = 2; // a range over the whole buffer
 
 const _box = new Box3();
 const _nodeBox = new Box3();
@@ -87,12 +91,20 @@ function same16(a: Float64Array, b: ArrayLike<number>): boolean {
   return true;
 }
 
-/** Marks an instance attribute for upload; `ranged` also records the rows written (three's vertex-buffer path syncs and clears them). */
-function markRows(attribute: BufferAttribute, start: number, count: number, ranged: boolean): void {
-  if (ranged) {
-    if (attribute.updateRanges.length >= MAX_UPDATE_RANGES) {
+/**
+ * Marks an instance attribute for upload (`mode`: MARK_ALL, MARK_ROWS or MARK_WHOLE). A whole-buffer range stays in the
+ * list until three's frame event consumes it, so a later sync never uploads less than every row written before it.
+ */
+function markRows(attribute: BufferAttribute, start: number, count: number, mode: number): void {
+  if (mode !== MARK_ALL) {
+    const ranges = attribute.updateRanges;
+    const whole = attribute.array.length;
+    const last = ranges.length > 0 ? ranges[ranges.length - 1]! : null;
+    if (ranges.length >= MAX_UPDATE_RANGES) {
       attribute.clearUpdateRanges();
-      attribute.addUpdateRange(0, attribute.array.length);
+      attribute.addUpdateRange(0, whole);
+    } else if (mode === MARK_WHOLE) {
+      if (last === null || last.start !== 0 || last.count !== whole) attribute.addUpdateRange(0, whole);
     } else {
       attribute.addUpdateRange(start, count);
     }
@@ -126,10 +138,15 @@ function markRows(attribute: BufferAttribute, start: number, count: number, rang
  *   six faces of `PointShadowNode`; its filter shadows up to that distance along the dominant axis). The set is
  *   built at the first shadow pass of a frame (rebuilt only when a light, its view or the instances changed: the
  *   nested key) and every shadow pass of the frame appends the same rows, so a point light's faces, which share one
- *   render object and so one frame event, need no second upload. Only the appended range is marked for upload
- *   (`addUpdateRange`) on the vertex-buffer path: a receiver's shadow nodes are analysed in the fragment stage before
- *   the instance event of the vertex stage (`defaultShaderStages`, `nodes/core/constants.js:65`), so the main cull's
- *   ranges and the append's are synced together.
+ *   render object and so one frame event, need no second upload.
+ * - Update ranges. An outermost compaction (with a tracker) marks only the rows it changed (`addUpdateRange`). A write
+ *   in a nested pass marks the whole matrix and colour buffers. A receiver's render object runs the instance
+ *   `OnBeforeFrameUpdate` event before its `ShadowNode`: the event sits in the position stack, which
+ *   `NodeBuilder.build` flows before its fragment/vertex loop (`NodeBuilder.js` ~3193), and `Node.build` registers
+ *   update nodes in its setup branch. So the main pass's ranges are already synced into the shared buffer when the
+ *   shadow render object's event replaces them with its own and uploads (`Instance.js:180-196`); back in the main pass
+ *   the buffer is not checked again in that render call, and rows `[0, count)` would stay stale on the GPU. Colours
+ *   always use a shared attribute synced the same way; matrices on the uniform-buffer path carry no ranges.
  * - Any other nested pass (a reflection) draws the enclosing pass's rows and appends nothing: instances outside the
  *   main camera's frustum are missing from reflections.
  * - `count` and `visibleIds` go back to the enclosing length when the nested render ends (a `PassTracker.atEnd`
@@ -217,8 +234,9 @@ export function createCulledInstancedMesh(
   });
   /** A master matrix changed: every row is rewritten at its next write. */
   let rowsStale = false;
-  /** Whether writes record update ranges: the renderer keeps these matrices in a vertex buffer, not a uniform buffer. */
-  let ranged = false;
+  /** How this call's writes mark the matrices and the colours (see `markRows`), set at the start of every hook call. */
+  let matrixMark = MARK_ALL;
+  let colorMark = MARK_WHOLE;
   /** Per level: the instances of the running cull or append, and how many. */
   const lists = levels.map(() => new Int32Array(n));
   const listLength = new Int32Array(levelCount);
@@ -254,8 +272,8 @@ export function createCulledInstancedMesh(
     }
     mesh.count = at + length;
     if (first < 0) return;
-    markRows(mesh.instanceMatrix, first * 16, (last - first + 1) * 16, ranged);
-    if (mesh.instanceColor) markRows(mesh.instanceColor, first * 3, (last - first + 1) * 3, ranged);
+    markRows(mesh.instanceMatrix, first * 16, (last - first + 1) * 16, matrixMark);
+    if (mesh.instanceColor) markRows(mesh.instanceColor, first * 3, (last - first + 1) * 3, colorMark);
   };
 
   // ---- compaction for a camera ----
@@ -479,13 +497,18 @@ export function createCulledInstancedMesh(
   };
 
   const hook = function (this: CulledInstancedMesh, renderer: unknown, scene: Scene | null, camera: Camera): void {
+    const depth = passes === undefined ? 0 : passes.depth;
+    // Only an outermost render with a tracker marks rows; anywhere else a later sync could replace ranges not yet
+    // uploaded, so writes mark the whole buffers (see the doc comment). Matrices within the uniform-buffer limit are
+    // written whole per render object and carry no ranges.
+    const outermost = passes !== undefined && depth === 1;
     const limit = (renderer as RendererLike)?.backend?.capabilities?.getUniformBufferLimit?.();
-    ranged = typeof limit === 'number' && n * 64 > limit;
+    matrixMark = typeof limit === 'number' && n * 64 > limit ? (outermost ? MARK_ROWS : MARK_WHOLE) : MARK_ALL;
+    colorMark = outermost ? MARK_ROWS : MARK_WHOLE;
     if (rowsStale) {
       for (const rows of rowIds) rows.fill(-1);
       rowsStale = false;
     }
-    const depth = passes === undefined ? 0 : passes.depth;
     layers.popClosed(depth);
     if (depth <= 1) {
       // An outermost render. At depth 1 a remaining layer means it compacted the group already: another level, or a

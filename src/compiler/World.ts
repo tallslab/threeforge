@@ -622,10 +622,14 @@ export class World {
     const mode = options.mode === 'async' && renderer.compileAsync ? 'async' : 'frame';
     let repaired = 0;
     if (mode === 'async') {
-      await renderer.compileAsync!(this.scene, camera);
-      // three r186's compileAsync calls the scene's onBeforeRender but never its onAfterRender (Renderer.js ~967): the
-      // tracker would count the next render as nested. It renders no shadow maps, so only its own render is open.
-      this.passes.reset();
+      try {
+        await renderer.compileAsync!(this.scene, camera);
+      } finally {
+        // three r186's compileAsync calls the scene's onBeforeRender but never its onAfterRender (Renderer.js ~967): the
+        // tracker would count the next render as nested, also after a rejection. It renders no shadow maps, so only its
+        // own render is open.
+        this.passes.reset();
+      }
       for (const material of materials) {
         if (!compiledWrongByCompileAsync(material)) continue;
         material.dispose(); // drops the renderer's cached render objects; the material stays usable

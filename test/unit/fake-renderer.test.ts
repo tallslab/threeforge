@@ -3,6 +3,7 @@ import {
   BackSide,
   BatchedMesh,
   BoxGeometry,
+  Color,
   DirectionalLight,
   DoubleSide,
   FrontSide,
@@ -528,6 +529,48 @@ describe('FakeRenderer instance matrices (nodes/accessors/Instance.js, NodeMater
       // Frame 2. The main render object refreshes (version changed), syncs and uploads the pending range (6); reflection
       // 1 syncs 7; reflection 2 draws 7 again.
       expect(drawn(renderer, mesh), 'frame 2').toEqual([[webgpu ? [0, 7] : [0, 6]], [[0, 7]], [[0, 7]]]);
+    }
+  });
+
+  it("runs an instanced receiver's frame event before the shadow render it triggers: the shadow pass's sync replaces the main pass's synced ranges before their upload, so both draws read the stale main row", () => {
+    const red = (rows: Float32Array | null): number[] | null => (rows === null ? null : Array.from({ length: rows.length / 3 }, (_, k) => Math.round(rows[k * 3]! * 100)));
+    for (const webgpu of [false, true]) {
+      const light = sun();
+      light.position.set(0, 10, 0);
+      // 4 instances x 64 bytes > 64: the matrices use the shared vertex buffer; the colours always use a shared attribute.
+      const renderer = new FakeRenderer({ webgpu, record: true, uniformBufferLimit: 64, shadowLights: [light], shadowTrigger: 'first-receiver' });
+      const { scene, camera } = sceneWithCamera();
+      const mesh = instanced(4);
+      for (let i = 0; i < 4; i++) mesh.setColorAt(i, new Color(i / 100, 0, 0));
+      mesh.count = 2;
+      mesh.castShadow = mesh.receiveShadow = true;
+      let frame = 0;
+      // The main pass rewrites row 0, the shadow pass row 1, each with its own update range.
+      mesh.onBeforeRender = (_r, _s, c) => {
+        const row = c === camera ? 0 : 1;
+        const value = (c === camera ? 10 : 20) + frame;
+        mesh.setMatrixAt(row, at(value));
+        mesh.setColorAt(row, new Color(value / 100, 0, 0));
+        mesh.instanceMatrix.addUpdateRange(row * 16, 16);
+        mesh.instanceColor!.addUpdateRange(row * 3, 3);
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.instanceColor!.needsUpdate = true;
+      };
+      scene.add(light, light.target, mesh);
+      scene.updateMatrixWorld();
+      const drawnColors = () => renderer.passes.map((p) => p.draws.filter((d) => d.object === mesh).map((d) => red(d.instanceColorRows)));
+      frame = 1;
+      renderer.render(scene, camera);
+      expect(passKinds(renderer)).toEqual(['render:0', 'shadow:1']);
+      // Frame 1 creates both buffers with the whole arrays.
+      expect(drawn(renderer, mesh), 'frame 1').toEqual([[[11, 21]], [[11, 21]]]);
+      expect(drawnColors(), 'frame 1 colours').toEqual([[[11, 21]], [[11, 21]]]);
+      frame = 2;
+      renderer.render(scene, camera);
+      // Frame 2. The main render object's event syncs row 0's range; the shadow render's event replaces it with row 1's
+      // and uploads only that; back in the main pass the buffer was already checked in this call count: row 0 stays 11.
+      expect(drawn(renderer, mesh), 'frame 2').toEqual([[[11, 22]], [[11, 22]]]);
+      expect(drawnColors(), 'frame 2 colours').toEqual([[[11, 22]], [[11, 22]]]);
     }
   });
 

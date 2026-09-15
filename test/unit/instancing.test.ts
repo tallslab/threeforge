@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { Box3, BoxGeometry, Color, Frustum, InstancedMesh, Matrix4, MeshStandardMaterial, PerspectiveCamera, Scene, Vector3, WebGLCoordinateSystem } from 'three';
+import { Box3, BoxGeometry, Color, DirectionalLight, Frustum, InstancedMesh, Matrix4, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, Scene, Vector3, WebGLCoordinateSystem, type Camera } from 'three';
 import { createCulledInstancedMesh, FORGE_HOOK } from '../../src/compiler/instancing.js';
+import { PassTracker } from '../../src/compiler/passTracker.js';
 import { mulberry32 } from '../../test/scenes/naive.js';
 
 const box = new BoxGeometry(1, 1, 1);
@@ -95,5 +96,93 @@ describe('createCulledInstancedMesh', () => {
     const m = new Matrix4();
     f.instanced.getMatrixAt(k, m);
     m.elements.forEach((e, i) => expect(e).toBeCloseTo(f.matrices[master]!.elements[i]!, 3));
+  });
+});
+
+describe('createCulledInstancedMesh update ranges on the vertex-buffer path', () => {
+  /** 2,000 instances with colours, a PassTracker, and a renderer as the hook reads it: a uniform-buffer limit the matrices exceed, and a sun. */
+  function rangedField() {
+    const passes = new PassTracker();
+    const rng = mulberry32(5);
+    const matrices: Matrix4[] = [];
+    const colors: Color[] = [];
+    for (let i = 0; i < 2000; i++) {
+      matrices.push(new Matrix4().makeTranslation(rng() * 2000 - 1000, 1, rng() * 2000 - 1000));
+      colors.push(new Color(i % 2 ? 0xff0000 : 0x00ff00));
+    }
+    const mesh = createCulledInstancedMesh(box, new MeshStandardMaterial(), matrices, colors, WebGLCoordinateSystem, { passes });
+    const sun = new DirectionalLight();
+    sun.castShadow = true;
+    sun.position.set(0, 100, 0);
+    Object.assign(sun.shadow.camera, { left: -400, right: 400, top: 400, bottom: -400, near: 1, far: 300 }).updateProjectionMatrix();
+    sun.updateMatrixWorld();
+    sun.target.updateMatrixWorld();
+    sun.shadow.updateMatrices(sun);
+    // 2,000 x 64 bytes of matrices exceed 65,536: three keeps them in the shared vertex buffer.
+    const renderer = { coordinateSystem: WebGLCoordinateSystem, backend: { capabilities: { getUniformBufferLimit: () => 65536 } }, lighting: { getNode: () => ({ getLights: () => [sun] }) } };
+    const camera = new PerspectiveCamera(60, 1.5, 0.1, 300);
+    camera.position.set(0, 2, 0);
+    camera.lookAt(100, 1, 0);
+    camera.updateMatrixWorld();
+    const scene = new Scene();
+    const shadowScene = new Scene();
+    shadowScene.overrideMaterial = Object.assign(new MeshBasicMaterial(), { isShadowPassMaterial: true });
+    const run = (c: Camera, s: Scene): void => mesh.onBeforeRender(renderer as never, s, c, mesh.geometry, mesh.material as never, null as never);
+    return { passes, mesh, sun, camera, scene, shadowScene, run };
+  }
+
+  /** The first and last row whose 16 matrix floats differ between two copies of the buffer. */
+  function changedRows(before: ArrayLike<number>, after: ArrayLike<number>): [number, number] | null {
+    let first = -1;
+    let last = -1;
+    for (let row = 0; row < before.length / 16; row++) {
+      for (let e = 0; e < 16; e++) {
+        if (before[row * 16 + e] === after[row * 16 + e]) continue;
+        if (first < 0) first = row;
+        last = row;
+        break;
+      }
+    }
+    return first < 0 ? null : [first, last];
+  }
+
+  it('marks exactly the rows an outermost compaction changed, and both whole buffers when a nested pass writes rows', () => {
+    const f = rangedField();
+    const before = Float32Array.from(f.mesh.instanceMatrix.array);
+    f.passes.begin(f.camera);
+    f.run(f.camera, f.scene);
+    const span = changedRows(before, f.mesh.instanceMatrix.array);
+    expect(span).not.toBeNull();
+    const [first, last] = span!;
+    expect(f.mesh.instanceMatrix.updateRanges, 'matrix rows of the outermost compaction').toEqual([{ start: first * 16, count: (last - first + 1) * 16 }]);
+    expect(f.mesh.instanceColor!.updateRanges, 'colour rows of the outermost compaction').toEqual([{ start: first * 3, count: (last - first + 1) * 3 }]);
+    const mainCount = f.mesh.count;
+    f.passes.begin(f.sun.shadow.camera);
+    f.run(f.sun.shadow.camera, f.shadowScene);
+    expect(f.mesh.count, 'the shadow pass appended casters').toBeGreaterThan(mainCount);
+    // A sync by the shadow pass's render object replaces the ranges the main render object synced but has not uploaded.
+    expect(f.mesh.instanceMatrix.updateRanges.at(-1), 'a nested write marks the whole matrix buffer').toEqual({ start: 0, count: 2000 * 16 });
+    expect(f.mesh.instanceColor!.updateRanges.at(-1), 'and the whole colour buffer').toEqual({ start: 0, count: 2000 * 3 });
+    f.passes.end();
+    f.passes.end();
+    expect(f.mesh.count).toBe(mainCount);
+  });
+
+  it('replaces more pending ranges than it keeps with one range over the whole buffer', () => {
+    const f = rangedField();
+    const other = f.camera.clone();
+    other.rotateY(Math.PI);
+    other.updateMatrixWorld();
+    // Nothing syncs here, so every outermost compaction that changes rows adds a range.
+    for (let i = 0; i < 40; i++) {
+      const c = i % 2 ? other : f.camera;
+      f.passes.begin(c);
+      f.run(c, f.scene);
+      f.passes.end();
+    }
+    for (const [attribute, itemSize] of [[f.mesh.instanceMatrix, 16], [f.mesh.instanceColor!, 3]] as const) {
+      expect(attribute.updateRanges.length).toBeLessThanOrEqual(32);
+      expect(attribute.updateRanges.some((r) => r.start === 0 && r.count === 2000 * itemSize)).toBe(true);
+    }
   });
 });

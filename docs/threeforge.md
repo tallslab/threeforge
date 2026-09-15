@@ -317,8 +317,12 @@ a threeforge transparent batch shares the main pass with another transparent sub
   what changed since): a nested pass that reaches a mesh before the outermost render did compacts it for the main
   camera first; a shadow pass keeps the enclosing rows and appends, once per frame and in the same rows for every
   shadow pass, the instances any shadow-casting light reaches (directional and spot frusta, a point light's cube of
-  half-size `distance || shadow.camera.far`), marking only that range with `addUpdateRange`; any other nested pass
-  draws the enclosing rows; `count` and `visibleIds` come back when the nested render ends.
+  half-size `distance || shadow.camera.far`); any other nested pass draws the enclosing rows; `count` and
+  `visibleIds` come back when the nested render ends. On that vertex buffer an outermost compaction marks only the
+  rows it changed (`addUpdateRange`), while a nested pass that writes rows marks the whole matrix and colour buffers:
+  a receiver's render object runs the instance `OnBeforeFrameUpdate` event before its `ShadowNode` (the position
+  stack is flowed before the stage loop in `NodeBuilder.build`), so the shadow render object's own sync replaces the
+  main pass's synced ranges before they upload, and the main pass cannot upload again in that render call.
 
   | Nested pass | Batch, `per-pass` | Batch, `reuse-main` | Compacted instanced mesh (either policy) |
   |---|---|---|---|

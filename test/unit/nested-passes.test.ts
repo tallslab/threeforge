@@ -586,6 +586,8 @@ interface InstancedRigOptions {
   lights?: (cs: CoordinateSystem) => ShadowLight[];
   /** The lit (receiving) row first in traversal: the unlit row is then first reached inside the shadow pass. */
   litFirst?: boolean;
+  /** Every lit cube gets its own colour, so the lit mesh carries per-instance colours (`instanceColor`). */
+  colors?: boolean;
 }
 
 /** The two rows of `rig` at the default instanceThreshold (64): one compacted InstancedMesh per row. */
@@ -601,6 +603,7 @@ function instancedRig(options: InstancedRigOptions) {
   const firstRow = litFirst ? row(scene, 'lit', 3, litMaterial, true) : row(scene, 'unlit', -3, unlitMaterial, false);
   const secondRow = litFirst ? row(scene, 'unlit', -3, unlitMaterial, false) : row(scene, 'lit', 3, litMaterial, true);
   const [unlitOriginals, litOriginals] = litFirst ? [secondRow, firstRow] : [firstRow, secondRow];
+  if (options.colors) litOriginals.forEach((mesh, i) => (mesh.material = new MeshStandardMaterial({ roughness: 0.8, color: new Color().setHSL(i / 101, 0.7, 0.5) })));
   scene.updateMatrixWorld(true);
   const world = new World(scene, options.nested === 'auto' ? {} : { nestedPasses: options.nested });
   const report = world.compile({ coordinateSystem: cs });
@@ -614,7 +617,10 @@ function instancedRig(options: InstancedRigOptions) {
   /** Per mesh: a row's translation (x, z) -> the instance id placed there. */
   const idAt = new Map<Instanced, Map<string, number>>();
   for (const [mesh, meshes] of originals) idAt.set(mesh, new Map(meshes.map((m) => [`${Math.round(m.position.x)},${Math.round(m.position.z)}`, world.slotOf(m)!.instanceId])));
-  return { cs, scene, main, lights, world, report, unlit, lit, originals, renderer, idAt };
+  /** Per mesh: instance id -> the colour of its original's material. */
+  const colorOf = new Map<Instanced, Map<number, Color>>();
+  for (const [mesh, meshes] of originals) colorOf.set(mesh, new Map(meshes.map((m) => [world.slotOf(m)!.instanceId, (m.material as MeshStandardMaterial).color])));
+  return { cs, scene, main, lights, world, report, unlit, lit, originals, renderer, idAt, colorOf };
 }
 type InstancedRig = ReturnType<typeof instancedRig>;
 
@@ -631,6 +637,16 @@ function instancedIds(r: InstancedRig, pass: FakePass, mesh: Instanced, label: s
     const id = byPosition.get(`${Math.round(rows![k * 16 + 12]!)},${Math.round(rows![k * 16 + 14]!)}`);
     expect(id, `${label}: row ${k} holds no instance of this mesh`).toBeDefined();
     ids.push(id!);
+  }
+  // With per-instance colours, row k's colour must be the colour of the instance its matrix row holds.
+  const colors = draws[0]!.instanceColorRows;
+  if (colors !== null) {
+    const wrong: number[] = [];
+    ids.forEach((id, k) => {
+      const c = r.colorOf.get(mesh)!.get(id)!;
+      if (Math.abs(colors[k * 3]! - c.r) > 1e-4 || Math.abs(colors[k * 3 + 1]! - c.g) > 1e-4 || Math.abs(colors[k * 3 + 2]! - c.b) > 1e-4) wrong.push(k);
+    });
+    expect(wrong, `${label}: colour rows that do not hold their instance's colour`).toEqual([]);
   }
   return ids;
 }
@@ -702,6 +718,20 @@ describe.each(backends)('compacted InstancedMesh in nested passes (webgpu: $webg
         for (const mesh of [r.unlit, r.lit]) {
           const mainMust = new Set(reference(r, mesh, frustumOf(main, r.cs)).must);
           expect(reference(r, mesh, frustumOf(shadow, r.cs)).must.filter((id) => !mainMust.has(id)).length, 'casters outside the view').toBeGreaterThan(20);
+        }
+      });
+
+      it.each([false, true])('keeps the rows exact while the main camera moves every frame, the lit mesh receiving shadows first (per-instance colours: %s)', (colors) => {
+        const r = instancedRig({ webgpu, nested, buffers, colors });
+        expect(r.lit.instanceColor === null, 'per-instance colours on the lit mesh').toBe(!colors);
+        for (let frame = 1; frame <= 3; frame++) {
+          // Two cubes leave the view and two enter each frame: the main rows and the appended casters both change.
+          r.main.position.set(4 * (frame - 1), 6, 35);
+          r.main.lookAt(4 * (frame - 1), 0, 0);
+          r.main.updateMatrixWorld();
+          r.renderer.render(r.scene, r.main);
+          expect(passLabels(r.renderer)).toEqual(['render:0', 'shadow:1']);
+          expectInstancedPasses(r, `frame ${frame}`);
         }
       });
 
