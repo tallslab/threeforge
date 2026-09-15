@@ -213,26 +213,33 @@ submission grows less than 3× from 2k to 20k submissions (best of 7).
 
 ### Tiers, budgets and hints
 
-`detectTier({ gpu, deviceMemory, cores, touch, dpr })` is GPU-first: a recognised GPU name decides the tier before
-touch is even considered, so a touch-capable desktop (a Windows laptop with a discrete GPU and a touchscreen) is
-not mistaken for a phone. In order:
+`detectTier({ gpu, deviceMemory, cores, touch, mobile, dpr })` is GPU-first: a recognised GPU name decides the
+tier before touch is even considered, so a touch-capable desktop (a Windows laptop with a discrete GPU and a
+touchscreen) is not mistaken for a phone. All six steps of the decision live in `detectTier` itself (so it never
+disagrees with what `tierInputFromNavigator` feeds it), in order:
 
 1. The low-end regex matches (Adreno 1xx–5xx and 60x–63x, Mali-G1x–G5x, Mali-T/4xx, PowerVR SGX, VideoCore)
    → `phone-low`.
-2. A mobile/tablet GPU matches (higher-end Adreno/Mali, PowerVR, VideoCore, Xclipse, Qualcomm, Apple A-series)
-   → `phone-mid`, whatever `touch` says.
+2. A mobile/tablet GPU matches (higher-end Adreno/Mali, PowerVR, Xclipse, Qualcomm, Apple A-series) → `phone-mid`,
+   whatever `touch`/`mobile` say — or `phone-low` when `deviceMemory <= 2`.
 3. A desktop GPU matches (NVIDIA, Radeon, AMD, Intel, Iris, Arc, Apple M-series, SwiftShader) → `desktop`,
-   whatever `touch` says.
-4. A bare `"Apple"` (an iPad on Safari reports only this) with `touch` → `phone-mid`.
-5. Otherwise the GPU string is unrecognised or empty: no touch → `desktop`; touch and `deviceMemory <= 2` →
-   `phone-low`; touch otherwise → `phone-mid`.
+   whatever `touch`/`mobile` say. Every alternative in all three GPU regexes is word-bounded, so an unrelated
+   string ("Intelligent Renderer", "Malibu GPU") cannot false-match a brand substring ("intel", "mali").
+4. A bare `"Apple"` (an iPad on Safari reports only this) with `touch` → `phone-mid`, or `phone-low` when
+   `deviceMemory <= 2`.
+5. Otherwise the GPU string is unrecognised or empty, and `mobile` is defined: `true` → `phone-mid` (or
+   `phone-low` under `deviceMemory <= 2`); `false` → `desktop`.
+6. Otherwise (`mobile` is `undefined`) the old touch-only rule: no `touch` → `desktop`; `touch` and
+   `deviceMemory <= 2` → `phone-low`; `touch` otherwise → `phone-mid`.
 
 `tierInputFromNavigator(gpu, nav)` builds the `TierInput` that feeds `detectTier` from a GPU name and `navigator`
 (passed explicitly so it is unit-testable with fake navigators) — `test/app/main.ts`, `cli-app/main.ts` and
-`bench-app/runner.ts` all call it the same way. It resolves `touch` in priority order: `navigator.userAgentData
-.mobile` (Chromium, most reliable — correctly `false` for a touch-capable desktop), then a `"Mobi"` sniff of
-`navigator.userAgent` (non-Chromium browsers), then `navigator.maxTouchPoints > 0` as a last resort when neither
-is available. Every field it reads (`userAgentData`, `deviceMemory`, `maxTouchPoints`) is optional and guarded.
+`bench-app/runner.ts` all call it the same way. `touch` is the real touch capability
+(`navigator.maxTouchPoints > 0`) and nothing else. `mobile` (step 5) is resolved separately, in priority order:
+`navigator.userAgentData.mobile` (Chromium, most reliable — correctly `false` for a touch-capable desktop even
+though `touch` is `true`), then a `"Mobi"` sniff of `navigator.userAgent` (non-Chromium browsers), else left
+`undefined` when neither is available, so `detectTier` falls back to `touch` alone (step 6). Every field it reads
+(`userAgentData`, `deviceMemory`, `maxTouchPoints`) is optional and guarded.
 
 Budgets per tier (`BUDGETS`, `budgetsFor(tier, overrides)`):
 

@@ -6,13 +6,20 @@
 - `world.warmup()` awaits `renderer.init()` (when present) before it changes any state and renders its frame with `render()` instead of the deprecated `renderAsync()`, so three no longer logs its deprecation warning and nothing yields between the 1×1 scissor and occlusion suspension and the render. `WarmupRenderer` gains `init?` and drops `renderAsync?`.
 - `ledger.attach()` resets the render depth: after a `detach()` from inside a draw, the next render on a re-attached ledger threw a `TypeError`.
 - `detectTier` is GPU-first: a recognised desktop GPU (NVIDIA, Radeon, AMD, Intel, Iris, Arc, Apple M-series,
-  SwiftShader) or mobile GPU (Adreno, Mali, PowerVR, VideoCore, Xclipse, Qualcomm, Apple A-series) now decides the
-  tier before touch is considered, so a touch-capable desktop (a Windows laptop with a discrete GPU and a
-  touchscreen) is no longer given phone budgets and phone hints. The low-end regex also gains `sgx` (PowerVR SGX).
-  New `tierInputFromNavigator(gpu, nav)` builds the shared `TierInput` from `navigator` (preferring
-  `userAgentData.mobile`, then a user agent sniff, then `maxTouchPoints` as before) and is exported from the
-  package; `test/app/main.ts`, `cli-app/main.ts` and `bench-app/runner.ts` all use it now instead of each building
-  the input inline.
+  SwiftShader) or mobile GPU (Adreno, Mali, PowerVR, Xclipse, Qualcomm, Apple A-series) now decides the tier
+  before touch is considered, so **a touch-capable desktop GPU now returns `desktop`** instead of a phone tier.
+  Reclassifications: a touch device with a recognised desktop GPU string moves from a phone tier to `desktop`;
+  non-SGX PowerVR (e.g. `PowerVR Rogue GE8320`) moves from `phone-low` to `phone-mid` (only the old `PowerVR SGX`
+  family stays `phone-low` — the low-end regex gains `sgx`); for a GPU string `detectTier` does not recognise,
+  `navigator.userAgentData.mobile` or a `"Mobi"` user-agent sniff now decides the tier ahead of raw touch-point
+  presence (falling back to the old touch-only rule only when neither signal is available). A recognised mobile
+  GPU, a bare `"Apple"` with touch, and this new UA-based signal each still downgrade to `phone-low` under
+  `deviceMemory <= 2`, matching the old touch-only rule. Every GPU-name regex is now word-bounded, so an
+  unrelated GPU string containing a brand name as a substring (e.g. "Intelligent", "Malibu") cannot false-match.
+  New `tierInputFromNavigator(gpu, nav)` builds the shared `TierInput` from `navigator` (`touch` is the real
+  touch capability; a new `TierInput.mobile` field carries the `userAgentData`/UA-string signal) and is exported
+  from the package; `test/app/main.ts`, `cli-app/main.ts` and `bench-app/runner.ts` all use it now instead of
+  each building the input inline.
 - The ledger's own cost per submission fell from 1.84 to 0.3–0.5 µs, and its allocations from 11.4 to 0.8 MB per frame, at 10k submissions (flat scene, same machine); every snapshot number is unchanged. Records are pooled, material hashes are read once per material per frame, display names are cached without `children.indexOf`, a frame traverses each scene once, and the periodic rescan reads each shared material once. New `scripts/ledger-overhead.mjs` reports µs per submission and bytes per frame at 2k, 10k and 20k submissions (not a gate).
 - New `registry.hashesOf(material)`: the cached `programHash`, `variantHash`, `description` and `unsupported`, without allocating. New `registry.keysRevision` moves whenever `invalidate()` or `forget()` drops cached keys.
 - Material keys include material code by identity, not `toString()`: materials that differ only in an instance `setup*`, `onBeforeCompile` or `customProgramCacheKey` function, or in a class that is not one of three's own (a subclass keeps its base's `type`), no longer merge into one registry canonical or one batch drawn with the first material's code, even when the source text matches; they report as `shader-variant`s. An instance `onBeforeRender` keeps materials apart too, as a `uniform-variant` (same program). `clippingPlanes` key their count in the program and their values in the variant: materials with the same number of different planes merged. A user-added own property keys plain data by value (arrays and BigInts included) and any function, `Texture`, `Object3D` or class instance inside it by identity; a circular or BigInt one no longer throws in `register()` or `compile()`. A material's `dispose` listeners no longer change its key.
