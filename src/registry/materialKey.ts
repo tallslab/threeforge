@@ -1,9 +1,14 @@
-import type { Color, Material, Texture } from 'three';
+import { Material, type Color, type Texture } from 'three';
+import { NodeMaterial } from 'three/webgpu';
 
 /**
  * Three keys describe a material:
  * - programKey: everything that changes the generated shader or pipeline state (mirrors what
- *   three's RenderObject.getMaterialCacheKey() looks at). Same programKey = same GPU program.
+ *   three's RenderObject.getMaterialCacheKey() looks at). Same programKey = same GPU program. Material code joins it
+ *   by identity, never by source text: every own function-valued property (an instance `setup*`, `onBeforeRender`,
+ *   `onBeforeCompile`, `customProgramCacheKey` …) and an `onBeforeCompile` or `customProgramCacheKey` that is not
+ *   three's default (one a subclass declares), so two closures with the same text but different captured state
+ *   never share a key.
  * - variantKey: programKey + uniform values + texture identity/transform/sampler + (`visible=0` when
  *   `material.visible` is false). Same variantKey = drawable in one BatchedMesh (colour excluded, it is
  *   per-instance in BatchedMesh).
@@ -12,6 +17,9 @@ import type { Color, Material, Texture } from 'three';
  *   that would otherwise clamp to the same hex. Used for registry/canonical identity and for grouping (e.g.
  *   sprite batching) — never for display.
  * - colorHex: `color.getHexString()`, the 8-bit sRGB hex. Display only; never used for identity or grouping.
+ *
+ * A user-added own property holding plain data (object literals, arrays, primitives) is keyed by value; a function
+ * or any other object inside it (a Texture, an Object3D, a class instance) is keyed by identity and never walked.
  */
 export interface MaterialKeys {
   programKey: string;
@@ -57,6 +65,28 @@ export function hashKey(key: string): string {
   return fnv1a(key);
 }
 
+/**
+ * One number per function or non-plain object, written `#n` in a key. Held weakly, so keying never keeps a material's
+ * code or data alive, and never reused while the process runs: the same object always gets the same number, a
+ * different object never does. The numbers follow the order objects are first keyed, so a hash that includes one
+ * is stable within a run, not across runs.
+ */
+const identities = new WeakMap<object, number>();
+let nextIdentity = 1;
+
+function identityOf(value: object): number {
+  let id = identities.get(value);
+  if (id === undefined) {
+    id = nextIdentity++;
+    identities.set(value, id);
+  }
+  return id;
+}
+
+function hasOwn(object: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
+
 function textureKind(texture: Texture): string {
   const t = texture as Texture & { isCubeTexture?: boolean; isDataArrayTexture?: boolean; isData3DTexture?: boolean; isVideoTexture?: boolean };
   if (t.isCubeTexture) return 'cube';
@@ -66,11 +96,30 @@ function textureKind(texture: Texture): string {
   return '2d';
 }
 
-function stableJson(value: unknown): string {
+/**
+ * Plain data by value: primitives as JSON, arrays in order, object literals (and `Object.create(null)` objects) with
+ * sorted keys. Everything else by identity, `#n`, without walking it: a function, or an object whose prototype is not
+ * `Object.prototype`, `Array.prototype` or null (a Texture, an Object3D and its scene graph, a class instance, a typed
+ * array). Cycle-safe: an object or array already on the path from the root is written `^d`, a reference to its
+ * ancestor at depth d, so a value that contains itself keys by its shape. A shared (non-cyclic) reference is walked
+ * each time it is reached, so two values with the same data match however they share it. `#` and `^` cannot start a
+ * JSON value, so neither marker collides with plain data.
+ */
+function stableJson(value: unknown, path: object[] = []): string {
+  if (typeof value === 'function') return `#${identityOf(value)}`;
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record).sort().map((k) => `${JSON.stringify(k)}:${stableJson(record[k])}`).join(',')}}`;
+  const prototype = Object.getPrototypeOf(value) as unknown;
+  if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return `#${identityOf(value)}`;
+  const depth = path.indexOf(value);
+  if (depth !== -1) return `^${depth}`;
+  path.push(value);
+  try {
+    if (Array.isArray(value)) return `[${value.map((v) => stableJson(v, path)).join(',')}]`;
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((k) => `${JSON.stringify(k)}:${stableJson(record[k], path)}`).join(',')}}`;
+  } finally {
+    path.pop();
+  }
 }
 
 function num(v: number): string {
@@ -99,6 +148,31 @@ export function computeMaterialKeys(material: Material): MaterialKeys {
   const custom = typeof material.customProgramCacheKey === 'function' ? material.customProgramCacheKey() : '';
   if (custom) program.push(`custom=${fnv1a(String(custom))}`);
 
+  // Material code, by identity (`identityOf`), never by `toString()`: closures with the same source text can capture
+  // different state, and three's classic default `customProgramCacheKey()` above is `onBeforeCompile.toString()`.
+  // Code joins the program key because three builds the program from it: WebGLPrograms keys `customProgramCacheKey()`
+  // and WebGLRenderer runs `onBeforeCompile` on the shader source, NodeMaterial.setup calls the `setup*` functions to
+  // build the node graph, and RenderObject.getMaterialCacheKey reads every own property, functions included (as
+  // `String(value)`).
+  // So every own function-valued property counts (an instance `setup*`, `onBeforeRender`, `onBeforeCompile`,
+  // `customProgramCacheKey` …), and so does an `onBeforeCompile` or `customProgramCacheKey` that is not three's default
+  // (`Material`'s, or `NodeMaterial`'s cache key): one a subclass declares. Other prototype functions, the class code
+  // (`setup*` on a node material class), add nothing; the `type` above already names the class.
+  for (const name of Object.getOwnPropertyNames(m).sort()) {
+    const value = m[name];
+    if (typeof value === 'function') program.push(`${name}=#${identityOf(value)}`);
+  }
+  if (!hasOwn(m, 'onBeforeCompile') && typeof material.onBeforeCompile === 'function' && material.onBeforeCompile !== Material.prototype.onBeforeCompile) {
+    program.push(`onBeforeCompile=#${identityOf(material.onBeforeCompile)}`);
+  }
+  const cacheKeyFunction = material.customProgramCacheKey;
+  if (
+    !hasOwn(m, 'customProgramCacheKey') && typeof cacheKeyFunction === 'function'
+    && cacheKeyFunction !== Material.prototype.customProgramCacheKey && cacheKeyFunction !== NodeMaterial.prototype.customProgramCacheKey
+  ) {
+    program.push(`customProgramCacheKey=#${identityOf(cacheKeyFunction)}`);
+  }
+
   const alphaTest = typeof m.alphaTest === 'number' ? (m.alphaTest as number) : 0;
   program.push(`alphaTest=${alphaTest > 0 ? 1 : 0}`);
   variant.push(`alphaTest=${num(alphaTest)}`);
@@ -109,10 +183,16 @@ export function computeMaterialKeys(material: Material): MaterialKeys {
   if (material.visible === false) variant.push('visible=0');
 
   for (const rawKey of Object.keys(m).sort()) {
+    // EventDispatcher's listener map, created by the first `addEventListener`. Renderers add a `dispose` listener to
+    // every material they draw (WebGLRenderer.js:2216; a closure per render object, RenderObject.js:359), so it
+    // records whether and where a material was drawn, not how it draws. three's getMaterialCacheKey skips every `_`
+    // property.
+    if (rawKey === '_listeners') continue;
     // Feature gates such as transmission/clearcoat/sheen are accessors backed by `_name` fields; read the accessor.
     const key = rawKey.startsWith('_') ? rawKey.slice(1) : rawKey;
     if (SKIP.has(key) || key === 'alphaTest' || key.startsWith('is')) continue;
     const value = key in m ? m[key] : m[rawKey];
+    // Functions were keyed by identity above.
     if (value === null || value === undefined || typeof value === 'function') continue;
 
     if (typeof value === 'boolean') {
@@ -180,7 +260,8 @@ export function computeMaterialKeys(material: Material): MaterialKeys {
       else program.push(`${key}=len${value.length}`);
       continue;
     }
-    // Plain objects such as `defines`.
+    // Plain objects such as `defines` by value; a user-added property holding a class instance (an Object3D, a Map)
+    // by identity (`stableJson`).
     program.push(`${key}=${stableJson(value)}`);
   }
 

@@ -217,6 +217,23 @@ colour), `uniform-variant`, `shader-variant`, `unsupported` (`ShaderMaterial` / 
 `programs` is checked against `renderer.info.memory.programs` in the tests: shader variants counted by the registry
 are real programs.
 
+**Materials with different code never merge, even when the source text matches.** Every own function-valued property
+(an instance `setup*`, `onBeforeRender`, `onBeforeCompile`, `customProgramCacheKey` …) and an `onBeforeCompile` or
+`customProgramCacheKey` that is not three's default (one a subclass declares) joins programKey **by identity**: a
+number per function object from a `WeakMap`, never `toString()`. Two closures from one factory, with the same text but
+different captured values, get different keys; materials sharing the same function object still merge. Other
+prototype functions (a node material class's own `setup*`) add nothing. Code joins programKey rather than only
+variantKey because three builds the program from it (WebGL keys `customProgramCacheKey()` and runs `onBeforeCompile`
+on the shader source, `NodeMaterial` calls `setup*` to build the node graph), so such materials report as
+`shader-variant`s; the compiler groups statics by variantKey, which contains programKey, and `register()` merges by
+variantKey plus colour, so a batch or a canonical never draws one material's code for another. A user-added own
+property (`material.extra = {…}`, data a hook reads through `this`) is keyed by value when it holds plain data (object
+literals, arrays, primitives; a value that contains itself is keyed by its shape, never overflowing the stack), and by
+identity for anything else inside it — a function, a `Texture`, an `Object3D`, any class instance — which is never
+walked. `userData` stays out of the key except `forgeKey` (which still overrides everything, code included), and so
+does EventDispatcher's `_listeners` (the `dispose` listener a renderer adds to every material it draws). Identity numbers
+follow the order objects are first keyed, so a hash that includes code is stable within a run, not across runs.
+
 **A material is immutable once registered.** `register()` and `describe()` compute a material's keys once and cache
 them (together with their `programHash`/`variantHash`, so `describe()` never re-hashes on repeated calls); nothing
 in `MaterialRegistry` re-reads a material's properties after that first pass. Mutating a registered material's

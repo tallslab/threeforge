@@ -1,20 +1,28 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  BoxGeometry,
   Color,
   DataTexture,
   DoubleSide,
+  Mesh,
   MeshBasicMaterial,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
+  Object3D,
   RGBAFormat,
+  Scene,
   ShaderMaterial,
   Sprite,
   SpriteMaterial,
   SRGBColorSpace,
+  type Material,
 } from 'three';
+import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 import * as materialKeyModule from '../../src/registry/materialKey.js';
 import { groupSprites } from '../../src/compiler/sprites.js';
+import { World } from '../../src/compiler/World.js';
+import { tag } from '../../src/tags.js';
 
 function texture(): DataTexture {
   const t = new DataTexture(new Uint8Array(4 * 4), 2, 2, RGBAFormat);
@@ -402,5 +410,183 @@ describe('sprite grouping uses the exact colorKey', () => {
     const { groups } = groupSprites([a, b], 1, (m) => registry.describe(m));
     expect(groups).toHaveLength(1);
     expect(groups[0]!.sprites).toHaveLength(2);
+  });
+});
+
+/*
+ * Material code and user-added own properties (Task 23b). Every factory below returns a new function (or class) with
+ * the same source text on every call: only the captured `tint` differs, which `toString()` cannot see.
+ */
+function makeSetupOutput(tint: number) {
+  return function (this: MeshStandardNodeMaterial, ...args: Parameters<MeshStandardNodeMaterial['setupOutput']>) {
+    void tint;
+    return MeshStandardNodeMaterial.prototype.setupOutput.apply(this, args);
+  };
+}
+function makeOnBeforeCompile(tint: number) {
+  return function (shader: { fragmentShader: string }): void {
+    shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>\ngl_FragColor.rgb *= ${tint.toFixed(3)};`);
+  };
+}
+function makeCustomProgramCacheKey(tint: number) {
+  return function (): string {
+    void tint;
+    return 'tinted';
+  };
+}
+function makeOnBeforeRender(tint: number) {
+  return function (): void {
+    void tint;
+  };
+}
+function makeHookedClass(tint: number) {
+  return class HookedMaterial extends MeshStandardMaterial {
+    override onBeforeCompile(shader: { fragmentShader: string }): void {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>\ngl_FragColor.rgb *= ${tint.toFixed(3)};`);
+    }
+  };
+}
+
+interface CodeCase {
+  /** A new function or class per call, same source text, different captured value. */
+  code: (tint: number) => unknown;
+  /** A material running `code`, otherwise a fresh default material. */
+  make: (code: unknown) => Material;
+}
+const CODE_CASES: Array<[string, CodeCase]> = [
+  ['an instance setupOutput on a MeshStandardNodeMaterial', { code: makeSetupOutput, make: (code) => Object.assign(new MeshStandardNodeMaterial(), { setupOutput: code as ReturnType<typeof makeSetupOutput> }) }],
+  ['an instance onBeforeCompile closure on a MeshStandardMaterial', { code: makeOnBeforeCompile, make: (code) => Object.assign(new MeshStandardMaterial(), { onBeforeCompile: code as ReturnType<typeof makeOnBeforeCompile> }) }],
+  ['an instance customProgramCacheKey on a MeshStandardMaterial', { code: makeCustomProgramCacheKey, make: (code) => Object.assign(new MeshStandardMaterial(), { customProgramCacheKey: code as ReturnType<typeof makeCustomProgramCacheKey> }) }],
+  ['an instance onBeforeRender on a MeshStandardMaterial', { code: makeOnBeforeRender, make: (code) => Object.assign(new MeshStandardMaterial(), { onBeforeRender: code as ReturnType<typeof makeOnBeforeRender> }) }],
+  ['an onBeforeCompile declared on a subclass prototype (a class factory)', { code: makeHookedClass, make: (code) => new (code as ReturnType<typeof makeHookedClass>)() }],
+];
+
+describe('material keys include material code by identity, not by source text', () => {
+  it.each(CODE_CASES)('%s: different function objects with identical source text do not merge', (_name, { code, make }) => {
+    const first = code(1);
+    const second = code(2);
+    expect(String(second)).toBe(String(first)); // toString() cannot tell them apart
+    const registry = new MaterialRegistry();
+    const a = make(first);
+    const b = make(second);
+    expect(registry.register(a)).toBe(a);
+    expect(registry.register(b)).not.toBe(a);
+    // Material code changes the generated program: it joins the program key, so the variant key differs too.
+    expect(registry.describe(b).programHash).not.toBe(registry.describe(a).programHash);
+    expect(registry.describe(b).outcome).toBe('shader-variant');
+  });
+
+  it.each(CODE_CASES)('%s: materials sharing the same function object still merge', (_name, { code, make }) => {
+    const shared = code(1);
+    const registry = new MaterialRegistry();
+    const a = make(shared);
+    const b = make(shared);
+    expect(registry.register(a)).toBe(a);
+    expect(registry.register(b)).toBe(a);
+    expect(registry.describe(b).variantHash).toBe(registry.describe(a).variantHash);
+  });
+
+  it('keys a function held inside a user-added own property by identity', () => {
+    const registry = new MaterialRegistry();
+    const a = Object.assign(new MeshStandardMaterial(), { extra: { tint: makeOnBeforeRender(1) } });
+    const b = Object.assign(new MeshStandardMaterial(), { extra: { tint: makeOnBeforeRender(2) } });
+    expect(registry.register(a)).toBe(a);
+    expect(registry.register(b)).not.toBe(a);
+  });
+
+  it('three tinted node materials, one with a different setupOutput, compile to separate groups', () => {
+    const shared = makeSetupOutput(1);
+    const other = makeSetupOutput(2);
+    const scene = new Scene();
+    const geometry = new BoxGeometry(1, 1, 1);
+    const tints = [0xff0000, 0x00ff00, 0x0000ff];
+    tints.forEach((color, i) => {
+      const mesh = tag.static(new Mesh(geometry, Object.assign(new MeshStandardNodeMaterial({ color }), { setupOutput: i === 2 ? other : shared })));
+      mesh.position.x = i * 2;
+      scene.add(mesh);
+    });
+    scene.updateMatrixWorld(true);
+    const world = new World(scene);
+    const report = world.compile();
+    // The two sharing `shared` batch together; the third is a group of its own (one mesh, left drawing itself).
+    expect(report.groups.map((g) => g.instances)).toEqual([2]);
+    expect((world.batchedMeshes[0]!.material as MeshStandardNodeMaterial).setupOutput).toBe(shared);
+    expect(report.registry.programs).toBe(2);
+  });
+});
+
+describe('material keys for user-added own properties', () => {
+  it.each([
+    ['a plain object that references itself', () => {
+      const extra: Record<string, unknown> = { tint: 1 };
+      extra.self = extra;
+      return extra;
+    }],
+    ['an array that contains itself', () => {
+      const list: unknown[] = [1];
+      list.push(list);
+      return { list };
+    }],
+    ['an Object3D in a scene graph (parent and children reference each other)', () => {
+      const scene = new Scene();
+      const target = new Object3D();
+      scene.add(target);
+      return { target };
+    }],
+  ])('a material whose own property holds %s registers without throwing', (_name, extra) => {
+    const value = extra();
+    const registry = new MaterialRegistry();
+    const a = Object.assign(new MeshStandardMaterial(), { extra: value });
+    const b = Object.assign(new MeshStandardMaterial(), { extra: value });
+    expect(() => registry.register(a)).not.toThrow();
+    expect(registry.register(b)).toBe(a);
+  });
+
+  it('merges materials whose own `extra` objects are different identities holding deep-equal plain data', () => {
+    const registry = new MaterialRegistry();
+    const a = Object.assign(new MeshStandardMaterial(), { extra: { uTint: [1, 0.5, 0], mode: 'warm', nested: { on: true } } });
+    const b = Object.assign(new MeshStandardMaterial(), { extra: { nested: { on: true }, mode: 'warm', uTint: [1, 0.5, 0] } });
+    const c = Object.assign(new MeshStandardMaterial(), { extra: { nested: { on: false }, mode: 'warm', uTint: [1, 0.5, 0] } });
+    expect(registry.register(a)).toBe(a);
+    expect(registry.register(b)).toBe(a);
+    expect(registry.register(c)).not.toBe(a);
+  });
+
+  it('keys a Texture inside an own property by identity: a distinct texture with the same uuid and content does not merge', () => {
+    const map = texture();
+    const twin = map.clone();
+    twin.uuid = map.uuid; // what ObjectLoader does when it parses the same JSON twice
+    const registry = new MaterialRegistry();
+    const a = Object.assign(new MeshStandardMaterial(), { extra: { map } });
+    const b = Object.assign(new MeshStandardMaterial(), { extra: { map: twin } });
+    expect(registry.register(a)).toBe(a);
+    expect(registry.register(b)).not.toBe(a);
+  });
+
+  it('keys a Texture inside an own property by identity: the same texture object in different `extra` objects merges', () => {
+    const map = texture();
+    const registry = new MaterialRegistry();
+    const a = Object.assign(new MeshStandardMaterial(), { extra: { map } });
+    const b = Object.assign(new MeshStandardMaterial(), { extra: { map } });
+    expect(registry.register(a)).toBe(a);
+    expect(registry.register(b)).toBe(a);
+  });
+
+  it('ignores EventDispatcher listeners: materials with different dispose listeners merge', () => {
+    const registry = new MaterialRegistry();
+    const a = new MeshStandardMaterial();
+    const b = new MeshStandardMaterial();
+    a.addEventListener('dispose', () => {});
+    b.addEventListener('dispose', () => {});
+    expect(registry.register(a)).toBe(a);
+    expect(registry.register(b)).toBe(a);
+  });
+
+  it('ignores EventDispatcher listeners: a material a renderer has drawn (a dispose listener) merges with an undrawn twin', () => {
+    const registry = new MaterialRegistry();
+    const drawn = new MeshStandardMaterial();
+    drawn.addEventListener('dispose', () => {});
+    expect(registry.register(drawn)).toBe(drawn);
+    expect(registry.register(new MeshStandardMaterial())).toBe(drawn);
   });
 });
