@@ -221,14 +221,28 @@ are real programs.
 them (together with their `programHash`/`variantHash`, so `describe()` never re-hashes on repeated calls); nothing
 in `MaterialRegistry` re-reads a material's properties after that first pass. Mutating a registered material's
 properties afterwards is outside the contract: anything already built from its old keys (a `BatchedMesh`, a sprite
-batch) stays built from them. Two escape hatches: `invalidate(material)` drops the cached keys so the next
-`keys()`/`describe()` call recomputes them — it does not touch what `register()` already decided, only keeps
-`describe()`'s reporting accurate after such a mutation (a live material editor, say). `forget(material)` removes a
-material from the registry entirely, as if it had never been registered, unwinding `stats()` and its program's
-bookkeeping; forgetting a canonical that other materials were merged into leaves those materials working (they keep
-their direct reference) but no longer findable by key, so a later identical material registers as a new canonical.
-Neither is wired into disposal yet — `World.decompile()` and `ResourceTracker` start calling `forget()` in a later
-phase.
+batch) stays built from them. Three ways to react to it:
+
+- `invalidate(material)` re-keys it: it removes `material` from every index it was filed under by its *old* keys
+  (`canonicalByFullKey`, its program's `canonicals`/`variants` — nothing to remove if it was a merged duplicate
+  rather than a canonical), recomputes its keys from its current properties, and re-files it under the *new* ones —
+  it stays/becomes the canonical for the new key if no other canonical already holds it, or its record is demoted
+  to `{ outcome: 'merged', canonical: <that other material> }` if one does. This closes a real defect: without the
+  removal step, a *different*, later material built with `material`'s old property values would still find the
+  stale index entry and merge into `material`, silently rendering with its new, mutated state. A material already
+  merged into `material` before the call is untouched and keeps resolving to it (a live object) regardless — that
+  is the app's choice once it mutates a shared canonical; `invalidate` does not chase down and re-key dependents.
+- `forget(material)` removes a material from the registry entirely, as if it had never been registered, unwinding
+  `stats()` and its program's bookkeeping (shares its index-removal step with `invalidate`). Forgetting a canonical
+  that other materials were merged into leaves those materials' bookkeeping correct — they keep resolving to that
+  exact `Material` object — but this is **not** a signal that the object's GPU resources are safe to dispose: every
+  one of those dependents is still relying on it rendering correctly, and `forget()` does not track or release
+  them. Check `dependentsOf(material) === 0` first, or `forget()` every dependent too before disposing.
+- `dependentsOf(material)` counts how many other registered materials currently resolve to `material` as their
+  canonical (a live scan of `records`, never cached) — the check `forget()`'s doc comment above calls for.
+
+Neither `invalidate` nor `forget` is wired into disposal yet — `World.decompile()` and `ResourceTracker` start
+calling `forget()` (checking `dependentsOf()` first) in a later phase.
 
 ## 6. Tags and classification
 

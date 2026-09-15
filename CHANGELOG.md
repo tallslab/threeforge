@@ -14,12 +14,18 @@
   as a result of this encoding change (every material carries `blendColor`, inherited from the base `Material`
   class); no `programHash` changes.
 - `MaterialRegistry` caches a material's `programHash`/`variantHash` alongside its keys, so `describe()` no longer
-  re-hashes on every call. `registry.invalidate(material)` drops the cached keys for a material so the next
-  `keys()`/`describe()` call recomputes them from its current property values, without touching what `register()`
-  already decided. `registry.forget(material)` removes a material from the registry entirely, as if it had never
-  been registered. A material is documented as immutable once registered: `docs/threeforge.md` section 5 and the
-  `MaterialRegistry`/`materialKey.ts` doc comments spell out the contract and these two escape hatches. Neither is
-  wired into disposal yet (`World.decompile()` / `ResourceTracker` start calling `forget()` in a later phase).
+  re-hashes on every call. `registry.invalidate(material)` re-keys a mutated material: it removes every index
+  entry `register()` filed under its *old* keys (`canonicalByFullKey`, its program's `canonicals`/`variants`) before
+  recomputing and re-filing it under its current properties' keys — without this removal step, a later, unrelated
+  material matching the mutated material's old state would still merge into it and silently render with its new,
+  mutated properties. `registry.forget(material)` removes a material from the registry entirely, as if it had never
+  been registered; its doc comment now says plainly that this is not a signal it is safe to dispose the material's
+  GPU resources, since materials merged into it as a canonical still resolve to that exact (now-forgotten) object.
+  New `registry.dependentsOf(material)` counts how many other registered materials currently resolve to `material`
+  as their canonical, so a caller can check it is `0` before disposing. A material is documented as immutable once
+  registered: `docs/threeforge.md` section 5 and the `MaterialRegistry`/`materialKey.ts` doc comments spell out the
+  contract and these three methods. None is wired into disposal yet (`World.decompile()` / `ResourceTracker` start
+  calling `forget()`, checking `dependentsOf()` first, in a later phase).
 
 - Compiled instance data is written in the scene's space (new `SceneSpace`, `src/compiler/space.ts`). Batch matrices, instanced masters, baked vertices, batch-sync matrices, `markDirty` writes and sprite centres and scales were world-space although every compiled object is a child of the scene, so a translated, rotated or scaled `Scene` applied its transform twice. The inverse of `scene.matrixWorld` is cached and derived again whenever the scene's world matrix changes, so a scene moved after compile is honoured; an untransformed scene copies world matrices unchanged. `BatchOptions`, `SpriteBatchOptions` and `SpriteFillOptions` gain an optional `space`, `bakeEntriesOf` an optional fourth `space` argument and `BakedGroup` a `space` field; `fillSpriteInstances` without `space` still writes world positions and scales, and `buildSpriteBatch` defaults to the space of `root`.
 - `world.markDirty()` recomputes the bounds of each touched batch and instanced group once (every LOD level) and fits their occlusion proxies to them: an instance moved outside its old bounds was culled by three's whole-object frustum test while on screen, and its proxy kept the old size. `InstanceCullingHandle` gains `refreshBounds()`, which reads the master matrices rather than the compacted rows.

@@ -264,6 +264,125 @@ describe('MaterialRegistry caching', () => {
   });
 });
 
+describe('MaterialRegistry.invalidate: re-files under the new keys, not just the describe() cache', () => {
+  it('removes the stale canonicalByFullKey entry: a fresh material matching the OLD state no longer merges into the mutated canonical', () => {
+    const registry = new MaterialRegistry();
+    const a = new MeshStandardMaterial({ roughness: 0.2 });
+    expect(registry.register(a)).toBe(a);
+    const originalHashes = registry.describe(a);
+
+    a.roughness = 0.9; // mutation outside the immutable-once-registered contract
+    registry.invalidate(a);
+    const rekeyedHashes = registry.describe(a);
+    expect(rekeyedHashes.variantHash).not.toBe(originalHashes.variantHash);
+    expect(rekeyedHashes.programHash).toBe(originalHashes.programHash); // roughness is a uniform, not a program key
+
+    // A fresh material matching A's ORIGINAL (pre-mutation) state must NOT merge into the re-keyed A: if the old
+    // canonicalByFullKey entry were still there, B would render with A's mutated roughness.
+    const b = registry.register(new MeshStandardMaterial({ roughness: 0.2 }));
+    expect(b).not.toBe(a);
+    expect(registry.describe(b).variantHash).toBe(originalHashes.variantHash);
+    expect(registry.describe(b).outcome).not.toBe('merged');
+
+    // A fresh material matching A's NEW state merges into the re-filed canonical.
+    const c = registry.register(new MeshStandardMaterial({ roughness: 0.9 }));
+    expect(c).toBe(a);
+    expect(registry.describe(c).variantHash).toBe(rekeyedHashes.variantHash);
+  });
+
+  it('demotes to a merged record when another canonical already holds the new key', () => {
+    const registry = new MaterialRegistry();
+    const target = registry.register(new MeshStandardMaterial({ roughness: 0.9 })); // the key A mutates into
+    const a = new MeshStandardMaterial({ roughness: 0.2 });
+    expect(registry.register(a)).toBe(a);
+    expect(a).not.toBe(target);
+
+    a.roughness = 0.9; // now matches `target`'s key exactly
+    registry.invalidate(a);
+
+    expect(registry.canonicalOf(a)).toBe(target);
+    expect(registry.describe(a).outcome).toBe('merged');
+    expect(registry.stats().merged).toBe(1); // stats().merged is a live count, shrunk by forget() too: it moves here
+    // `target` stays the canonical everyone else resolves to.
+    const d = registry.register(new MeshStandardMaterial({ roughness: 0.9 }));
+    expect(d).toBe(target);
+    expect(registry.stats().merged).toBe(2);
+  });
+
+  it('promotes a merged duplicate back to its own canonical once its mutation no longer matches', () => {
+    const registry = new MaterialRegistry();
+    const canonical = registry.register(new MeshStandardMaterial({ roughness: 0.2 }));
+    const duplicate = new MeshStandardMaterial({ roughness: 0.2 });
+    registry.register(duplicate);
+    expect(registry.canonicalOf(duplicate)).toBe(canonical);
+    expect(registry.stats().merged).toBe(1);
+
+    duplicate.roughness = 0.7; // no longer matches `canonical`'s key
+    registry.invalidate(duplicate);
+
+    expect(registry.canonicalOf(duplicate)).toBe(duplicate); // its own canonical again
+    expect(registry.describe(duplicate).outcome).not.toBe('merged');
+    expect(registry.stats().merged).toBe(0);
+    const another = registry.register(new MeshStandardMaterial({ roughness: 0.7 }));
+    expect(another).toBe(duplicate); // findable at its new key
+  });
+
+  it('leaves a material already merged into the old canonical resolving to it, even after the canonical mutates', () => {
+    const registry = new MaterialRegistry();
+    const a = new MeshStandardMaterial({ roughness: 0.2 });
+    expect(registry.register(a)).toBe(a);
+    const dependent = new MeshStandardMaterial({ roughness: 0.2 });
+    registry.register(dependent);
+    expect(registry.canonicalOf(dependent)).toBe(a);
+
+    a.roughness = 0.9;
+    registry.invalidate(a);
+
+    // `dependent` is not re-keyed by invalidating `a`: it still resolves to the same (now mutated) Material
+    // object, per invalidate()'s documented caveat — the app's choice once it mutates a shared canonical.
+    expect(registry.canonicalOf(dependent)).toBe(a);
+    expect(registry.stats().merged).toBe(1); // `a` stayed canonical throughout; `dependent`'s merge is untouched
+  });
+});
+
+describe('MaterialRegistry.forget: disposal hazard and re-registration', () => {
+  it('forgetting a canonical does not clear its dependents: they keep resolving to the (still live) forgotten object', () => {
+    const registry = new MaterialRegistry();
+    const a = registry.register(new MeshStandardMaterial({ color: 0xff0000, roughness: 0.5 }));
+    const duplicate = new MeshStandardMaterial({ color: 0xff0000, roughness: 0.5 });
+    registry.register(duplicate);
+    expect(registry.canonicalOf(duplicate)).toBe(a);
+    registry.forget(a);
+    expect(registry.canonicalOf(duplicate)).toBe(a); // untouched bookkeeping; disposing `a` now would break `duplicate`
+  });
+
+  it('forgetting a canonical, then registering an identical new material, creates a fresh distinct canonical', () => {
+    const registry = new MaterialRegistry();
+    const a = registry.register(new MeshStandardMaterial({ color: 0xff0000 }));
+    registry.forget(a);
+    const b = registry.register(new MeshStandardMaterial({ color: 0xff0000 }));
+    expect(b).not.toBe(a);
+    expect(registry.describe(b).outcome).toBe('new');
+    expect(registry.canonicalOf(b)).toBe(b);
+  });
+});
+
+describe('MaterialRegistry.dependentsOf', () => {
+  it('counts materials merged into a canonical, so a caller can check before disposing it', () => {
+    const registry = new MaterialRegistry();
+    const a = registry.register(new MeshStandardMaterial({ color: 0xff0000, roughness: 0.5 }));
+    expect(registry.dependentsOf(a)).toBe(0);
+    const dup1 = new MeshStandardMaterial({ color: 0xff0000, roughness: 0.5 });
+    const dup2 = new MeshStandardMaterial({ color: 0xff0000, roughness: 0.5 });
+    registry.register(dup1);
+    registry.register(dup2);
+    expect(registry.dependentsOf(a)).toBe(2);
+    registry.forget(dup1);
+    expect(registry.dependentsOf(a)).toBe(1);
+    expect(registry.dependentsOf(dup2)).toBe(0); // dup2 is not itself a canonical anyone merged into
+  });
+});
+
 describe('sprite grouping uses the exact colorKey', () => {
   it('does not merge sprites whose colours are 0.3/255 apart, even though they share an 8-bit display hex', () => {
     const registry = new MaterialRegistry();
