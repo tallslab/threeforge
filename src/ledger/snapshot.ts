@@ -1,5 +1,6 @@
 import type { Flag, Reason, SubmissionKind } from './reasons.js';
 import { lightingOf, skinningOf, type LightInfo } from './sections.js';
+import { capName } from './text.js';
 
 export interface SubmissionRecord {
   name: string;
@@ -250,7 +251,7 @@ export function buildFrame({ env, items, reportedDrawCalls, triangles, programs,
     if (!reason) byReason.set(item.reason, (reason = { submissions: 0, gpuDraws: 0, top: [] }));
     reason.submissions++;
     reason.gpuDraws += item.expectedGpuDraws;
-    if (reason.top.length < TOP_NAMES) reason.top.push(item.name);
+    if (reason.top.length < TOP_NAMES) reason.top.push(capName(item.name));
 
     if (item.reason === 'renderer-internal') continue;
     sceneSubmissions++;

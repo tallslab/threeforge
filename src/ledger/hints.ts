@@ -1,5 +1,6 @@
 import type { Budgets } from './budgets.js';
 import type { FrameSnapshot, Hint } from './snapshot.js';
+import { capMessage, capName } from './text.js';
 
 /** Facts the hint rules need that are not in the snapshot itself (gathered by the ledger's periodic rescan). */
 export interface HintContext {
@@ -16,8 +17,11 @@ const mb = (n: number): string => `${(n / (1024 * 1024)).toFixed(0)} MB`;
 /** SP1 rules: what the six sections already know how to say. Later modules add their own. */
 export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): Hint[] {
   const hints: Hint[] = [];
+  // `message` may already embed an untrusted name (e.g. a point light's), and `objects` may carry one directly
+  // (ctx.pointShadowLights/transmissive/staticAutoUpdated do not pass through snapshot.ts's own capping), so
+  // both are capped here, once, for every hint this function can push.
   const push = (category: Hint['category'], severity: Hint['severity'], code: string, message: string, objects: string[] = []): void => {
-    hints.push({ category, severity, code, message, objects });
+    hints.push({ category, severity, code, message: capMessage(message), objects: objects.map(capName) });
   };
   const t = f.totals;
   if (t.sceneSubmissions > b.sceneSubmissions) push('drawCalls', 'error', 'over-budget-submissions', `${t.sceneSubmissions} scene submissions, budget ${b.sceneSubmissions} for this tier`);
