@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compact, issueBody, issueTitle, issueUrl, resultId, toWire, URL_LIMIT } from '../../bench-app/submit.js';
+import { compact, issueBody, issueTitle, issueUrl, normalizeEnvString, resultId, toWire, URL_LIMIT } from '../../bench-app/submit.js';
 import { deviceRows, liveRows } from '../../bench-app/table.js';
 import { extractJson } from '../../scripts/bench-ingest.mjs';
 import { validateDeviceResult } from '../../scripts/bench-schema.mjs';
@@ -61,5 +61,32 @@ describe('table', () => {
     expect(deviceRows([evilDate])).not.toContain('<img');
     const evilGpu = { ...result, env: { ...env, gpu: "O'Brien GPU" } };
     expect(deviceRows([evilGpu])).toContain('&#39;');
+  });
+});
+
+describe('normalizeEnvString', () => {
+  it('maps ®/™/©, strips accents to their ASCII base, and replaces anything still outside the schema charset', () => {
+    expect(normalizeEnvString('NVIDIA®')).toBe('NVIDIA(R)');
+    expect(normalizeEnvString('RTX™')).toBe('RTX(TM)');
+    expect(normalizeEnvString('© 2026')).toBe('(C) 2026');
+    expect(normalizeEnvString('café')).toBe('cafe');
+    expect(normalizeEnvString('a|b')).toBe('a?b');
+    expect(normalizeEnvString('a`b')).toBe('a?b');
+    expect(normalizeEnvString('a\nb')).toBe('a b');
+  });
+
+  it('normalizes env before hashing the id and validating: a real ®/™-bearing GPU string and a non-ASCII UA still validate, and the id matches', () => {
+    const rawGpu = 'NVIDIA® GeForce RTX™ 4080';
+    const rawUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) CaféBrowser/1.0';
+    const normalizedEnv = { ...env, gpu: normalizeEnvString(rawGpu), ua: normalizeEnvString(rawUa), three: normalizeEnvString(env.three), platform: normalizeEnvString(env.platform) };
+    expect(normalizedEnv.gpu).toBe('NVIDIA(R) GeForce RTX(TM) 4080');
+    expect(normalizedEnv.ua).not.toMatch(/[^\x00-\x7f]/);
+    const now = new Date('2026-09-14T10:00:00Z');
+    const id = resultId(normalizedEnv, now);
+    const built = { schemaVersion: 1 as const, kind: 'device' as const, id, createdAt: now.toISOString(), env: normalizedEnv, scenes };
+    const v = validateDeviceResult(built);
+    expect(v.ok).toBe(true);
+    if (!v.ok) throw new Error('unreachable');
+    expect(v.result.id).toBe(id);
   });
 });

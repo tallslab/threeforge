@@ -43,6 +43,37 @@ export function resultId(env: DeviceEnv, now: Date): string {
 const round = (n: number, digits: number): number => Number(n.toFixed(digits));
 const cap = (s: string): string => (s.length > 200 ? s.slice(0, 200) : s);
 
+/** Maps one character outside `scripts/bench-schema.mjs`'s printable-ASCII-minus-`|`-and-backtick charset to
+ * something that survives: a control character (including newline) becomes a space, anything else becomes `?`. */
+function sanitizeChar(ch: string): string {
+  const code = ch.codePointAt(0) ?? 0;
+  if (code < 0x20 || code === 0x7f) return ' ';
+  if (code === 0x60 || code === 0x7c || code > 0x7e) return '?';
+  return ch;
+}
+
+// The Unicode "Combining Diacritical Marks" block (U+0300-U+036F): what NFKD decomposes an accented Latin letter
+// into (base letter + combining mark), e.g. 'é' -> 'e' + U+0301. Written as \u escapes, never as literal combining
+// characters, so the range is legible in source instead of rendering as an invisible accent on the char before it.
+const COMBINING_MARKS = /[\u0300-\u036f]/g;
+
+/**
+ * Normalizes a raw driver/browser string (`env.gpu`/`platform`/`ua`/`three`) to what
+ * `scripts/bench-schema.mjs`'s charset accepts, so a real device is never rejected at ingest for a string it had
+ * no part in choosing: `NVIDIA® GeForce RTX™ 4080` (WebGPU `adapter.info`/`UNMASKED_RENDERER_WEBGL` routinely
+ * carry `®`/`™`) becomes `NVIDIA(R) GeForce RTX(TM) 4080` and validates. `®`/`™`/`©` become their ASCII spellings
+ * first (NFKD alone only decomposes `™`, and not to the parenthesised form), then NFKD normalization plus
+ * stripping combining marks turns an accented Latin letter into its unaccented base (`é` → `e`) where one exists,
+ * then anything still outside the allowed set is replaced (see `sanitizeChar`), and the 200-character cap applies
+ * last. Called wherever `env` is built (`bench-app/runner.ts`), before the id is hashed (`resultId`) and before
+ * the issue body is built, so the id, the validated result and the displayed string always agree.
+ */
+export function normalizeEnvString(raw: string): string {
+  const symbols = raw.replace(/®/g, '(R)').replace(/™/g, '(TM)').replace(/©/g, '(C)');
+  const unaccented = symbols.normalize('NFKD').replace(COMBINING_MARKS, '');
+  return cap(Array.from(unaccented, sanitizeChar).join(''));
+}
+
 /** Rounded numbers and capped strings: smaller issue bodies, same information. */
 export function compact(r: DeviceResult): DeviceResult {
   const scenes = {} as DeviceResult['scenes'];

@@ -23,9 +23,10 @@ export function deviceRows(results: DeviceResult[]): string {
     .map((r) => {
       const cells = SCENE_IDS.map((id) => {
         const s = r.scenes[id];
-        return `<td>${s.naive.sceneSubmissions} → ${s.optimized.sceneSubmissions}<br><small>${s.naive.frameMs.toFixed(1)} → ${s.optimized.frameMs.toFixed(1)} ms</small></td>`;
+        return `<td>${esc(String(s.naive.sceneSubmissions))} → ${esc(String(s.optimized.sceneSubmissions))}<br><small>${esc(s.naive.frameMs.toFixed(1))} → ${esc(s.optimized.frameMs.toFixed(1))} ms</small></td>`;
       }).join('');
-      return `<tr><td>${esc(r.env.gpu)}<br><small>${esc(r.env.platform)}</small></td><td>${esc(r.env.backend)}</td><td>${esc(r.env.tier)}</td><td>${r.env.fillRateGPix === null ? '–' : r.env.fillRateGPix.toFixed(1)}</td>${cells}<td>${esc(r.createdAt.slice(0, 10))}</td></tr>`;
+      const fillRate = r.env.fillRateGPix === null ? '–' : esc(r.env.fillRateGPix.toFixed(1));
+      return `<tr><td>${esc(r.env.gpu)}<br><small>${esc(r.env.platform)}</small></td><td>${esc(r.env.backend)}</td><td>${esc(r.env.tier)}</td><td>${fillRate}</td>${cells}<td>${esc(r.createdAt.slice(0, 10))}</td></tr>`;
     })
     .join('');
 }

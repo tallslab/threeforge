@@ -4,7 +4,7 @@ import { DrawCallLedger, MaterialRegistry, World, detectTier, type Tier } from '
 import { BENCH_SCENES } from '../test/app/scenes/index.js';
 import { MEASURED, metricsOf, WARM, type BenchMetrics, type SceneId } from '../test/app/benchMetrics.js';
 import { probeFillRate } from './probe.js';
-import { resultId, type Backend, type DeviceEnv, type DeviceResult } from './submit.js';
+import { normalizeEnvString, resultId, type Backend, type DeviceEnv, type DeviceResult } from './submit.js';
 
 export interface RunOptions {
   sceneIds: SceneId[];
@@ -179,16 +179,19 @@ export async function runBench(host: Host, options: RunOptions): Promise<DeviceR
       options.onScene(id, variant, metrics);
     }
   }
+  // Normalized before anything reads it: the id (below) is hashed from these same fields, and the schema's
+  // printable-ASCII charset would otherwise reject a real driver string outright (e.g. `NVIDIA® GeForce RTX™
+  // 4080`, which WebGPU adapter info and UNMASKED_RENDERER_WEBGL both report with `®`/`™`).
   const env: DeviceEnv = {
-    three: REVISION,
+    three: normalizeEnvString(REVISION),
     backend: host.backend,
     multiDraw: host.multiDraw,
     tier: host.tier,
-    gpu: host.gpu,
+    gpu: normalizeEnvString(host.gpu),
     dpr: devicePixelRatio,
     viewport: [innerWidth, innerHeight],
-    ua: navigator.userAgent,
-    platform: (navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform || navigator.platform || 'unknown',
+    ua: normalizeEnvString(navigator.userAgent),
+    platform: normalizeEnvString((navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform || navigator.platform || 'unknown'),
     cores: navigator.hardwareConcurrency ?? null,
     deviceMemory: (navigator as { deviceMemory?: number }).deviceMemory ?? null,
     fillRateGPix,
