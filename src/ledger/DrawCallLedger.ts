@@ -507,6 +507,9 @@ export class DrawCallLedger {
    */
   private walkLights(state: FrameState, scene: Object3D): void {
     const main = state.mainScene === null;
+    // Scenes walked before the frame has a main scene (an outermost override render) are candidates in turn: the last one
+    // walked is the one the main pass draws, so its lights replace theirs instead of adding to them.
+    if (main) state.visibleLights.length = 0;
     let casting: WalkedLight[] | null = null;
     scene.traverseVisible((o) => {
       const light = o as WalkedLight;

@@ -131,6 +131,27 @@ describe('lighting section: lights', () => {
     expect(ledger.frame().lighting.lights).toEqual({ directional: 1, point: 0, spot: 1, hemisphere: 0, ambient: 0, other: 0 });
   });
 
+  it('without a lights node, a frame whose outermost render is an override scene reports only the main scene’s lights, not both scenes’', () => {
+    const { renderer, ledger, scene, camera } = attached();
+    const withLights = renderer.renderObject as (...args: unknown[]) => void;
+    renderer.renderObject = function (this: FakeRenderer, ...args: unknown[]) {
+      args[6] = null;
+      withLights.apply(this, args);
+    } as FakeRenderer['renderObject'];
+    // The outermost render draws `scene` under an override material (pass `override`): no main scene yet.
+    scene.overrideMaterial = new MeshBasicMaterial();
+    const trigger = tag.static(new Mesh(box, new MeshBasicMaterial()));
+    scene.add(new DirectionalLight(), new AmbientLight(), trigger);
+    // Its draw renders a second, plain scene: the frame's first scene render without an override, so its main pass.
+    const room = new Scene();
+    room.add(new PointLight(), tag.static(new Mesh(box, new MeshBasicMaterial())));
+    renderFromHook(trigger, (r) => r.render(room, camera));
+    renderer.render(scene, camera);
+    const frame = ledger.frame();
+    expect(frame.passes.map((p) => p.id)).toEqual(['main', 'override']);
+    expect(frame.lighting.lights).toEqual({ directional: 0, point: 1, spot: 0, hemisphere: 0, ambient: 0, other: 0 });
+  });
+
   it("does not read the output quad's lights node: a main pass that draws only the quad reports the scene's lights", () => {
     const { renderer, ledger, scene, camera } = attached();
     scene.add(new DirectionalLight(), new AmbientLight());
