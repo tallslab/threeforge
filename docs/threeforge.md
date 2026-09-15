@@ -193,10 +193,14 @@ items?:    per-submission records with ledger.frame({ items: true })
   `alphaTestNode`, `maskNode`, `positionNode`) is counted with whichever group's program three built first: three keys
   the render object by object, override material, context and lights, and assigning a slot bumps no version. A sprite
   batch mirrors its side in `onBeforeRender`, after the count has copied `side`, so a measurement taken right after a
-  mirroring flip, with no app frame between, counts the previous side. A scene rendered inside a count render (a
-  render-to-texture hook) keeps its own override material. A `measureOverdraw()` called while that renderer's count
-  renders run (a hook the count render calls again, as a measuring hook is) returns the measurement in progress and renders
-  nothing; one called once the counts have rendered, while the read-backs are pending, is a measurement of its own. Every scene and renderer setting it changes is restored before the read-backs are awaited, so frames
+  mirroring flip, with no app frame between, counts the previous side. A scene rendered inside a count draw with its
+  own override material, or none (a render-to-texture hook), passes straight through: its draws keep their materials and
+  change nothing on the count material, and a same-scene render inside a count draw (a reflector's `updateBefore`) puts
+  back every slot it changed. A `measureOverdraw()` called while that renderer's count renders run (a hook the count
+  render calls again, as a measuring hook is) returns the measurement in progress and renders nothing: it ignores its own
+  `scene`, `camera` and `options.scale`, and resolves with the outer measurement's result even for another scene. One
+  called once the counts have rendered, while the read-backs are pending, is a measurement of its own. A
+  `disposeOverdraw(renderer)` called while the count renders run releases once they end. Every scene and renderer setting it changes is restored before the read-backs are awaited, so frames
   rendered meanwhile are unaffected; attribution pauses for the two count renders only, which never become part of a
   frame (not even when measured from a render hook). The target and count materials are kept per renderer until
   `ledger.detach()` or `disposeOverdraw(renderer)`; `overdrawTargetOf(renderer)` returns the target, which the

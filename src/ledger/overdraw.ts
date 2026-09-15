@@ -1,4 +1,4 @@
-import { AddEquation, Color, CustomBlending, DataUtils, HalfFloatType, OneFactor, RenderTarget, Vector2, type Camera, type Material, type Object3D, type Scene, type Texture } from 'three';
+import { AddEquation, Color, CustomBlending, DataUtils, HalfFloatType, OneFactor, RenderTarget, Vector2, type Camera, type Material, type Object3D, type Scene, type Side, type Texture } from 'three';
 import { vec4 } from 'three/tsl';
 import { MeshBasicNodeMaterial, SpriteNodeMaterial, type Node } from 'three/webgpu';
 
@@ -62,6 +62,23 @@ interface CountState {
   renderObject: RenderObjectFunction;
   /** The measurement whose count renders are running on this renderer right now, else null: a nested call returns it. */
   measuring: Promise<OverdrawResult> | null;
+  /** disposeOverdraw() was called while the count renders ran: release as they end. */
+  disposeRequested: boolean;
+}
+
+/** The count material slots a count draw writes, or three's override copy writes, and puts back. */
+interface CountMaterialSlots {
+  map: Texture | null;
+  opacity: number;
+  alphaHash: boolean;
+  side: Side;
+  opacityNode: Node | null;
+  alphaTestNode: Node | null;
+  maskNode: Node | null;
+  positionNode: Node | null;
+  displacementMap?: Texture | null;
+  alphaMap: Texture | null;
+  alphaTest: number;
 }
 
 /** The fields of a drawn material the count reads; a field a material does not have counts as unset. */
@@ -105,8 +122,13 @@ const _black = new Color(0, 0, 0);
  * - **State:** both counts render and every scene and renderer setting is restored synchronously, before the returned
  *   promise first awaits (the read-backs). An app render during the wait sees the app's own state.
  * - **Re-entrancy:** a call made while this renderer's count renders are running (an `onBeforeRender` or another hook
- *   the count render calls again, as a measuring hook is) returns the measurement in progress and renders nothing. A call
- *   made once the counts have rendered, while the read-backs are pending, is a measurement of its own.
+ *   the count render calls again, as a measuring hook is) returns the measurement in progress and renders nothing: it
+ *   ignores its own `scene`, `camera` and `options.scale`, and resolves with the outer measurement's result even for
+ *   another scene. A call made once the counts have rendered, while the read-backs are pending, is a measurement of its
+ *   own. `disposeOverdraw(renderer)` called while the count renders run releases once they end.
+ * - **Nested renders:** a scene rendered inside a count draw with its own override material, or none (a render-to-texture
+ *   hook), passes straight through. A same-scene render inside a count draw (a reflector's `updateBefore`) is counted,
+ *   and every slot its draws change on the count material is put back for the draw around it.
  * - **Lifetime:** the target and the count materials are kept per renderer; `disposeOverdraw(renderer)` releases them.
  *
  * Costs two low-resolution renders: call it on demand, not every frame.
@@ -134,6 +156,7 @@ export function measureOverdraw(renderer: OverdrawRenderer, scene: Scene, camera
     reject(error);
   } finally {
     state.measuring = null;
+    if (state.disposeRequested) release(renderer, state);
   }
   return measurement;
 }
@@ -216,7 +239,17 @@ function countOverdraw(renderer: OverdrawRenderer, scene: Scene, camera: Camera,
 export function disposeOverdraw(renderer: object): void {
   const state = states.get(renderer);
   if (!state) return;
-  states.delete(renderer);
+  // From a hook the count renders run: releasing now would drop the guard a nested measureOverdraw joins through, and
+  // that call would render the counts inside the counts again. measureOverdraw releases as the renders end.
+  if (state.measuring !== null) {
+    state.disposeRequested = true;
+    return;
+  }
+  release(renderer, state);
+}
+
+function release(renderer: object, state: CountState): void {
+  if (states.get(renderer) === state) states.delete(renderer);
   state.target?.dispose();
   state.material.dispose();
   state.sprite.dispose();
@@ -236,7 +269,7 @@ function stateOf(renderer: OverdrawRenderer): CountState {
   if (!state) {
     const material = countMaterial(new MeshBasicNodeMaterial(), 'forge:overdraw-count');
     const sprite = countMaterial(new SpriteNodeMaterial(), 'forge:overdraw-count-sprite');
-    state = { target: null, material, sprite, renderObject: countObject(renderer, material, sprite), measuring: null };
+    state = { target: null, material, sprite, renderObject: countObject(renderer, material, sprite), measuring: null, disposeRequested: false };
     states.set(renderer, state);
   }
   return state;
@@ -260,9 +293,19 @@ function countMaterial<T extends MeshBasicNodeMaterial | SpriteNodeMaterial>(mat
   return material;
 }
 
-/** The render-object function of the count renders: skip what adds no colour to a real frame, then draw with a count material. */
+/**
+ * The render-object function of the count renders: skip what adds no colour to a real frame, then draw with a count
+ * material. Draws of a scene rendered inside a count draw with another override, or none, pass straight through.
+ */
 function countObject(renderer: OverdrawRenderer, meshCount: MeshBasicNodeMaterial, spriteCount: SpriteNodeMaterial): RenderObjectFunction {
   return (object, scene, camera, geometry, material, group, lightsNode, clippingContext = null, passId = null) => {
+    const override = scene.overrideMaterial;
+    // Renderer._renderScene installs this function for nested renders too (Renderer.js ~1736). A scene a hook renders
+    // during a count draw (a render-to-texture onBeforeRender, which three runs before its override copies, ~3721) keeps
+    // its own override, or none: its draws are the app's, and must not touch the count material under the draw around them.
+    if (override !== meshCount && override !== spriteCount) {
+      return renderer.renderObject(object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId);
+    }
     if (material.allowOverride !== true || material.colorWrite === false) return;
     if ((object.userData.forge as { kind?: string } | undefined)?.kind === 'occlusion-proxy') return;
     const source = material as SourceMaterial;
@@ -274,12 +317,25 @@ function countObject(renderer: OverdrawRenderer, meshCount: MeshBasicNodeMateria
     // SpriteNodeMaterial, a PointsNodeMaterial included, also carries `isSpriteMaterial`.
     const points = source.isPointsNodeMaterial === true || source.isPointsMaterial === true;
     const sprite = !points && (source.isSpriteMaterial === true || source.isSpriteNodeMaterial === true);
-    const override = scene.overrideMaterial;
-    // Only in the count renders themselves: Renderer._renderScene installs this function for nested renders too
-    // (Renderer.js ~1736), and a scene rendered inside a count render (a render-to-texture hook) keeps its own override,
-    // or none, so its sprites draw with their own materials.
-    const swap = sprite && override === meshCount;
-    const count = swap ? spriteCount : meshCount;
+    const count = sprite ? spriteCount : meshCount;
+    // Everything this draw and three's override copy change on the count material is put back in the finally: a
+    // same-scene render inside the draw (a reflector's updateBefore, Renderer.js ~3875, after three's copies at
+    // ~3744-3752) draws with the count too and must leave the draw around it as it was, and three's own restore
+    // (~3805-3809) sits outside a finally, so a throwing draw would leave its copies behind.
+    const saved: CountMaterialSlots = {
+      map: count.map,
+      opacity: count.opacity,
+      alphaHash: count.alphaHash,
+      side: count.side,
+      opacityNode: count.opacityNode,
+      alphaTestNode: count.alphaTestNode,
+      maskNode: count.maskNode,
+      positionNode: count.positionNode,
+      displacementMap: (count as { displacementMap?: Texture | null }).displacementMap,
+      alphaMap: count.alphaMap,
+      alphaTest: count.alphaTest,
+    };
+    const savedSprite = sprite ? { rotation: spriteCount.rotation, sizeAttenuation: spriteCount.sizeAttenuation, scaleNode: spriteCount.scaleNode, rotationNode: spriteCount.rotationNode } : null;
     // Read off the material three hands over, which may differ from a canonical one (a sprite batch's swapped side).
     count.map = source.map ?? null;
     count.opacity = source.opacity;
@@ -289,29 +345,21 @@ function countObject(renderer: OverdrawRenderer, meshCount: MeshBasicNodeMateria
     count.opacityNode = source.opacityNode ?? null;
     count.alphaTestNode = source.alphaTestNode ?? null;
     count.maskNode = source.maskNode ?? null;
-    if (swap) {
+    if (sprite) {
       spriteCount.rotation = source.rotation ?? 0;
       spriteCount.sizeAttenuation = source.sizeAttenuation ?? true;
       spriteCount.scaleNode = source.scaleNode ?? null;
       spriteCount.rotationNode = source.rotationNode ?? null;
-      // Renderer.renderObject reads scene.overrideMaterial on each call, and writes its restores back to it.
-      scene.overrideMaterial = spriteCount;
     }
+    // Renderer.renderObject reads scene.overrideMaterial on each call, and writes its restores back to it.
+    const swap = override !== count;
+    if (swap) scene.overrideMaterial = count;
     try {
       return renderer.renderObject(object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId);
     } finally {
       if (swap) scene.overrideMaterial = override;
-      count.opacityNode = null;
-      count.alphaTestNode = null;
-      count.maskNode = null;
-      if (swap || override === meshCount) {
-        // Renderer.renderObject copies these onto the override (~3744-3752) and puts them back after the draw (~3805-3809),
-        // outside a finally: a draw that throws in between would leave them on the count material until disposeOverdraw.
-        count.positionNode = null;
-        (count as { displacementMap?: Texture | null }).displacementMap = null;
-      }
-      spriteCount.scaleNode = null;
-      spriteCount.rotationNode = null;
+      Object.assign(count, saved);
+      if (savedSprite) Object.assign(spriteCount, savedSprite);
     }
   };
 }
