@@ -67,7 +67,8 @@ such dependency. \`optimize\` works out of the box (glTF-Transform is a dependen
 |---|---|
 ${commandRows}
 
-Exit codes: \`0\` pass · \`1\` verdict failed (over budget, an error-severity hint, or pixel parity lost) · \`2\` usage or
+Exit codes: \`0\` pass · \`1\` verdict failed (over budget, an error-severity hint, pixel parity lost, or a page error during
+\`analyze\`/\`optimize\`) · \`2\` usage or
 input error · \`3\` environment (Playwright or Chromium missing; the message has the install command) · \`4\` the page
 threw or timed out. In \`--json\` mode stdout is only the JSON document; the human summary goes to stderr.
 
@@ -158,9 +159,12 @@ welded counts). If a view changed, retry without \`--bake-buried\`, or exclude m
 Steps in order: dedup, instance, palette, flatten, join, weld, simplify, resample, prune, textures, quantize, meshopt;
 \`--no-<step>\` removes one, \`--<step>\` adds one. \`--instance\`, \`--join\` and \`--compress meshopt\` are never defaults: the
 first two change the node graph your code may address by name, the third needs a decoder. The verdict fails when the
-pixels moved past \`--parity\`, when a clip, skin or morph target was lost, or when the optimized file fails \`--budget\`;
-size and count deltas are reported, not judged. If parity fails, go back to \`--preset safe\` or raise \`--parity\` only
-after looking at the views. The output never uses Draco. Not covered: atlasing textured materials, KTX2 encoding.
+pixels moved past \`--parity\`, when a clip, skin or morph target was lost, when the optimized file fails \`--budget\`, or
+when either render raised a page error; size and count deltas are reported, not judged. If parity fails, go back to
+\`--preset safe\` or raise \`--parity\` only after looking at the views. The output never uses Draco. An image or buffer
+URI that is absolute, has a scheme other than \`data:\`, or leads outside the input's directory (symlinks included)
+exits \`2\` before anything is read, as does an \`--out\` that is the input file or does not end in \`.glb\`/\`.gltf\`.
+Not covered: atlasing textured materials, KTX2 encoding.
 
 ## Budgets per device tier
 

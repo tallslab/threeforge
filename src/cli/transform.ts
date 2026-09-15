@@ -88,7 +88,7 @@ export function statsOf(doc: Document, bytes: number): AssetStats {
 const LOADER_NEEDS: Record<string, Omit<Requirement, 'extension'>> = {
   EXT_meshopt_compression: { needs: 'MeshoptDecoder', code: "import { MeshoptDecoder } from 'meshoptimizer/decoder'; loader.setMeshoptDecoder(MeshoptDecoder);" },
   KHR_draco_mesh_compression: { needs: 'DRACOLoader', code: "const draco = new DRACOLoader().setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/'); loader.setDRACOLoader(draco);" },
-  KHR_texture_basisu: { needs: 'KTX2Loader', code: "const ktx2 = new KTX2Loader().setTranscoderPath('/basis/'); await ktx2.detectSupportAsync(renderer); loader.setKTX2Loader(ktx2);" },
+  KHR_texture_basisu: { needs: 'KTX2Loader', code: "const ktx2 = new KTX2Loader().setTranscoderPath('/basis/'); await renderer.init(); ktx2.detectSupport(renderer); loader.setKTX2Loader(ktx2);" },
   KHR_mesh_quantization: { needs: 'nothing: GLTFLoader reads quantized attributes', code: null },
   EXT_texture_webp: { needs: 'nothing: browsers decode WebP', code: null },
   EXT_texture_avif: { needs: 'nothing: browsers decode AVIF', code: null },

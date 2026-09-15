@@ -160,7 +160,7 @@ export const COMMAND_SPECS: Readonly<Record<CommandName, CommandSpec>> = {
     name: 'optimize',
     positionals: [{ name: 'file', usage: '<file.glb|.gltf>', required: true }],
     flags: [
-      { name: 'out', kind: 'value', value: 'out.glb', description: 'Output path (default `<name>.forge.glb` next to the input; never the input itself).' },
+      { name: 'out', kind: 'value', value: 'out.glb', description: 'Output path ending in `.glb` or `.gltf` (default `<name>.forge.glb` next to the input; never the input file, not even through a link).' },
       { name: 'preset', kind: 'value', value: 'safe|balanced|aggressive', choices: PRESETS, description: 'Step preset (default `safe`: dedup, palette, weld, resample, prune; never changes a pixel).' },
       ...STEP_FLAGS,
       { name: 'simplify', kind: 'optional-value', negatable: true, numeric: true, value: 'ratio', description: 'Add the simplify step with this ratio of vertices to keep, in (0, 1] (bare: 0.5); `--no-simplify` removes it from a preset.' },

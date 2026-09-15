@@ -36,8 +36,8 @@ describe('mcp result shaping', () => {
     expect(parsed.code).toBe(4);
   });
 
-  it('DATA_NOTE does not claim the JSON carries page errors: AgentDocument has no such field (only verdict reasons, which Task 10 may derive from them)', () => {
-    expect(DATA_NOTE).not.toMatch(/page error/i);
-    expect(DATA_NOTE).toMatch(/verdict reason/i);
+  it('DATA_NOTE says verdict reasons can quote page errors (analyze and optimize put cleaned page errors in verdict.reasons)', () => {
+    expect(DATA_NOTE).toMatch(/verdict reasons/i);
+    expect(DATA_NOTE).toMatch(/page errors/i);
   });
 });

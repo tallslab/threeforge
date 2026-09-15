@@ -93,7 +93,11 @@ describe('requirementsOf', () => {
   it('names the loader piece each extension needs and marks built-in ones with null code', () => {
     const reqs = requirementsOf(['EXT_meshopt_compression', 'KHR_mesh_quantization', 'EXT_texture_webp', 'KHR_texture_basisu', 'KHR_draco_mesh_compression', 'KHR_materials_transmission', 'VENDOR_unknown']);
     expect(reqs.find((r) => r.extension === 'EXT_meshopt_compression')!.code).toContain('setMeshoptDecoder');
-    expect(reqs.find((r) => r.extension === 'KHR_texture_basisu')!.code).toContain('KTX2Loader');
+    const basisu = reqs.find((r) => r.extension === 'KHR_texture_basisu')!.code!;
+    expect(basisu).toContain('KTX2Loader');
+    // detectSupportAsync is deprecated since r181 (node_modules/three/examples/jsm/loaders/KTX2Loader.js): init the renderer, then detectSupport.
+    expect(basisu).not.toContain('detectSupportAsync');
+    expect(basisu).toMatch(/await renderer\.init\(\); ktx2\.detectSupport\(renderer\);/);
     expect(reqs.find((r) => r.extension === 'KHR_draco_mesh_compression')!.code).toContain('DRACOLoader');
     expect(reqs.find((r) => r.extension === 'KHR_mesh_quantization')!.code).toBeNull();
     expect(reqs.find((r) => r.extension === 'EXT_texture_webp')!.code).toBeNull();

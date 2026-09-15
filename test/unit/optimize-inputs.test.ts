@@ -1,0 +1,191 @@
+import { Document, NodeIO } from '@gltf-transform/core';
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import pngjs from 'pngjs';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { parseArgs } from '../../src/cli/args.js';
+import { UsageError } from '../../src/cli/errors.js';
+import { optimizeAsset } from '../../src/cli/optimize.js';
+import type { OptimizeInput } from '../../src/cli/types.js';
+import { GLB_MAGIC, glbBytes } from './helpers/gltf-files.js';
+
+/**
+ * What `optimize` accepts as input resources and as `--out`. All of it runs with `--no-verify` (no browser). `root/a/b`
+ * is the input directory; `root/secret.png` is what a hostile URI reaches for.
+ */
+function inputFor(file: string, ...extra: string[]): OptimizeInput {
+  const command = parseArgs(['optimize', file, '--no-verify', ...extra]);
+  if (command.name !== 'optimize') throw new Error(`parsed as ${command.name}`);
+  return command.input;
+}
+
+async function rejection(promise: Promise<unknown>): Promise<Error> {
+  try {
+    await promise;
+  } catch (error) {
+    return error as Error;
+  }
+  throw new Error('expected a rejection, but the call resolved');
+}
+
+/** One textured triangle; the texture and the buffer keep the given URIs when written as .gltf. */
+function texturedTriangle({ imageUri, bufferUri }: { imageUri?: string; bufferUri?: string } = {}): Document {
+  const doc = new Document();
+  const buffer = doc.createBuffer();
+  if (bufferUri) buffer.setURI(bufferUri);
+  const png = new pngjs.PNG({ width: 4, height: 4 });
+  png.data.fill(180);
+  const texture = doc.createTexture('t').setImage(new Uint8Array(pngjs.PNG.sync.write(png))).setMimeType('image/png');
+  if (imageUri) texture.setURI(imageUri);
+  const position = doc.createAccessor().setType('VEC3').setArray(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0])).setBuffer(buffer);
+  const uv = doc.createAccessor().setType('VEC2').setArray(new Float32Array([0, 0, 1, 0, 0, 1])).setBuffer(buffer);
+  const prim = doc.createPrimitive().setAttribute('POSITION', position).setAttribute('TEXCOORD_0', uv).setMaterial(doc.createMaterial('m').setBaseColorTexture(texture));
+  doc.createScene().addChild(doc.createNode('n').setMesh(doc.createMesh('triangle').addPrimitive(prim)));
+  return doc;
+}
+
+let root: string;
+let dir: string;
+
+beforeEach(() => {
+  root = mkdtempSync(join(tmpdir(), 'forge-optimize-inputs-'));
+  dir = join(root, 'a', 'b');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(root, 'secret.png'), 'TOP SECRET');
+});
+
+afterEach(() => {
+  rmSync(root, { recursive: true, force: true });
+});
+
+const writeGltf = (name: string, json: Record<string, unknown>): string => {
+  const file = join(dir, name);
+  writeFileSync(file, JSON.stringify({ asset: { version: '2.0' }, ...json }));
+  return file;
+};
+
+describe('optimize reads resources only from inside the input directory', () => {
+  it('refuses a .gltf whose image URI climbs out (../../secret.png) before writing anything', async () => {
+    const file = writeGltf('scene.gltf', { images: [{ uri: '../../secret.png' }] });
+    const error = await rejection(optimizeAsset(inputFor(file)));
+    expect(error).toBeInstanceOf(UsageError);
+    expect(error.message).toMatch(/outside/);
+    expect(existsSync(join(dir, 'scene.forge.glb'))).toBe(false);
+  });
+
+  it.each([
+    ['%2e%2e/%2e%2e/secret.png', /outside/],
+    ['/etc/passwd', /absolute/],
+    ['file:///etc/passwd', /scheme/],
+    ['100%.png', /percent-encoding/],
+  ])('refuses the image URI %j', async (uri, reason) => {
+    const file = writeGltf('scene.gltf', { images: [{ uri }] });
+    const error = await rejection(optimizeAsset(inputFor(file)));
+    expect(error).toBeInstanceOf(UsageError);
+    expect(error.message).toMatch(reason);
+  });
+
+  it('refuses a .glb whose JSON chunk points a buffer outside (../x.bin)', async () => {
+    writeFileSync(join(root, 'a', 'x.bin'), new Uint8Array([1, 2, 3, 4]));
+    const file = join(dir, 'scene.glb');
+    writeFileSync(file, glbBytes({ asset: { version: '2.0' }, buffers: [{ uri: '../x.bin', byteLength: 4 }] }));
+    const error = await rejection(optimizeAsset(inputFor(file)));
+    expect(error).toBeInstanceOf(UsageError);
+    expect(error.message).toMatch(/buffers\[0\]\.uri .*outside/);
+  });
+
+  it('refuses a symlink inside the input directory that leads outside it', async () => {
+    symlinkSync(join(root, 'secret.png'), join(dir, 'innocent.png'));
+    const file = writeGltf('scene.gltf', { images: [{ uri: 'innocent.png' }] });
+    const error = await rejection(optimizeAsset(inputFor(file)));
+    expect(error).toBeInstanceOf(UsageError);
+    expect(error.message).toMatch(/outside/);
+  });
+
+  it('still optimizes a .gltf whose texture and buffer sit in subfolders with an escaped space', async () => {
+    const file = join(dir, 'scene.gltf');
+    await new NodeIO().write(file, texturedTriangle({ imageUri: 'tex/a%20b.png', bufferUri: 'bin/scene%20data.bin' }));
+    expect(existsSync(join(dir, 'tex', 'a b.png'))).toBe(true);
+    expect(existsSync(join(dir, 'bin', 'scene data.bin'))).toBe(true);
+    const doc = await optimizeAsset(inputFor(file));
+    expect(doc.stats.before.textures).toBe(1);
+    expect(doc.output.file).toBe(join(dir, 'scene.forge.glb'));
+    expect(readFileSync(doc.output.file).readUInt32LE(0)).toBe(GLB_MAGIC);
+  });
+});
+
+describe('optimize --out', () => {
+  async function inputGlb(name = 'fox.glb'): Promise<string> {
+    const file = join(dir, name);
+    writeFileSync(file, await new NodeIO().writeBinary(texturedTriangle()));
+    return file;
+  }
+
+  it('must end in .glb or .gltf', async () => {
+    const file = await inputGlb();
+    const out = join(dir, 'fox.txt');
+    const error = await rejection(optimizeAsset(inputFor(file, '--out', out)));
+    expect(error).toBeInstanceOf(UsageError);
+    expect(error.message).toMatch(/\.glb or \.gltf/);
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it('must not be the input file, even through a hard link or a symlink', async () => {
+    const file = await inputGlb();
+    const original = readFileSync(file);
+    linkSync(file, join(dir, 'hard.glb'));
+    symlinkSync(file, join(dir, 'soft.glb'));
+    for (const [input, out] of [
+      [file, file],
+      [file, join(dir, 'hard.glb')],
+      [file, join(dir, 'soft.glb')],
+      [join(dir, 'soft.glb'), file],
+    ] as const) {
+      const error = await rejection(optimizeAsset(inputFor(input, '--out', out)));
+      expect(error, out).toBeInstanceOf(UsageError);
+      expect(error.message).toMatch(/input file/);
+    }
+    expect(readFileSync(file).equals(original)).toBe(true);
+  });
+
+  it('on a case-insensitive filesystem, a case variant of the input name is the input file', async (ctx) => {
+    const file = await inputGlb();
+    const variant = join(dir, 'FOX.glb');
+    if (!existsSync(variant)) ctx.skip();
+    const error = await rejection(optimizeAsset(inputFor(file, '--out', variant)));
+    expect(error).toBeInstanceOf(UsageError);
+    expect(error.message).toMatch(/input file/);
+  });
+
+  it('writes an upper-case .GLB as binary glTF (glTF-Transform picks GLB only for a lower-case .glb)', async () => {
+    const file = await inputGlb();
+    const out = join(dir, 'Optimized.GLB');
+    await optimizeAsset(inputFor(file, '--out', out));
+    expect(readFileSync(out).readUInt32LE(0)).toBe(GLB_MAGIC);
+    expect(readdirSync(dir).sort()).toEqual(['Optimized.GLB', 'fox.glb']);
+  });
+
+  it('writes a .gltf output with its resources next to it', async () => {
+    const file = await inputGlb();
+    const out = join(dir, 'optimized.gltf');
+    const doc = await optimizeAsset(inputFor(file, '--out', out));
+    expect(doc.output.file).toBe(out);
+    const json = JSON.parse(readFileSync(out, 'utf8')) as { images?: Array<{ uri: string }>; buffers?: Array<{ uri: string }> };
+    const uris = [...(json.images ?? []), ...(json.buffers ?? [])].map((r) => r.uri);
+    expect(uris.length).toBeGreaterThan(0);
+    for (const uri of uris) expect(existsSync(join(dir, decodeURIComponent(uri))), uri).toBe(true);
+  });
+
+  it('refuses a .gltf output whose resource URIs would leave its directory, before writing anything', async () => {
+    const file = await inputGlb();
+    // glTF-Transform names the buffer after the output (`..%2F..%2Fescape.bin`) and writes it to path.join(dir, decodeURIComponent(uri)).
+    const out = join(dir, '..%2F..%2Fescape.gltf');
+    const error = await rejection(optimizeAsset(inputFor(file, '--out', out)));
+    expect(error).toBeInstanceOf(UsageError);
+    expect(error.message).toMatch(/outside/);
+    expect(existsSync(out)).toBe(false);
+    expect(readdirSync(root).sort()).toEqual(['a', 'secret.png']);
+    expect(readdirSync(dir).sort()).toEqual(['fox.glb']);
+  });
+});

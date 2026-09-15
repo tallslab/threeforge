@@ -57,8 +57,8 @@ pixels view by view, compiles both with threeforge, and reports:
 }
 ```
 
-The verdict fails when pixels moved past `--parity`, when a clip, skin or morph target was lost, or when the
-optimized file fails `--budget`. Texture compression needs `npm i -D sharp`; reading a Draco input needs
+The verdict fails when pixels moved past `--parity`, when a clip, skin or morph target was lost, when the
+optimized file fails `--budget`, or when either render raised a page error. Texture compression needs `npm i -D sharp`; reading a Draco input needs
 `npm i -D draco3dgltf`. The output never uses Draco.
 
 Draw-call numbers so far: the naive test scene (500 props, 40 material recipes, a new material per prop) goes from

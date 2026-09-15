@@ -507,8 +507,9 @@ swaps change data, not draw calls.
     fires at once), `budget` an integer ≥ 0, `views` an integer from 0 to 64, `parity` 0 to 100, `simplify` in
     (0, 1], `simplifyError` 0 to 1, `textureSize` an integer from 1 to 16384, `textureQuality` an integer from 1 to 100.
 - **The document**: `{ schemaVersion: 1, tool, version, command, input, env, asset, before, after, compile, parity,
-  hints, verdict, timings }`. `verdict.pass` is false over the budget, with an error-severity hint, or when parity is
-  lost. Exit codes: 0 pass, 1 verdict failed, 2 usage/input, 3 environment (install command in the message),
+  hints, verdict, timings }`. `verdict.pass` is false over the budget, with an error-severity hint, when parity is
+  lost, or when the harness page raised an error (`analyze`; one reason quotes up to five, cleaned and capped; `inspect`
+  does not judge its app's page errors). Exit codes: 0 pass, 1 verdict failed, 2 usage/input, 3 environment (install command in the message),
   4 page error/timeout. `--json` writes the JSON document to stdout before the human summary is built
   (`printDocument`), then the summary to stderr; a summary that throws leaves a note on stderr and the document intact.
 - **Programmatic**: `import { analyzeAsset, inspectApp, optimizeAsset, explain } from 'threeforge/cli'`.
@@ -533,6 +534,12 @@ swaps change data, not draw calls.
   the third needs `loader.setMeshoptDecoder`. A preset's texture step without `sharp` installed is skipped with a
   note; an explicit `--textures` without it is an environment error (exit 3), as is a Draco input without
   `draco3dgltf`. The output never uses Draco.
+- **Inputs and `--out`** (`src/cli/gltf-uris.ts`): every `images[].uri` and `buffers[].uri` of the input (a `.gltf`, or
+  a `.glb`'s JSON chunk) must be a `data:` URI or a relative path that stays inside the input's directory, also by real
+  path (symlinks followed). An absolute path, any other scheme (`file:`, `http:`, `C:`), a backslash, a NUL or invalid
+  percent-encoding exits 2 before glTF-Transform reads anything. `--out` must end in `.glb` or `.gltf` (any case; a
+  `.glb` is always written binary) and must not be the input file (same device and inode: a hard link, a symlink, a
+  case variant); a `.gltf` output whose resource URIs would leave its directory exits 2 before anything is written.
 - **Report**: `stats.before/after` (bytes, nodes, meshes, primitives, materials, textures, texture bytes, accessors,
   vertices, triangles, animations, skins, morph targets, extensions), one `steps[]` entry per step with the counts
   before and after and the time, `requires[]` (each extension of the output with the loader piece it needs and the
@@ -543,7 +550,7 @@ swaps change data, not draw calls.
   and estimated GPU memory.
 - **Verdict**: fails on parity over `--parity` (default 0.5 %), a lost animation, skin or morph target (checked in
   the glTF document and, when verified, in what the harness loaded), `--budget` exceeded by the optimized file's
-  compiled submissions, an error-severity hint on the optimized file, or a page error. Deltas are never judged: a
+  compiled submissions, an error-severity hint on the optimized file, or a page error in either verified render. Deltas are never judged: a
   palette texture can grow a file that then draws in one call.
 - **Limits**: no atlasing across materials that differ by textures (the biome case still needs one batch per
   texture set), no KTX2 encoding (needs `toktx`), no `MSFT_lod` chains, no Draco output.

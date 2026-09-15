@@ -1,5 +1,5 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -247,7 +247,7 @@ test('optimize --preset aggressive --compress meshopt lowers triangles, needs th
   }
 });
 
-test('optimize --no-verify runs without a browser, and a missing file is a usage error', () => {
+test('optimize --no-verify runs without a browser; a missing file, an out-of-directory resource URI and a non-glTF --out are usage errors', () => {
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
     const r = run(['optimize', asset('Fox'), '--out', join(dir, 'fox.glb'), '--no-verify', '--json']);
@@ -258,6 +258,16 @@ test('optimize --no-verify runs without a browser, and a missing file is a usage
     expect(r.stderr).toContain('not verified');
     expect(run(['optimize', 'nope.glb', '--json']).status).toBe(2);
     expect(run(['optimize', asset('Fox'), '--out', asset('Fox'), '--no-verify']).status).toBe(2);
+    // glTF-Transform would embed whatever an image URI reaches; the CLI refuses it before reading (exit 2, nothing on stdout).
+    const hostile = join(dir, 'hostile.gltf');
+    writeFileSync(hostile, JSON.stringify({ asset: { version: '2.0' }, images: [{ uri: '../../../../etc/passwd' }] }));
+    const refused = run(['optimize', hostile, '--no-verify', '--json']);
+    expect(refused.status, refused.stderr).toBe(2);
+    expect(refused.stdout).toBe('');
+    expect(refused.stderr).toMatch(/images\[0\]\.uri .*outside/);
+    expect(existsSync(join(dir, 'hostile.forge.glb'))).toBe(false);
+    expect(run(['optimize', asset('Fox'), '--out', join(dir, 'fox.txt'), '--no-verify']).status).toBe(2);
+    expect(existsSync(join(dir, 'fox.txt'))).toBe(false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

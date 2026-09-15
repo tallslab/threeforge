@@ -58,6 +58,8 @@ export interface AnalysisWithShots {
   doc: AgentDocument;
   /** PNGs of the naive render: `default` plus `orbit-<i>` for each extra view (empty unless requested or compiled). */
   shots: Array<{ view: string; png: Buffer }>;
+  /** Uncaught exceptions the harness page raised, as raw page text (`doc.verdict` already quotes them cleaned). */
+  pageErrors: string[];
 }
 
 /** `analyzeAsset` plus the screenshots it took before compiling, so `optimize` can compare two files. */
@@ -103,7 +105,7 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
     }
     if (pageErrors.length) log(`page errors: ${formatPageErrors(pageErrors)}`);
     const hints = (after ?? before.snapshot).hints;
-    const verdict = verdictOf(after, before.snapshot, input.budget, parity);
+    const verdict = verdictOf(after, before.snapshot, input.budget, parity, pageErrors);
     const doc: AgentDocument = {
       schemaVersion: 1,
       tool: 'threeforge',
@@ -120,7 +122,7 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
       verdict,
       timings: { totalMs: Date.now() - started },
     };
-    return { doc, shots: shotsBefore };
+    return { doc, shots: shotsBefore, pageErrors };
   });
 }
 
