@@ -339,6 +339,16 @@ describe('printDocument', () => {
     printDocument(doc, () => 'PASS', false, human.streams);
     expect(human.out).toEqual({ stdout: 'PASS\n', stderr: '' });
   });
+
+  it('cleans ANSI/control characters out of the summary (a name from the asset can reach it) while keeping its line structure, in both modes', () => {
+    const dirty = () => 'threeforge analyze \x1b[31mscene\x1b[0m\n! untagged: 3 meshes\ttag them';
+    const json = capture();
+    printDocument(doc, dirty, true, json.streams);
+    expect(json.out.stderr).toBe('threeforge analyze scene\n! untagged: 3 meshes tag them\n');
+    const human = capture();
+    printDocument(doc, dirty, false, human.streams);
+    expect(human.out.stdout).toBe('threeforge analyze scene\n! untagged: 3 meshes tag them\n');
+  });
 });
 
 describe('optimize schema and summary', () => {

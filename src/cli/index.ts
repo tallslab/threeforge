@@ -9,6 +9,7 @@ import { printDocument, summarize, summarizeOptimize } from './format.js';
 import { inspectApp } from './inspect.js';
 import { armExitWatchdog } from './lifecycle.js';
 import { ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA, SNAPSHOT_SCHEMA } from './schema.js';
+import { cleanText } from './untrusted.js';
 import { exitCodeOf } from './verdict.js';
 
 function helpText(): string {
@@ -20,8 +21,10 @@ function helpText(): string {
 }
 
 async function run(command: Command): Promise<number> {
+  // A progress line can embed a name from the asset or page (an error message, a file name): clean it before it
+  // reaches the terminal.
   const log = (line: string): void => {
-    process.stderr.write(`· ${line}\n`);
+    process.stderr.write(`· ${cleanText(line)}\n`);
   };
   switch (command.name) {
     case 'help':

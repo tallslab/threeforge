@@ -1,6 +1,7 @@
 import { formatCostRows, formatHints } from '../overlay/index.js';
 import { describeChange } from './transform.js';
 import type { AgentDocument, OptimizeDocument } from './types.js';
+import { cleanLines, cleanText } from './untrusted.js';
 
 /** Where a command prints: `process` in the CLI, anything with the two `write` methods in tests. */
 export interface OutputStreams {
@@ -12,17 +13,21 @@ export interface OutputStreams {
  * Prints a command's document. With `json`, stdout gets the JSON before the summary is built, so a summarizer that
  * throws costs only the stderr summary (a note replaces it) and never the document an agent parses. Without `json`,
  * the summary is the output and its error propagates.
+ *
+ * The summary can embed a name from the asset or page (a hint's `objects`/`message`, `env.gpu`): `cleanLines`
+ * strips ANSI/control/bidi characters from it, line by line, before either write, so the terminal that reads
+ * this (stdout without `--json`, stderr with it) never sees raw escape sequences or an unbounded line.
  */
 export function printDocument<T>(doc: T, summarizeDoc: (doc: T) => string, json: boolean, streams: OutputStreams = process): void {
   if (!json) {
-    streams.stdout.write(summarizeDoc(doc) + '\n');
+    streams.stdout.write(cleanLines(summarizeDoc(doc)) + '\n');
     return;
   }
   streams.stdout.write(JSON.stringify(doc, null, 2) + '\n');
   try {
-    streams.stderr.write(summarizeDoc(doc) + '\n');
+    streams.stderr.write(cleanLines(summarizeDoc(doc)) + '\n');
   } catch (error) {
-    streams.stderr.write(`summary unavailable: ${error instanceof Error ? error.message : String(error)}\n`);
+    streams.stderr.write(`summary unavailable: ${error instanceof Error ? cleanText(error.message) : String(error)}\n`);
   }
 }
 

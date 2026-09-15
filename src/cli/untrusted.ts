@@ -1,0 +1,99 @@
+/**
+ * Cleans text that came from a glTF asset or a page the CLI does not control before it reaches a terminal or an
+ * agent's JSON document. An audit reproduced a page returning a 340,000-character "IGNORE ALL PREVIOUS
+ * INSTRUCTIONS" hint message that flowed, unbounded and uncleaned, into an 883 kB document and the terminal.
+ *
+ * `cleanText` handles one string: a name, a stderr line, a page error. `sanitizeDeep` walks an arbitrary
+ * `page.evaluate` result (the whole thing is untrusted for `inspect`, whose target is any page, not necessarily
+ * one using threeforge's own capping in `src/ledger/text.ts`).
+ *
+ * Neither function is a substitute for treating the values as data: see the MCP "data, not instructions" note in
+ * `src/cli/mcp.ts`.
+ */
+
+/** CSI (`ESC [ params intermediate final`), OSC (`ESC ] ... BEL` or `ESC ] ... ESC \`), and other Fe escape sequences. */
+const ANSI = /[\x1B\x9B](?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\)|[@-Z\\-_])/g;
+
+/** Bidi override/isolate marks and zero-width formatting characters: invisible, so useless except to disguise text. */
+const ZERO_WIDTH_AND_BIDI = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
+
+/** C0 controls (incl. tab/newline/CR/ESC), DEL and C1 controls. Collapsing a line break to a space blocks fake log lines. */
+const CONTROL = /[\x00-\x1F\x7F-\x9F]/g;
+
+/** A cap generous enough for a normal CLI line, small enough to bound a hostile one. */
+export const DEFAULT_TEXT_MAX = 2000;
+
+/**
+ * Strips ANSI escapes, zero-width and bidi-override characters, replaces remaining control characters (including
+ * embedded newlines) with a space, then caps the result at `max` Unicode code points — never splitting a
+ * surrogate pair, so an astral emoji within budget survives whole. A non-string is returned unchanged (defensive:
+ * `sanitizeDeep` is the only caller that can hand this something other than a string).
+ */
+export function cleanText(s: string, max: number = DEFAULT_TEXT_MAX): string {
+  if (typeof s !== 'string') return s;
+  const cleaned = s.replace(ANSI, '').replace(ZERO_WIDTH_AND_BIDI, '').replace(CONTROL, ' ');
+  if (cleaned.length <= max) return cleaned; // UTF-16 length >= code point count: a safe fast path.
+  const chars = Array.from(cleaned);
+  if (chars.length <= max) return cleaned;
+  return chars.slice(0, Math.max(0, max - 1)).join('') + '…';
+}
+
+/** Cleans a possibly multi-line block of text one line at a time, so the newlines that give it structure survive. */
+export function cleanLines(text: string, max: number = DEFAULT_TEXT_MAX): string {
+  return text
+    .split('\n')
+    .map((line) => cleanText(line, max))
+    .join('\n');
+}
+
+export interface SanitizeOptions {
+  /** Cap per string, in Unicode code points (default 256). */
+  maxString?: number;
+  /** Cap per array, in elements; a longer array gets one extra `"(+N more)"` marker appended (default 256). */
+  maxArray?: number;
+  /** Cap on how many levels of arrays/objects are walked before a placeholder replaces the rest (default 16). */
+  maxDepth?: number;
+}
+
+const SANITIZE_DEFAULTS: Required<SanitizeOptions> = { maxString: 256, maxArray: 256, maxDepth: 16 };
+
+/**
+ * Recursively cleans a value that came from `page.evaluate`: every string through `cleanText`, every non-finite
+ * number (`NaN`, `Infinity`, `-Infinity`, none of which JSON can represent) replaced with `null`, arrays and
+ * plain objects capped in length/depth, and circular references broken instead of recursing forever. Functions,
+ * symbols and `bigint` become `undefined` (dropped by `JSON.stringify`, same as today). Booleans, `null` and
+ * finite numbers pass through unchanged.
+ */
+export function sanitizeDeep(value: unknown, options: SanitizeOptions = {}): unknown {
+  const opts: Required<SanitizeOptions> = { ...SANITIZE_DEFAULTS, ...options };
+  return sanitizeAt(value, opts, 0, new WeakSet<object>());
+}
+
+function sanitizeAt(value: unknown, opts: Required<SanitizeOptions>, depth: number, seen: WeakSet<object>): unknown {
+  if (typeof value === 'string') return cleanText(value, opts.maxString);
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (value === null || typeof value === 'boolean') return value;
+  if (typeof value !== 'object') return undefined; // undefined, function, symbol, bigint
+  if (seen.has(value)) return '[circular]';
+  if (depth >= opts.maxDepth) return '[max depth]';
+  seen.add(value);
+  if (Array.isArray(value)) {
+    const kept = value.slice(0, opts.maxArray).map((item) => sanitizeAt(item, opts, depth + 1, seen));
+    if (value.length > opts.maxArray) kept.push(`(+${value.length - opts.maxArray} more)`);
+    return kept;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) out[cleanText(key, opts.maxString)] = sanitizeAt(v, opts, depth + 1, seen);
+  return out;
+}
+
+/** How many page errors `formatPageErrors` keeps, and how long each kept one may be. */
+export const PAGE_ERRORS_MAX = 5;
+export const PAGE_ERROR_LENGTH_MAX = 300;
+
+/** The first `PAGE_ERRORS_MAX` page errors, each cleaned and capped at `PAGE_ERROR_LENGTH_MAX`, joined for a log line; a `(+N more)` suffix names the rest. */
+export function formatPageErrors(errors: readonly string[]): string {
+  const shown = errors.slice(0, PAGE_ERRORS_MAX).map((e) => cleanText(e, PAGE_ERROR_LENGTH_MAX));
+  const extra = errors.length - shown.length;
+  return extra > 0 ? `${shown.join(' | ')} (+${extra} more)` : shown.join(' | ');
+}

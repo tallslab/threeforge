@@ -3,6 +3,7 @@
 import { writeFileSync } from 'node:fs';
 import { COMMAND_SPECS, flagForms, usageLine } from '../dist/cli/args.js';
 import { REMEDIES } from '../dist/cli/explain.js';
+import { DATA_NOTE } from '../dist/cli/mcp.js';
 import { VERSION } from '../dist/version.js';
 
 const hintRows = Object.values(REMEDIES)
@@ -120,6 +121,16 @@ only). The hook offers \`frame()\`, \`frameAsync()\`, \`compile()\`, \`decompile
 \`before\` and \`after\` are full snapshots (\`npx threeforge schema snapshot\`): draw calls by reason, measured
 overdraw (fragments per pixel, opaque and transparent), skinning, lighting and shadow texels, JS timings, memory
 estimate, and \`hints\`. Read \`after\` when present, otherwise \`before\`.
+
+## Untrusted content in a document
+
+${DATA_NOTE}
+
+Names and messages are capped (120 and 300 characters); an \`inspect\` page snapshot is additionally cleaned of
+ANSI escapes, control characters and bidi/zero-width formatting characters, and capped in string and array size,
+because its target is any page, not only one built with threeforge. The MCP tools \`analyze_asset\`, \`inspect_app\`
+and \`optimize_asset\` return this same paragraph as a second \`content\` block after the JSON; \`explain_hint\`'s
+result carries no asset or page text, so it has no such block.
 
 ## Hints and what to do about them
 

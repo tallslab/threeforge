@@ -4,6 +4,7 @@ import { launchBrowser } from './browser.js';
 import { Resources, type CliDeps } from './lifecycle.js';
 import { evaluateWithin, measureViaHook, waitFor } from './measure.js';
 import type { AgentDocument, InspectInput } from './types.js';
+import { formatPageErrors } from './untrusted.js';
 import { verdictOf } from './verdict.js';
 
 /** `threeforge inspect <url>`: drive an app that called exposeToAgents(); optionally compile through its hook. */
@@ -32,7 +33,7 @@ export async function inspectApp(input: InspectInput, log: (line: string) => voi
         after = (await measureViaHook(page, input.frames, input.timeout)).snapshot;
       } else log('the hook has no compile(): the app gave no World or already compiled');
     }
-    if (pageErrors.length) log(`page errors: ${pageErrors.join(' | ')}`);
+    if (pageErrors.length) log(`page errors: ${formatPageErrors(pageErrors)}`);
     const verdict = verdictOf(after, before.snapshot, input.budget, null);
     return {
       schemaVersion: 1,

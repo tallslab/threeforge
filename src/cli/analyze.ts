@@ -10,6 +10,7 @@ import { Resources, type CliDeps } from './lifecycle.js';
 import { evaluateWithin, measureViaHook, waitFor } from './measure.js';
 import { serveStatic } from './server.js';
 import type { AgentDocument, AnalyzeInput, AssetFacts, Parity } from './types.js';
+import { formatPageErrors } from './untrusted.js';
 import { verdictOf } from './verdict.js';
 
 const PARITY_THRESHOLD = 0.5;
@@ -99,7 +100,7 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
       parity = { diffPct: worst, threshold: PARITY_THRESHOLD, pass: worst <= PARITY_THRESHOLD, views };
       if (!parity.pass) log(`pixel parity lost: ${views.filter((v) => v.diffPct > PARITY_THRESHOLD).map((v) => `${v.view} ${v.diffPct}%`).join(', ')}`);
     }
-    if (pageErrors.length) log(`page errors: ${pageErrors.join(' | ')}`);
+    if (pageErrors.length) log(`page errors: ${formatPageErrors(pageErrors)}`);
     const hints = (after ?? before.snapshot).hints;
     const verdict = verdictOf(after, before.snapshot, input.budget, parity);
     const doc: AgentDocument = {

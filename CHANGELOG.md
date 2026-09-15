@@ -39,6 +39,11 @@
 | `--out=` (empty) | resolved to the working directory | exit 2 |
 | `optimize --budget N --no-verify` | the budget was silently not judged | exit 2: the budget is judged on the verified render |
 
+- A frame snapshot's `byReason[reason].top` names, and a hint's `message` and `objects`, are capped at 120 and 300 characters (`src/ledger/text.ts`): a single long or malicious node/material/light name can no longer balloon an `analyze`/`inspect`/`optimize` document or the hint it appears in.
+- Every `page.evaluate` result the CLI reads (harness state, `compile()`, and `inspect`'s frame measurements) is cleaned before use: ANSI escapes, control characters and bidi/zero-width formatting characters are stripped, and strings, arrays and nesting depth are capped (`sanitizeDeep`, `src/cli/untrusted.ts`) — `inspect`'s target is any page, not only one using threeforge's own caps.
+- CLI progress lines and the human summary (stderr with `--json`, stdout otherwise) are cleaned the same way, line by line; page errors keep only the first 5, each capped at 300 characters, with a `(+N more)` suffix for the rest.
+- The MCP tools `analyze_asset`, `inspect_app` and `optimize_asset` now return a second `content` text block after the JSON, marking any name, hint text, `env.gpu` or page error in it as data from the asset or page, not instructions; `explain_hint` is unchanged. The same paragraph is in AGENTS.md.
+
 ## 0.8.0 — 2026-09-14
 
 - `createLoader(renderer, options)`: a GLTFLoader with Draco, KTX2 (formats detected on the renderer) and meshopt in one call; `disposeLoader`; `threeforge decoders <dir>` copies three's decoder files.

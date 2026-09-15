@@ -2,12 +2,18 @@ import type { FrameSnapshot } from '../ledger/snapshot.js';
 import type { PlaywrightPage } from './browser.js';
 import { PageError } from './errors.js';
 import { withTimeout } from './lifecycle.js';
+import { sanitizeDeep } from './untrusted.js';
 
 export { PageError };
 
-/** `page.evaluate` of an expression, bounded by `timeout` ms: a page that never answers becomes a PageError naming `what`. */
+/**
+ * `page.evaluate` of an expression, bounded by `timeout` ms: a page that never answers becomes a PageError naming
+ * `what`. The result goes through `sanitizeDeep` before it reaches the caller: `inspect`'s target is any page, not
+ * necessarily one that used threeforge's own name/message caps (`src/ledger/text.ts`), so this is the one place
+ * every value a page hands back to the CLI is bounded and cleaned before it can reach a document or the terminal.
+ */
 export function evaluateWithin<R>(page: PlaywrightPage, what: string, timeout: number, expression: string): Promise<R> {
-  return withTimeout(what, timeout, () => page.evaluate<R>(expression));
+  return withTimeout(what, timeout, async () => sanitizeDeep(await page.evaluate<R>(expression)) as R);
 }
 
 export interface Measurement {
