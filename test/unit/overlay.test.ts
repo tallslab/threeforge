@@ -44,8 +44,8 @@ describe('formatOverlay', () => {
   });
 });
 
-describe('formatOverlay v2', () => {
-  it('formats the six cost rows and hints from a v2 snapshot', () => {
+describe('formatOverlay v3', () => {
+  it('formats the six cost rows and hints from a v3 snapshot', () => {
     const f = emptyFrame({ three: '0.186.0', backend: 'webgpu', multiDraw: false, tier: 'phone-mid', gpu: 'Apple GPU', dpr: 2, viewport: [390, 844] });
     f.totals.sceneSubmissions = 27;
     f.totals.gpuDraws = 500;

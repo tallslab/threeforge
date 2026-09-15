@@ -63,7 +63,7 @@ npx threeforge inspect http://localhost:5173 --json
 |---|---|
 | `src/tags.ts` | `tag.static(obj)`, `tag.dynamic(obj)`, `tag.of(obj)`; stored in `userData.forge` |
 | `src/registry` | `MaterialRegistry`: material keys (program, variant, colour) and canonical sharing; three's own material classes (`isBuiltInMaterial`) |
-| `src/ledger` | `DrawCallLedger`, the v2 snapshot, reasons, display names (`DisplayNames`, a validated cache), expected GPU draws, sections (skinning, lighting), memory estimate, measured overdraw, budgets and tiers, hints |
+| `src/ledger` | `DrawCallLedger`, the v3 snapshot, reasons, display names (`DisplayNames`, a validated cache), expected GPU draws, sections (skinning, lighting), memory estimate, measured overdraw, budgets and tiers, hints |
 | `src/compiler` | `classify` (rules), `batchStatics` (batches, instancing, bake), `bake` (geometry bake), `culling` (BVH, hooks), `instancing` (compacted InstancedMesh), `geometryCompat`, `World` (compile/decompile/resolve/warmup) |
 | `src/lod` | meshoptimizer LOD generation |
 | `src/overdraw` | `ParticleBudget` (particle caps per tier) and `ResolutionScaler` (dynamic drawing-buffer scale) |
@@ -888,8 +888,10 @@ swaps change data, not draw calls.
     [--json]`: drives the agent's own dev server through the hook, compiling through it unless `--no-compile`
     (`--compile` is accepted and is the default); same document without asset facts and parity. There is no
     `--tier`: the app measures itself at the tier its own ledger detects. The app's hook must publish
-    `schemaVersion: 3` (threeforge 0.9.0 or later): any other version exits 4 with `unsupported schemaVersion N`
-    before anything is measured.
+    `schemaVersion: 3` (threeforge 0.9.0 or later): any other version exits 4 at once, before anything is measured,
+    with a message naming both versions and the fix, e.g. `window.__threeforge has unsupported schemaVersion 2:
+    this threeforge CLI reads schemaVersion 3; upgrade threeforge in the app (exposeToAgents)`. `analyze`'s own
+    measurement (`measureViaHook`) rejects an unsupported hook version the same way.
   - `optimize <file.glb|.gltf> [--out out.glb] [--preset safe|balanced|aggressive] [--no-<step>|--<step>]
     [--simplify [ratio]] [--simplify-error e] [--compress none|meshopt] [--textures [webp|avif|none]]
     [--texture-size N] [--texture-quality Q] [--no-verify] [--parity pct] [--views N] [--budget N] [--backend …]
@@ -897,7 +899,12 @@ swaps change data, not draw calls.
   - `explain [<hint-code>] [--all] [--json]`: `{ code, category, severity, meaning, fix, api, docs }` for one hint
     code, or every remedy with `--all` (a code or `--all`, not both).
   - `decoders <dir>`: copies three's Draco decoder and Basis transcoder into `<dir>/{draco,basis}` for `createLoader` (no JSON output, no flags).
-  - `schema [snapshot|analyze|inspect|optimize|all] [--json]`: JSON Schema (draft 2020-12) of everything printed (always JSON).
+  - `schema [snapshot|analyze|inspect|optimize|all] [--json]`: JSON Schema (draft 2020-12) of everything printed
+    (always JSON). Each of the four schemas is self-contained: `analyze` and `inspect` embed the frame snapshot as
+    `$defs.FrameSnapshot`, and `optimize` embeds both that and the analyze document as `$defs.AnalyzeDocument`
+    (`verify.original`/`verify.optimized` are full analyze documents), rather than `$ref`-ing another schema's
+    `$id`. Copy any one of the four out of `threeforge schema <name> --json` and it validates on its own in any
+    draft-2020-12 validator (e.g. `ajv/dist/2020`), with no `addSchema` of the others.
   - `mcp`: stdio Model Context Protocol server with `analyze_asset`, `inspect_app`, `optimize_asset`, `explain_hint` (no arguments).
 - **Flags** (`parseArgs`, `src/cli/args.ts`):
   - Flags follow the command, before or after its argument. A value flag takes `--flag value` or `--flag=value`; a

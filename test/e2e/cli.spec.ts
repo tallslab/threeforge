@@ -4,6 +4,8 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Ajv2020 } from 'ajv/dist/2020.js';
+import { ANALYZE_SCHEMA } from '../../src/cli/schema.js';
 import { expect, test } from './fixtures.js';
 
 /** The built CLI, as an agent would run it: `node dist/cli/index.js …` (npx threeforge … after install). */
@@ -202,6 +204,20 @@ test('analyze --bake --views keeps parity on a multi-part static asset and repor
   expect(doc.parity.pass, JSON.stringify(doc.parity)).toBe(true);
   expect(doc.after.totals.unattributed).toBe(0);
   expect(r.stderr).toContain('bake:');
+});
+
+test('analyze --bake --json output validates against ANALYZE_SCHEMA, compiled standalone in ajv (Task 29: self-contained $defs)', async ({ forge }) => {
+  test.setTimeout(600_000);
+  const index = JSON.parse(readFileSync('test/assets/files/index.json', 'utf8')) as Array<{ name: string; entry: string }>;
+  const engine = index.find((a) => a.name === '2CylinderEngine')!;
+  const r = run(['analyze', `test/assets/files/${engine.entry}`, '--backend', forge.backend, '--frames', '3', '--bake', '--json']);
+  expect(r.status, r.stderr).toBe(0);
+  const doc = JSON.parse(r.stdout);
+  expect(doc.input.bake).toBe('on');
+  // A fresh Ajv2020 instance, given only the one schema `threeforge schema analyze` prints: no addSchema of the
+  // snapshot schema, proving the embedded $defs (not an external $ref) are what resolve `before`/`after`.
+  const validate = new Ajv2020({ strict: true }).compile(ANALYZE_SCHEMA);
+  expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
 });
 
 test('optimize keeps the Fox pixel-identical, keeps its skin and clips, and shrinks the file', async ({ forge }) => {

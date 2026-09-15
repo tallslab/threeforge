@@ -48,6 +48,9 @@ importers:
       '@types/three':
         specifier: 0.186.0
         version: 0.186.0
+      ajv:
+        specifier: ^8.20.0
+        version: 8.20.0
       playwright:
         specifier: 1.63.0
         version: 1.63.0

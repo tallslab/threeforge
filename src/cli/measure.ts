@@ -39,7 +39,11 @@ export interface Measurement {
 /** The frame snapshot `schemaVersion` this CLI reads from `window.__threeforge` (what `exposeToAgents` publishes). */
 export const HOOK_SCHEMA_VERSION = 3;
 
-const unsupported = (version: string): string => `window.__threeforge has unsupported schemaVersion ${version}: this threeforge reads schemaVersion ${HOOK_SCHEMA_VERSION}`;
+// Split so the in-page check below (measureViaHook) can build the identical message from `hook.schemaVersion`, known
+// only inside the page, without re-typing the wording or reaching for a placeholder-and-replace trick.
+const UNSUPPORTED_PREFIX = 'window.__threeforge has unsupported schemaVersion ';
+const UNSUPPORTED_SUFFIX = `: this threeforge CLI reads schemaVersion ${HOOK_SCHEMA_VERSION}; upgrade threeforge in the app (exposeToAgents)`;
+const unsupported = (version: string): string => `${UNSUPPORTED_PREFIX}${version}${UNSUPPORTED_SUFFIX}`;
 
 /** Fails with a PageError unless the page's hook publishes the snapshot version this CLI reads. */
 export async function assertHookVersion(page: PlaywrightPage, timeout: number): Promise<void> {
@@ -62,7 +66,7 @@ export async function measureViaHook(page: PlaywrightPage, frames: number, timeo
     `(async () => {
       const hook = window.__threeforge;
       if (!hook) return { error: 'window.__threeforge is missing: call exposeToAgents({ ledger, world, renderer, scene, camera }) in the app' };
-      if (hook.schemaVersion !== ${HOOK_SCHEMA_VERSION}) return { error: ${JSON.stringify(unsupported('@'))}.replace('@', String(JSON.stringify(hook.schemaVersion))) };
+      if (hook.schemaVersion !== ${HOOK_SCHEMA_VERSION}) return { error: ${JSON.stringify(UNSUPPORTED_PREFIX)} + JSON.stringify(hook.schemaVersion) + ${JSON.stringify(UNSUPPORTED_SUFFIX)} };
       const render = []; const ledger = []; const intervals = []; let last = performance.now();
       for (let i = 0; i < ${count}; i++) {
         const f = await hook.frameAsync();

@@ -101,6 +101,9 @@ describe('inspect and the frame snapshot schemaVersion', () => {
     );
     expect(error).toBeInstanceOf(PageError);
     expect((error as Error).message).toMatch(/unsupported schemaVersion 2/);
+    // Names both versions and tells the reader what to do about it (Task 29).
+    expect((error as Error).message).toContain('reads schemaVersion 3');
+    expect((error as Error).message).toContain('upgrade threeforge in the app (exposeToAgents)');
     expect(Date.now() - started, 'fails without waiting for the timeout').toBeLessThan(1000);
     expect(evaluated.filter((e) => e.includes('frameAsync') || e.includes('compile'))).toEqual([]);
     expect(printed).toEqual([]);
@@ -115,5 +118,8 @@ describe('inspect and the frame snapshot schemaVersion', () => {
   it('measureViaHook (analyze and inspect) refuses a hook exposing another schemaVersion', async () => {
     const { window } = app({ schemaVersion: 2 });
     await expect(measureViaHook(pageOn(window), 2, 2000)).rejects.toThrow(/unsupported schemaVersion 2/);
+    // The in-page check (measureViaHook's own script) and the Node-side check (assertHookVersion, above) share the
+    // same wording: both build it from measure.ts's UNSUPPORTED_PREFIX/UNSUPPORTED_SUFFIX, not a re-typed copy.
+    await expect(measureViaHook(pageOn(window), 2, 2000)).rejects.toThrow(/upgrade threeforge in the app \(exposeToAgents\)/);
   });
 });
