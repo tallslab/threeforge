@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DodecahedronGeometry, Mesh, MeshStandardMaterial, Scene, SphereGeometry, TorusKnotGeometry, type BufferGeometry } from 'three';
-import { generateLods, lodsOf, prepareLods } from '../../src/lod/generateLods.js';
+import { disposeLods, generateLods, lodsOf, prepareLods } from '../../src/lod/generateLods.js';
 import { tag } from '../../src/tags.js';
 
 describe('generateLods', () => {
@@ -55,5 +55,22 @@ describe('prepareLods', () => {
 
   it('returns an empty list for geometries without LODs', () => {
     expect(lodsOf(new SphereGeometry())).toEqual([]);
+  });
+});
+
+describe('disposeLods', () => {
+  it('disposes every attached level, drops them from the geometry, and leaves the geometry itself alone', async () => {
+    const base = new SphereGeometry(1, 16, 12);
+    base.userData.forgeLods = await generateLods(base, { ratios: [0.5, 0.2] });
+    const levels = lodsOf(base);
+    expect(levels).toHaveLength(2);
+    const disposed = levels.map((g) => vi.spyOn(g, 'dispose'));
+    const baseDispose = vi.spyOn(base, 'dispose');
+    expect(disposeLods(base)).toBe(2);
+    for (const spy of disposed) expect(spy).toHaveBeenCalledTimes(1);
+    expect(baseDispose, 'the source geometry is the caller’s').not.toHaveBeenCalled();
+    expect(lodsOf(base), 'and is left without levels, so prepareLods can attach fresh ones').toEqual([]);
+    expect(disposeLods(base), 'a second call has nothing left to dispose').toBe(0);
+    expect(disposeLods(new SphereGeometry()), 'a geometry that never had levels').toBe(0);
   });
 });

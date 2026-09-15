@@ -20,6 +20,23 @@ export function lodsOf(geometry: BufferGeometry): BufferGeometry[] {
 }
 
 /**
+ * Disposes the LOD geometries `generateLods` / `prepareLods` attached to `geometry` and removes them from it,
+ * returning how many were disposed. The geometry itself is never touched — it is the caller's — and one that never
+ * had levels is a no-op, so this is also the way to drop levels before attaching fresh ones with `prepareLods`.
+ *
+ * Only call it once nothing draws those levels. A compiled `World` with `lod` gives a geometry's levels straight to
+ * the level meshes of its instanced groups (a batch copies them into its own buffers instead), so `decompile()` the
+ * World first: threeforge never disposes them itself, since the same levels outlive any one compile and are shared
+ * by every mesh holding that geometry.
+ */
+export function disposeLods(geometry: BufferGeometry): number {
+  const lods = lodsOf(geometry);
+  for (const lod of lods) lod.dispose();
+  delete geometry.userData[LOD_KEY];
+  return lods.length;
+}
+
+/**
  * Simplifies a geometry with meshoptimizer into one compacted geometry per ratio. Works in node (build scripts)
  * and in the browser. Positions drive the simplification; other attributes are carried through the vertex remap.
  * Never returns a level with more triangles than the previous one.
