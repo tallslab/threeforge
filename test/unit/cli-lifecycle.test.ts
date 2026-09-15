@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { analyzeAssetWithShots, bakeProgressLine } from '../../src/cli/analyze.js';
+import { analyzeAssetWithShots } from '../../src/cli/analyze.js';
 import { UsageError as ArgsUsageError } from '../../src/cli/args.js';
 import { EnvironmentError as BrowserEnvironmentError, type BrowserHandle, type PlaywrightPage } from '../../src/cli/browser.js';
 import { EnvironmentError, exitCodeFor, PageError, UsageError } from '../../src/cli/errors.js';
@@ -147,13 +147,6 @@ describe('armExitWatchdog', () => {
 
 const analyzeInput = (file: string): AnalyzeInput => ({ file, backend: 'webgl2', tier: 'auto', budget: null, frames: 1, compile: false, bake: 'off', views: 0, timeout: 1000, headed: false });
 const inspectInput = (timeout: number): InspectInput => ({ url: 'http://127.0.0.1:9/', backend: 'webgl2', tier: 'auto', budget: null, frames: 2, compile: true, timeout, headed: false });
-
-describe('analyze progress lines', () => {
-  it('the bake line counts the removed faces and the coincident faces the seam guard kept', () => {
-    const bake = { groups: 1, inputTriangles: 48, triangles: 36, contactFaces: 12, keptCoincidentFaces: 4, duplicateFaces: 1, buriedFaces: 2, weldedVertices: 10, excludedEntries: 0 };
-    expect(bakeProgressLine(bake)).toBe('bake: 48 -> 36 triangles (12 seam, 1 duplicate, 2 buried faces removed; 4 coincident faces kept; 10 vertices welded)');
-  });
-});
 
 /** A real static server whose close is counted, so a test can prove it stopped listening. */
 function countingServe(): { serve: (roots: StaticRoot[]) => Promise<{ url: string; close(): Promise<void> }>; state: { url: string; closed: number } } {

@@ -47,9 +47,12 @@ async function captureViews(page: PlaywrightPage, views: number, timeout: number
   return shots;
 }
 
-/** The progress line of a compile that baked: faces each rule removed, coincident faces the seam guard kept, vertices welded. */
+/**
+ * The progress line of a compile that baked: faces each rule removed, coincident faces the seam guard kept, vertices
+ * welded. A report from an older threeforge has no `keptCoincidentFaces`: it prints 0.
+ */
 export function bakeProgressLine(bake: BakeSummary): string {
-  return `bake: ${bake.inputTriangles} -> ${bake.triangles} triangles (${bake.contactFaces} seam, ${bake.duplicateFaces} duplicate, ${bake.buriedFaces} buried faces removed; ${bake.keptCoincidentFaces} coincident faces kept; ${bake.weldedVertices} vertices welded)`;
+  return `bake: ${bake.inputTriangles} -> ${bake.triangles} triangles (${bake.contactFaces} seam, ${bake.duplicateFaces} duplicate, ${bake.buriedFaces} buried faces removed; ${bake.keptCoincidentFaces ?? 0} coincident faces kept; ${bake.weldedVertices} vertices welded)`;
 }
 
 async function waitReady(page: PlaywrightPage, timeout: number): Promise<AssetFacts> {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { AdditiveBlending, BoxGeometry, BufferAttribute, DoubleSide, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, Scene, ShaderMaterial, type BufferGeometry, type Intersection, type Material } from 'three';
+import { AdditiveBlending, BackSide, BoxGeometry, BufferAttribute, DataTexture, DoubleSide, FrontSide, GreaterEqualDepth, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, Plane, Scene, ShaderMaterial, Vector3, type BufferGeometry, type Intersection, type Material } from 'three';
+import { positionLocal } from 'three/tsl';
+import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { World } from '../../src/compiler/World.js';
 import { bakeEntriesOf } from '../../src/compiler/batchStatics.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
@@ -67,10 +69,46 @@ describe('World with bake', () => {
     expect(report.bake).toEqual(expect.objectContaining({ contactFaces: 12, keptCoincidentFaces: 0, triangles: 36 }));
   });
 
+  it('keeps seams and buried faces when the material draws faces the rules assume hidden, or moves or cuts them', () => {
+    /** Two touching boxes (one seam) and a block 5 cm inside a solid, all with one material. */
+    const scene = (material: Material): Scene => {
+      const s = new Scene();
+      const add = (size: number, x: number, z: number): void => {
+        const m = new Mesh(new BoxGeometry(size, size, size), material);
+        m.position.set(x, 0, z);
+        tag.static(m);
+        s.add(m);
+      };
+      add(1, 0, 0);
+      add(1, 1, 0);
+      add(2, 0, -5);
+      add(1.9, 0, -5);
+      s.updateMatrixWorld(true);
+      return s;
+    };
+    const bake = (material: Material) => new World(scene(material), { bake: { removeBuried: true } }).compile();
+    expect(bake(new MeshStandardMaterial()).bake, 'control').toEqual(expect.objectContaining({ contactFaces: 4, keptCoincidentFaces: 0, buriedFaces: 12 }));
+    const cases: Array<[string, () => Material]> = [
+      ['BackSide', () => new MeshStandardMaterial({ side: BackSide })],
+      ['displacementMap', () => new MeshStandardMaterial({ displacementMap: new DataTexture(new Uint8Array(4), 1, 1) })],
+      ['positionNode', () => Object.assign(new MeshStandardNodeMaterial(), { positionNode: positionLocal })],
+      ['clippingPlanes', () => new MeshStandardMaterial({ clippingPlanes: [new Plane(new Vector3(0, 1, 0), 0)] })],
+      ['depthFunc', () => new MeshStandardMaterial({ depthFunc: GreaterEqualDepth })],
+    ];
+    for (const [label, material] of cases) {
+      const report = bake(material());
+      expect(report.after.baked, label).toBe(1);
+      expect(report.bake, label).toEqual(expect.objectContaining({ contactFaces: 0, keptCoincidentFaces: 4, buriedFaces: 0 }));
+    }
+  });
+
   it('bakeEntriesOf takes opacity, sidedness and vertex colours from the material', () => {
     const mesh = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
     const entry = (material: Material, vertexColors?: boolean) => bakeEntriesOf([mesh], new Set(), material, undefined, vertexColors)[0]!;
-    expect(entry(new MeshStandardMaterial())).toMatchObject({ opaque: true, doubleSided: false, vertexColors: false });
+    expect(entry(new MeshStandardMaterial())).toMatchObject({ opaque: true, side: FrontSide, doubleSided: false, vertexColors: false });
+    expect(entry(new MeshStandardMaterial({ side: BackSide }))).toMatchObject({ side: BackSide, doubleSided: false });
+    expect(entry(new MeshStandardNodeMaterial()).opaque, 'a node material without vertex or depth nodes').toBe(true);
+    expect(entry(new MeshStandardMaterial({ clippingPlanes: [] })).opaque, 'an empty clipping plane list').toBe(true);
     expect(entry(new MeshStandardMaterial({ side: DoubleSide }))).toMatchObject({ opaque: true, doubleSided: true });
     expect(entry(new MeshStandardMaterial({ vertexColors: true })).vertexColors).toBe(true);
     // A rebake passes the flag recorded at bake time: the baked material may be a clone with vertex colours forced on.
@@ -88,6 +126,15 @@ describe('World with bake', () => {
       ['alphaTestNode', Object.assign(new MeshStandardMaterial(), { alphaTestNode: {} })],
       ['fragmentNode', Object.assign(new MeshStandardMaterial(), { fragmentNode: {} })],
       ['ShaderMaterial', new ShaderMaterial()],
+      ['displacementMap', new MeshStandardMaterial({ displacementMap: new DataTexture(new Uint8Array(4), 1, 1) })],
+      ['positionNode', Object.assign(new MeshStandardNodeMaterial(), { positionNode: positionLocal })],
+      ['vertexNode', Object.assign(new MeshStandardNodeMaterial(), { vertexNode: positionLocal })],
+      ['geometryNode', Object.assign(new MeshStandardNodeMaterial(), { geometryNode: positionLocal })],
+      ['depthNode', Object.assign(new MeshStandardNodeMaterial(), { depthNode: positionLocal })],
+      ['clippingPlanes', new MeshStandardMaterial({ clippingPlanes: [new Plane(new Vector3(0, 1, 0), 0)] })],
+      ['depthFunc', new MeshStandardMaterial({ depthFunc: GreaterEqualDepth })],
+      ['wireframe', new MeshStandardMaterial({ wireframe: true })],
+      ['stencilWrite', new MeshStandardMaterial({ stencilWrite: true })],
     ];
     for (const [label, material] of notOpaque) expect(entry(material).opaque, label).toBe(false);
   });

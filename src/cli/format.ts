@@ -43,7 +43,7 @@ export function summarize(doc: AgentDocument): string {
   if (doc.after) lines.push(`${doc.before.totals.sceneSubmissions} → ${doc.after.totals.sceneSubmissions} submissions after compile${doc.compile ? ` (${doc.compile.after.batches} batches, ${doc.compile.after.instanced} instanced, ${doc.compile.skipped.length} skipped)` : ''}`);
   else lines.push(`${doc.before.totals.sceneSubmissions} submissions`);
   if (doc.parity) lines.push(`parity ${doc.parity.diffPct.toFixed(2)}% pixels changed over ${doc.parity.views.length} view${doc.parity.views.length === 1 ? '' : 's'} (threshold ${doc.parity.threshold}%)`);
-  if (doc.compile?.bake) lines.push(`bake: ${doc.compile.bake.groups} groups · ${doc.compile.bake.inputTriangles} → ${doc.compile.bake.triangles} tris · seams ${doc.compile.bake.contactFaces} · kept coincident ${doc.compile.bake.keptCoincidentFaces} · duplicates ${doc.compile.bake.duplicateFaces} · buried ${doc.compile.bake.buriedFaces} · welded ${doc.compile.bake.weldedVertices}`);
+  if (doc.compile?.bake) lines.push(`bake: ${doc.compile.bake.groups} groups · ${doc.compile.bake.inputTriangles} → ${doc.compile.bake.triangles} tris · seams ${doc.compile.bake.contactFaces} · kept coincident ${doc.compile.bake.keptCoincidentFaces ?? 0} · duplicates ${doc.compile.bake.duplicateFaces} · buried ${doc.compile.bake.buriedFaces} · welded ${doc.compile.bake.weldedVertices}`);
   lines.push(...formatCostRows(frame));
   lines.push(...formatHints(frame));
   lines.push(`${doc.timings.totalMs} ms total`);

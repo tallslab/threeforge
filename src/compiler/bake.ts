@@ -5,7 +5,7 @@
  * pair that is not provably a seam between two solids stays, and is counted) and every removal is counted and
  * returned as geometry (`removed`) that an agent can render to check.
  */
-import { BufferAttribute, BufferGeometry, Color, DoubleSide, Matrix3, Matrix4, Ray, Vector3 } from 'three';
+import { BufferAttribute, BufferGeometry, Color, DoubleSide, FrontSide, Matrix3, Matrix4, Ray, Vector3, type Side } from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 
 export interface BakeEntry {
@@ -16,12 +16,20 @@ export interface BakeEntry {
   color?: Color | null;
   /** `false` keeps this module's triangles exactly as they are: no removal, no welding. */
   bake?: boolean;
-  /** The material draws both faces: a buried face then needs both hemispheres blocked, and no seam involving it goes. Absent means single-sided. */
+  /** `true`: the material draws both faces, which counts as not front-side whatever `side` says. Superseded by `side`. */
   doubleSided?: boolean;
   /**
-   * The material hides whatever lies behind its faces (`bakeEntriesOf` decides it from the material). Only opaque
-   * modules lose seam or buried faces, and only their faces block buried-face rays. Absent counts as NOT opaque: that
-   * entry gets no seam and no buried-face removal (a missed deletion is invisible, a wrong one is visible).
+   * The material's `side` (`bakeEntriesOf` copies it). Only `FrontSide` modules lose seam or buried faces: a `BackSide`
+   * material draws exactly the faces those rules assume hidden, and a `DoubleSide` one draws both. Back-side faces also
+   * block no buried-face ray. Absent counts as not front-side: that entry loses no faces.
+   */
+  side?: Side;
+  /**
+   * The material hides whatever lies behind its faces and draws them where the geometry puts them (`bakeEntriesOf`
+   * decides it from the material: no blending, discard, transmission, vertex displacement, material clipping planes,
+   * custom depth, wireframe, stencil test, or depth test other than less-or-equal). Only opaque modules lose seam or
+   * buried faces, and only their faces block buried-face rays. Absent counts as NOT opaque: that entry loses no faces
+   * (a missed deletion is invisible, a wrong one is visible).
    */
   opaque?: boolean;
   /**
@@ -47,13 +55,13 @@ export interface BakeOptions {
   colorTolerance?: number;
   /**
    * Remove seams between touching solids (default true): a coincident, opposite-winding pair goes only when its two
-   * sides come from different entries that are all closed, outward, single-sided and opaque. Every other coincident,
-   * opposite pair stays and is counted in `keptCoincidentFaces`.
+   * sides come from different entries that are all closed, manifold, outward, front-side and opaque. Every other
+   * coincident, opposite pair stays and is counted in `keptCoincidentFaces`.
    */
   removeContactFaces?: boolean;
   /** Keep one of several coincident, same-winding triangles (default true). */
   removeDuplicateFaces?: boolean;
-  /** Remove faces of opaque entries that cannot be seen because opaque geometry sits right in front of them (default false). */
+  /** Remove faces of opaque, front-side entries that cannot be seen because opaque geometry sits right in front of them (default false). */
   removeBuried?: boolean | BuriedOptions;
 }
 
@@ -64,7 +72,10 @@ export interface BakeReport {
   triangles: number;
   weldedVertices: number;
   contactFaces: number;
-  /** Faces of coincident, opposite-winding pairs the seam rule kept because a condition failed (0 while `removeContactFaces` is off). */
+  /**
+   * Faces of coincident, opposite-winding pairs the seam rule kept because a condition failed, and that no later rule
+   * removed (a kept face later removed as buried is counted there only). 0 while `removeContactFaces` is off.
+   */
   keptCoincidentFaces: number;
   duplicateFaces: number;
   buriedFaces: number;
@@ -223,35 +234,41 @@ class Islands {
 }
 
 /**
- * Whether entry `k` is a closed, outward shell in every connected component (triangles joined by shared edges, by
- * position identity; degenerate triangles skipped): every edge is used equally often in both directions, and every
- * component encloses a positive signed volume beyond a flat slab's (`volume > area * tolerance`). Positions and
- * winding are the gathered ones, already reversed for a mirrored matrix, so a shell outward in its own space stays
- * outward. Per component, not per entry: an inside-out part next to a larger outward one would pass a total.
+ * Whether entry `k` is a closed, manifold, outward shell in every connected component (degenerate triangles skipped):
+ * every edge, by position identity, is used exactly once in each direction, so each edge joins exactly two
+ * consistently wound triangles (an edge shared by two parts of the entry, used four times, fails), and every component
+ * (triangles joined by shared edges) encloses a positive signed volume beyond a flat slab's (`volume > area *
+ * tolerance`). Positions and winding are the gathered ones, already reversed for a mirrored matrix, so a shell outward
+ * in its own space stays outward. Per component, not per entry: an inside-out part next to a larger outward one would
+ * pass a total.
  */
 function closedOutwardShell(g: Gathered, posIds: Uint32Array, posCount: number, k: number, tolerance: number): boolean {
   const start = g.entryTriangles[k]!;
   const end = g.entryTriangles[k + 1]!;
   const edgeKey = (u: number, v: number): number => (u < v ? u * posCount + v : v * posCount + u);
+  /** Position id of corner `c` (0, 1 or 2) of triangle `t`. */
+  const corner = (t: number, c: number): number => posIds[g.index[t * 3 + c]!]!;
   const triangles: number[] = [];
-  // +1 per use of an edge from its lower posId to its higher, -1 the other way: 0 everywhere when closed and consistently wound.
-  const balance = new Map<number, number>();
-  const tally = (u: number, v: number): void => {
+  // Per edge: bit 1 once it is used from its lower position id to its higher, bit 2 once it is used the other way.
+  const uses = new Map<number, number>();
+  const use = (u: number, v: number): boolean => {
     const key = edgeKey(u, v);
-    balance.set(key, (balance.get(key) ?? 0) + (u < v ? 1 : -1));
+    const bit = u < v ? 1 : 2;
+    const seen = uses.get(key) ?? 0;
+    if ((seen & bit) !== 0) return false; // a second use in the same direction: non-manifold or inconsistently wound
+    uses.set(key, seen | bit);
+    return true;
   };
   for (let t = start; t < end; t++) {
-    const a = posIds[g.index[t * 3]!]!;
-    const b = posIds[g.index[t * 3 + 1]!]!;
-    const c = posIds[g.index[t * 3 + 2]!]!;
+    const a = corner(t, 0);
+    const b = corner(t, 1);
+    const c = corner(t, 2);
     if (a === b || b === c || a === c) continue;
     triangles.push(t);
-    tally(a, b);
-    tally(b, c);
-    tally(c, a);
+    if (!use(a, b) || !use(b, c) || !use(c, a)) return false;
   }
   if (triangles.length === 0) return false;
-  for (const n of balance.values()) if (n !== 0) return false;
+  for (const bits of uses.values()) if (bits !== 3) return false; // used in one direction only: an open edge
   const components = new Islands(triangles.length);
   const byEdge = new Map<number, number>();
   const join = (i: number, u: number, v: number): void => {
@@ -261,9 +278,9 @@ function closedOutwardShell(g: Gathered, posIds: Uint32Array, posCount: number, 
     else components.union(i, other);
   };
   triangles.forEach((t, i) => {
-    const a = posIds[g.index[t * 3]!]!;
-    const b = posIds[g.index[t * 3 + 1]!]!;
-    const c = posIds[g.index[t * 3 + 2]!]!;
+    const a = corner(t, 0);
+    const b = corner(t, 1);
+    const c = corner(t, 2);
     join(i, a, b);
     join(i, b, c);
     join(i, c, a);
@@ -299,11 +316,15 @@ function closedOutwardShell(g: Gathered, posIds: Uint32Array, posCount: number, 
 
 /**
  * Coplanar contact: triangles are grouped by plane, split into the two facing sides, and each side is merged into
- * islands (polygons) along shared edges. Equal boundaries on the same side are duplicates: one stays. An island whose
- * boundary edges exactly equal an island's on the other side is a coincident, opposite pair, whatever the
- * triangulation. It is a seam (both go) only when the two islands' entries are disjoint and `seamSafe` holds for
- * every entry involved (closed, outward, single-sided, opaque); otherwise both are `kept`. With `seamSafe` null
- * (contact removal off) no pair is judged. Partial overlaps are left alone (invisible cost, never a visible hole).
+ * islands (polygons) along shared edges. An island without boundary edges is skipped: a region covered twice with
+ * different triangulations fuses into one island whose every edge is used twice, and its empty outline would match
+ * any other such region's. Equal non-empty boundaries on the same side would be duplicates (one stays), but islands
+ * sharing outline edges fuse into one, so that check only guards the invariant; exact duplicates are removed before
+ * this pass. An island whose boundary edges exactly equal an island's on the other side is a coincident, opposite
+ * pair, whatever the triangulation. It is a seam (both go) only when the two islands' entries are disjoint and
+ * `seamSafe` holds for every entry involved (closed, manifold, outward, front-side, opaque); otherwise both are
+ * `kept`. With `seamSafe` null (contact removal off) no pair is judged. Partial overlaps are left alone (invisible
+ * cost, never a visible hole).
  */
 function coincidentIslands(
   g: Gathered,
@@ -375,6 +396,8 @@ function coincidentIslands(
         }
       }
       const boundary = [...counts.entries()].filter(([, c]) => c === 1).map(([k]) => k).sort().join(';');
+      // No outline: every such region shares the empty key, so it can be matched against nothing. Leave it alone.
+      if (boundary.length === 0) continue;
       const existing = out.get(boundary);
       if (existing) duplicates.push(...island); // same side, same outline: keep the first island only
       else out.set(boundary, island);
@@ -428,7 +451,17 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
     degenerateFaces: 0,
     excludedEntries: entries.filter((e) => e.bake === false).length,
   };
-  const opaque = (t: number): boolean => entries[g.triangleEntry[t]!]!.opaque === true;
+  // Entries whose faces a rule may remove (opaque and front-side only), and entries whose faces block buried-face rays
+  // (opaque and front- or double-sided: a back-side shell draws its far wall behind whatever is inside it).
+  const removable = (k: number): boolean => {
+    const e = entries[k]!;
+    return e.opaque === true && e.side === FrontSide && e.doubleSided !== true;
+  };
+  const occludes = (k: number): boolean => {
+    const e = entries[k]!;
+    return e.opaque === true && (e.side === FrontSide || e.side === DoubleSide);
+  };
+  let kept: number[] = [];
 
   // 1. Position identity: vertices within `tolerance` share a posId (locked vertices keep their own).
   const inv = 1 / opts.tolerance;
@@ -476,26 +509,25 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
     candidates.push(t);
   }
   if (opts.removeContactFaces || opts.removeDuplicateFaces) {
-    // An entry may lose seam faces only when it is opaque, single-sided and a closed, outward shell (computed once).
+    // An entry may lose seam faces only when it is opaque, front-side and a closed, manifold, outward shell (computed once).
     const shells = new Int8Array(entries.length); // 0 not yet computed, 1 closed and outward, -1 not
     const seamSafe = (k: number): boolean => {
-      const entry = entries[k]!;
-      if (entry.opaque !== true || entry.doubleSided === true) return false;
+      if (!removable(k)) return false;
       if (shells[k] === 0) shells[k] = closedOutwardShell(g, posIds, nextPos, k, opts.tolerance) ? 1 : -1;
       return shells[k] === 1;
     };
-    const { seams, duplicates, kept } = coincidentIslands(g, posIds, candidates, opts.tolerance, opts.removeContactFaces ? seamSafe : null);
+    const found = coincidentIslands(g, posIds, candidates, opts.tolerance, opts.removeContactFaces ? seamSafe : null);
+    kept = found.kept;
     if (opts.removeContactFaces) {
-      for (const t of seams) {
+      for (const t of found.seams) {
         if (!removedTriangle[t]) {
           removedTriangle[t] = 1;
           report.contactFaces++;
         }
       }
-      report.keptCoincidentFaces = kept.length;
     }
     if (opts.removeDuplicateFaces) {
-      for (const t of duplicates) {
+      for (const t of found.duplicates) {
         if (!removedTriangle[t]) {
           removedTriangle[t] = 1;
           report.duplicateFaces++;
@@ -505,10 +537,10 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
   }
 
   // 3. Buried faces (opt-in): every ray from the face's front, over the hemisphere, hits opaque geometry within
-  // `distance`. Only opaque faces block, and only faces of opaque entries are removed.
+  // `distance`. Only faces of `occludes` entries block, and only faces of `removable` entries are removed.
   if (buried) {
     const occluders: number[] = [];
-    for (let t = 0; t < triangleCount; t++) if (!removedTriangle[t] && opaque(t)) occluders.push(t);
+    for (let t = 0; t < triangleCount; t++) if (!removedTriangle[t] && occludes(g.triangleEntry[t]!)) occluders.push(t);
     if (occluders.length > 0) {
       const occluder = new BufferGeometry();
       occluder.setAttribute('position', new BufferAttribute(g.position, 3));
@@ -541,24 +573,24 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
         }
         return true;
       };
-      // The occluders are exactly the surviving faces of opaque entries: the candidates for removal.
+      // Candidates: the surviving faces of opaque, front-side entries, all of which are occluders.
       for (const t of occluders) {
-        if (triangleLocked(t)) continue;
+        if (triangleLocked(t) || !removable(g.triangleEntry[t]!)) continue;
         a.fromArray(g.position, g.index[t * 3]! * 3);
         b.fromArray(g.position, g.index[t * 3 + 1]! * 3);
         c.fromArray(g.position, g.index[t * 3 + 2]! * 3);
         n.copy(b).sub(a).cross(c.clone().sub(a)).normalize();
         const centroid = a.clone().add(b).add(c).multiplyScalar(1 / 3);
-        const front = blocked(centroid.clone().addScaledVector(n, eps), n);
-        if (!front) continue;
-        const doubleSided = entries[g.triangleEntry[t]!]!.doubleSided === true;
-        if (doubleSided && !blocked(centroid.clone().addScaledVector(n, -eps), n.clone().negate())) continue;
+        if (!blocked(centroid.clone().addScaledVector(n, eps), n)) continue;
         removedTriangle[t] = 1;
         report.buriedFaces++;
       }
       occluder.dispose();
     }
   }
+
+  // Kept coincident faces that no later rule removed.
+  if (opts.removeContactFaces) for (const t of kept) if (!removedTriangle[t]) report.keptCoincidentFaces++;
 
   // 4. Weld: same posId, normals and tangent directions within normalAngle, identical tangent w and uv, colours within colorTolerance.
   const cosTol = Math.cos((opts.normalAngle * Math.PI) / 180);

@@ -1,4 +1,4 @@
-import { BatchedMesh, Color, DoubleSide, Matrix4, Mesh, NoBlending, NormalBlending, WebGLCoordinateSystem, type BufferGeometry, type CoordinateSystem, type InstancedMesh, type Material, type Scene } from 'three';
+import { BatchedMesh, Color, DoubleSide, LessEqualDepth, Matrix4, Mesh, NoBlending, NormalBlending, WebGLCoordinateSystem, type BufferGeometry, type CoordinateSystem, type InstancedMesh, type Material, type Scene } from 'three';
 import { bakeGeometries, type BakeEntry, type BakeOptions, type BakeReport } from './bake.js';
 import { createCulledInstancedMesh } from './instancing.js';
 import type { NestedPassPolicy } from './culling.js';
@@ -320,27 +320,54 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
 }
 
 /**
- * Whether a material hides whatever lies behind its faces, so the bake may remove faces nothing can see: nothing
- * blends (not transparent; normal or no blending), no fragment is discarded (`alphaTest`, `alphaHash`,
- * `alphaToCoverage`, a node material's `maskNode` or `alphaTestNode`, or a custom fragment stage: `ShaderMaterial`,
- * `fragmentNode`), no transmission, and depth write and depth test are on. Anything else counts as not opaque, which
- * only keeps faces.
+ * Whether a material hides whatever lies behind its faces and draws them where the geometry puts them, so the bake may
+ * remove faces nothing can see:
+ * - nothing blends: not transparent, normal or no blending, no transmission;
+ * - no fragment is discarded: no `alphaTest`, `alphaHash`, `alphaToCoverage`, `maskNode`, `alphaTestNode`, custom
+ *   fragment stage (`ShaderMaterial`, `fragmentNode`), material `clippingPlanes` or `stencilWrite` (the stencil test);
+ * - no vertex moves and no custom depth: no `displacementMap`, `positionNode`, `vertexNode`, `geometryNode` or
+ *   `depthNode`; triangles, not `wireframe` lines;
+ * - depth write on, and the depth test on with three's default `LessEqualDepth`.
+ * Anything else counts as not opaque, which only keeps faces. The side is judged separately (`BakeEntry.side`), and
+ * renderer-level clipping planes are outside what a material shows.
  */
 function isOpaque(material: Material): boolean {
-  const m = material as Material & { transmission?: number; maskNode?: unknown; alphaTestNode?: unknown; fragmentNode?: unknown; isShaderMaterial?: boolean };
+  const m = material as Material & {
+    transmission?: number;
+    displacementMap?: unknown;
+    wireframe?: boolean;
+    maskNode?: unknown;
+    alphaTestNode?: unknown;
+    fragmentNode?: unknown;
+    positionNode?: unknown;
+    vertexNode?: unknown;
+    geometryNode?: unknown;
+    depthNode?: unknown;
+    isShaderMaterial?: boolean;
+  };
+  const unset = (value: unknown): boolean => value === undefined || value === null;
   return (
     !m.transparent &&
     (m.blending === NormalBlending || m.blending === NoBlending) &&
+    !((m.transmission ?? 0) > 0) &&
     !(m.alphaTest > 0) &&
     !m.alphaHash &&
     !m.alphaToCoverage &&
-    !((m.transmission ?? 0) > 0) &&
-    (m.maskNode ?? null) === null &&
-    (m.alphaTestNode ?? null) === null &&
-    (m.fragmentNode ?? null) === null &&
+    unset(m.maskNode) &&
+    unset(m.alphaTestNode) &&
+    unset(m.fragmentNode) &&
     m.isShaderMaterial !== true &&
+    (m.clippingPlanes?.length ?? 0) === 0 &&
+    !m.stencilWrite &&
+    unset(m.displacementMap) &&
+    unset(m.positionNode) &&
+    unset(m.vertexNode) &&
+    unset(m.geometryNode) &&
+    unset(m.depthNode) &&
+    m.wireframe !== true &&
     m.depthWrite &&
-    m.depthTest
+    m.depthTest &&
+    m.depthFunc === LessEqualDepth
   );
 }
 
@@ -361,6 +388,7 @@ export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Mater
       color: (m.material as Material & { color?: Color }).color ?? null,
       bake: m.userData.forgeBake !== false,
       doubleSided: material.side === DoubleSide,
+      side: material.side,
       opaque,
       vertexColors,
     }));

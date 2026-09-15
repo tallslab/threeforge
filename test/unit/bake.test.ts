@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { BoxGeometry, BufferGeometry, Color, Float32BufferAttribute, Matrix4, PlaneGeometry, Vector3 } from 'three';
+import { BackSide, BoxGeometry, BufferGeometry, Color, DoubleSide, Float32BufferAttribute, FrontSide, Matrix4, PlaneGeometry, Vector3 } from 'three';
 import { bakeGeometries, type BakeEntry } from '../../src/compiler/bake.js';
 
-/** An opaque box module (an entry without `opaque` counts as not opaque, so tests of removal set it). */
-const box = (x: number, size = 1, extra?: Partial<BakeEntry>): BakeEntry => ({ geometry: new BoxGeometry(size, size, size), matrix: new Matrix4().makeTranslation(x, 0, 0), opaque: true, ...extra });
+/** An opaque, front-side box module (an entry without `opaque` or `side` loses no faces, so tests of removal set both). */
+const box = (x: number, size = 1, extra?: Partial<BakeEntry>): BakeEntry => ({ geometry: new BoxGeometry(size, size, size), matrix: new Matrix4().makeTranslation(x, 0, 0), opaque: true, side: FrontSide, ...extra });
 const faceNormal = (p: Float32Array | ArrayLike<number>, i: number, index: ArrayLike<number>): Vector3 => {
   const a = new Vector3().fromArray(p, index[i * 3]! * 3);
   const b = new Vector3().fromArray(p, index[i * 3 + 1]! * 3);
@@ -371,5 +371,90 @@ describe('bakeGeometries vertex colours and tangents', () => {
       { geometry: new PlaneGeometry(1, 1), matrix: new Matrix4().makeTranslation(2, 0, 0) },
     ]);
     expect(geometry.getAttribute('tangent')).toBeUndefined();
+  });
+
+  it('gives a three-component tangent w = 1 and turns its xyz', () => {
+    const g = new PlaneGeometry(1, 1);
+    g.setAttribute('tangent', new Float32BufferAttribute(new Float32Array(g.attributes.position!.count * 3).map((_, i) => (i % 3 === 0 ? 1 : 0)), 3));
+    const { geometry } = bakeGeometries([{ geometry: g, matrix: new Matrix4().makeRotationZ(Math.PI / 2) }]);
+    expect(geometry.getAttribute('tangent')?.itemSize).toBe(4);
+    for (const [x, y, z, w] of rows(geometry, 'tangent', 4)) {
+      expect(x).toBeCloseTo(0);
+      expect(y).toBeCloseTo(1);
+      expect(z).toBeCloseTo(0);
+      expect(w).toBe(1);
+    }
+  });
+});
+
+describe('bakeGeometries fix round 1: non-manifold shells, render sides, fused duplicates, kept survivors', () => {
+  it('rejects a shell whose outward and inside-out parts share one edge (non-manifold): the filler keeps every face', () => {
+    // One entry: an outward box [0,2]x[0,2]x[0,1] and an inside-out box [2,3]x[2,3]x[0,1] sharing the edge
+    // (2,2,0)-(2,2,1); a second entry fills the inside-out box. The shared edge is used twice in each direction.
+    const joined = (outwardOffsetX: number): BakeEntry => ({
+      geometry: merged([
+        { geometry: new BoxGeometry(2, 2, 1), matrix: new Matrix4().makeTranslation(1 + outwardOffsetX, 1, 0.5) },
+        { geometry: new BoxGeometry(1, 1, 1), matrix: new Matrix4().makeTranslation(2.5, 2.5, 0.5), insideOut: true },
+      ]),
+      matrix: new Matrix4(),
+      opaque: true,
+      side: FrontSide,
+    });
+    const filler: BakeEntry = { geometry: new BoxGeometry(1, 1, 1), matrix: new Matrix4().makeTranslation(2.5, 2.5, 0.5), opaque: true, side: FrontSide };
+    const shared = bakeGeometries([joined(0), filler]).report;
+    // The -x and -y walls fuse with the outward box's faces across the shared edge, so four pairs are judged.
+    expect(shared.contactFaces).toBe(0);
+    expect(shared.keptCoincidentFaces).toBe(16);
+    expect(shared.triangles).toBe(36);
+    // Control: without the shared edge all six pairs are judged, and kept.
+    const apart = bakeGeometries([joined(-0.5), filler]).report;
+    expect(apart.contactFaces).toBe(0);
+    expect(apart.keptCoincidentFaces).toBe(24);
+  });
+
+  it('keeps and counts the seam unless every module draws front faces only; an entry without `side` does not', () => {
+    const cases: Array<[string, BakeEntry[]]> = [
+      ['BackSide', [box(0, 1, { side: BackSide }), box(1, 1, { side: BackSide })]],
+      ['one BackSide', [box(0), box(1, 1, { side: BackSide })]],
+      ['DoubleSide', [box(0, 1, { side: DoubleSide }), box(1)]],
+      ['side absent', [box(0, 1, { side: undefined }), box(1, 1, { side: undefined })]],
+    ];
+    for (const [label, entries] of cases) {
+      const { report } = bakeGeometries(entries);
+      expect(report.contactFaces, label).toBe(0);
+      expect(report.keptCoincidentFaces, label).toBe(4);
+      expect(report.triangles, label).toBe(24);
+    }
+  });
+
+  it('removes buried faces only of front-side modules, and back-side faces block no ray', () => {
+    const options = { removeBuried: { distance: 1 } };
+    const buried = (entries: BakeEntry[]): number => bakeGeometries(entries, options).report.buriedFaces;
+    expect(buried([box(0, 1), box(0, 0.2)]), 'control').toBe(12);
+    expect(buried([box(0, 1), box(0, 0.2, { side: BackSide })]), 'back-side box inside').toBe(0);
+    expect(buried([box(0, 1), box(0, 0.2, { side: DoubleSide })]), 'double-sided box inside').toBe(0);
+    expect(buried([box(0, 1), box(0, 0.2, { side: undefined })]), 'side absent inside').toBe(0);
+    // A back-side shell draws the far wall behind the box inside it, so it hides nothing; a double-sided one does.
+    expect(buried([box(0, 1, { side: BackSide }), box(0, 0.2)]), 'inside a back-side shell').toBe(0);
+    expect(buried([box(0, 1, { side: DoubleSide }), box(0, 0.2)]), 'inside a double-sided shell').toBe(12);
+  });
+
+  it('keeps two separate regions each covered twice with different triangulations (their fused islands have no outline)', () => {
+    // Each spot: a tile and the same tile turned 90 degrees about its normal (the other diagonal). Every edge of a spot
+    // is used twice, so each spot fuses into one island whose boundary is empty.
+    const tile = (x: number, turned: boolean): BakeEntry => ({ geometry: new PlaneGeometry(1, 1), matrix: new Matrix4().makeTranslation(x, 0, 0).multiply(new Matrix4().makeRotationZ(turned ? Math.PI / 2 : 0)), opaque: true, side: FrontSide });
+    const { report, triangleOrigins } = bakeGeometries([tile(0, false), tile(0, true), tile(10, false), tile(10, true)]);
+    expect(report.duplicateFaces).toBe(0);
+    expect(report.triangles).toBe(8);
+    expect(new Set(triangleOrigins)).toEqual(new Set([0, 1, 2, 3]));
+  });
+
+  it('counts only the kept coincident faces that survive the bake: a kept pair buried inside a solid is not counted', () => {
+    const card = (turned: boolean): BakeEntry => ({ geometry: new PlaneGeometry(0.5, 0.5), matrix: new Matrix4().makeRotationY(turned ? Math.PI : 0), opaque: true, side: FrontSide });
+    expect(bakeGeometries([box(0, 1), card(false), card(true)]).report.keptCoincidentFaces, 'without removeBuried').toBe(4);
+    const { report } = bakeGeometries([box(0, 1), card(false), card(true)], { removeBuried: { distance: 1 } });
+    expect(report.contactFaces).toBe(0);
+    expect(report.buriedFaces).toBe(4);
+    expect(report.keptCoincidentFaces).toBe(0);
   });
 });

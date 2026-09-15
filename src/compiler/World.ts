@@ -109,7 +109,7 @@ export interface BakeSummary {
   inputTriangles: number;
   triangles: number;
   contactFaces: number;
-  /** Faces of coincident, opposite-winding pairs the seam rule kept: not provably a seam between two touching solids. */
+  /** Faces of coincident, opposite-winding pairs the seam rule kept (not provably a seam between two touching solids) and no later rule removed. */
   keptCoincidentFaces: number;
   duplicateFaces: number;
   buriedFaces: number;

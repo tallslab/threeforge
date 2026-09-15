@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { bakeProgressLine } from '../../src/cli/analyze.js';
 import { COMMAND_SPECS, COMMANDS, formatUsage, parseArgs, RANGES, UsageError, validateInput } from '../../src/cli/args.js';
 import { explain, REMEDIES } from '../../src/cli/explain.js';
 import { printDocument, summarize, summarizeOptimize } from '../../src/cli/format.js';
@@ -136,17 +137,34 @@ describe('summarize', () => {
     expect(text).toContain('parity 0.01%');
   });
 
-  it('prints the bake line with the coincident faces the seam guard kept', () => {
+  const bakeDoc = (bake: Record<string, number>): AgentDocument => {
     const before = emptyFrame(env);
     const after = emptyFrame(env);
     const input: AnalyzeInput = { file: 'a.glb', backend: 'webgl2', tier: 'auto', budget: null, frames: 30, compile: true, bake: 'on', views: 0, timeout: 60000, headed: false };
-    const compile = {
-      after: { batches: 0, instanced: 0, baked: 1, spriteBatches: 0, frozen: 0, meshes: 0 },
-      skipped: [],
-      bake: { groups: 1, inputTriangles: 48, triangles: 36, contactFaces: 12, keptCoincidentFaces: 4, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 10, excludedEntries: 0 },
-    } as unknown as AgentDocument['compile'];
-    const doc: AgentDocument = { schemaVersion: 1, tool: 'threeforge', version: '0.2.0', command: 'analyze', input, env, asset: null, before, after, compile, parity: null, hints: [], verdict: verdictOf(after, before, null, null), timings: { totalMs: 10 } };
+    const compile = { after: { batches: 0, instanced: 0, baked: 1, spriteBatches: 0, frozen: 0, meshes: 0 }, skipped: [], bake } as unknown as AgentDocument['compile'];
+    return { schemaVersion: 1, tool: 'threeforge', version: '0.2.0', command: 'analyze', input, env, asset: null, before, after, compile, parity: null, hints: [], verdict: verdictOf(after, before, null, null), timings: { totalMs: 10 } };
+  };
+
+  it('prints the bake line with the coincident faces the seam guard kept', () => {
+    const doc = bakeDoc({ groups: 1, inputTriangles: 48, triangles: 36, contactFaces: 12, keptCoincidentFaces: 4, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 10, excludedEntries: 0 });
     expect(summarize(doc)).toContain('bake: 1 groups · 48 → 36 tris · seams 12 · kept coincident 4 · duplicates 0 · buried 0 · welded 10');
+  });
+
+  it('prints 0 kept coincident faces for a bake report from an older threeforge that lacks the field', () => {
+    const doc = bakeDoc({ groups: 1, inputTriangles: 48, triangles: 36, contactFaces: 12, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 10, excludedEntries: 0 });
+    expect(summarize(doc)).toContain('seams 12 · kept coincident 0 · duplicates 0');
+  });
+});
+
+describe('analyze bake progress line', () => {
+  it('counts the removed faces and the coincident faces the seam guard kept', () => {
+    const bake = { groups: 1, inputTriangles: 48, triangles: 36, contactFaces: 12, keptCoincidentFaces: 4, duplicateFaces: 1, buriedFaces: 2, weldedVertices: 10, excludedEntries: 0 };
+    expect(bakeProgressLine(bake)).toBe('bake: 48 -> 36 triangles (12 seam, 1 duplicate, 2 buried faces removed; 4 coincident faces kept; 10 vertices welded)');
+  });
+
+  it('prints 0 kept coincident faces when an older report lacks the field', () => {
+    const old = { groups: 1, inputTriangles: 48, triangles: 36, contactFaces: 12, duplicateFaces: 1, buriedFaces: 2, weldedVertices: 10, excludedEntries: 0 } as unknown as Parameters<typeof bakeProgressLine>[0];
+    expect(bakeProgressLine(old)).toBe('bake: 48 -> 36 triangles (12 seam, 1 duplicate, 2 buried faces removed; 0 coincident faces kept; 10 vertices welded)');
   });
 });
 

@@ -1,6 +1,11 @@
 import { expect, test, type ForgePage } from './fixtures.js';
 import { pixelDiff, settle } from './pixels.js';
 
+/** Records a measurement on the test (visible in the JSON and HTML reports) instead of printing it. */
+function note(description: string): void {
+  test.info().annotations.push({ type: 'bake', description });
+}
+
 /**
  * The bake must never change a pixel: a wrong deletion is visible, a missed one is invisible. Every case compares the
  * naive render with the baked one and inspects what the bake reports it removed.
@@ -90,7 +95,7 @@ test('a modular wall loses only its seams; a block buried inside a solid goes on
     expect(r.bake.keptCoincidentFaces, mode).toBe(0);
     expect(r.bake.buriedFaces, mode).toBe(mode === 'buried' ? 12 : 0);
     const diff = pixelDiff(before, after, { threshold: 4 });
-    console.log(`[${forge.backend}] wall bake=${mode}: ${r.bake.contactFaces} seam faces removed, ${r.bake.keptCoincidentFaces} kept, ${r.bake.buriedFaces} buried, pixel diff ${(diff * 100).toFixed(4)}%`);
+    note(`[${forge.backend}] wall bake=${mode}: ${r.bake.contactFaces} seam faces removed, ${r.bake.keptCoincidentFaces} kept, ${r.bake.buriedFaces} buried, pixel diff ${(diff * 100).toFixed(4)}%`);
     expect(diff, mode).toBeLessThan(0.0005);
   }
 });
@@ -108,7 +113,7 @@ test('a modular wall under a mirrored scene loses exactly its seams and keeps it
   expect(r.bake.contactFaces).toBe(27 * 4);
   expect(r.bake.keptCoincidentFaces).toBe(0);
   const diff = pixelDiff(before, after, { threshold: 4 });
-  console.log(`[${forge.backend}] mirrored wall: ${r.bake.contactFaces} seam faces removed, ${r.bake.keptCoincidentFaces} kept, pixel diff ${(diff * 100).toFixed(4)}%`);
+  note(`[${forge.backend}] mirrored wall: ${r.bake.contactFaces} seam faces removed, ${r.bake.keptCoincidentFaces} kept, pixel diff ${(diff * 100).toFixed(4)}%`);
   expect(diff).toBeLessThan(0.0005);
 });
 
@@ -166,7 +171,7 @@ test('back-to-back sign cards and a floor under a ceiling keep both faces, seen 
   expect(r.bake.keptCoincidentFaces).toBe(8);
   for (let i = 0; i < views.length; i++) {
     const diff = pixelDiff(before[i]!, await shoot(views[i]!.position), { threshold: 4 });
-    console.log(`[${forge.backend}] cards and floor/ceiling from ${views[i]!.name}: ${r.bake.contactFaces} removed, ${r.bake.keptCoincidentFaces} kept, pixel diff ${(diff * 100).toFixed(4)}%`);
+    note(`[${forge.backend}] cards and floor/ceiling from ${views[i]!.name}: ${r.bake.contactFaces} removed, ${r.bake.keptCoincidentFaces} kept, pixel diff ${(diff * 100).toFixed(4)}%`);
     expect(diff, views[i]!.name).toBeLessThan(0.0005);
   }
 });
@@ -235,6 +240,55 @@ test('a mirrored, normal-mapped mesh baked by bakeGeometries keeps its tangents 
   expect(r.bakedW).toEqual(r.sourceW);
   expect(r.report.triangles).toBe(r.report.inputTriangles);
   const diff = pixelDiff(before, after, { threshold: 4 });
-  console.log(`[${forge.backend}] mirrored normal-mapped sphere through bakeGeometries: tangent ${r.hasTangent ? 'carried' : 'dropped'}, w ${JSON.stringify(r.bakedW)}, pixel diff ${(diff * 100).toFixed(4)}%`);
+  note(`[${forge.backend}] mirrored normal-mapped sphere through bakeGeometries: tangent ${r.hasTangent ? 'carried' : 'dropped'}, w ${JSON.stringify(r.bakedW)}, pixel diff ${(diff * 100).toFixed(4)}%`);
   expect(diff).toBeLessThan(0.0005);
+});
+
+test('touching BackSide rooms keep the wall between them, seen from inside a room and from outside', async ({ forge }) => {
+  test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+  await forge.open('empty', { bake: '1' });
+  await forge.page.evaluate(() => {
+    const f = window.__forge;
+    const T = f.three;
+    // Two modular rooms drawn from the inside (BackSide) touching at x = 1.5. three draws only their back faces, so
+    // from inside the first room, and from outside on its -x side, the nearest drawn surface ahead is the shared wall.
+    const rooms: Array<[number, number, string]> = [[0, 0xc04040, 'room-a'], [3, 0x4060c0, 'room-b']];
+    for (const [x, color, name] of rooms) {
+      const room = new T.Mesh(new T.BoxGeometry(3, 3, 3), new T.MeshStandardMaterial({ color, roughness: 0.9, side: T.BackSide }));
+      room.position.x = x;
+      room.name = name;
+      (room.userData as { forge?: string }).forge = 'static';
+      f.scene.add(room);
+    }
+    const sun = new T.DirectionalLight(0xffffff, 1.5);
+    sun.position.set(2, 5, 3);
+    f.scene.add(new T.AmbientLight(0xffffff, 0.7), sun);
+    f.scene.updateMatrixWorld(true);
+  });
+  const views: Array<{ name: string; position: [number, number, number] }> = [
+    { name: 'inside the first room', position: [-1, 0.3, 0.4] },
+    { name: 'outside, on -x', position: [-9, 1, 0.5] },
+  ];
+  const shoot = async (position: [number, number, number]): Promise<Buffer> => {
+    await forge.page.evaluate((p) => {
+      const f = window.__forge;
+      f.camera.position.set(p[0], p[1], p[2]);
+      f.camera.lookAt(1.5, 0, 0);
+      f.camera.updateMatrixWorld();
+    }, position);
+    await settle(forge.page);
+    return forge.page.screenshot({ type: 'png' });
+  };
+  const before: Buffer[] = [];
+  for (const view of views) before.push(await shoot(view.position));
+  const r = await compileAndSettle(forge);
+  expect(r.after.baked).toBe(1);
+  expect(r.submissions).toBe(1);
+  expect(r.bake.contactFaces).toBe(0);
+  expect(r.bake.keptCoincidentFaces).toBe(4);
+  for (let i = 0; i < views.length; i++) {
+    const diff = pixelDiff(before[i]!, await shoot(views[i]!.position), { threshold: 4 });
+    note(`[${forge.backend}] BackSide rooms from ${views[i]!.name}: ${r.bake.contactFaces} removed, ${r.bake.keptCoincidentFaces} kept, pixel diff ${(diff * 100).toFixed(4)}%`);
+    expect(diff, views[i]!.name).toBeLessThan(0.0005);
+  }
 });
