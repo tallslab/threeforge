@@ -727,6 +727,43 @@ describe('World in a transformed scene', () => {
     }
   });
 
+  it('under a mirrored scene, instances children not mirrored relative to it, with a positive instance determinant', () => {
+    // Regression guard (Task 19 re-review): a repeated, non-mirrored-relative-to-root child must still compile into
+    // an InstancedMesh under a mirrored scene, and its instance matrix (three flips the mesh's front face by the
+    // group's own world determinant, never per instance) must keep a positive determinant, like a batched one.
+    const scene = new Scene();
+    scene.position.set(5, 0, 0);
+    scene.scale.set(-1, 1, 1);
+    const plain = Array.from({ length: 4 }, (_, i) => {
+      const m = tag.static(new Mesh(dodeca, solid(0x808080)));
+      m.name = `plain-${i}`;
+      m.position.set(i * 2, 0, 0);
+      m.rotation.y = 0.3 * i;
+      scene.add(m);
+      return m;
+    });
+    scene.updateMatrixWorld(true);
+    const world = new World(scene, { instanceThreshold: 4 });
+    const report = world.compile();
+    expect(report.after.instanced).toBe(1);
+    const instanced = world.slotOf(plain[0]!)!.batch as CulledInstancedMesh;
+    expect(instanced.isInstancedMesh).toBe(true);
+    const camera = new PerspectiveCamera(90, 1, 0.1, 100);
+    camera.position.set(5, 30, 20);
+    camera.lookAt(5, 0, 0);
+    camera.updateMatrixWorld();
+    instanced.onBeforeRender(renderer as never, scene, camera, instanced.geometry, instanced.material as never, null as never);
+    const row = new Matrix4();
+    for (const m of plain) {
+      const slot = world.slotOf(m)!;
+      expect(slot.batch).toBe(instanced);
+      const k = instanced.visibleIds.indexOf(slot.instanceId);
+      expect(k, `${m.name} is drawn`).toBeGreaterThanOrEqual(0);
+      instanced.getMatrixAt(k, row);
+      expect(row.determinant(), `${m.name} instance matrix`).toBeGreaterThan(0);
+    }
+  });
+
   it('under a mirrored scene, bakes children not mirrored relative to it with every front face outward, like the originals', () => {
     const f = mirroredScene();
     for (const m of [...f.plain, ...f.again]) expect(inwardFaces(m), `${m.name} (naive)`).toBe(0);

@@ -341,7 +341,8 @@ a threeforge transparent batch shares the main pass with another transparent sub
   scene's, so under a scaled scene they are scene units, not world units. Chunk cells (`chunkSize`) are computed in
   world space at compile and the `Streamer` keeps them: streaming assumes the scene does not move after compile.
   Mirroring is decided at compile (`mirrored` is relative to the scene); a scene that becomes mirrored only after
-  compile is not handled, except by sprite batches, which swap sides every frame.
+  compile is not handled, except by sprite batches, which check every render and swap `FrontSide`/`BackSide` only
+  when the scene's mirroring changed since the last check.
 - **BVH culling** (`attachBvhCulling`): a `bvh.js` tree of instance boxes replaces `BatchedMesh`'s linear
   per-instance test. The hook mirrors three's own `onBeforeRender` (fills `_multiDrawStarts/Counts`, the indirect
   texture) and is prepended with `prependRenderHook`, never overwriting the object's hook; hooks are marked with
@@ -465,6 +466,14 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
   level) once, so three's whole-object frustum test never culls an instance moved outside its old bounds while it is
   on screen, and fits their occlusion proxies to the new bounds. `world.onDirty(listener)` reports
   `markDirty`, `setVisible`, `compile` and `decompile` (a `RenderScheduler` subscribes to it).
+  - **With `originals: 'detach'`**, a detached original has no parent, so `updateMatrixWorld` alone would give its
+    own local matrix, not its former scene-relative one. `World` records each detached original's former parent (still
+    in the graph; only slotted originals are ever detached) at hide time. `markDirty` on a detached original composes
+    its world matrix from that former parent's current `matrixWorld` (read, not recomputed by this call — `markDirty`
+    on the parent, or an ancestor reached through the still-attached graph, refreshes it) and the original's own
+    freshly recomposed local matrix, instead of the parentless value `updateMatrixWorld` would give. `markDirty` on a
+    former parent also reaches its detached descendants (recursively, for a detached original that itself has
+    children), even though they are no longer its children in the graph.
 - **`RenderScheduler`** (`src/scheduler/RenderScheduler.ts`): `new RenderScheduler({ renderer, scene, camera,
   ledger?, world?, mixers?, watch?, keepAliveMs?, onRender? })`, `start()` drives `renderer.setAnimationLoop`,
   `tick(time)` renders only when `invalidate()` was called, the camera's world or projection matrix changed, a

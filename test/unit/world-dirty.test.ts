@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { Box3, BoxGeometry, DodecahedronGeometry, Frustum, Group, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Scene, Vector3, WebGLCoordinateSystem, type BatchedMesh, type Sphere } from 'three';
+import { Box3, BoxGeometry, CylinderGeometry, DodecahedronGeometry, Frustum, Group, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Scene, Vector3, WebGLCoordinateSystem, type BatchedMesh, type Object3D, type Sphere } from 'three';
 import { World } from '../../src/compiler/World.js';
 import type { CulledInstancedMesh } from '../../src/compiler/instancing.js';
 import { tag } from '../../src/tags.js';
 
 const box = new BoxGeometry(1, 1, 1);
 const dodeca = new DodecahedronGeometry(0.5);
+const cylinder = new CylinderGeometry(0.4, 0.4, 1, 8);
 const solid = (color: number) => new MeshStandardMaterial({ color });
 
 function batchedScene() {
@@ -164,5 +165,148 @@ describe('World.markDirty bounds', () => {
     const refresh = vi.spyOn(mesh.forgeCulling, 'refreshBounds');
     world.markDirty(scene); // all four instances, one refresh
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('World.markDirty with originals: "detach"', () => {
+  const renderer = { coordinateSystem: WebGLCoordinateSystem };
+
+  /**
+   * A translated, scaled scene: two direct-child statics (former parent is the scene itself), and a transformed
+   * `group` holding two nested-batched statics and four nested statics repeated enough to instance.
+   */
+  function detachedScene() {
+    const scene = new Scene();
+    scene.position.set(10, -3, 4);
+    scene.scale.set(2, 1, 3);
+    const direct = [0, 1].map((i) => {
+      const m = tag.static(new Mesh(box, solid(0x223344)));
+      m.name = `direct-${i}`;
+      m.position.set(i * 3, 0, 0);
+      scene.add(m);
+      return m;
+    });
+    const group = new Group();
+    group.name = 'group';
+    group.position.set(1, 2, -1);
+    group.rotation.y = 0.4;
+    scene.add(group);
+    // A distinct geometry from `direct` and `nestedInstanced`, so it forms its own small BatchedMesh: the compiler
+    // groups by geometry signature first (colour alone folds into per-instance colour on a shared geometry).
+    const nestedBatched = [0, 1].map((i) => {
+      const m = tag.static(new Mesh(cylinder, solid(0x556677)));
+      m.name = `nested-batched-${i}`;
+      m.position.set(i * 2, 1, 0);
+      group.add(m);
+      return m;
+    });
+    const nestedInstanced = Array.from({ length: 4 }, (_, i) => {
+      const m = tag.static(new Mesh(dodeca, solid(0x2244ff)));
+      m.name = `nested-instanced-${i}`;
+      m.position.set(i * 1.5, -1, 0);
+      group.add(m);
+      return m;
+    });
+    scene.updateMatrixWorld(true);
+    return { scene, group, direct, nestedBatched, nestedInstanced };
+  }
+
+  /** Generous enough to keep every instance in `detachedScene()`'s small world region visible, whatever the test moves. */
+  function wideCamera(): PerspectiveCamera {
+    const camera = new PerspectiveCamera(170, 1, 0.1, 2000);
+    camera.position.set(18, 500, 5);
+    camera.lookAt(18, 0, 5);
+    camera.updateMatrixWorld();
+    return camera;
+  }
+
+  /** What three draws for master instance `id` after a cull pass, or null when it is not drawn. */
+  function instancedWorld(mesh: CulledInstancedMesh, id: number, scene: Scene, camera: PerspectiveCamera): Matrix4 | null {
+    mesh.onBeforeRender(renderer as never, scene, camera, mesh.geometry, mesh.material as never, null as never);
+    const k = mesh.visibleIds.indexOf(id);
+    if (k < 0) return null;
+    const row = new Matrix4();
+    mesh.getMatrixAt(k, row);
+    return new Matrix4().multiplyMatrices(mesh.matrixWorld, row);
+  }
+
+  /** What `mesh`'s `matrixWorld` would be if it were still parented under `formerParent` (its own local matrix recomposed). */
+  function expectedDetachedWorld(mesh: Object3D, formerParent: Object3D): Matrix4 {
+    formerParent.updateMatrixWorld(true);
+    mesh.updateMatrix();
+    return new Matrix4().multiplyMatrices(formerParent.matrixWorld, mesh.matrix);
+  }
+
+  it('rewrites a detached direct child of the translated, scaled scene to its former scene-relative transform', () => {
+    const { scene, direct } = detachedScene();
+    const world = new World(scene, { originals: 'detach' });
+    world.compile();
+    expect(direct[0]!.parent).toBeNull();
+    const slot = world.slotOf(direct[0]!)!;
+    const batch = slot.batch as BatchedMesh;
+    direct[0]!.position.x += 5;
+    direct[0]!.rotation.z = 0.6;
+    expect(world.markDirty(direct[0]!)).toBe(1);
+    scene.updateMatrixWorld();
+    const m = new Matrix4();
+    batch.getMatrixAt(slot.instanceId, m);
+    const drawn = new Matrix4().multiplyMatrices(batch.matrixWorld, m);
+    const expected = expectedDetachedWorld(direct[0]!, scene);
+    drawn.elements.forEach((e, i) => expect(e).toBeCloseTo(expected.elements[i]!, 3));
+  });
+
+  it('rewrites a detached nested original (scene, a transformed group, then the mesh) to its former scene-relative transform: batched and instanced', () => {
+    const { scene, group, nestedBatched, nestedInstanced } = detachedScene();
+    const world = new World(scene, { originals: 'detach', instanceThreshold: 4 });
+    world.compile();
+    expect(nestedBatched[0]!.parent).toBeNull();
+    expect(nestedInstanced[0]!.parent).toBeNull();
+
+    const batchSlot = world.slotOf(nestedBatched[0]!)!;
+    const batch = batchSlot.batch as BatchedMesh;
+    nestedBatched[0]!.position.y += 4;
+    expect(world.markDirty(nestedBatched[0]!)).toBe(1);
+    scene.updateMatrixWorld();
+    const m = new Matrix4();
+    batch.getMatrixAt(batchSlot.instanceId, m);
+    const drawnBatched = new Matrix4().multiplyMatrices(batch.matrixWorld, m);
+    const expectedBatched = expectedDetachedWorld(nestedBatched[0]!, group);
+    drawnBatched.elements.forEach((e, i) => expect(e).toBeCloseTo(expectedBatched.elements[i]!, 3));
+
+    const instSlot = world.slotOf(nestedInstanced[0]!)!;
+    const instanced = instSlot.batch as CulledInstancedMesh;
+    nestedInstanced[0]!.position.z += 3;
+    expect(world.markDirty(nestedInstanced[0]!)).toBe(1);
+    scene.updateMatrixWorld();
+    const drawnInstanced = instancedWorld(instanced, instSlot.instanceId, scene, wideCamera());
+    expect(drawnInstanced, 'instanced original is drawn').not.toBeNull();
+    const expectedInstanced = expectedDetachedWorld(nestedInstanced[0]!, group);
+    drawnInstanced!.elements.forEach((e, i) => expect(e).toBeCloseTo(expectedInstanced.elements[i]!, 3));
+  });
+
+  it('markDirty on the former parent rewrites its detached descendants (batched and instanced), using the parent’s current transform', () => {
+    const { scene, group, nestedBatched, nestedInstanced } = detachedScene();
+    const world = new World(scene, { originals: 'detach', instanceThreshold: 4 });
+    world.compile();
+    group.position.x += 6; // the former parent itself moves; the originals' own local matrices are untouched
+    const batchSlot = world.slotOf(nestedBatched[1]!)!;
+    const instSlot = world.slotOf(nestedInstanced[1]!)!;
+
+    const updated = world.markDirty(group);
+    expect(updated).toBe(nestedBatched.length + nestedInstanced.length);
+
+    scene.updateMatrixWorld();
+    const batch = batchSlot.batch as BatchedMesh;
+    const m = new Matrix4();
+    batch.getMatrixAt(batchSlot.instanceId, m);
+    const drawnBatched = new Matrix4().multiplyMatrices(batch.matrixWorld, m);
+    const expectedBatched = expectedDetachedWorld(nestedBatched[1]!, group);
+    drawnBatched.elements.forEach((e, i) => expect(e).toBeCloseTo(expectedBatched.elements[i]!, 3));
+
+    const instanced = instSlot.batch as CulledInstancedMesh;
+    const drawnInstanced = instancedWorld(instanced, instSlot.instanceId, scene, wideCamera());
+    expect(drawnInstanced, 'instanced original is drawn').not.toBeNull();
+    const expectedInstanced = expectedDetachedWorld(nestedInstanced[1]!, group);
+    drawnInstanced!.elements.forEach((e, i) => expect(e).toBeCloseTo(expectedInstanced.elements[i]!, 3));
   });
 });

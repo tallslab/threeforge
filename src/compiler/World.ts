@@ -245,6 +245,16 @@ export class World {
   private slots = new Map<Mesh, Slot>();
   private originalsByBatch = new Map<BatchedMesh | InstancedMesh, Mesh[]>();
   private hidden: OriginalState[] = [];
+  /**
+   * `originals: 'detach'` only: each detached original's former parent (still in the graph; only slotted originals
+   * are ever detached). `markDirty` reads this instead of the parentless `matrixWorld` `updateMatrixWorld` would give.
+   */
+  private detachedParents = new Map<Object3D, Object3D>();
+  /**
+   * The reverse index: former parent -> its detached originals, so `markDirty` on that parent (or an ancestor
+   * reached through the still-attached graph) can reach them even though they are no longer its children.
+   */
+  private detachedByParent = new Map<Object3D, Set<Object3D>>();
   private materialSwaps: { mesh: Mesh; material: Material }[] = [];
   private compiled = false;
 
@@ -542,15 +552,20 @@ export class World {
    * recomputes the bounds of each touched batch and instanced group once, so three's whole-object frustum test keeps a
    * moved instance, and fits their occlusion proxies to the new bounds. Sprite batches follow on their own. Returns the
    * number of batched instances updated.
+   *
+   * With `originals: 'detach'`, a detached original has no parent, so `updateMatrixWorld` alone would give its local
+   * matrix, not its former scene-relative one: its world matrix is instead composed from its former parent's current
+   * one (read, not recomputed here — `markDirty` on that parent, or an ancestor reached through the still-attached
+   * graph, refreshes it) and the original's own freshly recomposed local matrix. `markDirty` on a former parent
+   * reaches its detached descendants too, even though they are no longer its children.
    */
   markDirty(object: Object3D): number {
-    object.traverse((o) => o.updateMatrix());
-    object.updateMatrixWorld(true);
     let updated = 0;
     const rebakes = new Set<BakedGroup>();
     const batches = new Set<BatchedMesh>();
     const handles = new Set<InstanceCullingHandle>();
-    object.traverse((o) => {
+
+    const visitSlot = (o: Object3D): void => {
       const slot = this.slots.get(o as Mesh);
       if (!slot) return;
       const bakedGroup = this.baked.find((b) => b.mesh === slot.batch);
@@ -570,7 +585,34 @@ export class World {
         handles.add((target as CulledInstancedMesh).forgeCulling);
       }
       updated++;
-    });
+    };
+
+    // A detached original's own children are off the graph too (removeFromParent leaves its subtree intact under
+    // it), so they need the same manual matrixWorld composition, seeded from the parent's just-computed matrixWorld.
+    // Nested detach (a detached original whose recorded former parent is itself detached) composes the same way.
+    const rebuildDetached = (node: Object3D, parentWorld: Matrix4): void => {
+      node.updateMatrix();
+      node.matrixWorld.multiplyMatrices(parentWorld, node.matrix);
+      visitSlot(node);
+      const nested = this.detachedByParent.get(node);
+      if (nested) for (const child of nested) rebuildDetached(child, node.matrixWorld);
+      for (const child of node.children) rebuildDetached(child, node.matrixWorld);
+    };
+
+    const formerParent = this.detachedParents.get(object);
+    if (formerParent) {
+      // `object` is itself a detached original: rebuild it (and any of its own descendants) from its former parent.
+      rebuildDetached(object, formerParent.matrixWorld);
+    } else {
+      object.traverse((o) => o.updateMatrix());
+      object.updateMatrixWorld(true);
+      object.traverse((o) => {
+        visitSlot(o);
+        const detachedChildren = this.detachedByParent.get(o);
+        if (detachedChildren) for (const child of detachedChildren) rebuildDetached(child, o.matrixWorld);
+      });
+    }
+
     for (const group of rebakes) rebake(group);
     for (const batch of batches) {
       batch.computeBoundingBox();
@@ -769,6 +811,8 @@ export class World {
     this.originalsByBatch = new Map();
     this.cullingHandles = new Map();
     this.hidden = [];
+    this.detachedParents = new Map();
+    this.detachedByParent = new Map();
     this.materialSwaps = [];
     this.compiled = false;
     this.emitDirty({ kind: 'decompile' });
@@ -814,9 +858,13 @@ export class World {
   }
 
   private hideOriginal(state: OriginalState): void {
-    const { mesh, synced } = state;
+    const { mesh, parent, synced } = state;
     if (this.originalsMode === 'detach' && !synced) {
       mesh.removeFromParent();
+      this.detachedParents.set(mesh, parent);
+      let siblings = this.detachedByParent.get(parent);
+      if (!siblings) this.detachedByParent.set(parent, (siblings = new Set()));
+      siblings.add(mesh);
     } else {
       mesh.layers.set(FORGE_HIDDEN_LAYER);
       if (!synced) mesh.matrixAutoUpdate = false;
