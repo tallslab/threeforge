@@ -64,6 +64,11 @@ async function start(host: Host): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  const repoLink = $<HTMLAnchorElement>('repoLink');
+  if (/^[\w.-]+\/[\w.-]+$/.test(REPO)) {
+    repoLink.href = `https://github.com/${REPO}`;
+    repoLink.hidden = false;
+  }
   $('liveBody').innerHTML = liveRows({});
   fetch(new URL('devices.json', document.baseURI).href)
     .then((r) => (r.ok ? r.json() : []))

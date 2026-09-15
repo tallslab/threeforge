@@ -1,3 +1,4 @@
+import { computeResultId } from '../scripts/bench-id.mjs';
 import type { BenchMetrics, SceneId } from '../test/app/benchMetrics.js';
 
 export type Backend = 'webgl2' | 'webgpu';
@@ -33,19 +34,10 @@ export interface DeviceResult {
 export const URL_LIMIT = 7000;
 export const ISSUE_LABEL = 'bench-result';
 
-/** FNV-1a over the strings that identify a device, as 8 base-36 characters. */
-function hash8(text: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  return (h.toString(36) + 'zzzzzzzz').slice(0, 8);
-}
-
-/** `YYYY-MM-DD-<hash of gpu, ua, backend>`: the file name under bench/devices. */
+/** `YYYY-MM-DD-<hash of gpu, ua, backend>`: the file name under bench/devices. `scripts/bench-schema.mjs`
+ * recomputes this same id from a submitted result's `createdAt` and `env` to confirm it wasn't forged. */
 export function resultId(env: DeviceEnv, now: Date): string {
-  return `${now.toISOString().slice(0, 10)}-${hash8(`${env.gpu}|${env.ua}|${env.backend}`)}`;
+  return computeResultId(env, now.toISOString().slice(0, 10));
 }
 
 const round = (n: number, digits: number): number => Number(n.toFixed(digits));

@@ -5,13 +5,29 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateDeviceResult } from './bench-schema.mjs';
 
-/** The first ```json fence in an issue body, or null. */
+// A regex fence scan (`/```json\s*\n([\s\S]*?)\n\s*```/`) can back-track catastrophically on a body that never
+// closes the fence (a whitespace-only body took seconds); a linear `indexOf` scan can't. The cap keeps a huge body
+// (an issue can hold far more than this) from costing more than a bounded scan either way.
+const MAX_BODY = 65536;
+const OPEN_FENCE = '```json';
+const CLOSE_FENCE = '```';
+
+/** The first ```json fence in an issue body, or null. Throws if the body exceeds MAX_BODY characters. */
 export function extractJson(body) {
-  const m = /```json\s*\n([\s\S]*?)\n\s*```/.exec(body ?? '');
-  return m ? m[1].trim() : null;
+  const text = typeof body === 'string' ? body : '';
+  if (text.length > MAX_BODY) throw new Error(`issue body: expected at most ${MAX_BODY} characters, got ${text.length}`);
+  const start = text.indexOf(OPEN_FENCE);
+  if (start === -1) return null;
+  let i = start + OPEN_FENCE.length;
+  while (i < text.length && (text[i] === ' ' || text[i] === '\t' || text[i] === '\r')) i++;
+  if (text[i] !== '\n') return null;
+  const close = text.indexOf(CLOSE_FENCE, i + 1);
+  if (close === -1) return null;
+  return text.slice(i + 1, close).trim();
 }
 
-/** Validates the body's JSON and writes `<dir>/<id>.json`; throws with the reasons otherwise. */
+/** Validates the body's JSON and writes `<dir>/<id>.json`; throws with the reasons otherwise. Never overwrites an
+ * existing result (`flag: 'wx'`): a second submission for the same id must be rejected, not silently replace it. */
 export function ingest(body, dir) {
   const json = extractJson(body);
   if (json === null) throw new Error('no ```json fence in the issue body');
@@ -25,7 +41,12 @@ export function ingest(body, dir) {
   if (!v.ok) throw new Error(`invalid result:\n- ${v.errors.join('\n- ')}`);
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${v.result.id}.json`);
-  writeFileSync(path, JSON.stringify(v.result, null, 2) + '\n');
+  try {
+    writeFileSync(path, JSON.stringify(v.result, null, 2) + '\n', { flag: 'wx' });
+  } catch (e) {
+    if (e.code === 'EEXIST') throw new Error(`result ${JSON.stringify(v.result.id)} already exists at ${JSON.stringify(path)}`);
+    throw e;
+  }
   return { path, result: v.result };
 }
 

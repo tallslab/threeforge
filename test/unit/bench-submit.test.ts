@@ -55,4 +55,11 @@ describe('table', () => {
     expect(rows.match(/<tr>/g)).toHaveLength(1);
     expect(deviceRows([{ ...result, env: { ...env, gpu: '<script>' } }])).toContain('&lt;script&gt;');
   });
+
+  it('escapes createdAt and apostrophes so neither can break out of the row HTML', () => {
+    const evilDate = { ...result, createdAt: '<img src=x>' };
+    expect(deviceRows([evilDate])).not.toContain('<img');
+    const evilGpu = { ...result, env: { ...env, gpu: "O'Brien GPU" } };
+    expect(deviceRows([evilGpu])).toContain('&#39;');
+  });
 });

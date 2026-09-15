@@ -2,10 +2,12 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SCENE_IDS } from './bench-schema.mjs';
+import { SCENE_IDS, validateDeviceResult } from './bench-schema.mjs';
 
 const TIER_ORDER = { 'phone-low': 0, 'phone-mid': 1, desktop: 2 };
 const short = (s) => (s.length > 40 ? `${s.slice(0, 39)}…` : s);
+/** Escapes a value for a Markdown table cell: `|` would end the cell early and a newline would end the row. */
+const cell = (s) => String(s).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 
 /** Low tier first, then by GPU name, newest first for the same device. */
 export function sortResults(results) {
@@ -21,15 +23,31 @@ export function renderDevices(results) {
       const s = r.scenes[id];
       return `${s.naive.sceneSubmissions} → ${s.optimized.sceneSubmissions} / ${s.naive.frameMs.toFixed(1)} → ${s.optimized.frameMs.toFixed(1)}`;
     });
-    return `| ${short(r.env.gpu)} (${short(r.env.platform)}) | ${r.env.backend} | ${r.env.tier} | ${r.env.fillRateGPix === null ? '–' : r.env.fillRateGPix.toFixed(1)} | ${cells.join(' | ')} | ${r.createdAt.slice(0, 10)} |`;
+    const gpu = cell(short(r.env.gpu));
+    const platform = cell(short(r.env.platform));
+    const backend = cell(r.env.backend);
+    const tier = cell(r.env.tier);
+    const date = cell(r.createdAt.slice(0, 10));
+    return `| ${gpu} (${platform}) | ${backend} | ${tier} | ${r.env.fillRateGPix === null ? '–' : r.env.fillRateGPix.toFixed(1)} | ${cells.join(' | ')} | ${date} |`;
   });
   return [head, sep, ...rows].join('\n');
 }
 
+/** Reads and validates every result file in `dir`; throws, naming the file, if one fails validation. */
 export function readResults(dir) {
   return readdirSync(dir)
     .filter((f) => f.endsWith('.json') && f !== 'index.json')
-    .map((f) => JSON.parse(readFileSync(join(dir, f), 'utf8')));
+    .map((f) => {
+      let parsed;
+      try {
+        parsed = JSON.parse(readFileSync(join(dir, f), 'utf8'));
+      } catch (e) {
+        throw new Error(`${JSON.stringify(f)}: invalid JSON (${e.message})`);
+      }
+      const v = validateDeviceResult(parsed);
+      if (!v.ok) throw new Error(`${JSON.stringify(f)}: ${v.errors.join('; ')}`);
+      return v.result;
+    });
 }
 
 /** Writes `<dir>/index.json` (what the page fetches as devices.json) and the markdown table; returns the count. */
