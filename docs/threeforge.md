@@ -225,7 +225,8 @@ provide), `dynamic-geometry` (`DynamicDrawUsage` / `StreamDrawUsage` attributes)
 
 ### `compile()` step by step
 
-1. Install scene hooks when the nested-pass policy is `reuse-main` (see culling).
+1. Install the `PassTracker` scene hooks (always): render depth, open passes and the main camera, for batch culling,
+   instancing and sprite batches (see culling).
 2. Classify every mesh; record the counts of meshes and distinct materials (`before`).
 3. Collect statics; with `dynamics: 'batch-sync'` also collect dynamics that pass every batch rule.
 4. `batchStatics`: register materials, group statics by **variant key + geometry attribute signature + castShadow +
@@ -290,9 +291,18 @@ a threeforge transparent batch shares the main pass with another transparent sub
 - **LOD** (`generateLods(geometry, { ratios, error, lockBorder })`, `prepareLods(root, options)`, `lodsOf`): meshoptimizer
   `simplify` (with `simplifySloppy` fallback), welding non-indexed meshes first; levels are extra geometry ranges in
   the batch or extra InstancedMeshes, picked by `levelFor(distance, distances)`.
-- **Nested passes**: a BatchedMesh whose visible set changes twice in one frame on WebGPU (a reflection pass, then
-  the main pass, same material) draws the main pass with the nested pass's instance list; `reuse-main` culls once per
-  frame with the outermost camera. Shadow passes are fine (own bind group).
+- **Nested passes** (shadow maps, reflections, portals): three renders them from inside another render, a shadow map
+  from the first `receiveShadow` object's draw. Every material of a batch reads one index texture; on WebGPU its
+  upload lands at once while a pass is submitted only when it ends, and on WebGL that receiving batch draws right
+  after the shadow render returns. So batches keep a **stable prefix**: `PassTracker` (scene hooks, marked) knows
+  which passes are open, and a nested pass on a batch an open pass has already culled leaves that pass's index rows
+  untouched, zeroes the counts of the rows its camera does not need, appends the ids it lacks (LOD by the main
+  camera's distance; sorted for its camera when the batch sorts) and marks the texture only when an appended row
+  changed; the counts and `_multiDrawCount` come back when the nested render ends (or when the tracker heals after
+  a render that threw). `nestedPasses` decides a batch no open pass has culled yet: `per-pass` culls it for the
+  nested camera, `reuse-main` appends to the rows of its last outermost cull. On WebGPU a nested pass issues one
+  draw command per slot, zero-count ones included. Compacted instanced meshes still draw the main camera's list in
+  nested passes under `reuse-main`.
 - **Occlusion** (`occlusion: true`): a proxy box per batch / instanced group carries `occlusionTest`; its own
   `onAfterRender` reads `renderer.isOccluded()` and hides the target next frame.
 
@@ -639,8 +649,10 @@ gated.
   `material.dispose()` can. threeforge's warm-up renders a scissored real frame instead (`docs/upstream-compileAsync.md`).
 - Shadow maps and the transmission backdrop re-render once per node frame id, which advances only on animation-frame
   ticks: measurements must come from a frame after a real tick (`frameAsync()` everywhere).
-- On WebGPU a batch whose visible set changes twice per frame (reflection then main) draws the main pass with the
-  nested pass's list: `nestedPasses: 'reuse-main'`.
+- On WebGPU a batch whose index rows change after a pass recorded its draw (a reflection or shadow map rendered from
+  inside that pass re-culls it) draws that pass with the new rows, and on WebGL the receiver that triggered a shadow
+  map draws the shadow camera's list: batches keep the enclosing rows as a stable prefix (section 7); compacted
+  instanced meshes use `nestedPasses: 'reuse-main'`.
 - Transmissive materials cannot be batched (thickness scales with the object matrix); reflectors fill their target
   one frame late; `KTX2Loader` needs `detectSupportAsync(renderer)`; `RenderObject.getDrawParameters()` returns null for
   a zero-instance InstancedMesh (no draw, no count); `ShaderMaterial` does not render on `WebGPURenderer`.
