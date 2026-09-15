@@ -1,14 +1,15 @@
 import type { Document, NodeIO } from '@gltf-transform/core';
-import { existsSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { VERSION } from '../version.js';
 import { analyzeAssetWithShots, pixelDiffPct } from './analyze.js';
 import { EnvironmentError, UsageError } from './errors.js';
-import { assertConfinedUri, assertConfinedUris, readGltfJson } from './gltf-uris.js';
+import { assertConfinedUri, assertConfinedUris, readGltfJson, resourcePathsOf, type ResourcePath } from './gltf-uris.js';
 import type { CliDeps } from './lifecycle.js';
 import { planSteps } from './pipeline.js';
 import { applySteps, createIO, DRACO_INSTALL, loadDeps, requirementsOf, statsOf } from './transform.js';
 import type { AgentDocument, AnalyzeInput, AssetStats, OptimizeDelta, OptimizeDocument, OptimizeInput, OptimizeVerify, Parity, Verdict } from './types.js';
+import { cleanText } from './untrusted.js';
 import { pageErrorsReason, verdictOf } from './verdict.js';
 
 /** `scene.glb` → `scene.forge.glb` next to it; `.gltf` inputs still default to a single `.glb`. */
@@ -23,8 +24,9 @@ export interface VerifyPageErrors {
   optimized: string[];
 }
 
-/** Both paths name one file: the same device and inode (a hard link, a symlink, a case variant on a case-insensitive filesystem). */
+/** Both paths name one file: the same resolved path, or the same device and inode (a hard link, a symlink, a case variant on a case-insensitive filesystem). */
 function sameFile(a: string, b: string): boolean {
+  if (resolve(a) === resolve(b)) return true;
   try {
     const statA = statSync(a, { bigint: true, throwIfNoEntry: false });
     if (!statA || statA.ino === 0n) return false;
@@ -42,10 +44,15 @@ export async function optimizeAsset(input: OptimizeInput, log: (line: string) =>
   if (!existsSync(file) || !statSync(file).isFile()) throw new UsageError(`file not found: ${input.file}`);
   const out = resolve(input.out ?? defaultOutputPath(file));
   if (!/\.(glb|gltf)$/i.test(out)) throw new UsageError(`--out must end in .glb or .gltf (got ${input.out ?? out})`);
-  if (out === file || sameFile(out, file)) throw new UsageError('--out must not be the input file');
+  if (sameFile(out, file)) throw new UsageError('--out must not be the input file');
   const steps = planSteps(input);
   // glTF-Transform reads every external image and buffer wherever its URI points; refuse the file before it does.
-  assertConfinedUris(readGltfJson(file), dirname(file));
+  const inputJson = readGltfJson(file);
+  assertConfinedUris(inputJson, dirname(file));
+  // A .gltf input is its JSON plus these files: nothing this run writes may land on one of them.
+  const inputFiles: InputFiles = { file, resources: resourcePathsOf(inputJson, dirname(file)) };
+  const named = inputFiles.resources.find((resource) => sameFile(out, resource.path));
+  if (named) throw new UsageError(`--out would overwrite the input's ${named.where} ${JSON.stringify(cleanText(named.uri, 200))}`);
   const deps = await loadDeps(steps, input.textures !== null && input.textures !== 'none');
   const io = await createIO(deps);
   const { Logger } = await import('@gltf-transform/core');
@@ -64,7 +71,7 @@ export async function optimizeAsset(input: OptimizeInput, log: (line: string) =>
   log(`${basename(file)}: ${before.meshes} meshes, ${before.materials} materials, ${before.triangles} triangles, ${before.bytes} bytes; ${steps.map((s) => s.name).join(' → ') || 'no steps'}`);
   const transformStarted = Date.now();
   const stepReports = await applySteps(doc, steps, deps, log);
-  await writeOutput(io, out, doc);
+  await writeOutput(io, out, doc, inputFiles);
   const transformMs = Date.now() - transformStarted;
   const after = statsOf(doc, statSync(out).size);
   const requires = requirementsOf(after.extensions);
@@ -90,23 +97,46 @@ export async function optimizeAsset(input: OptimizeInput, log: (line: string) =>
   };
 }
 
+/** The input file and the external resources its JSON names: what `optimize` must never write over. */
+interface InputFiles {
+  file: string;
+  resources: ResourcePath[];
+}
+
 /**
  * `io.write` picks GLB only for a lower-case `.glb` and writes anything else as `.gltf` plus resource files, so every
- * `.glb` (any case) goes through `writeBinary` here. A `.gltf` writer names each resource after its existing URI or
- * after the output's base name (`..%2F..%2Fx.gltf` → `..%2F..%2Fx.bin`) and writes it to
- * `path.join(dirname(out), decodeURIComponent(uri))` after `mkdir -p`, so the URIs of a dry `writeJSON` are checked
- * against the output's directory before anything is written.
+ * `.glb` (any case) goes through `writeBinary` here. For a `.gltf`, glTF-Transform names each resource after its
+ * existing URI (`createURI` returns `getURI()`, so a `.gltf` input's `scene.bin` stays `scene.bin`) or after the
+ * output's base name (`..%2F..%2Fx.gltf` → `..%2F..%2Fx.bin`), and `NodeIO._writeGLTF` writes it to
+ * `path.join(dirname(out), decodeURIComponent(uri))` after `mkdir -p`. So this serializes once with `writeJSON`, checks
+ * every resource target (inside the output's directory, and not the input file or one of its resources, by path or by
+ * device and inode), and only then writes the same JSON and resources itself, the way `_writeGLTF` does. Its skip of
+ * `http:` resource URIs never applies: `assertConfinedUri` refuses any scheme first.
  */
-async function writeOutput(io: NodeIO, out: string, doc: Document): Promise<void> {
+async function writeOutput(io: NodeIO, out: string, doc: Document, input: InputFiles): Promise<void> {
   if (/\.glb$/i.test(out)) {
     writeFileSync(out, await io.writeBinary(doc));
     return;
   }
+  const dir = dirname(out);
   const { FileUtils, Format } = await import('@gltf-transform/core');
   const { json, resources } = await io.writeJSON(doc, { format: Format.GLTF, basename: FileUtils.basename(out) });
-  assertConfinedUris(json, dirname(out));
-  for (const uri of Object.keys(resources)) assertConfinedUri(uri, 'resource', dirname(out));
-  await io.write(out, doc);
+  assertConfinedUris(json, dir);
+  const targets = Object.keys(resources).map((uri) => {
+    assertConfinedUri(uri, 'resource', dir);
+    return { uri, path: join(dir, decodeURIComponent(uri)) };
+  });
+  for (const target of targets) {
+    const clash = sameFile(target.path, input.file) ? 'file' : input.resources.find((resource) => sameFile(target.path, resource.path))?.where;
+    if (!clash) continue;
+    const what = clash === 'file' ? 'the input file' : `the input's ${clash}`;
+    throw new UsageError(`the .gltf output's resource ${JSON.stringify(cleanText(target.uri, 200))} would overwrite ${what} (${cleanText(target.path, 300)}); write the output to another directory, or as .glb`);
+  }
+  writeFileSync(out, JSON.stringify(json, null, 2));
+  for (const target of targets) {
+    mkdirSync(dirname(target.path), { recursive: true });
+    writeFileSync(target.path, resources[target.uri]!);
+  }
 }
 
 /**

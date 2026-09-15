@@ -542,7 +542,10 @@ swaps change data, not draw calls.
   path (symlinks followed). An absolute path, any other scheme (`file:`, `http:`, `C:`), a backslash, a NUL or invalid
   percent-encoding exits 2 before glTF-Transform reads anything. `--out` must end in `.glb` or `.gltf` (any case; a
   `.glb` is always written binary) and must not be the input file (same device and inode: a hard link, a symlink, a
-  case variant); a `.gltf` output whose resource URIs would leave its directory exits 2 before anything is written.
+  case variant) or one of its resources. A `.gltf` output whose resource URIs would leave its directory, or whose
+  resource would land on the input or on one of the input's resources (same path, or same device and inode), exits 2
+  before anything is written: glTF-Transform keeps each resource's URI, so a `.gltf` output beside a `.gltf` input
+  would rewrite the input's `.bin` and textures. Write it to another directory, or as `.glb`.
 - **Report**: `stats.before/after` (bytes, nodes, meshes, primitives, materials, textures, texture bytes, accessors,
   vertices, triangles, animations, skins, morph targets, extensions), one `steps[]` entry per step with the counts
   before and after and the time, `requires[]` (each extension of the output with the loader piece it needs and the

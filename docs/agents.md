@@ -180,7 +180,8 @@ pixels moved past `--parity`, when a clip, skin or morph target was lost, when t
 when either render raised a page error; size and count deltas are reported, not judged. If parity fails, go back to
 `--preset safe` or raise `--parity` only after looking at the views. The output never uses Draco. An image or buffer
 URI that is absolute, has a scheme other than `data:`, or leads outside the input's directory (symlinks included)
-exits `2` before anything is read, as does an `--out` that is the input file or does not end in `.glb`/`.gltf`.
+exits `2` before anything is read, as does an `--out` that is the input file or does not end in `.glb`/`.gltf`, and
+a `.gltf` output whose resources would overwrite the input's own (write it to another directory, or as `.glb`).
 Not covered: atlasing textured materials, KTX2 encoding.
 
 ## Budgets per device tier

@@ -1,7 +1,8 @@
 import { Document, NodeIO } from '@gltf-transform/core';
+import { createHash } from 'node:crypto';
 import { existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import pngjs from 'pngjs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseArgs } from '../../src/cli/args.js';
@@ -29,13 +30,16 @@ async function rejection(promise: Promise<unknown>): Promise<Error> {
   throw new Error('expected a rejection, but the call resolved');
 }
 
-/** One textured triangle; the texture and the buffer keep the given URIs when written as .gltf. */
+/**
+ * One textured triangle; the texture and the buffer keep the given URIs when written as .gltf. The 4×4 image is not a
+ * single colour, so the safe preset's `prune` keeps it (it replaces solid-colour textures with a factor).
+ */
 function texturedTriangle({ imageUri, bufferUri }: { imageUri?: string; bufferUri?: string } = {}): Document {
   const doc = new Document();
   const buffer = doc.createBuffer();
   if (bufferUri) buffer.setURI(bufferUri);
   const png = new pngjs.PNG({ width: 4, height: 4 });
-  png.data.fill(180);
+  for (let i = 0; i < png.data.length; i++) png.data[i] = i % 4 === 3 ? 255 : (i * 37) % 256;
   const texture = doc.createTexture('t').setImage(new Uint8Array(pngjs.PNG.sync.write(png))).setMimeType('image/png');
   if (imageUri) texture.setURI(imageUri);
   const position = doc.createAccessor().setType('VEC3').setArray(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0])).setBuffer(buffer);
@@ -175,6 +179,7 @@ describe('optimize --out', () => {
     const uris = [...(json.images ?? []), ...(json.buffers ?? [])].map((r) => r.uri);
     expect(uris.length).toBeGreaterThan(0);
     for (const uri of uris) expect(existsSync(join(dir, decodeURIComponent(uri))), uri).toBe(true);
+    expect((await new NodeIO().read(out)).getRoot().listMeshes()).toHaveLength(1);
   });
 
   it('refuses a .gltf output whose resource URIs would leave its directory, before writing anything', async () => {
@@ -187,5 +192,81 @@ describe('optimize --out', () => {
     expect(existsSync(out)).toBe(false);
     expect(readdirSync(root).sort()).toEqual(['a', 'secret.png']);
     expect(readdirSync(dir).sort()).toEqual(['fox.glb']);
+  });
+});
+
+/** Every file under `base`, recursively, mapped to its SHA-256: proves a run left a directory byte-identical. */
+function snapshotOf(base: string): Record<string, string> {
+  const hashes: Record<string, string> = {};
+  const walk = (current: string): void => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else hashes[relative(base, path)] = createHash('sha256').update(readFileSync(path)).digest('hex');
+    }
+  };
+  walk(base);
+  return hashes;
+}
+
+/**
+ * A `.gltf` input is its JSON plus its resources. glTF-Transform keeps each buffer's and image's URI (`createURI`
+ * returns `getURI()`) and writes it to `path.join(dirname(out), decodeURIComponent(uri))`, so a `.gltf` output beside
+ * the input rewrote the input's own `scene.bin` and left `scene.gltf` unloadable, with exit 0.
+ */
+describe("optimize never overwrites a .gltf input's resources", () => {
+  /** `scene.gltf` beside `scene.bin` and `tex/a.png`, the usual multi-file glTF. */
+  async function gltfInput(): Promise<string> {
+    const file = join(dir, 'scene.gltf');
+    await new NodeIO().write(file, texturedTriangle({ imageUri: 'tex/a.png', bufferUri: 'scene.bin' }));
+    return file;
+  }
+
+  it("refuses a .gltf output beside the input whose resources would replace the input's, leaving the input byte-identical and loadable", async () => {
+    const file = await gltfInput();
+    const before = snapshotOf(dir);
+    const error = await rejection(optimizeAsset(inputFor(file, '--out', join(dir, 'scene.opt.gltf'))));
+    expect(error).toBeInstanceOf(UsageError);
+    expect(error.message).toMatch(/would overwrite the input's/);
+    expect(error.message).toMatch(/another directory|\.glb/);
+    expect(snapshotOf(dir)).toEqual(before);
+    expect((await new NodeIO().read(file)).getRoot().listTextures()).toHaveLength(1);
+  });
+
+  it('refuses an output resource that is a hard link to an input resource', async () => {
+    const file = await gltfInput();
+    const outDir = join(root, 'out');
+    mkdirSync(outDir);
+    linkSync(join(dir, 'scene.bin'), join(outDir, 'scene.bin'));
+    const before = snapshotOf(dir);
+    const error = await rejection(optimizeAsset(inputFor(file, '--out', join(outDir, 'scene.opt.gltf'))));
+    expect(error).toBeInstanceOf(UsageError);
+    expect(error.message).toMatch(/would overwrite the input's/);
+    expect(snapshotOf(dir)).toEqual(before);
+    expect(existsSync(join(outDir, 'scene.opt.gltf'))).toBe(false);
+  });
+
+  it("refuses an --out that is one of the input's resources", async () => {
+    writeFileSync(join(dir, 'skin.gltf'), 'not really an image');
+    const file = writeGltf('scene.gltf', { images: [{ uri: 'skin.gltf' }] });
+    const error = await rejection(optimizeAsset(inputFor(file, '--out', join(dir, 'skin.gltf'))));
+    expect(error).toBeInstanceOf(UsageError);
+    expect(error.message).toMatch(/would overwrite the input's images\[0\]\.uri/);
+    expect(readFileSync(join(dir, 'skin.gltf'), 'utf8')).toBe('not really an image');
+  });
+
+  it('writes a .gltf output into another directory, re-runs over its own resources, and leaves the input byte-identical', async () => {
+    const file = await gltfInput();
+    const before = snapshotOf(dir);
+    const outDir = join(root, 'out');
+    mkdirSync(outDir);
+    const out = join(outDir, 'scene.opt.gltf');
+    const doc = await optimizeAsset(inputFor(file, '--out', out));
+    expect(doc.output.file).toBe(out);
+    expect(existsSync(join(outDir, 'scene.bin'))).toBe(true);
+    expect(existsSync(join(outDir, 'tex', 'a.png'))).toBe(true);
+    expect((await new NodeIO().read(out)).getRoot().listTextures()).toHaveLength(1);
+    await optimizeAsset(inputFor(file, '--out', out));
+    expect(snapshotOf(dir)).toEqual(before);
   });
 });

@@ -89,6 +89,36 @@ export function assertConfinedUris(json: { images?: unknown; buffers?: unknown }
   }
 }
 
+/** One external resource of a glTF document: where its URI sits in the JSON, the URI, and the file it names. */
+export interface ResourcePath {
+  where: string;
+  uri: string;
+  path: string;
+}
+
+/**
+ * The files the external `images[].uri` and `buffers[].uri` of `json` name, resolved as glTF-Transform resolves them
+ * (`path.resolve(baseDir, decodeURIComponent(uri))`). `data:` URIs and entries without a URI name no file. Call it after
+ * `assertConfinedUris`; a URI that does not decode is skipped here because that check already refused it.
+ */
+export function resourcePathsOf(json: { images?: unknown; buffers?: unknown }, baseDir: string): ResourcePath[] {
+  const paths: ResourcePath[] = [];
+  for (const key of ['images', 'buffers'] as const) {
+    const list = json[key];
+    if (!Array.isArray(list)) continue;
+    list.forEach((entry: unknown, i) => {
+      const uri = entry !== null && typeof entry === 'object' ? (entry as { uri?: unknown }).uri : undefined;
+      if (typeof uri !== 'string' || uri === '' || uri.startsWith('data:')) return;
+      try {
+        paths.push({ where: `${key}[${i}].uri`, uri, path: resolve(baseDir, decodeURIComponent(uri)) });
+      } catch {
+        // Undecodable: assertConfinedUri refuses it before this runs.
+      }
+    });
+  }
+  return paths;
+}
+
 /**
  * Refuses a resource URI that could make glTF-Transform read or write outside `baseDir` (`UsageError`, exit 2, naming
  * `where`). Allowed: no URI (`undefined`, `null`, `''`), a `data:` URI, a relative path. Refused, on the raw text and
