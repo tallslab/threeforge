@@ -11,6 +11,7 @@ import { verdictOf } from './verdict.js';
 export async function inspectApp(input: InspectInput, log: (line: string) => void = () => {}, deps: CliDeps = {}): Promise<AgentDocument> {
   const started = Date.now();
   const resources = new Resources();
+  resources.armAbort(deps.signal);
   return resources.run(async () => {
     const browser = await (deps.launch ?? launchBrowser)(input.backend, input.headed);
     resources.add('the browser', () => browser.close());

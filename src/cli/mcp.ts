@@ -1,11 +1,11 @@
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve as resolvePath } from 'node:path';
 import { analyzeAsset } from './analyze.js';
 import { validateInput } from './args.js';
 import { EnvironmentError, exitCodeFor, UsageError } from './errors.js';
 import { explain, REMEDIES } from './explain.js';
 import { inspectApp } from './inspect.js';
-import { Resources } from './lifecycle.js';
+import { Resources, type CliDeps } from './lifecycle.js';
 import { defaultOutputPath, optimizeAsset } from './optimize.js';
 import type { AnalyzeInput, InspectInput, OptimizeInput } from './types.js';
 import { cleanText } from './untrusted.js';
@@ -40,18 +40,53 @@ export const ok = (value: unknown, note?: string): ToolResult => {
  */
 export const fail = (error: unknown): ToolResult => ({ isError: true, content: [{ type: 'text', text: JSON.stringify({ error: cleanText(error instanceof Error ? error.message : String(error)), code: exitCodeFor(error) }) }] });
 
-/** `target` is `base` itself or nested inside it: no `..` escape, and not a different absolute root. */
+/** `target` is `base` itself or nested inside it: no `..` escape, and not a different absolute root. Callers pass
+ *  already-canonicalised (`realish`) paths so a symlink cannot make this lie. */
 function isInside(base: string, target: string): boolean {
   const rel = relative(base, target);
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+/** A filesystem root (POSIX `/`, a Windows drive root like `C:\`): every absolute path is trivially "inside" it,
+ *  so it cannot serve as a confinement boundary — unlike, say, the user's home directory, which is still a bounded,
+ *  user-specific location and is not special-cased here. */
+function isFsRoot(path: string): boolean {
+  return dirname(path) === path;
+}
+
+/**
+ * `realpathSync(target)`, resolving every symlink on the way — but `target` (an `optimize_asset.out`) may not
+ * exist yet, since the write happens after this check, and `realpathSync` throws on a path that doesn't exist. So
+ * this walks up to the nearest existing ancestor, canonicalises *that*, and appends the remaining, not-yet-existing
+ * segments lexically (they cannot be symlinks if nothing exists at them yet). Falls back to `target` unchanged only
+ * if nothing on the path resolves at all, which cannot happen for an absolute path (the filesystem root always
+ * exists and always resolves).
+ */
+function realish(target: string): string {
+  const pending: string[] = [];
+  let current = target;
+  for (;;) {
+    try {
+      const real = realpathSync(current);
+      return pending.length ? resolvePath(real, ...pending) : real;
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return target;
+      pending.unshift(current.slice(parent.length + 1));
+      current = parent;
+    }
+  }
 }
 
 /**
  * The MCP-only rule for `optimize_asset.out` (the CLI's `--out` has none of this: a local user typing a path is
  * trusted, an agent's is not). Resolves `out` (or the default `<name>.forge.glb` next to the input) to an absolute
  * path and throws `UsageError` (exit code 2) when it does not end in `.glb`/`.gltf`, sits outside both the input
- * file's directory and the working directory, or already exists without `overwrite: true`. `cwd` and `exists` are
- * injected so the extension and confinement logic is unit-testable without touching the filesystem.
+ * file's directory and the working directory, or already exists without `overwrite: true`. The confinement check is
+ * done on `realish`-canonicalised paths, so a symlink under either root that leads outside it is refused even
+ * though it looks lexically contained (matching `src/cli/server.ts`'s `realpathSync` defense against the same
+ * class of escape). The filesystem root is never treated as an allowed working directory (see `isFsRoot`), since
+ * every path is trivially "inside" it. `cwd` and `exists` are injected so the logic is unit-testable.
  */
 export function resolveOptimizeOut(file: string, out: string | null, overwrite: boolean, cwd: string = process.cwd(), exists: (path: string) => boolean = existsSync): string {
   const resolvedFile = resolvePath(cwd, file);
@@ -59,7 +94,14 @@ export function resolveOptimizeOut(file: string, out: string | null, overwrite: 
   if (!/\.(glb|gltf)$/i.test(target)) throw new UsageError(`out must end in .glb or .gltf (got ${out ?? target})`);
   const fileDir = dirname(resolvedFile);
   const workingDir = resolvePath(cwd);
-  if (!isInside(fileDir, target) && !isInside(workingDir, target)) throw new UsageError(`out must sit inside the input's directory (${fileDir}) or the working directory (${workingDir}) (got ${target})`);
+  const workingDirAllowed = !isFsRoot(workingDir);
+  const realTarget = realish(target);
+  const insideFileDir = isInside(realish(fileDir), realTarget);
+  const insideWorkingDir = workingDirAllowed && isInside(realish(workingDir), realTarget);
+  if (!insideFileDir && !insideWorkingDir) {
+    const scope = workingDirAllowed ? `the input's directory (${fileDir}) or the working directory (${workingDir})` : `the input's directory (${fileDir})`;
+    throw new UsageError(`out must sit inside ${scope} (got ${target})`);
+  }
   if (exists(target) && !overwrite) throw new UsageError(`out already exists: ${target} (pass overwrite: true to replace it)`);
   return target;
 }
@@ -70,7 +112,7 @@ interface StdinLike {
   off(event: 'end', listener: () => void): unknown;
 }
 
-export interface McpDeps {
+export interface McpDeps extends Pick<CliDeps, 'launch' | 'serve' | 'appDir'> {
   /** Defaults to `process.stdin`; tests inject a `PassThrough`. */
   stdin?: StdinLike;
   /** Defaults to `process.stdout`; forwarded to the SDK's `StdioServerTransport` unchanged. */
@@ -95,6 +137,13 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
   const onEnd = (): void => notifyEnded();
   stdin.once('end', onEnd);
 
+  // One AbortController for the whole session: every run tool gets its signal, so a client disconnecting mid-call
+  // (stdin end, below) aborts every call still in flight, closing its own Resources (browser/static server)
+  // instead of letting it run to completion after nothing will ever read the result. `launch`/`serve`/`appDir`
+  // (McpDeps, tests only) pass straight through; the CLI's own behaviour is unchanged when no signal is given.
+  const controller = new AbortController();
+  const runDeps: CliDeps = { launch: deps.launch, serve: deps.serve, appDir: deps.appDir, signal: controller.signal };
+
   let sdk: { McpServer: new (info: { name: string; version: string }) => McpServerLike };
   let transport: { StdioServerTransport: new (stdin?: unknown, stdout?: unknown) => unknown };
   let z: ZodLike;
@@ -107,17 +156,18 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
     throw new EnvironmentError(`the MCP server needs the SDK: ${INSTALL}`);
   }
   const server = new sdk.McpServer({ name: 'threeforge', version: VERSION });
-  const backend = z.enum(['webgl2', 'webgpu']).default('webgl2');
-  const tier = z.enum(['auto', 'desktop', 'phone-mid', 'phone-low']).default('auto');
-  // Bounds (RANGES) and cross-field rules live only in validateInput, not here: a zod-level rejection would return
-  // the SDK's own plain-text isError, while every bound threeforge defines should read the same `{ error, code }`
-  // JSON regardless of which field or command tripped it (src/cli/args.ts, RANGES, validateInput).
+  const tier = z.string().default('auto');
+  // Choices (CHOICES) and bounds (RANGES) — including integer-ness — live only in validateInput, not here: a
+  // zod-level rejection (a tight z.enum, a `.int()`) would return the SDK's own plain-text isError, while every
+  // rule threeforge defines should read the same `{ error, code }` JSON regardless of which field or command
+  // tripped it (src/cli/args.ts, CHOICES, RANGES, validateInput). Allowed values stay discoverable to agents
+  // through each field's `.describe()` text instead of a JSON Schema `enum`.
   const runShape = {
-    backend: backend.describe('Renderer backend to measure on'),
-    budget: z.number().int().optional().describe('Fail the verdict above this many scene submissions (an integer ≥ 0)'),
-    frames: z.number().int().default(30).describe('Frames to measure (medians; an integer ≥ 1, default 30)'),
+    backend: z.string().default('webgl2').describe('Renderer backend to measure on: webgl2 or webgpu (default webgl2)'),
+    budget: z.number().optional().describe('Fail the verdict above this many scene submissions (an integer ≥ 0)'),
+    frames: z.number().default(30).describe('Frames to measure (medians; an integer ≥ 1, default 30)'),
     compile: z.boolean().default(true).describe('Compile (batch) the scene and measure again'),
-    timeout: z.number().int().default(60000).describe('Bound in milliseconds on each page step: the load, every evaluate, the whole N-frame measurement, compile() (an integer from 1000 to 2147483647, default 60000)'),
+    timeout: z.number().default(60000).describe('Bound in milliseconds on each page step: the load, every evaluate, the whole N-frame measurement, compile() (an integer from 1000 to 2147483647, default 60000)'),
   };
   server.registerTool(
     'analyze_asset',
@@ -126,10 +176,10 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
       description: 'Render a .glb/.gltf headlessly, measure every frame cost (draw calls, overdraw, skinning, lighting, js, memory), compile it with threeforge, measure again, compare pixels and return hints with a verdict.',
       inputSchema: {
         file: z.string().describe('Path to a .glb or .gltf file'),
-        tier: tier.describe('Device tier for budgets and hints (auto detects from the machine)'),
+        tier: tier.describe('Device tier for budgets and hints: auto, desktop, phone-mid or phone-low (default auto; auto detects from the machine)'),
         ...runShape,
-        bake: z.enum(['off', 'on', 'buried']).default('off').describe('Bake finished groups into one mesh each (seams and duplicates removed); buried also removes faces solid geometry sits right in front of'),
-        views: z.number().int().default(0).describe('Extra orbit views for pixel parity (an integer from 0 to 64, default 0)'),
+        bake: z.string().default('off').describe('Bake finished groups into one mesh each: off, on or buried (default off); buried also removes faces solid geometry sits right in front of'),
+        views: z.number().default(0).describe('Extra orbit views for pixel parity (an integer from 0 to 64, default 0)'),
       },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
@@ -137,7 +187,7 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
       try {
         const input: AnalyzeInput = { file: String(args.file), backend: args.backend as AnalyzeInput['backend'], tier: args.tier as AnalyzeInput['tier'], budget: typeof args.budget === 'number' ? args.budget : null, frames: Number(args.frames ?? 30), compile: args.compile !== false, bake: (args.bake as AnalyzeInput['bake']) ?? 'off', views: Number(args.views ?? 0), timeout: Number(args.timeout ?? 60000), headed: false };
         validateInput('analyze', input, { names: 'fields' });
-        return ok(await analyzeAsset(input), DATA_NOTE);
+        return ok(await analyzeAsset(input, undefined, runDeps), DATA_NOTE);
       } catch (error) {
         return fail(error);
       }
@@ -155,7 +205,7 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
       try {
         const input: InspectInput = { url: String(args.url), backend: args.backend as InspectInput['backend'], tier: 'auto', budget: typeof args.budget === 'number' ? args.budget : null, frames: Number(args.frames ?? 30), compile: args.compile !== false, timeout: Number(args.timeout ?? 60000), headed: false };
         validateInput('inspect', input, { names: 'fields' });
-        return ok(await inspectApp(input), DATA_NOTE);
+        return ok(await inspectApp(input, undefined, runDeps), DATA_NOTE);
       } catch (error) {
         return fail(error);
       }
@@ -170,15 +220,15 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
         file: z.string().describe('Path to a .glb or .gltf file'),
         out: z.string().optional().describe("Output path; must end in .glb or .gltf and sit inside the input's directory or the working directory (default <name>.forge.glb next to the input)"),
         overwrite: z.boolean().default(false).describe('Allow out to replace a file that already exists (default false: an existing target is rejected)'),
-        preset: z.enum(['safe', 'balanced', 'aggressive']).default('safe').describe('safe never changes a pixel; balanced quantizes and compresses textures; aggressive also simplifies to 50 % triangles'),
+        preset: z.string().default('safe').describe('Step preset: safe (never changes a pixel), balanced (quantizes and compresses textures) or aggressive (also simplifies to 50 % triangles); default safe'),
         simplify: z.number().optional().describe('Simplify ratio in (0, 1]; overrides the preset'),
-        compress: z.enum(['none', 'meshopt']).default('none').describe('meshopt needs loader.setMeshoptDecoder in the app'),
-        textures: z.enum(['none', 'webp', 'avif']).optional().describe('Texture format (needs sharp); overrides the preset'),
-        textureSize: z.number().int().optional().describe('Longest texture side in pixels'),
+        compress: z.string().default('none').describe('none or meshopt (needs loader.setMeshoptDecoder in the app); default none'),
+        textures: z.string().optional().describe('Texture format: webp, avif or none (needs sharp); overrides the preset'),
+        textureSize: z.number().optional().describe('Longest texture side in pixels'),
         verify: z.boolean().default(true).describe('Render both files and compare pixels; false runs without a browser'),
         parity: z.number().default(0.5).describe('Allowed percent of changed pixels between the original and the optimized render'),
-        views: z.number().int().default(2).describe('Extra orbit views for the comparison (an integer from 0 to 64, default 2)'),
-        tier: tier.describe('Device tier for budgets and hints (auto detects from the machine)'),
+        views: z.number().default(2).describe('Extra orbit views for the comparison (an integer from 0 to 64, default 2)'),
+        tier: tier.describe('Device tier for budgets and hints: auto, desktop, phone-mid or phone-low (default auto; auto detects from the machine)'),
         ...runShape,
       },
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
@@ -210,7 +260,7 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
           headed: false,
         };
         validateInput('optimize', input, { names: 'fields' });
-        return ok(await optimizeAsset(input), DATA_NOTE);
+        return ok(await optimizeAsset(input, undefined, runDeps), DATA_NOTE);
       } catch (error) {
         return fail(error);
       }
@@ -236,6 +286,9 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
   resources.add('the mcp connection', () => server.close());
   await ended;
   stdin.off('end', onEnd);
+  // Abort every in-flight run tool first (closes its own browser/static server and lets it reject promptly),
+  // then close the connection itself.
+  controller.abort();
   await resources.close();
 }
 
@@ -250,13 +303,12 @@ interface McpServerLike {
   connect(transport: unknown): Promise<void>;
   close(): Promise<void>;
 }
+/** No `.enum()`: every field is `z.string()`/`z.number()` here, with choices and integer-ness left to `validateInput` (see the comment above `runShape`). */
 interface ZodLike {
-  enum(values: [string, ...string[]]): { default(v: string): { describe(d: string): unknown }; optional(): { describe(d: string): unknown } };
   number(): {
     optional(): { describe(d: string): unknown };
     default(v: number): { describe(d: string): unknown };
-    int(): { optional(): { describe(d: string): unknown }; default(v: number): { describe(d: string): unknown } };
   };
   boolean(): { default(v: boolean): { describe(d: string): unknown } };
-  string(): { describe(d: string): unknown; optional(): { describe(d: string): unknown } };
+  string(): { describe(d: string): unknown; optional(): { describe(d: string): unknown }; default(v: string): { describe(d: string): unknown } };
 }

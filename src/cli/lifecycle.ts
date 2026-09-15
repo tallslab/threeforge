@@ -59,6 +59,21 @@ export class Resources {
     return errors;
   }
 
+  /**
+   * If `signal` later aborts, closes everything registered so far (newest first), same as `close()` — so a caller
+   * whose work is stuck (e.g. a page that never resolves) still has its browser/server torn down promptly instead
+   * of running to completion after nobody is listening for the result. A no-op when `signal` is undefined; closes
+   * immediately when `signal` is already aborted at call time. Call once, right after construction, before `run`.
+   */
+  armAbort(signal?: AbortSignal): void {
+    if (!signal) return;
+    if (signal.aborted) {
+      void this.close();
+      return;
+    }
+    signal.addEventListener('abort', () => void this.close(), { once: true });
+  }
+
   /** Run `work`, then close everything. The work's error always wins; after a successful run the first close error is thrown. */
   async run<T>(work: () => Promise<T>): Promise<T> {
     let result: T;
@@ -82,6 +97,9 @@ export interface CliDeps {
   serve?: (roots: StaticRoot[]) => Promise<{ url: string; close(): Promise<void> }>;
   /** Directory of the harness page `analyze` serves (default `dist/cli-app` next to the CLI). */
   appDir?: string;
+  /** Aborting closes the call's `Resources` (browser/server) and lets it reject promptly instead of running to
+   *  completion. `serveMcp` passes one shared signal into every run so a client disconnecting mid-call cancels it. */
+  signal?: AbortSignal;
 }
 
 /**

@@ -66,6 +66,7 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
   const file = resolve(input.file);
   if (!existsSync(file) || !statSync(file).isFile()) throw new UsageError(`file not found: ${input.file}`);
   const resources = new Resources();
+  resources.armAbort(deps.signal);
   return resources.run(async () => {
     // The server is on the stack before the launch, so a missing browser does not leave it listening.
     const server = await (deps.serve ?? serveStatic)([

@@ -76,6 +76,30 @@ test('analyze_asset rejects frames: 0 as an isError with code 2, without opening
   }
 });
 
+test('analyze_asset rejects a bad enum value and a non-integer frames the same way: isError with code 2', async () => {
+  // Finding 4 (Important, Task 8 fix round 1): a tight z.enum()/`.int()` in the MCP schema made these two return
+  // the SDK's own plain-text isError instead of threeforge's { error, code: 2 } JSON. Both now go through
+  // validateInput (src/cli/args.ts), same as any other bad input.
+  test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
+  await ready();
+  const { client, close } = await connect();
+  try {
+    const badBackend = await client.callTool({ name: 'analyze_asset', arguments: { file: fox(), backend: 'webgl3' } });
+    expect(badBackend.isError).toBe(true);
+    const badBackendBody = JSON.parse((badBackend.content as Array<{ text: string }>)[0]!.text);
+    expect(badBackendBody.code).toBe(2);
+    expect(badBackendBody.error).toMatch(/backend/);
+
+    const fractionalFrames = await client.callTool({ name: 'analyze_asset', arguments: { file: fox(), frames: 2.5 } });
+    expect(fractionalFrames.isError).toBe(true);
+    const fractionalFramesBody = JSON.parse((fractionalFrames.content as Array<{ text: string }>)[0]!.text);
+    expect(fractionalFramesBody.code).toBe(2);
+    expect(fractionalFramesBody.error).toMatch(/frames/);
+  } finally {
+    await close();
+  }
+});
+
 test('optimize_asset rejects an out path outside the allowed scope as an isError with code 2', async () => {
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
   await ready();
