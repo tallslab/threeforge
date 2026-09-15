@@ -234,7 +234,12 @@ function countObject(renderer: OverdrawRenderer, meshCount: MeshBasicNodeMateria
     // SpriteNodeMaterial, a PointsNodeMaterial included, also carries `isSpriteMaterial`.
     const points = source.isPointsNodeMaterial === true || source.isPointsMaterial === true;
     const sprite = !points && (source.isSpriteMaterial === true || source.isSpriteNodeMaterial === true);
-    const count = sprite ? spriteCount : meshCount;
+    const override = scene.overrideMaterial;
+    // Only in the count renders themselves: Renderer._renderScene installs this function for nested renders too
+    // (Renderer.js ~1736), and a scene rendered inside a count render (a render-to-texture hook) keeps its own override,
+    // or none, so its sprites draw with their own materials.
+    const swap = sprite && override === meshCount;
+    const count = swap ? spriteCount : meshCount;
     // Read off the material three hands over, which may differ from a canonical one (a sprite batch's swapped side).
     count.map = source.map ?? null;
     count.opacity = source.opacity;
@@ -244,8 +249,7 @@ function countObject(renderer: OverdrawRenderer, meshCount: MeshBasicNodeMateria
     count.opacityNode = source.opacityNode ?? null;
     count.alphaTestNode = source.alphaTestNode ?? null;
     count.maskNode = source.maskNode ?? null;
-    const override = scene.overrideMaterial;
-    if (sprite) {
+    if (swap) {
       spriteCount.rotation = source.rotation ?? 0;
       spriteCount.sizeAttenuation = source.sizeAttenuation ?? true;
       spriteCount.scaleNode = source.scaleNode ?? null;
@@ -256,10 +260,16 @@ function countObject(renderer: OverdrawRenderer, meshCount: MeshBasicNodeMateria
     try {
       return renderer.renderObject(object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId);
     } finally {
-      scene.overrideMaterial = override;
+      if (swap) scene.overrideMaterial = override;
       count.opacityNode = null;
       count.alphaTestNode = null;
       count.maskNode = null;
+      if (swap || override === meshCount) {
+        // Renderer.renderObject copies these onto the override (~3744-3752) and puts them back after the draw (~3805-3809),
+        // outside a finally: a draw that throws in between would leave them on the count material until disposeOverdraw.
+        count.positionNode = null;
+        (count as { displacementMap?: Texture | null }).displacementMap = null;
+      }
       spriteCount.scaleNode = null;
       spriteCount.rotationNode = null;
     }

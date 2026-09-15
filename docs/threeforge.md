@@ -183,7 +183,12 @@ items?:    per-submission records with ledger.frame({ items: true })
   `vertexNode` (a `PointsNodeMaterial` on a non-`Points` object, Line2-style materials), which count what the count
   material rasterises from the geometry and `positionNode`. Not counted: the
   background (the target clears to 0), materials with `allowOverride = false` or `colorWrite = false`, and occlusion
-  proxies. Every scene and renderer setting it changes is restored before the read-backs are awaited, so frames
+  proxies. A mesh whose material groups differ only in the slots the count copies (`map`, `alphaHash`, `opacityNode`,
+  `alphaTestNode`, `maskNode`, `positionNode`) is counted with whichever group's program three built first: three keys
+  the render object by object, override material, context and lights, and assigning a slot bumps no version. A sprite
+  batch mirrors its side in `onBeforeRender`, after the count has copied `side`, so a measurement taken right after a
+  mirroring flip, with no app frame between, counts the previous side. A scene rendered inside a count render (a
+  render-to-texture hook) keeps its own override material. Every scene and renderer setting it changes is restored before the read-backs are awaited, so frames
   rendered meanwhile are unaffected; attribution pauses for the two count renders only, which never become part of a
   frame (not even when measured from a render hook). The target and count materials are kept per renderer until
   `ledger.detach()` or `disposeOverdraw(renderer)`. Call it on demand.

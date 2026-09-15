@@ -250,13 +250,13 @@ test('occlusion proxies and batch colours leave the count alone: the compiled sc
   expect(r.compiled.transparent).toBeCloseTo(r.naive.transparent, 2);
 });
 
-test('sprites count their billboards from a tilted view, and the compiled sprite batch counts the same: 16 sprites a quarter of the view wide read 0.25', async ({ forge }) => {
+test('sprites count their billboards from a tilted view, and the compiled sprite batch counts the same: 16 sprites each an eighth of the view wide read 0.25', async ({ forge }) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
     const T = f.three;
-    // Orthographic and tilted over the field: every billboard faces the camera, so a sprite scaled to a quarter of the
-    // 2 x 2 view covers 16 x 12 texels of the 128 x 96 target wherever it lands, 1/64 of it.
+    // Orthographic and tilted over the field: every billboard faces the camera, so a sprite of scale 0.25 (an eighth of
+    // the 2 x 2 view's width) covers 16 x 12 texels of the 128 x 96 target wherever it lands, 1/64 of it: 16 read 0.25.
     const ortho = new T.OrthographicCamera(-1, 1, 1, -1, 0.1, 20);
     ortho.position.set(4, 5, 6);
     ortho.lookAt(0, 0, 0);

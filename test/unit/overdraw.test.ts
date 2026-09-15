@@ -44,6 +44,8 @@ type CountMaterial = Material & {
   sizeAttenuation?: boolean;
   scaleNode?: unknown;
   rotationNode?: unknown;
+  positionNode?: unknown;
+  displacementMap?: Texture | null;
 };
 type NodeScene = Scene & { backgroundNode?: unknown };
 
@@ -278,6 +280,28 @@ describe('measureOverdraw', () => {
     expectAppState();
   });
 
+  it("clears the positionNode and displacementMap three's override copied when a draw throws before three puts them back", async () => {
+    const { scene, camera } = sceneWithCamera();
+    const renderer = protocolRenderer([]);
+    const positionNode = float(1);
+    const displacementMap = new DataTexture(new Uint8Array(4), 1, 1);
+    const animated = new Mesh(new PlaneGeometry(), Object.assign(new MeshBasicNodeMaterial(), { positionNode, displacementMap }));
+    drawEach(renderer, camera, [animated]);
+    // Renderer.renderObject copies both onto the override (Renderer.js ~3744-3752) and puts them back after the draw
+    // (~3805-3809), outside any finally: a draw that throws in between leaves the copies on the count material.
+    renderer.renderObject = (_object: Object3D, s: Scene, _camera: Camera, _geometry: unknown, material: Material) => {
+      const count = s.overrideMaterial as CountMaterial;
+      count.positionNode = (material as CountMaterial).positionNode;
+      count.displacementMap = (material as CountMaterial).displacementMap ?? null;
+      throw new Error('pipeline failed');
+    };
+
+    await expect(measureOverdraw(renderer as never, scene, camera)).rejects.toThrow('pipeline failed');
+
+    const count = renderer.calls[0]!.override!;
+    expect([count.positionNode ?? null, count.displacementMap ?? null]).toEqual([null, null]);
+  });
+
   it('decodes raw half-float read-backs (0x3C00 is 1.0)', async () => {
     const { scene, camera } = sceneWithCamera();
     const renderer = protocolRenderer([]);
@@ -385,6 +409,41 @@ describe('measureOverdraw', () => {
     });
     disposeOverdraw(renderer as never);
     expect(disposed).toBe(true);
+  });
+
+  it('a scene rendered inside a count render (a render-to-texture hook) keeps its own override and draws its sprites with their own materials', async () => {
+    const { scene, camera } = sceneWithCamera();
+    const renderer = new FakeRenderer({ record: true });
+    // Renderer._renderScene installs the render-object function for nested renders too (Renderer.js ~1736), so the
+    // count's function also sees the draws of a scene an onBeforeRender renders during a count render.
+    const bare = sceneWithCamera().scene;
+    const bareSprite = new Sprite(new SpriteMaterial());
+    bare.add(bareSprite);
+    const overridden = sceneWithCamera().scene;
+    const appOverride = new MeshBasicMaterial();
+    overridden.overrideMaterial = appOverride;
+    const overriddenSprite = new Sprite(new SpriteMaterial());
+    overridden.add(overriddenSprite);
+    // Transparent, so it draws in the transparent count render, whose renderer flags let the nested renders draw sprites.
+    const mirror = new Mesh(new PlaneGeometry(), new MeshBasicMaterial({ transparent: true }));
+    const nestedOverrides: unknown[] = [];
+    mirror.onBeforeRender = () => {
+      renderer.render(bare, camera);
+      renderer.render(overridden, camera);
+      nestedOverrides.push(bare.overrideMaterial, overridden.overrideMaterial);
+    };
+    scene.add(mirror);
+    for (const s of [scene, bare, overridden]) s.updateMatrixWorld();
+
+    await measureOverdraw(renderer as never, scene, camera);
+
+    const drawOf = (object: Object3D) => renderer.passes.flatMap((p) => p.draws).find((d) => d.object === object);
+    expect(drawOf(mirror)?.material.type).toBe('MeshBasicNodeMaterial');
+    expect(drawOf(bareSprite)?.material).toBe(bareSprite.material);
+    expect(drawOf(overriddenSprite)?.material).toBe(appOverride);
+    expect(nestedOverrides).toEqual([null, appOverride]);
+    expect([bare.overrideMaterial, overridden.overrideMaterial]).toEqual([null, appOverride]);
+    disposeOverdraw(renderer);
   });
 
   it('keeps one count target and material per renderer until disposeOverdraw() releases them', async () => {
