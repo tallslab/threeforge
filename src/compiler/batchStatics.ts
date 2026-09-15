@@ -2,6 +2,7 @@ import { BatchedMesh, Color, DoubleSide, Mesh, WebGLCoordinateSystem, type Buffe
 import { bakeGeometries, type BakeEntry, type BakeOptions, type BakeReport } from './bake.js';
 import { createCulledInstancedMesh } from './instancing.js';
 import type { NestedPassPolicy } from './culling.js';
+import type { PassTracker } from './passTracker.js';
 import { lodsOf } from '../lod/generateLods.js';
 import type { MaterialRegistry } from '../registry/MaterialRegistry.js';
 import { attributeSignature, ensureIndexed } from './geometryCompat.js';
@@ -36,7 +37,8 @@ export interface BatchOptions {
   /** Distance thresholds for LOD levels; geometries carry their levels via `prepareLods` / `generateLods`. */
   lodDistances?: number[];
   nestedPasses?: NestedPassPolicy;
-  mainCamera?: () => import('three').Camera | null;
+  /** The scene's pass tracker, handed to compacted instanced meshes (`InstancingOptions.passes`). */
+  passes?: PassTracker;
   /** Bake finished groups into one mesh each (seams and duplicates removed, vertices welded) instead of batching them. */
   bake?: BakeOptions;
   /** Meshes that must stay in a BatchedMesh (matrix-synced dynamics): a group containing one is batched, not baked. */
@@ -158,7 +160,7 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
         const instanced = createCulledInstancedMesh(geometry, material, matrices, colors, coordinateSystem, {
           ...(lodDistances ? { lods, distances: lodDistances } : {}),
           ...(options.nestedPasses ? { nestedPasses: options.nestedPasses } : {}),
-          ...(options.mainCamera ? { mainCamera: options.mainCamera } : {}),
+          ...(options.passes ? { passes: options.passes } : {}),
         });
         const index = perProgramInstanced.get(programHash) ?? 0;
         perProgramInstanced.set(programHash, index + 1);

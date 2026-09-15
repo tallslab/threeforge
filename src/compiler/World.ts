@@ -1,4 +1,4 @@
-import { BoxGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, Vector3, Vector4, WebGLCoordinateSystem, WebGPUCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Sprite, type Texture } from 'three';
+import { BoxGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, Vector3, Vector4, WebGLCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Sprite, type Texture } from 'three';
 import type { DrawCallLedger } from '../ledger/DrawCallLedger.js';
 import { displayName } from '../ledger/reasons.js';
 import { MaterialRegistry, type RegistryStats } from '../registry/MaterialRegistry.js';
@@ -50,9 +50,10 @@ export interface WorldOptions {
    * A batch an enclosing pass has already culled keeps that pass's index rows as a stable prefix under either policy:
    * the nested pass zeroes the rows its camera does not need and appends the ones it lacks (see `attachBvhCulling`).
    * The policy decides a batch no enclosing pass has culled yet: `per-pass` culls it for the nested camera,
-   * `reuse-main` keeps the rows of its last outermost-render cull and appends. Compacted instanced meshes still draw
-   * the main camera's list in nested passes under `reuse-main`. `auto` (default) is `reuse-main` on the WebGPU
-   * backend and `per-pass` on WebGL.
+   * `reuse-main` keeps the rows of its last outermost-render cull and appends. Compacted instanced meshes keep a
+   * stable prefix too, the same under both policies: shadow passes append every shadow light's casters, other nested
+   * passes draw the main camera's list (see `createCulledInstancedMesh`). `auto` (default) is `per-pass` on both
+   * backends.
    */
   nestedPasses?: NestedPassPolicy | 'auto';
   /** `canonical` (default): meshes left unbatched get the registry's canonical material; `keep`: materials are left alone. */
@@ -329,12 +330,10 @@ export class World {
   compile(options: CompileOptions = {}): CompileReport {
     if (this.compiled) throw new Error('World is already compiled; call decompile() first.');
     const coordinateSystem = options.coordinateSystem ?? WebGLCoordinateSystem;
-    const nestedPasses: NestedPassPolicy =
-      this.nestedPassesOption === 'auto' ? (coordinateSystem === WebGPUCoordinateSystem ? 'reuse-main' : 'per-pass') : this.nestedPassesOption;
-    const mainCamera = (): Camera | null => this.passes.mainCamera;
-    // The scene hooks bracket every render() call, nested ones included: the tracker gives the batch culling the
-    // depth of the current pass and which passes are still open, the main camera to instanced meshes and sprite
-    // batches (which sync for it only, see below).
+    const nestedPasses: NestedPassPolicy = this.nestedPassesOption === 'auto' ? 'per-pass' : this.nestedPassesOption;
+    // The scene hooks bracket every render() call, nested ones included: the tracker gives the batch and instanced
+    // culling the depth of the current pass, which passes are still open and the main camera, which sprite batches
+    // also sync for (see below).
     this.sceneHookRestores.push(this.passes.install(this.scene));
     const classifications = classify(this.scene, { policy: this.policy, animations: this.animations });
     const before = {
@@ -354,7 +353,7 @@ export class World {
       }
     }
     const noBake = new Set<Mesh>([...syncRule.entries()].filter(([, rule]) => rule === null).map(([mesh]) => mesh));
-    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem, chunkSize: this.chunkSizeOption, nestedPasses, mainCamera, transparent: this.transparentMode, ...(this.lod ? { lodDistances: this.lod.distances } : {}), ...(this.bakeOptions ? { bake: this.bakeOptions, noBake } : {}) });
+    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem, chunkSize: this.chunkSizeOption, nestedPasses, passes: this.passes, transparent: this.transparentMode, ...(this.lod ? { lodDistances: this.lod.distances } : {}), ...(this.bakeOptions ? { bake: this.bakeOptions, noBake } : {}) });
     const transparentKeptSet = new Set<Mesh>(result.transparentKept);
     this.batches = result.batches;
     this.instanced = result.instanced;
@@ -624,6 +623,9 @@ export class World {
     let repaired = 0;
     if (mode === 'async') {
       await renderer.compileAsync!(this.scene, camera);
+      // three r186's compileAsync calls the scene's onBeforeRender but never its onAfterRender (Renderer.js ~967): the
+      // tracker would count the next render as nested. It renders no shadow maps, so only its own render is open.
+      this.passes.reset();
       for (const material of materials) {
         if (!compiledWrongByCompileAsync(material)) continue;
         material.dispose(); // drops the renderer's cached render objects; the material stays usable

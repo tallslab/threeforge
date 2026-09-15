@@ -1,11 +1,12 @@
 /**
- * Shadow passes on compiled batches: casters outside the main view must still shadow what is in view.
+ * Shadow passes on compiled batches and compacted instanced meshes: casters outside the main view must still shadow
+ * what is in view.
  *
- * three renders a directional light's shadow map from inside the first `receiveShadow` object's draw, nested in the
- * main pass. A batch's shadow draw must therefore add the casters the shadow camera sees without rewriting the index
- * rows the main pass already recorded (WebGPU submits the main pass only when it ends; on WebGL the receiving batch
- * draws right after the shadow render returns). Both scenes compare the naive scene (one mesh per prop, three's own
- * per-object culling) with the compiled one, under the backend's default policy and under explicit 'per-pass'.
+ * three renders a light's shadow map from inside the first `receiveShadow` object's draw, nested in the main pass. A
+ * batch's or an instanced mesh's shadow draw must therefore add the casters the shadow camera sees without rewriting
+ * the rows the main pass already recorded (WebGPU submits the main pass only when it ends; on WebGL the receiver draws
+ * right after the shadow render returns). Every scene compares the naive scene (one mesh per prop, three's own
+ * per-object culling) with the compiled one, under the default policy ('per-pass' on both backends) and 'reuse-main'.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { expect, test } from './fixtures.js';
@@ -13,15 +14,22 @@ import { pixelDiff, settle } from './pixels.js';
 
 const OUT = 'test-results/nested-passes';
 
-/** 'auto' is 'reuse-main' on WebGPU and 'per-pass' on WebGL2, so explicit 'per-pass' only adds a case on WebGPU. */
-const POLICIES = ['auto', 'per-pass'] as const;
+/** 'auto' resolves to 'per-pass' on both backends; 'reuse-main' is the other policy. */
+const POLICIES = ['auto', 'reuse-main'] as const;
+type Nested = (typeof POLICIES)[number];
+const policyOf = (nested: Nested): string => (nested === 'reuse-main' ? 'reuse-main' : 'per-pass');
+const nestedQuery = (nested: Nested): Record<string, string> => (nested === 'auto' ? {} : { nested });
+
+/** Keeps the measured numbers with the test result instead of printing them. */
+async function attachNumbers(name: string, value: unknown): Promise<void> {
+  await test.info().attach(name, { body: JSON.stringify(value, null, 2), contentType: 'application/json' });
+}
 
 for (const nested of POLICIES) {
   test(`tall casters out of view shadow a receiving batch through a narrow sun frustum (nestedPasses: ${nested})`, async ({ forge }) => {
     test.skip(!forge.pixelChecks, 'pixel checks need a native WebGPU adapter');
-    test.skip(nested === 'per-pass' && forge.backend === 'webgl2', "'per-pass' is the WebGL2 default, covered by 'auto'");
-    // threshold=1000 keeps the 289 repeated tiles in the BatchedMesh (the default 64 would make them an InstancedMesh, Task 17).
-    await forge.open('empty', { threshold: '1000', ...(nested === 'per-pass' ? { nested } : {}) });
+    // threshold=1000 keeps the 289 repeated tiles in the BatchedMesh (the default 64 would make them an InstancedMesh).
+    await forge.open('empty', { threshold: '1000', ...nestedQuery(nested) });
     const built = await forge.page.evaluate(async () => {
       const f = window.__forge;
       const T = f.three;
@@ -115,7 +123,7 @@ for (const nested of POLICIES) {
         mainOthers: main.filter((i) => !i.name.includes('tile-')).map((i) => i.name),
       };
     });
-    console.log(JSON.stringify({ test: 'pillars-naive', backend: forge.backend, built, naive }));
+    await attachNumbers('pillars-naive', { backend: forge.backend, built, naive });
     // Three's per-object culling: the casters the sun sees; the tiles in view, the ground and the output quad.
     expect(naive.passes).toEqual([
       ['shadow:sun', built.castersInShadow],
@@ -132,7 +140,7 @@ for (const nested of POLICIES) {
       const frame = await f.frameAsync();
       return { after: report.after, nestedPasses: report.nestedPasses, passes: frame.passes.map((p) => [p.id, p.submissions]), unattributed: frame.totals.unattributed };
     });
-    expect(compiled.nestedPasses).toBe(nested === 'per-pass' || forge.backend === 'webgl2' ? 'per-pass' : 'reuse-main');
+    expect(compiled.nestedPasses).toBe(policyOf(nested));
     expect(compiled.after).toMatchObject({ batches: 1, instanced: 0 });
     // One batch in each pass; the ground and the output quad stay.
     expect(compiled.passes).toEqual([
@@ -147,16 +155,15 @@ for (const nested of POLICIES) {
     writeFileSync(`${OUT}/pillars-naive-${tag}.png`, before);
     writeFileSync(`${OUT}/pillars-compiled-${tag}.png`, after);
     const diff = pixelDiff(before, after, { threshold: 4, diffPath: `${OUT}/pillars-diff-${tag}.png` });
-    console.log(JSON.stringify({ test: 'pillars', backend: forge.backend, nestedPasses: compiled.nestedPasses, built, diffPct: (diff * 100).toFixed(4) }));
+    await attachNumbers('pillars', { backend: forge.backend, nestedPasses: compiled.nestedPasses, built, diffPct: (diff * 100).toFixed(4) });
     expect(diff).toBeLessThan(0.0005);
   });
 
   test(`audit reproduction: the shadowed naive scene seen from (24, 10, 18) compiles with the same pixels (nestedPasses: ${nested})`, async ({ forge }) => {
     test.skip(!forge.pixelChecks, 'pixel checks need a native WebGPU adapter');
-    test.skip(nested === 'per-pass' && forge.backend === 'webgl2', "'per-pass' is the WebGL2 default, covered by 'auto'");
     test.setTimeout(180_000);
     // transparent=keep: transparent statics stay individual meshes, so their draw order does not enter the comparison.
-    await forge.open('naive', { shadows: '1', transparent: 'keep', ...(nested === 'per-pass' ? { nested } : {}) });
+    await forge.open('naive', { shadows: '1', transparent: 'keep', ...nestedQuery(nested) });
     const naive = await forge.page.evaluate(async () => {
       const f = window.__forge;
       // Casters behind and beside the camera stay inside the sun's shadow frustum but leave the view.
@@ -238,11 +245,173 @@ for (const nested of POLICIES) {
     writeFileSync(`${OUT}/audit-naive-${tag}.png`, before);
     writeFileSync(`${OUT}/audit-compiled-${tag}.png`, after);
     const diff = pixelDiff(before, after, { threshold: 4, diffPath: `${OUT}/audit-diff-${tag}.png` });
-    console.log(JSON.stringify({ test: 'audit', backend: forge.backend, nestedPasses: compiled.nestedPasses, after: compiled.after, naive: naive.passes, passes: compiled.passes, shadow: compiled.shadow, diffPct: (diff * 100).toFixed(4) }));
+    await attachNumbers('audit', { backend: forge.backend, nestedPasses: compiled.nestedPasses, after: compiled.after, naive: naive.passes, passes: compiled.passes, shadow: compiled.shadow, diffPct: (diff * 100).toFixed(4) });
+    expect(compiled.nestedPasses).toBe(policyOf(nested));
     expect(compiled.after.instanced).toBe(0);
     expect(compiled.unattributed).toBe(0);
     expect(compiled.shadow.needed, 'batched casters inside the shadow frustum').toBeGreaterThan(100);
     expect(compiled.shadow.sample, 'batched casters missing from the shadow pass').toEqual([]);
     expect(diff).toBeLessThan(0.001);
   });
+
+  for (const receiver of ['instanced', 'ground'] as const) {
+    test(`1,500 tall instanced boxes shadow themselves through a sun and a spot light with casters out of view (first receiver: ${receiver}, nestedPasses: ${nested})`, async ({ forge }) => {
+      test.skip(!forge.pixelChecks, 'pixel checks need a native WebGPU adapter');
+      test.setTimeout(180_000);
+      await forge.open('empty', nestedQuery(nested));
+      const built = await forge.page.evaluate(async (groundFirst) => {
+        const f = window.__forge;
+        const T = f.three;
+        const { scene, camera, renderer } = f;
+        renderer.shadowMap.enabled = true;
+        scene.add(new T.AmbientLight(0xffffff, 0.3));
+        // A low sun from +x: a 6-unit box throws an 18-unit shadow toward -x, so boxes right of the view shadow it. Narrow
+        // across z (|z| <= 12), so its list misses boxes in view and a pass that draws it in the main pass shows.
+        const sun = new T.DirectionalLight(0xffffff, 2);
+        sun.name = 'sun';
+        sun.position.set(150, 50, 0);
+        sun.castShadow = true;
+        sun.shadow.mapSize.set(2048, 2048);
+        Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 40, bottom: -40, near: 1, far: 400 }).updateProjectionMatrix();
+        // A narrow spot light low on the left: boxes left of the view shadow it toward +x.
+        const spot = new T.SpotLight(0xffe8d0, 4000, 0, Math.PI / 12, 0.2, 2);
+        spot.name = 'spot';
+        spot.position.set(-90, 22, 0);
+        spot.castShadow = true;
+        spot.shadow.mapSize.set(1024, 1024);
+        spot.shadow.camera.near = 1;
+        spot.shadow.camera.far = 300;
+        scene.add(sun, sun.target, spot, spot.target);
+        // A lit ground that receives and does not cast. Its renderOrder decides which receiver three draws first, and so
+        // which draw renders the shadow maps: the boxes (just culled for the main camera) or the ground (before that cull).
+        const ground = new T.Mesh(new T.PlaneGeometry(400, 400), new T.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 1 }));
+        ground.name = 'ground';
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        ground.renderOrder = groundFirst ? -1 : 1;
+        ground.userData.forge = 'static';
+        scene.add(ground);
+        // One geometry and one material: a single InstancedMesh (instanceThreshold 64) whose 1,500 x 64 bytes of matrices
+        // exceed the 65,536-byte uniform buffer, so three uploads them to one vertex buffer shared by every pass.
+        const geometry = new T.BoxGeometry(1.2, 6, 1.2);
+        const material = new T.MeshStandardMaterial({ color: 0xc8ccd2, roughness: 0.85, metalness: 0 });
+        const boxes: InstanceType<typeof T.Mesh>[] = [];
+        for (let i = 0; i < 50; i++) {
+          for (let j = 0; j < 30; j++) {
+            const b = new T.Mesh(geometry, material);
+            b.name = `box-${boxes.length}`;
+            b.position.set(-98 + 4 * i, 3, -29 + 2 * j);
+            b.castShadow = b.receiveShadow = true;
+            b.userData.forge = 'static';
+            boxes.push(b);
+            scene.add(b);
+          }
+        }
+        camera.position.set(0, 16, 40);
+        camera.lookAt(0, 0, 0);
+        camera.updateMatrixWorld();
+        scene.updateMatrixWorld(true);
+        await f.frameAsync(); // places the shadow cameras and gives them this backend's coordinate system
+        const frustumOf = (c: typeof camera | typeof sun.shadow.camera | typeof spot.shadow.camera) =>
+          new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(c.projectionMatrix, c.matrixWorldInverse), c.coordinateSystem, c.reversedDepth);
+        const view = frustumOf(camera);
+        const sunView = frustumOf(sun.shadow.camera);
+        const spotView = frustumOf(spot.shadow.camera);
+        return {
+          boxes: boxes.length,
+          inView: boxes.filter((b) => view.intersectsObject(b)).length,
+          sunOutOfView: boxes.filter((b) => sunView.intersectsObject(b) && !view.intersectsObject(b)).length,
+          spotOutOfView: boxes.filter((b) => spotView.intersectsObject(b) && !view.intersectsObject(b)).length,
+        };
+      }, receiver === 'ground');
+      expect(built.boxes).toBe(1500);
+      expect(built.inView).toBeGreaterThan(100);
+      expect(built.sunOutOfView, 'boxes the sun sees outside the view').toBeGreaterThan(50);
+      expect(built.spotOutOfView, 'boxes the spot light sees outside the view').toBeGreaterThan(50);
+      const naive = await forge.page.evaluate(async () => (await window.__forge.frameAsync()).passes.map((p) => [p.id, p.submissions]));
+      expect(naive.map(([id]) => id)).toEqual(expect.arrayContaining(['shadow:sun', 'shadow:spot', 'main']));
+      await settle(forge.page, 2);
+      const before = await forge.page.screenshot({ type: 'png' });
+
+      const compiled = await forge.page.evaluate(async () => {
+        const f = window.__forge;
+        const T = f.three;
+        const report = f.compile();
+        await f.world.warmup(f.renderer, f.camera);
+        await f.frameAsync();
+        const cameras = {
+          main: f.camera as InstanceType<typeof T.Camera>,
+          sun: (f.scene.getObjectByName('sun') as InstanceType<typeof T.DirectionalLight>).shadow.camera as InstanceType<typeof T.Camera>,
+          spot: (f.scene.getObjectByName('spot') as InstanceType<typeof T.SpotLight>).shadow.camera as InstanceType<typeof T.Camera>,
+        };
+        const keys = ['main', 'sun', 'spot'] as const;
+        // The ids each instanced mesh draws in each pass, read once three has issued the draw (onAfterRender, composed with
+        // whatever hook the mesh has and put back afterwards): the rows [0, count) of its compaction table.
+        type Spied = { onAfterRender: (...args: unknown[]) => void; count: number; visibleIds: number[] };
+        const drawn = { main: new Set<number>(), sun: new Set<number>(), spot: new Set<number>() };
+        const restores: (() => void)[] = [];
+        for (const mesh of f.world.instancedMeshes) {
+          const m = mesh as unknown as Spied;
+          const hadOwn = Object.prototype.hasOwnProperty.call(m, 'onAfterRender');
+          const original = m.onAfterRender;
+          m.onAfterRender = function (this: unknown, ...args: unknown[]) {
+            for (const key of keys) if (args[2] === cameras[key]) for (let k = 0; k < m.count; k++) drawn[key].add(m.visibleIds[k]!);
+            original.apply(this, args);
+          };
+          restores.push(() => {
+            if (hadOwn) m.onAfterRender = original;
+            else delete (m as Partial<Spied>).onAfterRender;
+          });
+        }
+        const frame = await f.frameAsync();
+        for (const restore of restores) restore();
+        // Every instance whose box meets a pass's frustum must be among the ids that pass drew.
+        const frusta = Object.fromEntries(
+          keys.map((key) => {
+            const c = cameras[key];
+            return [key, new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(c.projectionMatrix, c.matrixWorldInverse), c.coordinateSystem, c.reversedDepth)];
+          }),
+        ) as Record<(typeof keys)[number], InstanceType<typeof T.Frustum>>;
+        const needed = { main: 0, sun: 0, spot: 0 };
+        const missing = { main: [] as string[], sun: [] as string[], spot: [] as string[] };
+        f.scene.traverse((o) => {
+          const mesh = o as InstanceType<typeof T.Mesh>;
+          if (!mesh.isMesh || !mesh.name.startsWith('box-')) return;
+          const slot = f.world.slotOf(mesh);
+          if (!slot || !(slot.batch as { isInstancedMesh?: boolean }).isInstancedMesh) return;
+          if (mesh.geometry.boundingBox === null) mesh.geometry.computeBoundingBox();
+          const bounds = mesh.geometry.boundingBox!.clone().applyMatrix4(mesh.matrixWorld);
+          for (const key of keys) {
+            if (!frusta[key].intersectsBox(bounds)) continue;
+            needed[key]++;
+            if (!drawn[key].has(slot.instanceId)) missing[key].push(mesh.name);
+          }
+        });
+        return {
+          after: report.after,
+          nestedPasses: report.nestedPasses,
+          passes: frame.passes.map((p) => [p.id, p.submissions, p.gpuDraws]),
+          unattributed: frame.totals.unattributed,
+          needed,
+          missing: { main: missing.main.length, sun: missing.sun.length, spot: missing.spot.length },
+          sample: { main: missing.main.slice(0, 5), sun: missing.sun.slice(0, 5), spot: missing.spot.slice(0, 5) },
+        };
+      });
+      await settle(forge.page, 2);
+      const after = await forge.page.screenshot({ type: 'png' });
+      mkdirSync(OUT, { recursive: true });
+      const tag = `field-${receiver}-${nested}-${forge.backend}`;
+      writeFileSync(`${OUT}/${tag}-naive.png`, before);
+      writeFileSync(`${OUT}/${tag}-compiled.png`, after);
+      const diff = pixelDiff(before, after, { threshold: 4, diffPath: `${OUT}/${tag}-diff.png` });
+      await attachNumbers('instanced-field', { backend: forge.backend, receiver, built, naive, compiled, diffPct: (diff * 100).toFixed(4) });
+      expect(compiled.nestedPasses).toBe(policyOf(nested));
+      expect(compiled.after).toMatchObject({ batches: 0, instanced: 1 });
+      expect(compiled.unattributed).toBe(0);
+      expect(compiled.needed.sun, 'instances inside the sun frustum').toBeGreaterThan(100);
+      expect(compiled.needed.spot, 'instances inside the spot frustum').toBeGreaterThan(100);
+      expect(compiled.sample, 'instances missing from the pass that needs them').toEqual({ main: [], sun: [], spot: [] });
+      expect(diff).toBeLessThan(0.0005);
+    });
+  }
 }

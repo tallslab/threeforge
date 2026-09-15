@@ -540,7 +540,7 @@ try {
     ...(params.has('threshold') ? { instanceThreshold: Number(params.get('threshold')) } : {}),
     occlusion: params.get('occlusion') === '1',
     ...(params.get('materials') === 'keep' ? { materials: 'keep' as const } : {}),
-    ...(params.get('nested') === 'per-pass' ? { nestedPasses: 'per-pass' as const } : {}),
+    ...(params.get('nested') === 'per-pass' || params.get('nested') === 'reuse-main' ? { nestedPasses: params.get('nested') as 'per-pass' | 'reuse-main' } : {}),
     ...(params.has('bake') ? { bake: params.get('bake') === 'buried' ? { removeBuried: true } : true } : {}),
     ...(params.get('sprites') === 'keep' ? { sprites: 'keep' as const } : {}),
     ...(params.get('transparent') === 'keep' ? { transparent: 'keep' as const } : {}),

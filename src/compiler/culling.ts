@@ -36,6 +36,73 @@ export interface CullingOptions {
   passes?: PassTracker;
 }
 
+/**
+ * The open passes that culled or served one object, innermost last, with strictly increasing depths. The batch and
+ * instanced culling hooks share it: they keep their own per-layer data indexed by layer number, `pop` hands that number
+ * to `restore` so the owner puts back what the layer changed, and `restoreAtEnd` asks the `PassTracker` to pop the
+ * layers of the innermost open pass when that pass ends (from the scene's marked `onAfterRender`, after
+ * `backend.finishRender`; or when the tracker resets).
+ */
+export class PassLayers {
+  /** Layers on the stack. */
+  size = 0;
+  private readonly depths: number[] = [];
+  private readonly ids: number[] = [];
+  /** Per depth: the pass whose end is already set to pop this stack. */
+  private readonly registered: number[] = [];
+  private readonly endPass: (depth: number) => void;
+
+  constructor(
+    private readonly passes: PassTracker | undefined,
+    private readonly restore: (layer: number) => void,
+  ) {
+    this.endPass = (depth) => {
+      while (this.size > 0 && this.depths[this.size - 1]! >= depth) this.pop();
+    };
+  }
+
+  /** The depth of the innermost layer, 0 when there is none. */
+  get topDepth(): number {
+    return this.size > 0 ? this.depths[this.size - 1]! : 0;
+  }
+
+  /** Pops the layers deeper than `depth` and those whose pass is over (their end already popped them unless a render threw). */
+  popClosed(depth: number): void {
+    while (this.size > 0) {
+      const top = this.size - 1;
+      if (this.depths[top]! <= depth && this.passes!.passAt(this.depths[top]!) === this.ids[top]) return;
+      this.pop();
+    }
+  }
+
+  /** Pushes a layer for the open pass `pass` at `depth` (by default the innermost open pass); returns its number. */
+  push(depth: number, pass: number = this.passes!.pass): number {
+    const layer = this.size++;
+    this.depths[layer] = depth;
+    this.ids[layer] = pass;
+    return layer;
+  }
+
+  /** Pops the layers at `depth` and deeper when the innermost open pass (at `depth`) ends; registers once per pass. */
+  restoreAtEnd(depth: number): void {
+    const pass = this.passes!.pass;
+    if (this.registered[depth] === pass) return;
+    this.registered[depth] = pass;
+    this.passes!.atEnd(this.endPass);
+  }
+
+  /** Pops the innermost layer, restoring it. */
+  pop(): void {
+    this.size--;
+    this.restore(this.size);
+  }
+
+  /** Pops every layer. */
+  clear(): void {
+    while (this.size > 0) this.pop();
+  }
+}
+
 /** Index of the LOD level for a camera distance. */
 export function levelFor(distance: number, distances: number[]): number {
   let level = 0;
@@ -189,20 +256,24 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
   /** The ids the nested camera needs, in query order. */
   let needed = new Int32Array(0);
   let neededCount = 0;
-  /**
-   * One layer per open pass that culled the batch (a plain cull) or appended to its list, innermost last, with
-   * strictly increasing depths. An append layer saved `_multiDrawCounts[0, base)` as it found them.
-   */
-  const layerDepth: number[] = [];
-  const layerPass: number[] = [];
-  /** The prefix length an append layer kept; -1 for a plain cull. */
+  /** The prefix length an append layer kept, per layer; -1 for a plain cull. */
   const layerBase: number[] = [];
   /** The list length the layer left: the prefix of anything nested inside that pass. */
   const layerCount: number[] = [];
+  /** `_multiDrawCounts[0, base)` as an append layer found them. */
   const saved: Int32Array[] = [];
-  let layers = 0;
-  /** Per depth: the pass whose end is already set to restore this batch. */
-  const endRegistered: number[] = [];
+  /**
+   * One layer per open pass that culled the batch (a plain cull) or appended to its list; popping an append layer puts
+   * back the counts and the list length it found.
+   */
+  const layers = new PassLayers(passes, (layer) => {
+    const base = layerBase[layer]!;
+    if (base < 0) return;
+    const snapshot = saved[layer]!;
+    const counts = target._multiDrawCounts;
+    for (let i = 0; i < base; i++) counts[i] = snapshot[i]!;
+    target._multiDrawCount = base;
+  });
   /** The list length of the last outermost-render cull: `reuse-main`'s prefix when no pass is open. */
   let mainCount = 0;
   /** The main camera's position in the batch's frame, for the LOD level of appended ids. */
@@ -219,30 +290,6 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
     mark = 0;
     needed = new Int32Array(n);
     capacity = n;
-  };
-
-  const pushLayer = (depth: number, pass: number, base: number, length: number): void => {
-    layerDepth[layers] = depth;
-    layerPass[layers] = pass;
-    layerBase[layers] = base;
-    layerCount[layers] = length;
-    layers++;
-  };
-
-  /** Drops the innermost layer; an append layer puts back the counts and the list length it found. */
-  const popLayer = (): void => {
-    layers--;
-    const base = layerBase[layers]!;
-    if (base < 0) return;
-    const snapshot = saved[layers]!;
-    const counts = target._multiDrawCounts;
-    for (let i = 0; i < base; i++) counts[i] = snapshot[i]!;
-    target._multiDrawCount = base;
-  };
-
-  /** PassTracker end callback: the render at `depth` is over. */
-  const endPass = (depth: number): void => {
-    while (layers > 0 && layerDepth[layers - 1]! >= depth) popLayer();
   };
 
   const setUnits = (geometry: BufferGeometry, material: Material): void => {
@@ -454,15 +501,16 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
     const depth = passes === undefined ? 0 : passes.depth;
     // Drop the layers of passes that are over (their end already restored them, unless a render threw) and this pass's
     // own layer when three culls the batch twice in one pass (onBeforeShadow, then onBeforeRender).
-    while (layers > 0 && (layerDepth[layers - 1]! >= depth || passes!.passAt(layerDepth[layers - 1]!) !== layerPass[layers - 1])) popLayer();
-    const base = layers > 0 ? layerCount[layers - 1]! : reuseMain && depth > 1 ? mainCount : -1;
+    layers.popClosed(depth);
+    if (layers.size > 0 && layers.topDepth === depth) layers.pop();
+    const base = layers.size > 0 ? layerCount[layers.size - 1]! : reuseMain && depth > 1 ? mainCount : -1;
     if (base >= 0) {
-      const pass = passes!.pass;
-      pushLayer(depth, pass, base, appendFor(camera, geometry, material, base, layers));
-      if (endRegistered[depth] !== pass) {
-        endRegistered[depth] = pass;
-        passes!.atEnd(endPass);
-      }
+      const layer = layers.size;
+      const length = appendFor(camera, geometry, material, base, layer);
+      layers.push(depth);
+      layerBase[layer] = base;
+      layerCount[layer] = length;
+      layers.restoreAtEnd(depth);
       return;
     }
     cullPlain(renderer, scene, camera, geometry, material, group);
@@ -474,7 +522,11 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
         hasMainPos = true;
       }
     }
-    if (depth >= 1) pushLayer(depth, passes!.pass, -1, target._multiDrawCount);
+    if (depth >= 1) {
+      const layer = layers.push(depth);
+      layerBase[layer] = -1;
+      layerCount[layer] = target._multiDrawCount;
+    }
   };
   (hook as unknown as Record<symbol, boolean>)[FORGE_HOOK] = true;
   batch.onBeforeRender = hook as unknown as BatchedMesh['onBeforeRender'];
@@ -497,7 +549,7 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
       nodes.delete(id);
     },
     detach() {
-      while (layers > 0) popLayer();
+      layers.clear();
       if (Object.prototype.hasOwnProperty.call(batch, 'onBeforeRender')) delete (batch as { onBeforeRender?: unknown }).onBeforeRender;
       bvh.clear();
       nodes.clear();

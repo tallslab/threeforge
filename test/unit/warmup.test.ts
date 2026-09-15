@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { BoxGeometry, DataTexture, DoubleSide, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, PerspectiveCamera, RGBAFormat, Scene, Vector4, WebGLCoordinateSystem } from 'three';
-import type { Material } from 'three';
+import type { Camera, Material } from 'three';
 import { World } from '../../src/compiler/World.js';
 import { tag } from '../../src/tags.js';
+import { FakeRenderer } from './helpers/fakeRenderer.js';
 
 const box = new BoxGeometry();
 
@@ -87,6 +88,31 @@ describe('World.warmup', () => {
     expect(disposed().sort()).toEqual(['foliage', 'glass']);
     expect(renderer.calls).toEqual(['compileAsync', 'setScissor(0,0,1,1)', 'setScissorTest(true)', 'render scissor=0,0,1,1', 'setScissorTest(false)', 'setScissor(0,0,800,600)']);
     expect(result).toEqual({ mode: 'async', textures: 0, repaired: 2 });
+  });
+
+  it('async mode forgets the render compileAsync opens: three calls scene.onBeforeRender there but never onAfterRender', async () => {
+    const scene = new Scene();
+    for (let i = 0; i < 4; i++) scene.add(tag.static(new Mesh(box, new MeshStandardMaterial({ name: `m${i}` }))));
+    const world = new World(scene);
+    world.compile();
+    // Renderer.compileAsync (three r186 Renderer.js ~967) calls sceneRef.onBeforeRender, queues the objects and resolves
+    // without the matching sceneRef.onAfterRender.
+    const renderer = Object.assign(new FakeRenderer({ sceneHooks: true }), {
+      getScissor: (target: Vector4) => target.set(0, 0, 300, 150),
+      setScissor: () => undefined,
+      getScissorTest: () => false,
+      setScissorTest: () => undefined,
+      async compileAsync(this: FakeRenderer, target: Scene, camera: Camera) {
+        target.onBeforeRender(this as never, target, camera, null as never, null as never, null as never);
+      },
+    });
+    await world.warmup(renderer as never, new PerspectiveCamera(), { mode: 'async' });
+    const main = new PerspectiveCamera();
+    let mainInside: Camera | null = null;
+    scene.add(Object.assign(new Mesh(box, new MeshStandardMaterial()), { onBeforeRender: () => void (mainInside = world.mainCamera) }));
+    renderer.render(scene, main);
+    expect(mainInside, 'the next render is an outermost render: its camera is the main camera').toBe(main);
+    expect(world.mainCamera).toBe(main);
   });
 
   it('async mode falls back to the frame when the renderer has no compileAsync', async () => {
