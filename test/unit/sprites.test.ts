@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Frustum, Group, Matrix4, Object3D, PerspectiveCamera, Scene, Sprite, SpriteMaterial, Vector2, Vector3, type Material } from 'three';
 import { ClippingGroup, SpriteNodeMaterial } from 'three/webgpu';
 import { float } from 'three/tsl';
@@ -210,6 +210,77 @@ describe('fillSpriteInstances in scene space', () => {
       const m = s.matrixWorld.elements;
       expect(scales[k * 2]! * 2, `sprite ${k} scale x`).toBeCloseTo(Math.hypot(m[0]!, m[1]!, m[2]!), 4);
       expect(scales[k * 2 + 1]! * 3, `sprite ${k} scale y`).toBeCloseTo(Math.hypot(m[4]!, m[5]!, m[6]!), 4);
+    });
+  });
+});
+
+describe('fillSpriteInstances ordering and column lengths', () => {
+  const material = new SpriteMaterial();
+
+  /** 240 sprites over 8 depths, so roughly thirty share each sort key and ties decide the order. */
+  function tied() {
+    const scene = new Scene();
+    const list: Sprite[] = [];
+    for (let i = 0; i < 240; i++) list.push(spriteAt(((i % 17) - 8) * 0.1, (((i * 7) % 11) - 5) * 0.1, -(6 + (i % 8) * 6), material, [1 + (i % 3), 2 + (i % 5)]));
+    scene.add(...list);
+    scene.updateMatrixWorld(true);
+    const camera = new PerspectiveCamera(70, 1, 0.1, 500);
+    camera.position.set(0, 0, 0);
+    camera.lookAt(0, 0, -1);
+    camera.updateMatrixWorld(true);
+    camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+    return { scene, list, camera };
+  }
+
+  it('writes what a stable back-to-front comparator sort over the same Float32 depths would, ties and all', () => {
+    const { scene, list, camera } = tied();
+    const e = new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).elements;
+    // The depth the fill computes, rounded the way it stores it: two sprites whose depths round together must tie.
+    const depthOf = (sprite: Sprite): number => {
+      const m = sprite.matrixWorld.elements;
+      const x = m[12]!;
+      const y = m[13]!;
+      const z = m[14]!;
+      const w = e[3]! * x + e[7]! * y + e[11]! * z + e[15]!;
+      return Math.fround((e[2]! * x + e[6]! * y + e[10]! * z + e[14]!) / (w === 0 ? 1e-9 : w));
+    };
+    // Array.prototype.sort is stable, which is what the fill has to reproduce.
+    const expected = list.map((_, i) => i).sort((a, b) => depthOf(list[b]!) - depthOf(list[a]!));
+    expect(new Set(expected.slice(0, 30).map((i) => depthOf(list[i]!))).size, 'the farthest depth is shared').toBeLessThan(5);
+    const centers = new Float32Array(list.length * 3);
+    const scales = new Float32Array(list.length * 2);
+    expect(fillSpriteInstances(list, centers, scales, { camera, sorted: true, cap: Infinity, root: scene, frustum: null })).toBe(list.length);
+    expected.forEach((index, k) => {
+      const m = list[index]!.matrixWorld.elements;
+      expect([centers[k * 3], centers[k * 3 + 1], centers[k * 3 + 2]], `slot ${k}`).toEqual([Math.fround(m[12]!), Math.fround(m[13]!), Math.fround(m[14]!)]);
+    });
+    // A cap keeps the nearest, at the end of the sorted run.
+    const capped = new Float32Array(list.length * 3);
+    expect(fillSpriteInstances(list, capped, scales, { camera, sorted: true, cap: 10, root: scene, frustum: null })).toBe(10);
+    expected.slice(-10).forEach((index, k) => {
+      expect(capped[k * 3 + 2], `capped slot ${k}`).toBe(Math.fround(list[index]!.matrixWorld.elements[14]!));
+    });
+  });
+
+  it('takes each sprite’s two column lengths once, with sqrt rather than hypot', () => {
+    const { scene, list, camera } = tied();
+    const frustum = new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    const centers = new Float32Array(list.length * 3);
+    const scales = new Float32Array(list.length * 2);
+    const sqrt = vi.spyOn(Math, 'sqrt');
+    const hypot = vi.spyOn(Math, 'hypot');
+    const written = fillSpriteInstances(list, centers, scales, { camera, sorted: false, cap: Infinity, root: scene, frustum });
+    const sqrts = sqrt.mock.calls.length;
+    const hypots = hypot.mock.calls.length;
+    sqrt.mockRestore();
+    hypot.mockRestore();
+    expect(written, 'every sprite is in view').toBe(list.length);
+    expect(sqrts, 'two per sprite, shared by the cull radius and the scales').toBe(list.length * 2);
+    expect(hypots).toBe(0);
+    // And the scales are the column lengths, whichever pass computed them.
+    list.forEach((sprite, k) => {
+      const m = sprite.matrixWorld.elements;
+      expect([scales[k * 2], scales[k * 2 + 1]], `sprite ${k}`).toEqual([Math.fround(Math.hypot(m[0]!, m[1]!, m[2]!)), Math.fround(Math.hypot(m[4]!, m[5]!, m[6]!))]);
     });
   });
 });

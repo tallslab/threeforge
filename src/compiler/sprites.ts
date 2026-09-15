@@ -185,8 +185,14 @@ export interface SpriteFillOptions {
   space?: SceneSpace | null;
 }
 
+/** The sprites to write, in draw order. */
 let order: Uint32Array = new Uint32Array(0);
-let depths: Float32Array = new Float32Array(0);
+/** The sort key beside each entry of `order`. Float32, as the depths always were, so the same pairs still tie. */
+let keys: Float32Array = new Float32Array(0);
+let orderBuffer: Uint32Array = new Uint32Array(0);
+let keyBuffer: Float32Array = new Float32Array(0);
+/** Per sprite, by index: the lengths of its world matrix's first two columns, taken once by the cull pass. */
+let columns: Float64Array = new Float64Array(0);
 const _sphere = new Sphere();
 const _projScreen = new Matrix4();
 /** Half the diagonal of the unit quad: a sprite's bounding-sphere radius per unit of scale. */
@@ -200,6 +206,47 @@ function insideSidePlanes(frustum: Frustum, sphere: Sphere): boolean {
 }
 
 /**
+ * Sorts `keys[0, n)` and the sprite indices beside them in `order` from the largest key down, leaving entries with
+ * equal keys in the order they came in. A bottom-up merge through the scratch pair: it allocates nothing and calls
+ * no comparator, where `%TypedArray%.prototype.sort(comparator)` copies the array into a JS array, sorts that and
+ * copies it back. Stable, like the sort it replaces, so equal depths keep drawing in the same order.
+ */
+function sortByDepth(n: number): void {
+  let fromKeys = keys;
+  let fromIds = order;
+  let toKeys = keyBuffer;
+  let toIds = orderBuffer;
+  for (let width = 1; width < n; width *= 2) {
+    for (let lo = 0; lo < n; lo += width * 2) {
+      const mid = Math.min(lo + width, n);
+      const hi = Math.min(lo + width * 2, n);
+      let i = lo;
+      let j = mid;
+      for (let k = lo; k < hi; k++) {
+        // `>=` takes the left run first on a tie, which is what keeps the merge stable.
+        if (i < mid && (j >= hi || fromKeys[i]! >= fromKeys[j]!)) {
+          toKeys[k] = fromKeys[i]!;
+          toIds[k] = fromIds[i++]!;
+        } else {
+          toKeys[k] = fromKeys[j]!;
+          toIds[k] = fromIds[j++]!;
+        }
+      }
+    }
+    const swapKeys = fromKeys;
+    fromKeys = toKeys;
+    toKeys = swapKeys;
+    const swapIds = fromIds;
+    fromIds = toIds;
+    toIds = swapIds;
+  }
+  if (fromIds !== order) {
+    order.set(fromIds.subarray(0, n));
+    keys.set(fromKeys.subarray(0, n));
+  }
+}
+
+/**
  * Copies every sprite's position and scale, in `space` when given, into the instanced attributes (an invisible sprite gets scale 0),
  * culled against `frustum` when given, optionally sorted back to front for `camera`, capped to `cap`. Returns the
  * instance count written.
@@ -208,17 +255,30 @@ export function fillSpriteInstances(sprites: Sprite[], centers: Float32Array, sc
   const total = sprites.length;
   if (order.length < total) {
     order = new Uint32Array(total);
-    depths = new Float32Array(total);
+    keys = new Float32Array(total);
+    orderBuffer = new Uint32Array(total);
+    keyBuffer = new Float32Array(total);
+    columns = new Float64Array(total * 2);
   }
+  const frustum = options.frustum;
   let n = 0;
-  for (let i = 0; i < total; i++) {
-    if (options.frustum) {
+  if (frustum) {
+    for (let i = 0; i < total; i++) {
       const m = sprites[i]!.matrixWorld.elements;
+      // three scales a sprite quad by its model matrix's first two column lengths, which both the cull radius here
+      // and the scales written below need: each is taken once, per sprite. `Math.sqrt` of the squared length, not
+      // `Math.hypot`, which is written to survive values whose square would overflow and costs several times as much.
+      const sx = Math.sqrt(m[0]! * m[0]! + m[1]! * m[1]! + m[2]! * m[2]!);
+      const sy = Math.sqrt(m[4]! * m[4]! + m[5]! * m[5]! + m[6]! * m[6]!);
       _sphere.center.set(m[12]!, m[13]!, m[14]!);
-      _sphere.radius = QUAD_RADIUS * Math.max(Math.hypot(m[0]!, m[1]!, m[2]!), Math.hypot(m[4]!, m[5]!, m[6]!));
-      if (!insideSidePlanes(options.frustum, _sphere)) continue;
+      _sphere.radius = QUAD_RADIUS * Math.max(sx, sy);
+      if (!insideSidePlanes(frustum, _sphere)) continue;
+      columns[i * 2] = sx;
+      columns[i * 2 + 1] = sy;
+      order[n++] = i;
     }
-    order[n++] = i;
+  } else {
+    for (let i = 0; i < total; i++) order[n++] = i;
   }
   const limit = Math.max(0, Math.min(n, Number.isFinite(options.cap) ? Math.floor(options.cap) : n));
   let start = 0;
@@ -232,11 +292,10 @@ export function fillSpriteInstances(sprites: Sprite[], centers: Float32Array, sc
       const y = m[13]!;
       const z = m[14]!;
       const w = e[3]! * x + e[7]! * y + e[11]! * z + e[15]!;
-      depths[order[k]!] = (e[2]! * x + e[6]! * y + e[10]! * z + e[14]!) / (w === 0 ? 1e-9 : w);
+      keys[k] = (e[2]! * x + e[6]! * y + e[10]! * z + e[14]!) / (w === 0 ? 1e-9 : w);
     }
-    const view = order.subarray(0, n);
     // Larger projected depth is farther: farthest first; a cap keeps the nearest, at the end of the sorted run.
-    view.sort((a, b) => depths[b]! - depths[a]!);
+    sortByDepth(n);
     start = n - limit;
   }
   // Culling and sorting above are in world space, like the camera; the instances are written in the batch's space.
@@ -246,7 +305,8 @@ export function fillSpriteInstances(sprites: Sprite[], centers: Float32Array, sc
   const scaleY = inverse === null ? 1 : space!.scaleY;
   let written = 0;
   for (let k = start; k < start + limit; k++) {
-    const sprite = sprites[order[k]!]!;
+    const index = order[k]!;
+    const sprite = sprites[index]!;
     const m = sprite.matrixWorld.elements;
     const o = written * 3;
     if (inverse === null) {
@@ -263,9 +323,9 @@ export function fillSpriteInstances(sprites: Sprite[], centers: Float32Array, sc
     }
     const s = written * 2;
     if (isVisibleInGraph(sprite, options.root)) {
-      // three scales a sprite quad by its model matrix's column lengths: the batch's (the space's) times these.
-      scales[s] = Math.hypot(m[0]!, m[1]!, m[2]!) / scaleX;
-      scales[s + 1] = Math.hypot(m[4]!, m[5]!, m[6]!) / scaleY;
+      // The column lengths again: the batch's (the space's) divide out, and the cull pass above already took them.
+      scales[s] = (frustum ? columns[index * 2]! : Math.sqrt(m[0]! * m[0]! + m[1]! * m[1]! + m[2]! * m[2]!)) / scaleX;
+      scales[s + 1] = (frustum ? columns[index * 2 + 1]! : Math.sqrt(m[4]! * m[4]! + m[5]! * m[5]! + m[6]! * m[6]!)) / scaleY;
     } else {
       scales[s] = 0;
       scales[s + 1] = 0;
