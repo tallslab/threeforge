@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { BoxGeometry, Mesh, MeshStandardMaterial, Scene, type Material } from 'three';
+import { BoxGeometry, Color, Mesh, MeshStandardMaterial, Scene, type Material } from 'three';
 import * as WEBGPU from 'three/webgpu';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { World } from '../../src/compiler/World.js';
@@ -92,5 +92,110 @@ describe('tinted-group material clones keep the source material code', () => {
     expect(sources, 'a tinted group renders with a clone').not.toContain(material);
     expect((material as MeshStandardNodeMaterial).setupOutput, 'setupOutput').toBe(setupOutput);
     expect(material.alphaTest, 'alphaTest').toBe(0.5);
+  });
+
+  const kinds = {
+    classic: (color: number): Material => new MeshStandardMaterial({ color }),
+    node: (color: number): Material => new MeshStandardNodeMaterial({ color }),
+  } as const;
+  const pathsByKind = (Object.keys(paths) as Array<keyof typeof paths>).flatMap((path) => (Object.keys(kinds) as Array<keyof typeof kinds>).map((kind) => [path, kind] as const));
+
+  it.each(pathsByKind)('the %s material of a %s source keeps user-added own properties by reference (object and primitive)', (path, kind) => {
+    const extra = { uTint: { value: new Color(1, 0.5, 0.25) } };
+    const { scene, sources } = tintedScene((i) => Object.assign(kinds[kind](tints[i]!), { extra, surface: 'crate', wear: 3 }));
+    const world = new World(scene, paths[path].options);
+    world.compile();
+    const material = paths[path].material(world) as Material & { extra?: unknown; surface?: unknown; wear?: unknown };
+    expect(sources, 'a tinted group renders with a clone').not.toContain(material);
+    expect(material.extra, 'object').toBe(extra);
+    expect(material.surface, 'string').toBe('crate');
+    expect(material.wear, 'number').toBe(3);
+  });
+
+  it.each(pathsByKind)("the %s material of a %s source shares the source's userData object, so values set through the source reach it", (path, kind) => {
+    const { scene, sources } = tintedScene((i) => {
+      const material = kinds[kind](tints[i]!);
+      material.userData.uTime = { value: 0 };
+      return material;
+    });
+    const world = new World(scene, paths[path].options);
+    world.compile();
+    const material = paths[path].material(world);
+    expect(sources, 'a tinted group renders with a clone').not.toContain(material);
+    expect(sources.map((source) => source.userData), "the clone's userData is its source's own object").toContain(material.userData);
+  });
+
+  it.each(Object.keys(paths) as Array<keyof typeof paths>)('the %s material runs a classic onBeforeCompile that reads a user-added property through `this`', (path) => {
+    const extra = { uTint: { value: new Color(1, 0.5, 0.25) } };
+    const onBeforeCompile = function (this: { extra: typeof extra }, shader: { uniforms: Record<string, unknown> }): void {
+      shader.uniforms.uTint = this.extra.uTint;
+    };
+    const { scene, sources } = tintedScene((i) => Object.assign(new MeshStandardMaterial({ color: tints[i]! }), { extra, onBeforeCompile }));
+    const world = new World(scene, paths[path].options);
+    world.compile();
+    const material = paths[path].material(world);
+    expect(sources, 'a tinted group renders with a clone').not.toContain(material);
+    // WebGLRenderer calls `material.onBeforeCompile(parameters, renderer)` on the drawn material while it acquires the program.
+    const shader = { uniforms: {} as Record<string, unknown> };
+    (material.onBeforeCompile as unknown as (this: Material, shader: { uniforms: Record<string, unknown> }) => void).call(material, shader);
+    expect(shader.uniforms.uTint).toBe(extra.uTint);
+  });
+
+  it.each(Object.keys(paths) as Array<keyof typeof paths>)("the %s material runs a node source's instance setupOutput that reads a user-added property through `this`", (path) => {
+    const extra = { darken: 0.35 };
+    const seen: unknown[] = [];
+    const setupOutput = function (this: { extra: typeof extra }, _builder: unknown, output: unknown): unknown {
+      seen.push(this.extra.darken);
+      return output;
+    };
+    const { scene, sources } = tintedScene((i) => Object.assign(new MeshStandardNodeMaterial({ color: tints[i]! }), { extra, setupOutput }));
+    const world = new World(scene, paths[path].options);
+    world.compile();
+    const material = paths[path].material(world);
+    expect(sources, 'a tinted group renders with a clone').not.toContain(material);
+    // NodeMaterial.setup calls `this.setupOutput(builder, outputNode)` on the drawn material while it builds the fragment stage.
+    (material as unknown as { setupOutput(builder: unknown, output: unknown): unknown }).setupOutput(null, 'output');
+    expect(seen).toEqual([0.35]);
+  });
+
+  it.each(pathsByKind.flatMap(([path, kind]) => (['circular', 'BigInt'] as const).map((label) => [label, path, kind] as const)))('compiles a tinted group whose material userData cannot be serialised (%s) on the %s path of a %s source, and shares it', (label, path, kind) => {
+    const circular: Record<string, unknown> = { name: 'loop' };
+    circular.self = circular;
+    const userData = label === 'circular' ? circular : { big: BigInt(1) };
+    const { scene, sources } = tintedScene((i) => {
+      const material = kinds[kind](tints[i]!);
+      material.userData = userData;
+      return material;
+    });
+    const world = new World(scene, paths[path].options);
+    expect(() => world.compile(), 'compile').not.toThrow();
+    const material = paths[path].material(world);
+    expect(sources, 'a tinted group renders with a clone').not.toContain(material);
+    expect(material.userData, 'the clone shares it').toBe(userData);
+    for (const source of sources) expect(source.userData, 'the source keeps it').toBe(userData);
+  });
+
+  it.each(Object.keys(paths) as Array<keyof typeof paths>)("the %s material keeps its own event listeners: disposing it at decompile runs none of the source's", (path) => {
+    // WebGLRenderer (`onMaterialDispose`) and WebGPU's RenderObject register `dispose` listeners on every material they
+    // draw, kept in EventDispatcher's lazily created own `_listeners`; WebGLRenderer's removes itself from the target.
+    const targets: unknown[] = [];
+    const onDispose = (event: { target: Material }): void => {
+      targets.push(event.target);
+      event.target.removeEventListener('dispose', onDispose);
+    };
+    const { scene, sources } = tintedScene((i) => {
+      const material = new MeshStandardMaterial({ color: tints[i]! });
+      material.addEventListener('dispose', onDispose);
+      return material;
+    });
+    const world = new World(scene, paths[path].options);
+    world.compile();
+    const material = paths[path].material(world);
+    expect(sources, 'a tinted group renders with a clone').not.toContain(material);
+    const dispose = vi.spyOn(material, 'dispose');
+    world.decompile();
+    expect(dispose, 'decompile disposes the clone').toHaveBeenCalled();
+    expect(targets, "no source listener ran for the clone's dispose").toEqual([]);
+    for (const source of sources) expect(source.hasEventListener('dispose', onDispose), 'the source keeps its listener').toBe(true);
   });
 });

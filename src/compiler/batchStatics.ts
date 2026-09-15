@@ -448,14 +448,34 @@ export function hasOwnFunctions(material: Material): boolean {
  *   `onBeforeRender` or any other own function, and custom `defines`, are lost;
  * - `NodeMaterial.copy` (`NodeMaterial.js:1321-1376`) copies the setters of the concrete class prototype and the
  *   properties a fresh instance already has: `alphaTest` (an accessor on `Material.prototype`, backed by `_alphaTest`)
- *   and every instance function (`setup`, `setupOutput` …) are lost.
+ *   and every instance function (`setup`, `setupOutput` …) are lost;
+ * - neither copies an own property a user added (data a hook reads through `this`, such as `this.extra.uTint`), so a
+ *   hook on the copy reads `undefined` and throws while three builds the program;
+ * - both end with `this.userData = JSON.parse(JSON.stringify(source.userData))` (`Material.js:1195`,
+ *   `NodeMaterial.js:1372`): it throws on a circular or BigInt value, and a uniform kept there becomes a copy that
+ *   updates made through the source never reach (a node uniform becomes a plain object).
  *
- * Restored on the copy: every own function-valued property (the same function, as the source's meshes share it), a copy
- * of `defines`, and every accessor on the prototype chain whose primitive value the copy lost (`alphaTest`). The
- * registry's material keys and grouping do not change.
+ * So `source.userData` is swapped for an empty object around `clone()` (put back in `finally`), and the copy shares the
+ * source's `userData` object. No threeforge code writes a batched source's or its clone's `userData`: `materialKey.ts`
+ * reads `forgeKey` and `collectResources` reads `forgeTextures`. Restored on the copy: every own function-valued property
+ * (the same function, as the source's meshes share it), a copy of `defines`, every accessor on the prototype chain whose
+ * primitive value the copy lost (`alphaTest`), and, by reference, every own enumerable property the fresh copy leaves
+ * undefined. The one exception is EventDispatcher's `_listeners`, created lazily by the first `addEventListener`
+ * (`EventDispatcher.js:33`): the renderers register `dispose` listeners on every material they draw (`WebGLRenderer.js:2216`,
+ * `RenderObject.js:359`), so a shared `_listeners` would run the source's listeners when the clone is disposed, and
+ * WebGLRenderer's `onMaterialDispose` (`:1151-1157`) would remove its listener from the source. The registry's material
+ * keys and grouping do not change.
  */
 export function cloneMaterial<T extends Material>(source: T): T {
-  const copy = source.clone() as T;
+  const userData = source.userData;
+  source.userData = {};
+  let copy: T;
+  try {
+    copy = source.clone() as T;
+  } finally {
+    source.userData = userData;
+  }
+  copy.userData = userData;
   const from = source as unknown as Record<string, unknown>;
   const to = copy as unknown as Record<string, unknown>;
   for (const key of Object.getOwnPropertyNames(source)) {
@@ -471,6 +491,10 @@ export function cloneMaterial<T extends Material>(source: T): T {
       const value = from[key];
       if ((typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') && to[key] !== value) to[key] = value;
     }
+  }
+  for (const key of Object.keys(source)) {
+    if (key === '_listeners' || to[key] !== undefined || from[key] === undefined) continue;
+    to[key] = from[key];
   }
   return copy;
 }

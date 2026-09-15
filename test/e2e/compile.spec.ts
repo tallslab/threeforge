@@ -92,7 +92,7 @@ test("dynamics: 'batch-sync' folds the 10 movers into their batches: 28 -> 18 su
   if (forge.pixelChecks) await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
 });
 
-test('tinted node-material statics keep an instance setupOutput and alphaTest when a group clone carries the tints', async ({ forge }) => {
+test('tinted node-material statics keep an instance setupOutput, alphaTest, a user-added property and a userData uniform node when a group clone carries the tints', async ({ forge }) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   for (const [mode, query] of TINTED_MODES) {
     await forge.open('empty', { ...query });
@@ -100,8 +100,12 @@ test('tinted node-material statics keep an instance setupOutput and alphaTest wh
       const f = window.__forge;
       const T = f.three;
       const W = f.webgpu;
-      // Alpha in stripes that alphaTest cuts out, and an instance setupOutput that darkens the colour: NodeMaterial.copy()
-      // carries neither (alphaTest is an accessor on Material.prototype; instance functions are not on a fresh instance).
+      // Alpha in stripes that alphaTest cuts out, and an instance setupOutput that darkens the colour by a user-added own
+      // property and mixes in a uniform node kept in userData, both read through `this`. NodeMaterial.copy() carries none
+      // of them: alphaTest is an accessor on Material.prototype, instance functions and user-added properties are not on
+      // a fresh instance, and userData is JSON-copied, which turns the uniform node into a plain object. (three r186 takes
+      // the value of a uniform read inside a setup method when the material builds, also in the naive render, so this
+      // cell keeps it fixed; the classic cell animates its userData uniform.)
       const size = 32;
       const data = new Uint8Array(size * size * 4);
       for (let y = 0; y < size; y++) {
@@ -113,15 +117,18 @@ test('tinted node-material statics keep an instance setupOutput and alphaTest wh
       }
       const map = new T.DataTexture(data, size, size);
       map.needsUpdate = true;
-      const setupOutput = function (this: unknown, builder: unknown, output: unknown) {
+      const extra = { darken: 0.35 };
+      const glow = W.TSL.uniform(0.3);
+      const setupOutput = function (this: { extra: typeof extra; userData: { glow: typeof glow } }, builder: unknown, output: unknown) {
         const out = output as { rgb: { mul(value: number): unknown }; a: unknown };
-        const darker = W.TSL.vec4(out.rgb.mul(0.35) as never, out.a as never);
-        return (W.NodeMaterial.prototype.setupOutput as (...args: unknown[]) => unknown).call(this, builder, darker);
+        const rgb = W.TSL.mix(out.rgb.mul(this.extra.darken) as never, W.TSL.vec3(1, 0.85, 0.2), this.userData.glow as never);
+        return (W.NodeMaterial.prototype.setupOutput as (...args: unknown[]) => unknown).call(this, builder, W.TSL.vec4(rgb as never, out.a as never));
       };
       const geometry = new T.BoxGeometry(1.4, 1.4, 1.4);
       [0xd04040, 0x40b060, 0x4060d0, 0xd0b040].forEach((color, i) => {
-        const material = Object.assign(new W.MeshStandardNodeMaterial({ color, map, roughness: 0.8 }), { setupOutput });
+        const material = Object.assign(new W.MeshStandardNodeMaterial({ color, map, roughness: 0.8 }), { setupOutput, extra });
         material.alphaTest = 0.5;
+        material.userData.glow = glow;
         const mesh = new T.Mesh(geometry, material);
         mesh.position.set(i * 2 - 3, 0.7, 0);
         mesh.rotation.y = 0.5;
@@ -147,13 +154,13 @@ test('tinted node-material statics keep an instance setupOutput and alphaTest wh
     await settle(forge.page, 2);
     const after = await forge.page.screenshot({ type: 'png' });
     const diff = pixelDiff(before, after, { threshold: 4 });
-    note(`[${forge.backend}] tinted node materials, ${mode}: ${r.after.batches} batches, ${r.after.baked} baked, pixel diff ${(diff * 100).toFixed(4)}%`);
+    note(`[${forge.backend}] tinted node materials with extra and a userData uniform node, ${mode}: ${r.after.batches} batches, ${r.after.baked} baked, pixel diff ${(diff * 100).toFixed(4)}%`);
     expect(r.after.batches + r.after.baked, `${mode}: the tinted group is compiled`).toBe(1);
     expect(diff, mode).toBeLessThan(0.0005);
   }
 });
 
-test('tinted classic statics keep a custom onBeforeCompile and define when a group clone carries the tints (drawn by WebGLRenderer, which runs them)', async ({ forge }) => {
+test('tinted classic statics keep a custom onBeforeCompile, define, user-added property and a userData uniform animated through the source when a group clone carries the tints (drawn by WebGLRenderer, which runs them)', async ({ forge }) => {
   // three r186 runs material onBeforeCompile and defines only in renderers/WebGLRenderer.js; the harness's WebGPURenderer
   // (both backends) ignores them, so this cell draws the same scene with a classic WebGLRenderer inside the page.
   for (const [mode, query] of TINTED_MODES) {
@@ -161,17 +168,25 @@ test('tinted classic statics keep a custom onBeforeCompile and define when a gro
     const r = await forge.page.evaluate(() => {
       const f = window.__forge;
       const T = f.three;
-      const onBeforeCompile = (shader: { fragmentShader: string }): void => {
-        shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>', '#include <dithering_fragment>\n#ifdef MY_DEFINE\n\tgl_FragColor.rgb = vec3( 1.0 ) - gl_FragColor.rgb;\n#endif');
+      // The hook reads, through `this` (the drawn material), a user-added own property, which Material.copy() does not
+      // carry, and a uniform kept in userData, which Material.copy() JSON-copies and so cuts loose from the source.
+      const extra = { uTint: { value: new T.Color(0.6, 0.9, 0.75) } };
+      const onBeforeCompile = function (this: { extra: typeof extra; userData: { uWave: { value: number } } }, shader: { fragmentShader: string; uniforms: Record<string, unknown> }): void {
+        shader.uniforms.uTint = this.extra.uTint;
+        shader.uniforms.uWave = this.userData.uWave;
+        shader.fragmentShader = `uniform vec3 uTint;\nuniform float uWave;\n${shader.fragmentShader.replace('#include <dithering_fragment>', '#include <dithering_fragment>\n#ifdef MY_DEFINE\n\tgl_FragColor.rgb = vec3( 1.0 ) - gl_FragColor.rgb;\n#endif\n\tgl_FragColor.rgb = mix( gl_FragColor.rgb * uTint, vec3( 1.0, 0.85, 0.2 ), uWave );')}`;
       };
+      const wave = { value: 0 };
       const geometry = new T.BoxGeometry(1.4, 1.4, 1.4);
-      [0xd04040, 0x40b060, 0x4060d0, 0xd0b040].forEach((color, i) => {
-        const material = Object.assign(new T.MeshStandardMaterial({ color, roughness: 0.8 }), { onBeforeCompile, defines: { STANDARD: '', MY_DEFINE: '' } });
+      const sources = [0xd04040, 0x40b060, 0x4060d0, 0xd0b040].map((color, i) => {
+        const material = Object.assign(new T.MeshStandardMaterial({ color, roughness: 0.8 }), { onBeforeCompile, extra, defines: { STANDARD: '', MY_DEFINE: '' } });
+        material.userData.uWave = wave;
         const mesh = new T.Mesh(geometry, material);
         mesh.position.set(i * 2 - 3, 0.7, 0);
         mesh.rotation.y = 0.5;
         (mesh.userData as { forge?: string }).forge = 'static';
         f.scene.add(mesh);
+        return material;
       });
       const sun = new T.DirectionalLight(0xffffff, 2);
       sun.position.set(3, 6, 5);
@@ -188,17 +203,29 @@ test('tinted classic statics keep a custom onBeforeCompile and define when a gro
         gl.render(f.scene, camera);
         return gl.domElement.toDataURL('image/png');
       };
-      const before = shot();
+      // Animated through a source material, as an app holding its own material does it.
+      const waveThroughSource = (value: number): void => {
+        (sources[0]!.userData as { uWave: { value: number } }).uWave.value = value;
+      };
+      const naive = [shot()];
+      waveThroughSource(0.6);
+      naive.push(shot());
+      waveThroughSource(0);
       const report = f.compile();
       shot();
-      const after = shot();
+      const compiled = [shot()];
+      waveThroughSource(0.6);
+      compiled.push(shot());
       gl.dispose();
-      return { before, after, compiled: report.after };
+      return { naive, compiled, after: report.after };
     });
     const png = (dataUrl: string): Buffer => Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');
-    const diff = pixelDiff(png(r.before), png(r.after), { threshold: 4 });
-    note(`[${forge.backend}] tinted classic materials with onBeforeCompile and MY_DEFINE (WebGLRenderer), ${mode}: ${r.compiled.batches} batches, ${r.compiled.baked} baked, pixel diff ${(diff * 100).toFixed(4)}%`);
-    expect(r.compiled.batches + r.compiled.baked, `${mode}: the tinted group is compiled`).toBe(1);
-    expect(diff, mode).toBeLessThan(0.0005);
+    const animated = pixelDiff(png(r.naive[0]!), png(r.naive[1]!), { threshold: 4 });
+    const diffs = [0, 1].map((k) => pixelDiff(png(r.naive[k]!), png(r.compiled[k]!), { threshold: 4 }));
+    note(`[${forge.backend}] tinted classic materials with onBeforeCompile, MY_DEFINE, extra and a userData uniform (WebGLRenderer), ${mode}: ${r.after.batches} batches, ${r.after.baked} baked, the wave uniform changes the naive render by ${(animated * 100).toFixed(4)}%, pixel diff at wave 0 ${(diffs[0]! * 100).toFixed(4)}%, at wave 0.6 set through the source ${(diffs[1]! * 100).toFixed(4)}%`);
+    expect(r.after.batches + r.after.baked, `${mode}: the tinted group is compiled`).toBe(1);
+    expect(animated, `${mode}: the wave uniform visibly changes the naive render`).toBeGreaterThan(0.01);
+    expect(diffs[0], `${mode}, wave 0`).toBeLessThan(0.0005);
+    expect(diffs[1], `${mode}, wave 0.6 set through the source`).toBeLessThan(0.0005);
   }
 });
