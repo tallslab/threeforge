@@ -8,6 +8,7 @@
 - The CLI closes its static server and browser on every path, newest first, each close bounded to 5 s; the first error is reported. A finished command (all but `mcp`) exits at most 5 s after flushing its output even if a handle lingers.
 - `window.__threeforge.frameAsync()` rejects when the render throws; it used to stay pending forever.
 - Programmatic `analyzeAsset`, `analyzeAssetWithShots`, `inspectApp` and `optimizeAsset` take an optional trailing `deps` (`{ launch, serve, appDir }`, type `CliDeps`).
+- The static server (`analyze`'s harness/asset host) no longer crashes the process on a malformed request URL, such as a texture named `100%.jpg`: a request whose path fails to decode now falls back to the literal, undecoded path when it names a real file inside the root, and answers 400 otherwise. It also compares real paths (`realpathSync`), so a symlink inside the root that resolves outside it now answers 403 instead of being served, and any other unexpected error in a request answers 500 instead of taking the server down.
 
 ## 0.8.0 — 2026-09-14
 
