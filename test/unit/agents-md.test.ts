@@ -14,6 +14,7 @@ describe('AGENTS.md', () => {
   it('documents the commands and exit codes', () => {
     for (const command of Object.keys(COMMAND_SPECS)) expect(text).toContain(`npx threeforge ${command}`);
     expect(text).toContain('exposeToAgents');
+    expect(text).toContain('if (import.meta.env.DEV) exposeToAgents(');
     expect(text).toMatch(/`3` environment/);
   });
   it('documents every flag of every command, in each accepted form', () => {

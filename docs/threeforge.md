@@ -46,7 +46,7 @@ tag.dynamic(player);                         // moves: left alone (or synced int
 const world = new World(scene, { registry, ledger, policy: 'tagged' });
 const report = world.compile({ coordinateSystem: renderer.coordinateSystem });
 await world.warmup(renderer, camera);        // build every pipeline now, not on the first visible frame
-exposeToAgents({ ledger, world, renderer, scene, camera }); // window.__threeforge for the CLI and agents
+if (import.meta.env.DEV) exposeToAgents({ ledger, world, renderer, scene, camera }); // window.__threeforge, development only
 
 renderer.render(scene, camera);
 const frame = ledger.frame();                // FrameSnapshot v2: six cost sections + hints
@@ -465,6 +465,9 @@ swaps change data, not draw calls.
 - **Hook**: `exposeToAgents({ ledger, world, renderer, scene, camera })` publishes `window.__threeforge` with
   `version`, `schemaVersion`, `frame()`, `frameAsync()` (waits one animation frame so shadow maps update, renders if it
   can), `compile()` / `decompile()`, `measureOverdraw()`, `measureMemory()`, `hints()`, `report()`. Returns a disposer.
+  It lets any script on the page call `compile()`/`decompile()` and read the ledger, so call it as
+  `if (import.meta.env.DEV) exposeToAgents(...)` (Vite) or behind your own flag, never unconditionally in a shipped
+  build; bundlers other than Vite need their own dev check.
 - **CLI** (`npx threeforge` with no arguments, `threeforge help [<command>]`, or `--help` on any command prints
   AGENTS.md). Every command's positionals and flags are declared once in `COMMAND_SPECS` (`src/cli/args.ts`); the
   parser, the usage text printed after a usage error, and the AGENTS.md command and flag tables come from it.
