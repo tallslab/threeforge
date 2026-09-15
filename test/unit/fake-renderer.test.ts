@@ -185,6 +185,25 @@ describe('FakeRenderer shadowLights (ShadowNode.updateBefore)', () => {
     expect(new FakeRenderer().shadowMap.enabled).toBe(false);
   });
 
+  it('builds light.shadow.map as a map first renders, a colour target with a depth texture, as ShadowNode.setupShadow sets it; none while shadow maps are disabled', () => {
+    const a = sun('a');
+    const renderer = new FakeRenderer({ shadowLights: [a] });
+    const { scene, camera } = sceneWithCamera();
+    const caster = cube('caster');
+    caster.castShadow = true;
+    scene.add(a, caster);
+    renderer.shadowMap.enabled = false;
+    renderer.render(scene, camera);
+    expect(a.shadow.map).toBeNull();
+    renderer.shadowMap.enabled = true;
+    renderer.render(scene, camera);
+    const map = a.shadow.map as unknown as { textures: unknown[]; depthTexture: unknown } | null;
+    expect(map?.textures).toHaveLength(1);
+    expect(map?.depthTexture).toBeTruthy();
+    renderer.render(scene, camera);
+    expect(a.shadow.map).toBe(map);
+  });
+
   it('renders a map only when shadow.autoUpdate or shadow.needsUpdate, and clears needsUpdate', () => {
     const light = sun();
     light.shadow.autoUpdate = false;

@@ -14,7 +14,8 @@
  *   side) and two draws, BackSide then FrontSide, for double-sided transparent materials.
  * - RenderObject.getDrawParameters and the backends' Info.update: nothing for zero instances or an empty range; one
  *   draw per call, N per BatchedMesh on WebGPU or on WebGL without WEBGL_multi_draw; triangles = instances x count / 3.
- * - ShadowNode and PointShadowNode: shadow maps per light (see `shadowLights`), six faces per point light, VSM quads.
+ * - ShadowNode and PointShadowNode: shadow maps per light (see `shadowLights`), six faces per point light, VSM quads,
+ *   and `light.shadow.map` built as a light's map first renders.
  * Every Scene render without an override material also draws an "Output Color Transform" quad, like three's output
  * pass (a QuadMesh: one fullscreen triangle). Not modelled: frustum culling, sorting, matrix updates (call `scene.updateMatrixWorld()`), pipeline readiness.
  */
@@ -23,6 +24,7 @@ import {
   BatchedMesh,
   BufferGeometry,
   Color,
+  DepthTexture,
   DoubleSide,
   Float32BufferAttribute,
   FrontSide,
@@ -35,6 +37,7 @@ import {
   OrthographicCamera,
   PCFShadowMap,
   PerspectiveCamera,
+  RenderTarget,
   Scene,
   Vector2,
   Vector3,
@@ -707,6 +710,14 @@ export class FakeRenderer {
   /** ShadowNode.updateShadow: render the map with the shadow material and render-object function, then the VSM quads. */
   private updateShadow(light: ShadowLight, scene: Scene, camera: Camera): void {
     const shadow = light.shadow;
+    // ShadowNode.setupShadow builds the light's map when a receiver's lighting first sets up and sets `shadow.map`
+    // (ShadowNode.js ~529): a colour target with a depth texture (PointShadowNode.setupRenderTarget: a cube target and a
+    // cube depth texture, two textures too). Built here as the map first renders.
+    const built = shadow as unknown as { map: RenderTarget | null };
+    if (!built.map) {
+      built.map = new RenderTarget(shadow.mapSize.x, shadow.mapSize.y);
+      built.map.depthTexture = new DepthTexture(shadow.mapSize.x, shadow.mapSize.y);
+    }
     const vsm = this.shadowMap.type === VSMShadowMap;
     const layerMask = shadow.camera.layers.mask;
     if ((layerMask & 0xfffffffe) === 0) shadow.camera.layers.mask = camera.layers.mask;
