@@ -7,6 +7,7 @@ import {
   DirectionalLight,
   DoubleSide,
   FrontSide,
+  Group,
   InstancedBufferGeometry,
   InstancedMesh,
   Matrix4,
@@ -314,6 +315,29 @@ describe('FakeRenderer render list (Renderer._renderScene, _renderTransparents)'
     expect(seen).toHaveLength(1);
     expect(seen[0]).toHaveLength(1);
     expect(seen[0]![0]).toBe(key);
+  });
+
+  it('projects nothing under a hidden object, but still the children of an object the camera layers exclude (Renderer._projectObject)', () => {
+    const renderer = new FakeRenderer({ record: true });
+    const { scene, camera } = sceneWithCamera();
+    const key = new DirectionalLight();
+    const hidden = named(new Group(), 'hidden');
+    hidden.visible = false;
+    hidden.add(cube('under-hidden'), new DirectionalLight());
+    const otherLayer = cube('other-layer');
+    otherLayer.layers.set(2);
+    otherLayer.add(cube('child-of-other-layer'));
+    scene.add(key, hidden, otherLayer, cube('m'));
+    const seen: Light[][] = [];
+    const renderObject = renderer.renderObject.bind(renderer);
+    renderer.renderObject = (...args: Parameters<FakeRenderer['renderObject']>) => {
+      if (args[0].name === 'm') seen.push([...(args[6] as { getLights(): Light[] }).getLights()]);
+      renderObject(...args);
+    };
+    renderer.render(scene, camera);
+    expect(renderer.passes[0]!.draws.map((d) => d.object.name)).toEqual(['child-of-other-layer', 'm', 'Output Color Transform']);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toEqual([key]);
   });
 
   it('renders opaque items, then a back-side pass of transmissive double-sided items, then the transparent list', () => {

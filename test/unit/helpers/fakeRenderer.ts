@@ -4,6 +4,7 @@
  * getDrawingBufferSize), the state the overdraw measurement saves and sets (render target, MRT, render-object function,
  * clear colour, `autoClear`, `opaque`/`transparent`, a zero read-back), and follows three's source where it decides what
  * is drawn:
+ * - Renderer._projectObject: a hidden object hides its subtree; the camera's layers gate each object alone.
  * - Renderer._renderScene: the render list in traversal order, opaque items first, then a back-side pass of transmissive
  *   double-sided items, then transparent items (three also sorts each list; tests control order by insertion); the
  *   lights node of the projected lights as renderObject's argument 7; `scene.onAfterRender`, plus
@@ -396,32 +397,19 @@ export class FakeRenderer {
     this.calls.push(call);
     if (this.options.sceneHooks) (sceneRef.onBeforeRender as (...args: unknown[]) => void)(this, scene, camera, hookTarget);
 
-    // Renderer._projectObject into the render list.
+    // Renderer._projectObject into the render list: a hidden object returns before its children, so it hides its whole
+    // subtree; the camera's layers gate the object itself only, and its children are still projected.
     const opaque: RenderItem[] = [];
     const transparent: RenderItem[] = [];
     const doublePass: RenderItem[] = [];
     const lights: Light[] = [];
-    scene.traverse((object) => {
-      if (!object.visible || !object.layers.test(camera.layers)) return;
-      if ((object as Light).isLight) {
-        lights.push(object as Light);
-        return;
-      }
-      const mesh = object as Mesh & { isPoints?: boolean; isSprite?: boolean; isLine?: boolean };
-      if (!(mesh.isMesh || mesh.isPoints || mesh.isSprite || mesh.isLine)) return;
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      const groups = mesh.isMesh && mesh.geometry.groups.length > 0 && Array.isArray(mesh.material) ? mesh.geometry.groups : [null];
-      for (const group of groups) {
-        const material = group ? materials[group.materialIndex ?? 0] : materials[0];
-        if (!material) continue;
-        const item = { object, geometry: mesh.geometry, material, group };
-        if (!isTransparentItem(material)) opaque.push(item);
-        else {
-          if (needsDoublePass(material)) doublePass.push(item);
-          transparent.push(item);
-        }
-      }
-    });
+    const project = (object: Object3D): void => {
+      if (!object.visible) return;
+      if (object.layers.test(camera.layers)) this.projectItem(object, lights, opaque, transparent, doublePass);
+      const children = object.children;
+      for (let i = 0; i < children.length; i++) project(children[i]!);
+    };
+    project(scene);
     lightsNode.setLights(lights);
     const plainScene = sceneRef === root && root.overrideMaterial === null;
     if (this.options.shadowTrigger === undefined && plainScene) this.updateShadows(root, camera, lightsNode);
@@ -661,6 +649,28 @@ export class FakeRenderer {
       else for (const range of gpu.ranges) gpu.data.set(array.subarray(range.start, range.start + range.count), range.start);
       gpu.ranges = [];
       gpu.uploaded = gpu.version;
+    }
+  }
+
+  /** One visible object the camera's layers see, pushed where Renderer._projectObject puts it: a light, or render items. */
+  private projectItem(object: Object3D, lights: Light[], opaque: RenderItem[], transparent: RenderItem[], doublePass: RenderItem[]): void {
+    if ((object as Light).isLight) {
+      lights.push(object as Light);
+      return;
+    }
+    const mesh = object as Mesh & { isPoints?: boolean; isSprite?: boolean; isLine?: boolean };
+    if (!(mesh.isMesh || mesh.isPoints || mesh.isSprite || mesh.isLine)) return;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const groups = mesh.isMesh && mesh.geometry.groups.length > 0 && Array.isArray(mesh.material) ? mesh.geometry.groups : [null];
+    for (const group of groups) {
+      const material = group ? materials[group.materialIndex ?? 0] : materials[0];
+      if (!material) continue;
+      const item = { object, geometry: mesh.geometry, material, group };
+      if (!isTransparentItem(material)) opaque.push(item);
+      else {
+        if (needsDoublePass(material)) doublePass.push(item);
+        transparent.push(item);
+      }
     }
   }
 
