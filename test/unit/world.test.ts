@@ -4,6 +4,7 @@ import {
   BoxGeometry,
   Color,
   DataTexture,
+  DirectionalLight,
   DodecahedronGeometry,
   Group,
   InstancedMesh,
@@ -272,12 +273,21 @@ describe('World.decompile', () => {
     const single = tag.static(new Mesh(box, new MeshStandardMaterial({ color: 0x999999, roughness: 0.1, metalness: 0.9 })));
     single.name = 'single';
     scene.add(single);
+    // An empty container, an anchor with no children, and a light's target: none is a static leaf, so none may be
+    // frozen — freezing `light.target` would stop DayNight from ever rotating it again.
+    const anchor = new Group();
+    anchor.name = 'anchor';
+    const light = new DirectionalLight();
+    light.name = 'light';
+    scene.add(anchor, light, light.target);
     const world = new World(scene);
     const report = world.compile();
     expect(report.after.frozen).toBe(2);
     expect(world.frozenObjects.map((o) => o.name).sort()).toEqual(['props', 'single']);
     expect(props.matrixAutoUpdate).toBe(false);
     expect(single.matrixAutoUpdate).toBe(false);
+    expect(anchor.matrixAutoUpdate).toBe(true);
+    expect(light.target.matrixAutoUpdate).toBe(true);
     world.decompile();
     expect(props.matrixAutoUpdate).toBe(true);
     expect(single.matrixAutoUpdate).toBe(true);

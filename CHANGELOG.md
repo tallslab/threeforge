@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `freezableObjects` no longer freezes a container unless its subtree holds at least one static leaf (an unbatched
+  static mesh or a hidden unsynced original): an empty container, an anchor `Object3D` with no children, and a
+  light's `target` (for example `DayNight`'s `sun.target`, added straight to the scene) previously froze
+  vacuously and never updated their matrix again. `village` (and any scene that adds a light's `target` to the
+  scene) now reports one more `autoUpdatedMatrices` per such target.
 - `classify`'s `exclusionRule(mesh, root?)` gains four rules the classifier previously missed: `invisible-ancestor`
   (an ancestor up to `root` with `visible = false` — a static mesh under a hidden Group no longer gets batched and
   drawn), `material-invisible` (`material.visible === false`, distinct from the mesh's own `visible`),

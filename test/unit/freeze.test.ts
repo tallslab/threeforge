@@ -78,4 +78,33 @@ describe('freezableObjects', () => {
     scene.add(h);
     expect(freezableObjects(scene, { hidden: new Set([h]), synced: new Set(), animated: new Set() })).toEqual([]);
   });
+
+  it('does not freeze an empty container, an anchor with no children, a light target, or a container whose only static descendant is an empty container', () => {
+    const scene = new Scene();
+    const emptyGroup = new Group();
+    emptyGroup.name = 'emptyGroup';
+    const anchor = new Object3D();
+    anchor.name = 'anchor';
+    const light = new DirectionalLight();
+    light.name = 'light';
+    light.target.name = 'light-target';
+    const onlyEmptyDescendant = new Group();
+    onlyEmptyDescendant.name = 'onlyEmptyDescendant';
+    const innerEmpty = new Group();
+    innerEmpty.name = 'innerEmpty';
+    onlyEmptyDescendant.add(innerEmpty);
+    scene.add(emptyGroup, anchor, light, light.target, onlyEmptyDescendant);
+    const out = freezableObjects(scene, { hidden: new Set(), synced: new Set(), animated: new Set() });
+    expect(out).toEqual([]);
+  });
+
+  it('still freezes a container whose only child is a single static mesh leaf', () => {
+    const scene = new Scene();
+    const leaf = new Group();
+    leaf.name = 'leaf';
+    leaf.add(tag.static(mesh('m')));
+    scene.add(leaf);
+    const out = freezableObjects(scene, { hidden: new Set(), synced: new Set(), animated: new Set() });
+    expect(names(out)).toEqual(['leaf']);
+  });
 });

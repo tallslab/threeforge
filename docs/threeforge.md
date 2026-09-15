@@ -396,8 +396,10 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
 - **Freezing** (`src/compiler/freeze.ts`, `freezableObjects`): at compile, unbatched static-tagged meshes and the
   topmost ancestors whose subtree is entirely static (hidden unsynced originals, static meshes, plain containers;
   nothing dynamic-tagged, animated, lit, skinned, bone or sprite inside) get `matrixAutoUpdate = false` after one
-  last `updateMatrix()`. `decompile()` restores the flags. The village drops from 310 to 33 recomposed matrices per
-  frame with identical pixels.
+  last `updateMatrix()`. A container freezes only when it also holds at least one such static leaf: an empty
+  container, an anchor `Object3D` with no children, and a light's `target` (added straight to the scene, as
+  `DayNight` does for the sun) are never frozen, since nothing would ever move their matrix again. `decompile()`
+  restores the flags. The village drops from 310 to 34 recomposed matrices per frame with identical pixels.
 - **`world.markDirty(object)`** moves a frozen static on demand: recomposes every local matrix under `object`,
   recomputes the world matrices, pushes each batched original in the subtree into its batch (`BatchedMesh`
   matrix and BVH leaf, `InstancedMesh` through its culling handle, a baked group by rebaking once; sprite
