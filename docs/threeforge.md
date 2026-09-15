@@ -682,11 +682,18 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
     (~772), neither of which removes it from `_actions`; `isRunning()` (~220) is false either way once finished.
     The check reads these private fields through a reflection cast (pinned by a canary test in
     `test/unit/render-scheduler.test.ts`) and falls back to `stats.actions.inUse > 0` for a mixer-like object
-    that does not expose them (a test double, or a future three version that renames them).
+    that does not expose them (a test double, or a future three version that renames them). `isRunning()` does
+    not consult `weight`, so an active, enabled, unpaused action with `weight === 0` still counts as running —
+    the scheduler deliberately errs toward rendering here, since a `fadeIn()` starts its target action at weight
+    0 and a skipped tick would miss the start of the fade.
   - **Matrices:** `cameraChanged()` and `watchedChanged()` (and `watch()`, for the initial baseline) call
     `object.updateWorldMatrix(true, false)` before reading `matrixWorld`: three does not recompute it just
     because a property changed, only a render pass or an explicit update call does, so moving `camera.position`
-    or a watched object's transform without calling `updateMatrixWorld()` is still detected.
+    or a watched object's transform without calling `updateMatrixWorld()` is still detected. Do not `watch()` a
+    detached original (`originals: 'detach'`): this per-tick `updateWorldMatrix` call is exactly the hazard
+    described above under "The composed matrix and later world-matrix updates" — with `matrixAutoUpdate` on (the
+    default), it overwrites the world matrix `markDirty` composed for a detached original with a parentless one,
+    every tick. Watch the live object you actually move instead.
   - **A disposed `World`:** the scheduler holds only the disposer `World.onDirty()` returns, and calls it once
     from `dispose()`; it never calls back into the `World` at tick time. Constructing a scheduler against an
     already-disposed `World` throws immediately — that is `World.onDirty()`'s own fail-fast guard, not scheduler

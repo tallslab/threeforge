@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { AnimationClip, AnimationMixer, LoopOnce, Mesh, Object3D, PerspectiveCamera, Scene, Vector2, VectorKeyframeTrack } from 'three';
+import { AnimationClip, AnimationMixer, BoxGeometry, LoopOnce, Mesh, MeshStandardMaterial, Object3D, PerspectiveCamera, Scene, Vector2, VectorKeyframeTrack } from 'three';
 import { RenderScheduler } from '../../src/scheduler/RenderScheduler.js';
 import { World } from '../../src/compiler/World.js';
+import { tag } from '../../src/tags.js';
 
 function fakeRenderer(width = 800, height = 600) {
   const r = {
@@ -222,6 +223,42 @@ describe('RenderScheduler running-mixer rule (real AnimationMixer)', () => {
     expect(scheduler.tick(32)).toBe(true);
   });
 
+  it('keeps counting as running through isRunning() once startAt(future) hands off to actual playback', () => {
+    const { mixer, action } = makeAnimatedMixer();
+    action.play().startAt(2); // starts 2s of mixer time from now
+    const startTimeOf = () => (action as unknown as { _startTime: number | null })._startTime;
+    const { scheduler } = setup({ mixers: [mixer] });
+
+    let time = 0;
+    expect(scheduler.tick(time)).toBe(true); // first tick always renders (invalidated)
+    expect(action.isRunning()).toBe(false); // still waiting: _startTime !== null
+    expect(startTimeOf()).toBe(2);
+
+    for (let i = 0; i < 4; i++) {
+      time += 800; // four 0.8s ticks: 3.2s of mixer time total, crossing the 2s start
+      expect(scheduler.tick(time)).toBe(true);
+    }
+
+    // three cleared _startTime once its global time passed it (AnimationAction.js ~587): the action now counts
+    // as running through isRunning() itself, not the "scheduled to start" branch.
+    expect(startTimeOf()).toBeNull();
+    expect(action.isRunning()).toBe(true);
+
+    time += 16;
+    expect(scheduler.tick(time)).toBe(true); // still running, now via the isRunning() branch
+  });
+
+  it('treats an active, enabled, unpaused action with weight 0 as running (a fadeIn() target starts there)', () => {
+    const { mixer, action } = makeAnimatedMixer();
+    action.play();
+    action.weight = 0; // e.g. the action fadeIn() is fading in, before any weight has been applied
+    expect(action.isRunning()).toBe(true); // isRunning() does not consult weight
+    const { scheduler } = setup({ mixers: [mixer] });
+
+    expect(scheduler.tick(0)).toBe(true); // first tick always renders (invalidated)
+    expect(scheduler.tick(16)).toBe(true); // still counts as running despite weight 0: errs toward rendering
+  });
+
   it('falls back to stats.actions.inUse when a mixer-like object has no private _actions/_nActiveActions fields', () => {
     const fake = { deltas: [] as number[], stats: { actions: { inUse: 0 } }, update(dt: number) { fake.deltas.push(dt); } };
     const { scheduler } = setup({ mixers: [fake] });
@@ -264,7 +301,9 @@ describe('RenderScheduler and a disposed World', () => {
     expect(() => setup({ world })).toThrow(/disposed/i);
   });
 
-  it('does not throw when the World is disposed mid-lifecycle, and other change signals keep working', () => {
+  it('does not throw when an uncompiled World is disposed mid-lifecycle, and other change signals keep working', () => {
+    // Uncompiled: World.decompile() (called by dispose()) returns early when `!this.compiled`, so no 'decompile'
+    // dirty event is ever emitted here. Kept separate from the compiled case below, which does emit one.
     const world = new World(new Scene());
     const { camera, scheduler } = setup({ world });
 
@@ -275,5 +314,37 @@ describe('RenderScheduler and a disposed World', () => {
     camera.updateMatrixWorld();
     expect(scheduler.tick(32)).toBe(true); // camera-change detection is independent of the World subscription
     expect(() => scheduler.dispose()).not.toThrow(); // teardown after a disposed World must not throw
+  });
+
+  it('renders once more when a compiled World is disposed mid-lifecycle (its own decompile event), then lets ticks skip', () => {
+    // Compiled: dispose() -> decompile() emits a 'decompile' dirty event to still-attached listeners (World.ts
+    // emitDirty(), before dirtyListeners.clear() in dispose()'s finally block), and the scheduler's onDirty
+    // callback calls invalidate() synchronously. The next tick sees `invalidated` and renders once; nothing
+    // further ever arrives from the World, since every mutator throws once it is disposed.
+    const scene = new Scene();
+    const mesh = tag.static(new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial()));
+    scene.add(mesh);
+    const world = new World(scene);
+    world.compile();
+
+    const { camera, scheduler } = setup({ world });
+    const dirtyListeners = (world as unknown as { dirtyListeners: Set<unknown> }).dirtyListeners;
+    expect(dirtyListeners.size).toBe(1); // just the scheduler's own subscription
+
+    expect(scheduler.tick(0)).toBe(true); // settle: first tick always renders
+    expect(scheduler.tick(16)).toBe(false); // idle before disposal
+
+    expect(() => world.dispose()).not.toThrow();
+    expect(dirtyListeners.size).toBe(0); // World.dispose() clears every dirty listener, including the scheduler's
+
+    expect(scheduler.tick(32)).toBe(true); // renders once more: the decompile event invalidated this tick
+    expect(scheduler.tick(48)).toBe(false); // idle again: a disposed World cannot fire another dirty event
+    expect(scheduler.tick(64)).toBe(false);
+
+    camera.position.x = 3; // other detectors still work independently of the (now-dead) World subscription
+    camera.updateMatrixWorld();
+    expect(scheduler.tick(80)).toBe(true);
+
+    expect(() => scheduler.dispose()).not.toThrow(); // teardown after a disposed, compiled World must not throw
   });
 });

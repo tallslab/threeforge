@@ -38,7 +38,9 @@ interface ActionInternals {
  * without clamping it is only disabled (~772), and neither removes it from `_actions`. `isRunning()` (~220)
  * requires enabled, not paused, `timeScale !== 0` and `_startTime === null`, so it is false in both cases: that
  * is the bug this replaces. Falls back to `stats.actions.inUse` when `_actions` / `_nActiveActions` are absent
- * (mixer-like test doubles that do not model three's internals).
+ * (mixer-like test doubles that do not model three's internals). `isRunning()` does not consult `weight`, so an
+ * active, enabled, unpaused action with `weight === 0` still counts as running here — intentional, not a gap:
+ * `fadeIn()` starts its target action at weight 0, and skipping a tick would miss the start of the fade.
  */
 function isMixerAnimating(mixer: SchedulerMixer): boolean {
   const internals = mixer as unknown as Partial<MixerInternals>;
