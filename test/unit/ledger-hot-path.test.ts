@@ -414,6 +414,24 @@ describe('reasonOf', () => {
     expect(reasonOf(mesh, material, null, scene, true, undefined)).toBe('unsupported-material');
     expect(reasonOf(mesh, material, null, scene, false, 'excluded:mirrored')).toBe('excluded:mirrored'); // an annotation wins over tags
   });
+
+  it('walks past an ancestor whose userData is null instead of throwing, and still finds a tag above it', () => {
+    const material = new MeshStandardMaterial();
+    const scene = new Scene();
+    const group = new Group();
+    const mesh = new Mesh(box, material);
+    group.add(mesh);
+    scene.add(group);
+    // three fills `userData` on its own constructors, but a loader, a clone of a hand-built object or app code can
+    // leave it null on an ancestor; the walk reads the key off it for every ancestor, so it must tolerate one.
+    (group as { userData: unknown }).userData = null;
+
+    expect(reasonOf(mesh, material, null, scene, false, undefined)).toBe('untagged');
+    tag.static(scene);
+    expect(reasonOf(mesh, material, null, scene, false, undefined)).toBe('unique-material');
+    tag.dynamic(mesh);
+    expect(reasonOf(mesh, material, null, scene, false, undefined)).toBe('dynamic');
+  });
 });
 
 describe('DrawCallLedger pooled records', () => {

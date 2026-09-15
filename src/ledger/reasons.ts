@@ -1,5 +1,5 @@
 import { DoubleSide, type Material, type Object3D } from 'three';
-import { tag, type ForgeTag } from '../tags.js';
+import { FORGE_TAG_KEY, tag, type ForgeTag } from '../tags.js';
 
 /**
  * Why a submission exists. One primary reason per submission; `excluded:<rule>` comes from the compiler. `reasonOf` gives
@@ -69,15 +69,6 @@ export function effectiveTag(object: Object3D): ForgeTag | undefined {
   return undefined;
 }
 
-export function isDescendantOf(object: Object3D, root: Object3D): boolean {
-  let current: Object3D | null = object;
-  while (current) {
-    if (current === root) return true;
-    current = current.parent;
-  }
-  return false;
-}
-
 export function isDoubleSidedTransparent(material: Material): boolean {
   return material.transparent && material.side === DoubleSide && !material.forceSinglePass;
 }
@@ -91,14 +82,10 @@ function isUserHook(object: Object3D, name: 'onBeforeRender' | 'onAfterRender'):
   return fn[FORGE_HOOK] !== true;
 }
 
-/** The flags of a submission drawn with `material` itself (no override material). */
-export function flagsOf(object: Object3D, material: Material): Flag[] {
-  return flagsInto(object, material, isDoubleSidedTransparent(material) ? 2 : 1, []);
-}
-
 /**
- * `flagsOf`, pushed onto `flags` (the ledger reuses one array per pooled record). `sides` is the pass's draws per call
- * (`sideFactor()` in expectedDraws.ts), so `double-sided-transparent` follows the material three draws in that pass.
+ * The flags of one submission, pushed onto `flags` (the ledger reuses one array per pooled record). `sides` is the
+ * pass's draws per call (`sideFactor()` in expectedDraws.ts), so `double-sided-transparent` follows the material three
+ * draws in that pass.
  */
 export function flagsInto(object: Object3D, material: Material, sides: number, flags: Flag[]): Flag[] {
   if (object.castShadow) flags.push('shadow-caster');
@@ -123,7 +110,9 @@ export function isVsmBlur(object: Object3D): boolean {
 
 /**
  * One primary reason per submission. A single walk up the ancestors answers both questions that need them: whether
- * `root` is among them (`isDescendantOf`) and the nearest tag (`effectiveTag`, which may sit above the root).
+ * `root` is among them and the nearest tag (as `effectiveTag` reads it, which may sit above the root). The tag is read
+ * off `userData` here rather than through `tag.of`, so an ancestor whose `userData` is null — three fills it on its own
+ * constructors, but a loader or hand-built node need not — is walked past instead of throwing.
  */
 export function reasonOf(object: Object3D, material: Material, group: unknown, root: Object3D, unsupported: boolean, annotation: Reason | undefined): Reason {
   const o = object as Flags;
@@ -131,7 +120,10 @@ export function reasonOf(object: Object3D, material: Material, group: unknown, r
   let nearestTag: ForgeTag | undefined;
   for (let current: Object3D | null = object; current; current = current.parent) {
     if (current === root) underRoot = true;
-    if (nearestTag === undefined) nearestTag = tag.of(current);
+    if (nearestTag === undefined) {
+      const value: unknown = current.userData?.[FORGE_TAG_KEY];
+      if (value === 'static' || value === 'dynamic') nearestTag = value;
+    }
     if (underRoot && nearestTag !== undefined) break;
   }
   if (!underRoot) return 'renderer-internal';

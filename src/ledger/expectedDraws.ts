@@ -66,15 +66,11 @@ export function expectedGpuDraws(object: Object3D, sides: number, info: BackendI
   return (n === 0 ? 0 : info.backend === 'webgpu' || !info.multiDraw ? n : 1) * sides;
 }
 
-/** Instances covered by a submission and how many of them the renderer will actually draw. */
-export function instanceCounts(object: Object3D): { instances: number; instancesDrawn: number } {
-  return writeInstanceCounts(object, { instances: 0, instancesDrawn: 0 });
-}
-
 /**
- * `instanceCounts`, written into `into` (the ledger's pooled record). Like `expectedGpuDraws`, read after the renderer
- * processed the object. A BatchedMesh draws the multi-draw slots whose index count is not zero: a slot a nested pass
- * zeroed (stable-prefix culling, `src/compiler/culling.ts`) still adds a draw call but draws no instance.
+ * Instances covered by a submission and how many of them the renderer will actually draw, written into `into` (the
+ * ledger's pooled record). Like `expectedGpuDraws`, read after the renderer processed the object. A BatchedMesh draws
+ * the multi-draw slots whose index count is not zero: a slot a nested pass zeroed (stable-prefix culling,
+ * `src/compiler/culling.ts`) still adds a draw call but draws no instance.
  */
 export function writeInstanceCounts<T extends { instances: number; instancesDrawn: number }>(object: Object3D, into: T): T {
   const o = object as Counted;

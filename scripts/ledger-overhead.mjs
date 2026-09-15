@@ -6,7 +6,9 @@
 // twice: once bare and once with a ledger attached. The difference is the ledger's cost.
 // - flat: N unnamed meshes directly under the scene (every name is a `Mesh[i]` path), tags alternating static/dynamic.
 // - nested: N unnamed meshes in unnamed groups of 50 under named, static-tagged zones of 500 (`zone-3/Group[4]/Mesh[17]`).
-// Both share 16 registered materials and one geometry. µs per submission is the best of 9 rounds of 5 frames; bytes per
+// Both share 16 registered materials and one geometry. µs per submission is the best of 9 ledger rounds of 5 frames
+// minus the best of 9 bare rounds (the best of the per-round differences picks the round whose ledger time was lowest
+// and whose bare time was highest, which is biased low and can even read negative); bytes per
 // frame is the heap growth over 10 frames with the young generation sized so no scavenge runs inside the window (the
 // script re-runs itself with --expose-gc and a large semi-space). Neither window contains the ledger's periodic rescan
 // (every 60 frames), which is timed on its own in the `rescan ms` column. Numbers vary by machine; compare runs on one.
@@ -129,16 +131,19 @@ function measure(shape, submissions) {
   frames(renderer, scene, camera, BYTE_FRAMES);
   const ledgerBytes = (heapUsed() - before) / BYTE_FRAMES;
 
-  let best = Infinity;
+  // Each side's own best round: noise is one-sided (a round is never faster than the work it does), so the minimum of
+  // each estimates its true cost, while the minimum of the differences subtracts a slow bare round from a fast ledger one.
+  let bestBare = Infinity;
+  let bestLedger = Infinity;
   for (let r = 0; r < ROUNDS; r++) {
     let t = performance.now();
     frames(bare, scene, camera, ROUND_FRAMES);
-    const bareMs = performance.now() - t;
+    bestBare = Math.min(bestBare, performance.now() - t);
     t = performance.now();
     frames(renderer, scene, camera, ROUND_FRAMES);
-    const ledgerMs = performance.now() - t;
-    best = Math.min(best, (ledgerMs - bareMs) / ROUND_FRAMES);
+    bestLedger = Math.min(bestLedger, performance.now() - t);
   }
+  const best = (bestLedger - bestBare) / ROUND_FRAMES;
 
   let rescanMs = Infinity;
   for (let r = 0; r < 5; r++) {
