@@ -666,6 +666,10 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
       const n = new Vector3();
       const t1 = new Vector3();
       const t2 = new Vector3();
+      // Scratch for the per-candidate second edge and ray origin: the loop below runs once per surviving face of every
+      // opaque front-side entry, so a `clone()` there is one allocation per face.
+      const edge = new Vector3();
+      const origin = new Vector3();
       const eps = Math.max(opts.tolerance * 10, 1e-5);
       const blocked = (origin: Vector3, normal: Vector3): boolean => {
         t1.set(1, 0, 0);
@@ -695,9 +699,10 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
         a.fromArray(g.position, g.index[t * 3]! * 3);
         b.fromArray(g.position, g.index[t * 3 + 1]! * 3);
         c.fromArray(g.position, g.index[t * 3 + 2]! * 3);
-        n.copy(b).sub(a).cross(c.clone().sub(a)).normalize();
-        const centroid = a.clone().add(b).add(c).multiplyScalar(1 / 3);
-        if (!blocked(centroid.clone().addScaledVector(n, eps), n)) continue;
+        n.copy(b).sub(a).cross(edge.copy(c).sub(a)).normalize();
+        // The centroid, lifted `eps` along the face normal: the same value the two clones built, in one vector.
+        origin.copy(a).add(b).add(c).multiplyScalar(1 / 3).addScaledVector(n, eps);
+        if (!blocked(origin, n)) continue;
         removedTriangle[t] = 1;
         report.buriedFaces++;
       }

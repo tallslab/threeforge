@@ -466,6 +466,17 @@ function isOpaque(material: Material): boolean {
   return m.depthWrite && m.depthTest && m.depthFunc === LessEqualDepth;
 }
 
+export interface BakeEntriesOptions {
+  /** The space the matrices are written in (`World`: the scene's); each module's world matrix without one. */
+  space?: SceneSpace;
+  /** Defaults to `material.vertexColors`; a rebake passes the value recorded at bake time. */
+  vertexColors?: boolean;
+  /** Whether the material passed the bake's opacity allowlist at bake time (default true). */
+  opaqueAtBake?: boolean;
+  /** Count every module as casting shadows, whatever its own flag (a rebake passes the baked mesh's `castShadow`). */
+  alsoCasts?: boolean;
+}
+
 /**
  * Bake entries for a group's modules: matrices in `space` (world matrices without one, or while its root has no
  * transform), instance tints, per-module opt-out and shadow casting, and from the material its sidedness, opacity
@@ -475,7 +486,8 @@ function isOpaque(material: Material): boolean {
  * a rebake passes the baked mesh's `castShadow`, which is what the shadow pass draws by (the hidden originals draw
  * nothing), so originals that stop casting after compile never let a rebake remove seams from a mesh that still casts.
  */
-export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Material, space?: SceneSpace, vertexColors: boolean = material.vertexColors, opaqueAtBake = true, alsoCasts = false): BakeEntry[] {
+export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Material, options: BakeEntriesOptions = {}): BakeEntry[] {
+  const { space, vertexColors = material.vertexColors, opaqueAtBake = true, alsoCasts = false } = options;
   const local = space !== undefined && !space.update();
   const opaque = opaqueAtBake && isOpaque(material);
   return meshes
@@ -497,7 +509,7 @@ function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, 
   const canonical = group.canonical;
   const vertexColors = canonical.vertexColors;
   const opaque = isOpaque(canonical);
-  const entries = bakeEntriesOf(group.meshes, new Set(), canonical, space, vertexColors, opaque, group.castShadow);
+  const entries = bakeEntriesOf(group.meshes, new Set(), canonical, { space, vertexColors, opaqueAtBake: opaque, alsoCasts: group.castShadow });
   const result = bakeGeometries(entries, options);
   // Instance tints become vertex colours: the material then needs vertexColors and a white base colour.
   let material: Material = canonical;
@@ -525,7 +537,7 @@ function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, 
 export function rebake(group: BakedGroup): void {
   const material = group.mesh.material as Material;
   const entriesVisible = group.entries.filter((m) => !group.hidden.has(m));
-  const entries = bakeEntriesOf(entriesVisible, new Set(), material, group.space, group.vertexColors, group.opaque, group.mesh.castShadow);
+  const entries = bakeEntriesOf(entriesVisible, new Set(), material, { space: group.space, vertexColors: group.vertexColors, opaqueAtBake: group.opaque, alsoCasts: group.mesh.castShadow });
   const result = bakeGeometries(entries, group.options);
   group.mesh.geometry.dispose();
   group.removed.dispose();
