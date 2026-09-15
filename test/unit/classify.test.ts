@@ -103,6 +103,27 @@ describe('classify', () => {
     expect(classify(scene)[0]).toMatchObject({ kind: 'excluded', rule: 'mirrored' });
   });
 
+  it('under a mirrored scene, decides mirrored by the determinant relative to the root: three flips a batch by the scene, never per instance', () => {
+    const scene = new Scene();
+    scene.scale.x = -1;
+    // Case A: mirrored again, so positive in the world but mirrored relative to the scene.
+    const again = tag.static(new Mesh(box, mat()));
+    again.scale.x = -1;
+    // Case B: not mirrored relative to the scene, so negative in the world.
+    const plain = tag.static(new Mesh(box, mat()));
+    scene.add(again, plain);
+    const [a, b] = classify(scene);
+    expect(a!.object.matrixWorld.determinant()).toBeGreaterThan(0);
+    expect(b!.object.matrixWorld.determinant()).toBeLessThan(0);
+    expect(a).toMatchObject({ kind: 'excluded', rule: 'mirrored' });
+    expect(b).toMatchObject({ kind: 'static', rule: 'tag:static' });
+    expect(exclusionRule(again, scene)).toBe('mirrored');
+    expect(exclusionRule(plain, scene)).toBeNull();
+    // Without a root there is no scene to be relative to: the world determinant decides, as before.
+    expect(exclusionRule(again)).toBeNull();
+    expect(exclusionRule(plain)).toBe('mirrored');
+  });
+
   it('lets a dynamic tag win over exclusion rules (dynamics are never batched anyway)', () => {
     const m = tag.dynamic(new Mesh(box, mat()));
     m.renderOrder = 3;

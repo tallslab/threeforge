@@ -247,7 +247,9 @@ so only the closest Group's value reaches the mesh; a farther Group's `renderOrd
 `renderOrder` in between are never read for this), `clipping-group` (an enabled `isClippingGroup` ancestor at *any*
 depth — clipping contexts chain, `getGroupContext` builds each one from its parent — WebGPU-only per three's docs,
 but the shared `Renderer.js` `_projectObject` that reads it backs both the WebGL2 and WebGPU backends here), `custom-hook` (own
-`onBeforeRender`/`onAfterRender`), `draw-range`, `frustum-culled-off`, `mirrored` (negative determinant). Every
+`onBeforeRender`/`onAfterRender`), `draw-range`, `frustum-culled-off`, `mirrored` (a negative determinant relative to
+the scene: the world determinant times the scene's; three flips a batch's front face by its own world matrix, the
+scene's, never per instance). Every
 excluded mesh shows up in the ledger as `excluded:<rule>`. `root` is optional; without it the three ancestor-scoped
 rules (`invisible-ancestor`, `group-render-order`, `clipping-group`) are skipped, since there is no boundary to walk
 to. `spriteRule(sprite, root?)` shares the same ancestor walker (`ancestorExclusionRule`) for `group-render-order`
@@ -318,9 +320,14 @@ a threeforge transparent batch shares the main pass with another transparent sub
   masters at compile, baked vertices (rebakes included), batch-sync matrices, `markDirty` writes, and sprite centres
   and scales (divided by the scene matrix's column lengths, which three multiplies back in). The inverse is cached and
   derived again whenever the scene's world matrix differs from the one it came from (its 16 elements are compared on
-  every use), so a scene translated, turned or scaled after compile is honoured by every later write; a scene without a
-  transform copies world matrices unchanged. Culling, LOD distances and sprite sorting already work in the object's
-  frame or in world space and are unaffected; chunk cells (`chunkSize`) stay world-space.
+  every use, and a counter, `version`, tells the batch sync that the scene moved, so a synced mover whose world matrix
+  did not change is rewritten too). A scene translated, turned or scaled after compile is therefore honoured by every
+  later compiled write; a scene without a transform copies world matrices unchanged. Culling and sprite sorting work in
+  the object's frame or in world space and are unaffected. `lod.distances` are measured in the object's frame, the
+  scene's, so under a scaled scene they are scene units, not world units. Chunk cells (`chunkSize`) are computed in
+  world space at compile and the `Streamer` keeps them: streaming assumes the scene does not move after compile.
+  Mirroring is decided at compile (`mirrored` is relative to the scene); a scene that becomes mirrored only after
+  compile is not handled, except by sprite batches, which swap sides every frame.
 - **BVH culling** (`attachBvhCulling`): a `bvh.js` tree of instance boxes replaces `BatchedMesh`'s linear
   per-instance test. The hook mirrors three's own `onBeforeRender` (fills `_multiDrawStarts/Counts`, the indirect
   texture) and is prepended with `prependRenderHook`, never overwriting the object's hook; hooks are marked with
@@ -393,7 +400,9 @@ three compiles wrong that way (transparent double-sided and transmissive ones; s
 - **Sprite batching** (`src/compiler/sprites.ts`, `src/compiler/spriteBatch.ts`): `compile()` collects every
   `Sprite`, groups them by material keys (`variantHash` and colour), and for each group of at least
   `spriteThreshold` builds one `Mesh` over an `InstancedBufferGeometry` unit quad with a `SpriteNodeMaterial` copied
-  from the group's `SpriteMaterial`; `positionNode` and `scaleNode` read per-instance attributes. The originals go
+  from the group's `SpriteMaterial`; `positionNode` and `scaleNode` read per-instance attributes. Under a mirrored
+  scene the batch swaps `FrontSide` and `BackSide` (checked every render): three flips a mesh's front face under a
+  negative world determinant, never a sprite's. The originals go
   to the hidden layer and keep auto-updating; a `FORGE_HOOK` render hook on the batch copies their world
   positions and scales into the attributes once per frame, for the main camera only (an invisible sprite gets
   scale 0; instances outside the four side planes of the frustum are left out, so the count matches what three

@@ -13,6 +13,9 @@ const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] as const;
  * (matrix sync, `markDirty`, sprite fills) use the scene's current matrix. While the root's world matrix is the
  * identity, `toLocal()` copies the world matrix unchanged (no multiplication, bit for bit).
  *
+ * `version` increases whenever `update()` finds the root's world matrix changed, so a write that skips unchanged inputs
+ * (the batch sync) can tell that the scene moved; `mirrored` says whether the root's world matrix mirrors.
+ *
  * The root's `matrixWorld` is read as it stands: three refreshes it at the start of every `render()`; outside a
  * render, call `root.updateMatrixWorld()` after moving it.
  */
@@ -25,9 +28,24 @@ export class SceneSpace {
   private identity = true;
   private columnX = 1;
   private columnY = 1;
+  private derivations = 0;
+  private negative = false;
 
   constructor(root: Object3D) {
     this.root = root;
+  }
+
+  /** Increases every time `update()` finds the root's world matrix changed and derives the inverse again. */
+  get version(): number {
+    return this.derivations;
+  }
+
+  /**
+   * Whether the root's world matrix mirrors (a negative determinant) as of the last `update()`. three r186 then flips the
+   * front face of every mesh under it (`object.isMesh && matrixWorld.determinantAffine() < 0`).
+   */
+  get mirrored(): boolean {
+    return this.negative;
   }
 
   /** The length of the root world matrix's first column (its x scale) as of the last `update()`. */
@@ -53,6 +71,8 @@ export class SceneSpace {
       if (e[k] !== IDENTITY[k]) identity = false;
     }
     this.identity = identity;
+    this.derivations++;
+    this.negative = !identity && this.root.matrixWorld.determinant() < 0;
     if (identity) {
       this.inverse.identity();
       this.columnX = 1;

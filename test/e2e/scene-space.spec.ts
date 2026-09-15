@@ -64,3 +64,85 @@ test('the offset village moved after compile, with batch-synced dynamics turning
   console.log(`village moved after compile (synced ${compiled.synced}) pixel diff ${(diff * 100).toFixed(4)}%`);
   expect(diff).toBeLessThan(0.0005);
 });
+
+test('the village in a mirrored scene compiles at parity: children mirrored again stay unbatched, the rest batch', async ({ forge }) => {
+  test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+  await forge.open('village', { variant: 'naive' });
+  const setup = await forge.page.evaluate(() => {
+    const f = window.__forge;
+    f.scene.scale.x = -1;
+    // Every fifth mesh is mirrored again: mirrored relative to the scene, not in the world.
+    let meshes = 0;
+    let again = 0;
+    f.scene.traverse((o) => {
+      const mesh = o as typeof o & { isMesh?: boolean; isSkinnedMesh?: boolean };
+      if (!mesh.isMesh || mesh.isSkinnedMesh) return;
+      if (meshes++ % 5 === 0) {
+        o.scale.x *= -1;
+        again++;
+      }
+    });
+    f.scene.updateMatrixWorld(true);
+    return { again, visible: f.visibleMeshes() };
+  });
+  await settle(forge.page);
+  const before = await forge.page.screenshot({ type: 'png' });
+  const r = await forge.page.evaluate(async () => {
+    const f = window.__forge;
+    const report = f.compile();
+    await f.world.warmup(f.renderer, f.camera);
+    for (let i = 0; i < 3; i++) await f.frameAsync();
+    const frame = await f.frameAsync();
+    return { batches: report.after.batches, mirrored: report.skipped.filter((s) => s.rule === 'mirrored').length, unattributed: frame.totals.unattributed, submissions: frame.totals.sceneSubmissions };
+  });
+  const after = await forge.page.screenshot({ type: 'png' });
+  const diff = pixelDiff(before, after, { threshold: 4 });
+  console.log(`mirrored village (${setup.again} meshes mirrored again, ${r.mirrored} skipped as mirrored, ${r.batches} batches) pixel diff ${(diff * 100).toFixed(4)}% · submissions ${r.submissions}`);
+  expect(diff).toBeLessThan(0.0005);
+  expect(setup.visible, 'the village is in view').toBeGreaterThan(250);
+  expect(r.mirrored, 'children mirrored again stay unbatched').toBeGreaterThan(0);
+  expect(r.batches).toBeGreaterThan(5);
+  expect(r.unattributed).toBe(0);
+});
+
+for (const mirrored of [false, true] as const) {
+  test(`a sprite grid compiles at parity in ${mirrored ? 'a mirrored' : 'an unmirrored'} scene`, async ({ forge }) => {
+    test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+    await forge.open('empty');
+    await forge.page.evaluate((mirror) => {
+      const f = window.__forge;
+      const T = f.three;
+      const materials = [new T.SpriteMaterial({ color: 0xff6040, transparent: false }), new T.SpriteMaterial({ color: 0x40a0ff, transparent: false })];
+      for (let x = 0; x < 8; x++) {
+        for (let z = 0; z < 6; z++) {
+          const sprite = new T.Sprite(materials[(x + z) % 2]!);
+          sprite.name = `sprite-${x}-${z}`;
+          sprite.position.set((x - 3.5) * 14, 6, (z - 2.5) * 14);
+          sprite.scale.set(8, 5, 1);
+          f.scene.add(sprite);
+        }
+      }
+      if (mirror) f.scene.scale.x = -1;
+      f.scene.position.x = 7;
+      f.scene.updateMatrixWorld(true);
+    }, mirrored);
+    await settle(forge.page);
+    const before = await forge.page.screenshot({ type: 'png' });
+    const r = await forge.page.evaluate(async () => {
+      const f = window.__forge;
+      const report = f.compile();
+      await f.world.warmup(f.renderer, f.camera);
+      for (let i = 0; i < 3; i++) await f.frameAsync();
+      const frame = await f.frameAsync();
+      return { spriteBatches: report.after.spriteBatches, drawn: frame.byReason['sprite-batch']?.submissions ?? 0, sprites: frame.byReason.sprite?.submissions ?? 0, unattributed: frame.totals.unattributed };
+    });
+    const after = await forge.page.screenshot({ type: 'png' });
+    const diff = pixelDiff(before, after, { threshold: 4 });
+    console.log(`sprite grid mirrored=${mirrored} pixel diff ${(diff * 100).toFixed(4)}%`);
+    expect(diff).toBeLessThan(0.0005);
+    expect(r.spriteBatches).toBe(2);
+    expect(r.drawn).toBe(2);
+    expect(r.sprites).toBe(0);
+    expect(r.unattributed).toBe(0);
+  });
+}

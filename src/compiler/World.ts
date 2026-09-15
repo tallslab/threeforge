@@ -625,16 +625,20 @@ export class World {
       const handle = batched ? this.cullingHandles.get(batched) : undefined;
       const instanced = batched ? null : (target as CulledInstancedMesh);
       const space = this.space;
+      // What is written is inverse(scene) * world: once the scene moved since the last sync every entry is rewritten, also
+      // one whose world matrix did not change (a world-anchored mover, a floating-origin shift of the scene root).
+      space.update();
+      let spaceVersion = space.version;
       const sync = (): void => {
+        space.update();
+        const sceneMoved = space.version !== spaceVersion;
+        spaceVersion = space.version;
         for (const entry of entries) {
           const e = entry.mesh.matrixWorld.elements;
           const last = entry.last;
-          let changed = false;
-          for (let i = 0; i < 16; i++) {
-            if (e[i] !== last[i]) {
-              changed = true;
-              break;
-            }
+          let changed = sceneMoved;
+          for (let i = 0; !changed && i < 16; i++) {
+            if (e[i] !== last[i]) changed = true;
           }
           if (!changed) continue;
           last.set(e);

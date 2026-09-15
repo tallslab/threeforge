@@ -22,8 +22,13 @@ import {
   SpriteMaterial,
   Vector3,
   WebGLCoordinateSystem,
+  BackSide,
+  DoubleSide,
+  FrontSide,
+  Matrix3,
   type Camera,
   type InstancedBufferGeometry,
+  type Side,
 } from 'three';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
@@ -506,43 +511,58 @@ describe('World in a transformed scene', () => {
   }
   type Fixture = ReturnType<typeof transformedScene>;
 
-  function expectMatrix(actual: Matrix4, expected: Matrix4, label: string): void {
-    actual.elements.forEach((e, i) => expect(e, `${label} [${i}]`).toBeCloseTo(expected.elements[i]!, 3));
+  /** The first element where `actual` differs from `expected` by 5e-4 or more (what `toBeCloseTo(x, 3)` rejects), or null. */
+  function offBy(actual: ArrayLike<number>, expected: ArrayLike<number>): string | null {
+    for (let i = 0; i < expected.length; i++) {
+      if (!(Math.abs(actual[i]! - expected[i]!) < 5e-4)) return `[${i}] ${actual[i]} instead of ${expected[i]}`;
+    }
+    return null;
   }
 
-  function expectBox(actual: Box3, expected: Box3, label: string): void {
-    [...actual.min.toArray(), ...actual.max.toArray()].forEach((v, i) => expect(v, `${label} [${i}]`).toBeCloseTo([...expected.min.toArray(), ...expected.max.toArray()][i]!, 3));
-  }
-
-  /** Compacts an instanced group for `camera` and returns what three draws for master instance `id`. */
-  function instancedWorld(mesh: CulledInstancedMesh, id: number, scene: Scene, camera: Camera): Matrix4 {
+  /** Compacts an instanced group for `camera` and returns what three draws for master instance `id`, or null when it is not drawn. */
+  function instancedWorld(mesh: CulledInstancedMesh, id: number, scene: Scene, camera: Camera): Matrix4 | null {
     mesh.onBeforeRender(renderer as never, scene, camera, mesh.geometry, mesh.material as never, null as never);
     const k = mesh.visibleIds.indexOf(id);
-    expect(k, `instance ${id} is drawn`).toBeGreaterThanOrEqual(0);
+    if (k < 0) return null;
     mesh.getMatrixAt(k, _row);
     return new Matrix4().multiplyMatrices(mesh.matrixWorld, _row);
   }
 
-  /** Runs every compiled object's hooks for the fixture's camera and checks what three would draw against the originals. */
+  type Category = 'batched' | 'synced' | 'instanced' | 'baked' | 'sprites';
+
+  /**
+   * Runs every compiled object's hooks for the fixture's camera and compares what three would draw with the originals.
+   * The first element off per object is collected per category and asserted once, so a failure names every category
+   * that is wrong.
+   */
   function expectCompiled(world: World, f: Fixture, label: string): void {
     f.scene.updateMatrixWorld();
+    const off: Record<Category, string[]> = { batched: [], synced: [], instanced: [], baked: [], sprites: [] };
+    const note = (category: Category, name: string, what: string | null): void => {
+      if (what !== null) off[category].push(`${name} ${what}`);
+    };
     const batch = world.slotOf(f.mover)!.batch as BatchedMesh;
     // The batch hook runs the matrix sync of the mover first.
     batch.onBeforeRender(renderer as never, f.scene, f.camera, batch.geometry, batch.material as never, null as never);
     for (const m of [...f.batched, f.mover]) {
       batch.getMatrixAt(world.slotOf(m)!.instanceId, _row);
-      expectMatrix(new Matrix4().multiplyMatrices(batch.matrixWorld, _row), m.matrixWorld, `${label}: ${m.name}`);
+      note(m === f.mover ? 'synced' : 'batched', m.name, offBy(new Matrix4().multiplyMatrices(batch.matrixWorld, _row).elements, m.matrixWorld.elements));
     }
     const instanced = world.slotOf(f.instanced[0]!)!.batch as CulledInstancedMesh;
-    for (const m of f.instanced) expectMatrix(instancedWorld(instanced, world.slotOf(m)!.instanceId, f.scene, f.camera), m.matrixWorld, `${label}: ${m.name}`);
+    for (const m of f.instanced) {
+      const drawn = instancedWorld(instanced, world.slotOf(m)!.instanceId, f.scene, f.camera);
+      note('instanced', m.name, drawn === null ? 'is not drawn' : offBy(drawn.elements, m.matrixWorld.elements));
+    }
     const bakedMesh = world.slotOf(f.baked[0]!)!.batch as Mesh;
     const originals = new Box3();
     for (const m of f.baked) originals.expandByObject(m, true);
-    expectBox(new Box3().setFromObject(bakedMesh, true), originals, `${label}: baked vertices`);
+    const vertices = new Box3().setFromObject(bakedMesh, true);
+    note('baked', 'vertex box', offBy([...vertices.min.toArray(), ...vertices.max.toArray()], [...originals.min.toArray(), ...originals.max.toArray()]));
     const sprites = (world as unknown as { spriteBatchList: SpriteBatch[] }).spriteBatchList[0]!;
     const mesh = sprites.mesh;
     mesh.onBeforeRender(renderer as never, f.scene, f.camera, mesh.geometry, mesh.material as never, null as never);
-    expect((mesh.geometry as InstancedBufferGeometry).instanceCount, `${label}: sprites drawn`).toBe(f.sprites.length);
+    const drawnSprites = (mesh.geometry as InstancedBufferGeometry).instanceCount;
+    if (drawnSprites !== f.sprites.length) note('sprites', 'instanceCount', `${drawnSprites} instead of ${f.sprites.length}`);
     const e = mesh.matrixWorld.elements;
     const batchScaleX = Math.hypot(e[0]!, e[1]!, e[2]!);
     const batchScaleY = Math.hypot(e[4]!, e[5]!, e[6]!);
@@ -550,12 +570,66 @@ describe('World in a transformed scene', () => {
     const s = sprites.scales.array;
     f.sprites.forEach((sprite, k) => {
       const centre = new Vector3(c[k * 3]!, c[k * 3 + 1]!, c[k * 3 + 2]!).applyMatrix4(mesh.matrixWorld);
-      const expected = new Vector3().setFromMatrixPosition(sprite.matrixWorld);
-      centre.toArray().forEach((v, i) => expect(v, `${label}: ${sprite.name} centre [${i}]`).toBeCloseTo(expected.toArray()[i]!, 3));
+      note('sprites', `${sprite.name} centre`, offBy(centre.toArray(), new Vector3().setFromMatrixPosition(sprite.matrixWorld).toArray()));
       const m = sprite.matrixWorld.elements;
-      expect(batchScaleX * s[k * 2]!, `${label}: ${sprite.name} scale x`).toBeCloseTo(Math.hypot(m[0]!, m[1]!, m[2]!), 3);
-      expect(batchScaleY * s[k * 2 + 1]!, `${label}: ${sprite.name} scale y`).toBeCloseTo(Math.hypot(m[4]!, m[5]!, m[6]!), 3);
+      note('sprites', `${sprite.name} scale`, offBy([batchScaleX * s[k * 2]!, batchScaleY * s[k * 2 + 1]!], [Math.hypot(m[0]!, m[1]!, m[2]!), Math.hypot(m[4]!, m[5]!, m[6]!)]));
     });
+    expect(off, label).toEqual({ batched: [], synced: [], instanced: [], baked: [], sprites: [] });
+  }
+
+  /**
+   * Triangles whose front face, oriented as three r186 orients it (counter-clockwise; clockwise when the object's own
+   * world matrix mirrors, `object.isMesh && matrixWorld.determinantAffine() < 0`), points against its vertex normal.
+   */
+  function inwardFaces(mesh: Mesh): number {
+    const geometry = mesh.geometry;
+    const position = geometry.getAttribute('position');
+    const normal = geometry.getAttribute('normal');
+    const normalMatrix = new Matrix3().getNormalMatrix(mesh.matrixWorld);
+    const flip = mesh.matrixWorld.determinant() < 0 ? -1 : 1;
+    const index = geometry.index;
+    const count = index ? index.count : position.count;
+    const a = new Vector3();
+    const b = new Vector3();
+    const c = new Vector3();
+    const n = new Vector3();
+    let inward = 0;
+    for (let t = 0; t < count; t += 3) {
+      const ia = index ? index.getX(t) : t;
+      const ib = index ? index.getX(t + 1) : t + 1;
+      const ic = index ? index.getX(t + 2) : t + 2;
+      a.fromBufferAttribute(position, ia).applyMatrix4(mesh.matrixWorld);
+      b.fromBufferAttribute(position, ib).applyMatrix4(mesh.matrixWorld).sub(a);
+      c.fromBufferAttribute(position, ic).applyMatrix4(mesh.matrixWorld).sub(a);
+      n.fromBufferAttribute(normal, ia).applyMatrix3(normalMatrix);
+      if (b.cross(c).multiplyScalar(flip).dot(n) <= 0) inward++;
+    }
+    return inward;
+  }
+
+  /** A mirrored scene holding two plain boxes (not mirrored relative to it) and two boxes mirrored again. */
+  function mirroredScene() {
+    const scene = new Scene();
+    scene.position.set(5, 0, 0);
+    scene.scale.set(-1, 1, 1);
+    const plain = [0, 1].map((i) => {
+      const m = tag.static(new Mesh(box, solid(0x808080)));
+      m.name = `plain-${i}`;
+      m.position.set(i * 3, 0, 0);
+      m.rotation.y = 0.4 * i;
+      scene.add(m);
+      return m;
+    });
+    const again = [0, 1].map((i) => {
+      const m = tag.static(new Mesh(box, solid(0x808080)));
+      m.name = `again-${i}`;
+      m.position.set(i * 3, 3, 0);
+      m.scale.x = -1;
+      scene.add(m);
+      return m;
+    });
+    scene.updateMatrixWorld(true);
+    return { scene, plain, again };
   }
 
   it('writes instance data in scene space: batched, instanced, baked, sprite and synced results draw at each original', () => {
@@ -586,6 +660,117 @@ describe('World in a transformed scene', () => {
     expect(world.markDirty(f.instanced[2]!)).toBe(1);
     expect(world.markDirty(f.baked[0]!)).toBe(1);
     expectCompiled(world, f, 'after markDirty in the moved scene');
+  });
+
+  it('rewrites synced movers when only the scene moves: a world-anchored mover whose world matrix never changes stays where it is', () => {
+    const scene = new Scene();
+    scene.position.set(10, 0, -5);
+    scene.rotation.y = 0.3;
+    for (let i = 0; i < 2; i++) {
+      const m = tag.static(new Mesh(box, solid(0x223344)));
+      m.position.set(i * 3, 0, 0);
+      scene.add(m);
+    }
+    for (let i = 0; i < 3; i++) {
+      const m = tag.static(new Mesh(dodeca, solid(0x223344)));
+      m.position.set(i * 3, 4, 0);
+      scene.add(m);
+    }
+    // World-anchored movers (a physics body at rest, a floating-origin anchor): their world matrices are written directly.
+    const anchored = [box, dodeca].map((geometry, i) => {
+      const m = tag.dynamic(new Mesh(geometry, solid(0x223344)));
+      m.name = `anchored-${i}`;
+      m.matrixAutoUpdate = false;
+      m.matrixWorldAutoUpdate = false;
+      m.matrixWorld.makeTranslation(-4, 1 + i * 4, 6);
+      scene.add(m);
+      return m;
+    });
+    const world = new World(scene, { instanceThreshold: 4, dynamics: 'batch-sync' });
+    expect(world.compile().synced).toBe(2);
+    const batch = world.slotOf(anchored[0]!)!.batch as BatchedMesh;
+    const instanced = world.slotOf(anchored[1]!)!.batch as CulledInstancedMesh;
+    expect(batch.isBatchedMesh).toBe(true);
+    expect(instanced.isInstancedMesh).toBe(true);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 2000);
+    camera.position.set(0, 60, 250);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    const expectAnchored = (label: string): void => {
+      scene.updateMatrixWorld();
+      batch.onBeforeRender(renderer as never, scene, camera, batch.geometry, batch.material as never, null as never);
+      batch.getMatrixAt(world.slotOf(anchored[0]!)!.instanceId, _row);
+      const batched = offBy(new Matrix4().multiplyMatrices(batch.matrixWorld, _row).elements, anchored[0]!.matrixWorld.elements);
+      const drawn = instancedWorld(instanced, world.slotOf(anchored[1]!)!.instanceId, scene, camera);
+      expect({ batched, instanced: drawn === null ? 'is not drawn' : offBy(drawn.elements, anchored[1]!.matrixWorld.elements) }, label).toEqual({ batched: null, instanced: null });
+    };
+    expectAnchored('after compile');
+    const before = anchored.map((m) => Array.from(m.matrixWorld.elements));
+    scene.position.set(-20, 3, 8);
+    scene.rotation.y = -0.5;
+    scene.scale.setScalar(1.5);
+    expectAnchored('after only the scene moved');
+    expect(anchored.map((m) => Array.from(m.matrixWorld.elements)), 'the movers never moved in the world').toEqual(before);
+  });
+
+  it('under a mirrored scene, batches children not mirrored relative to it and leaves children mirrored again unbatched', () => {
+    const f = mirroredScene();
+    const world = new World(f.scene);
+    const report = world.compile();
+    expect(report.skipped.filter((s) => s.rule === 'mirrored').map((s) => s.name).sort()).toEqual(['again-0', 'again-1']);
+    for (const m of f.plain) {
+      const slot = world.slotOf(m);
+      expect((slot?.batch as BatchedMesh | undefined)?.isBatchedMesh, `${m.name} is batched`).toBe(true);
+      // three flips a batch's front face by its own world matrix (the scene's), never per instance.
+      (slot!.batch as BatchedMesh).getMatrixAt(slot!.instanceId, _row);
+      expect(_row.determinant(), `${m.name} instance matrix`).toBeGreaterThan(0);
+    }
+  });
+
+  it('under a mirrored scene, bakes children not mirrored relative to it with every front face outward, like the originals', () => {
+    const f = mirroredScene();
+    for (const m of [...f.plain, ...f.again]) expect(inwardFaces(m), `${m.name} (naive)`).toBe(0);
+    const world = new World(f.scene, { bake: true });
+    expect(world.compile().after.baked).toBe(1);
+    expect(world.slotOf(f.plain[0]!)?.batch).toBe(world.bakedMeshes[0]);
+    f.scene.updateMatrixWorld();
+    expect(inwardFaces(world.bakedMeshes[0]!), 'baked triangles facing inward').toBe(0);
+  });
+
+  it("swaps a sprite batch's FrontSide and BackSide while the scene is mirrored, so three culls the quads the way it culls the sprites", () => {
+    const scene = new Scene();
+    const materials = [new SpriteMaterial({ color: 0xff0000, transparent: false }), new SpriteMaterial({ color: 0x00ff00, transparent: false, side: DoubleSide })];
+    materials.forEach((material, g) => {
+      for (let i = 0; i < 4; i++) {
+        const s = new Sprite(material);
+        s.position.set(i * 2, g * 3, 0);
+        scene.add(s);
+      }
+    });
+    scene.scale.x = -1;
+    scene.updateMatrixWorld(true);
+    const world = new World(scene);
+    expect(world.compile().after.spriteBatches).toBe(2);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+    camera.position.set(0, 0, 30);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    const batches = (world as unknown as { spriteBatchList: SpriteBatch[] }).spriteBatchList;
+    // three r186 flips a Mesh's front face when its own world matrix mirrors (WebGPUPipelineUtils._getPrimitiveState,
+    // WebGLState.setMaterial); a Sprite is not a Mesh and never flips. The side three effectively culls by:
+    const effectiveSide = (side: Side, flipped: boolean): Side => (side === DoubleSide ? DoubleSide : (side === BackSide) !== flipped ? BackSide : FrontSide);
+    const expectSides = (label: string): void => {
+      scene.updateMatrixWorld();
+      for (const b of batches) {
+        b.mesh.onBeforeRender(renderer as never, scene, camera, b.mesh.geometry, b.mesh.material as never, null as never);
+        expect(effectiveSide(b.material.side, b.mesh.matrixWorld.determinant() < 0), `${label}: ${b.mesh.name}`).toBe(effectiveSide(b.group.material.side, false));
+      }
+    };
+    expectSides('mirrored at compile');
+    scene.scale.x = 1;
+    expectSides('unmirrored after compile');
+    scene.scale.x = -1;
+    expectSides('mirrored again');
   });
 });
 

@@ -53,4 +53,24 @@ describe('SceneSpace', () => {
     expect(space.update()).toBe(true);
     expect(Array.from(space.toLocal(world, new Matrix4()).elements)).toEqual(Array.from(world.elements));
   });
+  it('counts every change of the root matrix in version, and says when the root mirrors', () => {
+    const root = new Object3D();
+    root.updateMatrixWorld();
+    const space = new SceneSpace(root);
+    space.update();
+    const start = space.version;
+    expect(space.mirrored).toBe(false);
+    space.update();
+    expect(space.version, 'an unchanged root is not a change').toBe(start);
+    root.scale.x = -2;
+    root.updateMatrixWorld();
+    space.toLocal(world, new Matrix4());
+    expect(space.version).toBe(start + 1);
+    expect(space.mirrored).toBe(true);
+    root.scale.x = 2;
+    root.updateMatrixWorld();
+    space.update();
+    expect(space.version).toBe(start + 2);
+    expect(space.mirrored).toBe(false);
+  });
 });

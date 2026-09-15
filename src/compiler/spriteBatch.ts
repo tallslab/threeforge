@@ -1,4 +1,4 @@
-import { DynamicDrawUsage, Frustum, InstancedBufferAttribute, InstancedBufferGeometry, Matrix4, Mesh, NormalBlending, PlaneGeometry, type Camera, type CoordinateSystem, type Object3D } from 'three';
+import { BackSide, DynamicDrawUsage, FrontSide, Frustum, InstancedBufferAttribute, InstancedBufferGeometry, Matrix4, Mesh, NormalBlending, PlaneGeometry, type Camera, type CoordinateSystem, type Object3D } from 'three';
 import { SpriteNodeMaterial } from 'three/webgpu';
 import { instancedDynamicBufferAttribute } from 'three/tsl';
 import { prependRenderHook } from './culling.js';
@@ -32,7 +32,7 @@ export interface SpriteBatchOptions {
  * Builds the batch: a unit quad as InstancedBufferGeometry, a SpriteNodeMaterial copied from the group's
  * SpriteMaterial with per-instance centre and scale nodes, and a FORGE_HOOK render hook that fills the attributes
  * from the originals' world matrices every frame, written in `options.space` (sorted back to front when the material
- * blends). A ParticleBudget
+ * blends; FrontSide and BackSide swapped while the space mirrors). A ParticleBudget
  * caps the instance count through `mesh.userData.forge.cap`.
  */
 export function buildSpriteBatch(group: SpriteGroup, index: number, options: SpriteBatchOptions): SpriteBatch {
@@ -78,9 +78,25 @@ export function buildSpriteBatch(group: SpriteGroup, index: number, options: Spr
   mesh.userData.forge = { kind: 'sprites', cap: Infinity };
   const sorted = source.transparent && source.blending === NormalBlending;
   const space = options.space ?? new SceneSpace(options.root);
+  // three r186 flips a Mesh's front face when its own world matrix mirrors (`object.isMesh &&
+  // matrixWorld.determinantAffine() < 0`: WebGPUPipelineUtils._getPrimitiveState, WebGLBackend -> WebGLState.setMaterial),
+  // never a Sprite's, and the quad is counter-clockwise in view space. So while the space mirrors, the batch swaps
+  // FrontSide and BackSide to cull exactly what the sprites cull (DoubleSide stays). A swap bumps the material version:
+  // RenderObjects.get compares the cache key, which holds `side`, only after a version change.
+  const side = source.side;
+  const mirroredSide = side === FrontSide ? BackSide : side === BackSide ? FrontSide : side;
+  const fitSide = (): void => {
+    space.update();
+    const wanted = space.mirrored ? mirroredSide : side;
+    if (material.side === wanted) return;
+    material.side = wanted;
+    material.needsUpdate = true;
+  };
+  fitSide();
   const frustum = new Frustum();
   const projScreen = new Matrix4();
   const restoreHook = prependRenderHook(mesh, (renderer, _scene, camera) => {
+    fitSide();
     if (!options.sync(camera)) return;
     const cap = (mesh.userData.forge as { cap?: number }).cap ?? Infinity;
     projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);

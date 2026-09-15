@@ -36,7 +36,8 @@ function isShader(material: Material | Material[]): boolean {
 /**
  * Rules that make a mesh unreproducible inside a BatchedMesh, in the order they are checked. `root` scopes the
  * ancestor-based rules (`invisible-ancestor`, `group-render-order`, `clipping-group`); omit it to skip those three
- * and check only the mesh's own state.
+ * and check only the mesh's own state. With `root`, `mirrored` is decided relative to it (the compiled objects are its
+ * children); without it, by the world determinant.
  */
 export function exclusionRule(mesh: Mesh, root?: Object3D): string | null {
   if (!mesh.visible) return 'invisible';
@@ -66,7 +67,12 @@ export function exclusionRule(mesh: Mesh, root?: Object3D): string | null {
   const range = mesh.geometry.drawRange;
   if (range.start !== 0 || range.count !== Infinity) return 'draw-range';
   if (!mesh.frustumCulled) return 'frustum-culled-off';
-  if (mesh.matrixWorld.determinant() < 0) return 'mirrored';
+  // three r186 flips a mesh's front face by its own world matrix only (`object.isMesh &&
+  // matrixWorld.determinantAffine() < 0`), never per instance, and a batch's world matrix is the root's: an instance
+  // must not mirror relative to the root. Under a mirrored root that excludes a mesh mirrored again (positive in the
+  // world) and keeps one that is not (negative in the world).
+  const determinant = mesh.matrixWorld.determinant();
+  if ((root ? determinant * root.matrixWorld.determinant() : determinant) < 0) return 'mirrored';
   return null;
 }
 
