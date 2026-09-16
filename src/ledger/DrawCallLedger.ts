@@ -26,8 +26,11 @@ export interface LedgerRenderer {
     createTexture?(texture: unknown): void;
     destroyTexture?(texture: unknown): void;
   };
-  /** `renderer.shadowMap`: its type tells the memory section whether built maps hold VSM blur targets. */
-  shadowMap?: { type?: number };
+  /**
+   * `renderer.shadowMap`: its type tells the memory section whether built maps hold VSM blur targets, and `enabled: false`
+   * that no shadow map renders (the `point-light-shadow` hint).
+   */
+  shadowMap?: { type?: number; enabled?: boolean };
   backend?: unknown;
   getRenderTarget?(): { name?: string; texture?: { name?: string } } | null;
   /** Drawing-buffer size in pixels; `overdraw.pixels` stays 0 without it. */
@@ -313,6 +316,8 @@ export class DrawCallLedger {
     let hidden = 0;
     const ctx: Required<Omit<HintContext, 'items'>> = { staticAutoUpdated: [], pointShadowLights: [], transmissive: [] };
     const paths = this.names.forRoot(scene);
+    // three renders no shadow map with shadow maps off (ShadowNode builds none), so no point light's six faces.
+    const shadowMapsOn = this.renderer?.shadowMap?.enabled !== false;
     scene.traverse((o) => {
       objects++;
       if (o.layers.mask === HIDDEN_MASK) hidden++;
@@ -321,11 +326,14 @@ export class DrawCallLedger {
         if ((o.userData as Record<string, unknown> | null)?.[FORGE_TAG_KEY] === 'static' && (o as { isMesh?: boolean }).isMesh) ctx.staticAutoUpdated.push(this.names.of(o, scene, paths));
       }
       const light = o as Light & { isPointLight?: boolean };
-      if (light.isLight && light.isPointLight && light.castShadow && light.visible) ctx.pointShadowLights.push(this.names.of(o, scene, paths));
+      // Both lists name what three renders: its render lists skip a hidden subtree, lights included (Renderer.js
+      // `_projectObject` returns at `visible === false`), so a light or mesh under a hidden parent costs nothing. The
+      // static-auto-update list keeps hidden objects: `updateMatrixWorld` recomposes their matrices all the same.
+      if (light.isLight && light.isPointLight && light.castShadow && shadowMapsOn && worldVisible(o, scene)) ctx.pointShadowLights.push(this.names.of(o, scene, paths));
       const material = (o as { material?: Material | Material[] }).material;
       for (const m of Array.isArray(material) ? material : material ? [material] : []) {
         if (((m as Material & { transmission?: number }).transmission ?? 0) > 0) {
-          ctx.transmissive.push(this.names.of(o, scene, paths));
+          if (worldVisible(o, scene)) ctx.transmissive.push(this.names.of(o, scene, paths));
           break;
         }
       }
@@ -709,6 +717,15 @@ export class DrawCallLedger {
     state.buffer.items[state.count++] = record;
     if (!state.descriptions.has(record.programHash)) state.descriptions.set(record.programHash, { type: record.materialType, description: hashes.description });
   }
+}
+
+/** Whether `object` and every ancestor up to and including `root` is visible: what three's render lists test. */
+function worldVisible(object: Object3D, root: Object3D): boolean {
+  for (let current: Object3D | null = object; current !== null; current = current.parent) {
+    if (!current.visible) return false;
+    if (current === root) return true;
+  }
+  return true;
 }
 
 function detectBackend(renderer: LedgerRenderer): BackendInfo {

@@ -21,6 +21,7 @@ import {
   PlaneGeometry,
   Points,
   PointsMaterial,
+  PointLight,
   Scene,
   ShaderMaterial,
   Skeleton,
@@ -851,6 +852,35 @@ describe('DrawCallLedger snapshot, report and budget', () => {
     // And again on the periodic rescan, RESCAN_EVERY frames later.
     for (let i = 0; i < 60; i++) renderer.render(scene, camera);
     expect(ledger.frame().js.objects).toBe(4);
+  });
+
+  it('names no point light or transmissive mesh under a hidden parent, and no point-light shadow while shadow maps are off', () => {
+    const { renderer, ledger, scene, camera } = attached();
+    const hidden = new Group();
+    hidden.name = 'hidden';
+    hidden.visible = false;
+    const lamp = new PointLight(0xffffff, 1);
+    lamp.name = 'lamp';
+    lamp.castShadow = true;
+    const glass = new Mesh(box, new MeshPhysicalMaterial({ transmission: 1 }));
+    glass.name = 'glass';
+    hidden.add(lamp, glass);
+    scene.add(hidden);
+    (renderer.shadowMap as { enabled: boolean }).enabled = true;
+    const codes = (): string[] => ledger.frame().hints.map((h) => h.code);
+    renderer.render(scene, camera); // the first frame rescans
+    // three's render lists skip a hidden subtree (Renderer._projectObject returns at visible === false): no shadow
+    // faces render for the lamp and the glass draws in no pass.
+    expect(codes()).not.toContain('point-light-shadow');
+    expect(codes()).not.toContain('transmission');
+    hidden.visible = true;
+    ledger.rescan();
+    expect(codes()).toEqual(expect.arrayContaining(['point-light-shadow', 'transmission']));
+    // With shadow maps off, ShadowNode builds no map and renders none of the six faces.
+    (renderer.shadowMap as { enabled: boolean }).enabled = false;
+    ledger.rescan();
+    expect(codes()).not.toContain('point-light-shadow');
+    expect(codes()).toContain('transmission');
   });
 
   it("reports the attached streamer's chunks in the memory section", () => {
