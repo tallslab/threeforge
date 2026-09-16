@@ -115,7 +115,7 @@ export interface BatchResult {
   transparentKept: Mesh[];
   /** Per batch: base geometryId -> geometryIds per LOD level (present only when lodDistances is set). */
   lodGeometryIds: Map<BatchedMesh, Map<number, number[]>>;
-  /** Statics of groups `bake` left to batching because a geometry carries an attribute the bake drops (`unbakeableAttribute`). */
+  /** Statics of groups `bake` left to batching because a geometry carries an attribute the bake drops and the material may read (`unbakeableAttribute`). */
   unbakeable: number;
 }
 
@@ -246,9 +246,11 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
       result.singletons.push(...group.meshes);
       continue;
     }
-    // A group whose geometry carries data the bake would drop (a vertex colour's alpha, a custom attribute) is batched
-    // instead: BatchedMesh keeps every attribute as it is. Counted, since `bake` asked for it.
-    const bakeable = !group.meshes.some((m) => unbakeableAttribute(m.geometry, group.canonical.vertexColors) !== null);
+    // A group whose geometry carries data the bake would drop (a vertex colour's alpha, a custom attribute, a colour a
+    // node graph reads although `vertexColors` is false) is batched instead: BatchedMesh keeps every attribute as it is.
+    // Counted, since `bake` asked for it.
+    const builtInReads = readsOnlyBuiltInAttributes(group.canonical);
+    const bakeable = !group.meshes.some((m) => unbakeableAttribute(m.geometry, group.canonical.vertexColors, builtInReads) !== null);
     if (options.bake && !bakeable && !group.meshes.some((m) => options.noBake?.has(m))) result.unbakeable += group.meshes.length;
     if (options.bake && bakeable && !group.meshes.some((m) => options.noBake?.has(m))) {
       const index = perProgramBaked.get(programHash) ?? 0;
@@ -349,6 +351,17 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
 }
 
 export { isBuiltInMaterial };
+
+/**
+ * Whether three's own code is all that reads the material's geometry attributes: exactly one of three's material classes
+ * (`isBuiltInMaterial`: a subclass can override `setupDiffuseColor` or any other `setup*`), no function assigned to the
+ * instance (`hasOwnFunctions`) and no node in any slot (`hasNoNodes`: a `colorNode = vertexColor()` reads `color`
+ * whatever `vertexColors` says). Only then does `vertexColors: false` prove the `color` attribute unread
+ * (`unbakeableAttribute`'s `builtInReads`).
+ */
+function readsOnlyBuiltInAttributes(material: Material): boolean {
+  return isBuiltInMaterial(material) && !hasOwnFunctions(material) && hasNoNodes(material);
+}
 
 /**
  * Whether code is assigned to the material instance: any own property holding a function (an instance

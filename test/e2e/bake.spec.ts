@@ -453,3 +453,54 @@ test('vertex colours with alpha and a custom attribute a node material reads sta
   expect(r.after.batches).toBe(2);
   expect(r.bake.unbakeableEntries).toBe(4);
 });
+
+test('a node material reading a colour attribute its vertexColors flag ignores stays out of the bake, batched at parity', async ({ forge }) => {
+  test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+  await forge.open('empty', { bake: '1' });
+  await forge.page.evaluate(() => {
+    const f = window.__forge;
+    const T = f.three;
+    const TSL = f.webgpu.TSL;
+    const coloured = () => {
+      const geometry = new T.BoxGeometry(1.2, 1.2, 1.2);
+      const count = geometry.attributes.position!.count;
+      const rgb = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) rgb.set([(i % 3) / 2, 0.9 - (i % 4) / 5, 0.3 + (i % 2) * 0.5], i * 3);
+      geometry.setAttribute('color', new T.BufferAttribute(rgb, 3));
+      return geometry;
+    };
+    // `vertexColors` stays false, so three's own diffuse colour ignores the attribute; the colour node reads it anyway.
+    const painted = new f.webgpu.MeshStandardNodeMaterial({ roughness: 0.7 });
+    painted.colorNode = TSL.vertexColor();
+    // The control: three's own code alone reads its geometry, so the flag provably ignores the attribute and it bakes.
+    const plain = new T.MeshStandardMaterial({ color: 0x8899aa, roughness: 0.7 });
+    const box = (material: InstanceType<typeof T.Material>, x: number, y: number, name: string) => {
+      const mesh = new T.Mesh(coloured(), material);
+      mesh.position.set(x, y, 0);
+      mesh.name = name;
+      return mesh;
+    };
+    const backdrop = new T.Mesh(new T.BoxGeometry(7, 5, 0.2), new T.MeshStandardMaterial({ color: 0x303848 }));
+    backdrop.position.set(0, 1.5, -2);
+    backdrop.name = 'backdrop';
+    f.scene.add(box(painted, -1.6, 0.7, 'painted-a'), box(painted, 1.6, 0.7, 'painted-b'), box(plain, -1.6, 2.3, 'plain-a'), box(plain, 1.6, 2.3, 'plain-b'), backdrop);
+    f.scene.traverse((o) => { if ((o as { isMesh?: boolean }).isMesh) (o.userData as { forge?: string }).forge = 'static'; });
+    const sun = new T.DirectionalLight(0xffffff, 2);
+    sun.position.set(3, 6, 5);
+    f.scene.add(new T.AmbientLight(0xffffff, 0.6), sun);
+    f.scene.updateMatrixWorld(true);
+    f.camera.position.set(0, 1.5, 7);
+    f.camera.lookAt(0, 1.5, 0);
+    f.camera.updateMatrixWorld();
+  });
+  await settle(forge.page);
+  const before = await forge.page.screenshot({ type: 'png' });
+  const r = await compileAndSettle(forge);
+  const after = await forge.page.screenshot({ type: 'png' });
+  const diff = pixelDiff(before, after, { threshold: 4 });
+  note(`[${forge.backend}] vertexColor() node with vertexColors false: ${r.after.baked} baked, ${r.after.batches} batches, ${r.bake.unbakeableEntries} unbakeable, pixel diff ${(diff * 100).toFixed(4)}%`);
+  expect(diff).toBeLessThan(0.0005);
+  expect(r.after.baked).toBe(1);
+  expect(r.after.batches).toBe(1);
+  expect(r.bake.unbakeableEntries).toBe(2);
+});

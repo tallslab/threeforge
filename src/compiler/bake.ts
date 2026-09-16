@@ -121,14 +121,23 @@ const CARRIED: Record<string, readonly number[]> = { position: [3], normal: [3],
  * The first attribute of `geometry` the bake does not carry faithfully, or null: one outside `position`, `normal`,
  * `tangent` (three or four components), `uv` to `uv3` (two) and `color` (three), or one of those with another item
  * size. The bake writes colour as three components, so a four-component colour (glTF's RGBA `COLOR_0`) loses its alpha,
- * which three multiplies into the diffuse colour (NodeMaterial.setupDiffuseColor reads `vertexColor()` as a vec4); it
- * counts only when the material reads vertex colours (`vertexColors`, default true), since three ignores the attribute
- * otherwise. Any other attribute (a custom one a node material reads with `attribute()`, feature ids) is dropped.
+ * which three multiplies into the diffuse colour (NodeMaterial.setupDiffuseColor reads `vertexColor()` as a vec4). Any
+ * other attribute (a custom one a node material reads with `attribute()`, feature ids) is dropped.
+ *
+ * `vertexColors` is the material's flag (default true). With it false the bake drops `color` altogether, which is
+ * faithful only when nothing reads it: `builtInReads` says three's own code is all that reads the geometry (a built-in
+ * material class with no instance function and no node in any slot; `readsOnlyBuiltInAttributes` in batchStatics.ts),
+ * and then the flag decides (setupDiffuseColor, NodeMaterial.js:839, is three r186's only reader). Otherwise a
+ * `colorNode = vertexColor()`, an `attribute('color')` or an overridden method may read it, so `color` counts, of any
+ * size. Default false: an allowlist, since a colour dropped under a reader is visible and a group left to batching is not.
  */
-export function unbakeableAttribute(geometry: BufferGeometry, vertexColors = true): string | null {
+export function unbakeableAttribute(geometry: BufferGeometry, vertexColors = true, builtInReads = false): string | null {
   for (const name of Object.keys(geometry.attributes)) {
     const size = geometry.attributes[name]!.itemSize;
-    if (name === 'color' && !vertexColors) continue;
+    if (name === 'color' && !vertexColors) {
+      if (builtInReads) continue;
+      return name;
+    }
     if (!CARRIED[name]?.includes(size)) return name;
   }
   return null;

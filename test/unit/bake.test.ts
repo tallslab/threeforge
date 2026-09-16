@@ -694,7 +694,16 @@ describe('unbakeableAttribute: what the bake carries faithfully', () => {
   it('names a four-component colour the material reads (three multiplies its alpha into the diffuse colour), not one it ignores', () => {
     expect(unbakeableAttribute(withAttribute('color', 4))).toBe('color');
     expect(unbakeableAttribute(withAttribute('color', 4), true)).toBe('color');
-    expect(unbakeableAttribute(withAttribute('color', 4), false)).toBeNull();
+    expect(unbakeableAttribute(withAttribute('color', 4), false, true)).toBeNull();
+  });
+
+  it('names a colour its vertexColors flag ignores unless three\'s own code is all that reads the geometry (an allowlist)', () => {
+    for (const size of [3, 4]) {
+      expect(unbakeableAttribute(withAttribute('color', size), false, true), `color:${size}, built-in reads`).toBeNull();
+      expect(unbakeableAttribute(withAttribute('color', size), false, false), `color:${size}, a node graph may read it`).toBe('color');
+      expect(unbakeableAttribute(withAttribute('color', size), false), `color:${size}, reads not stated`).toBe('color');
+    }
+    expect(unbakeableAttribute(withAttribute('color', 3), true, false), 'a three-component colour the flag reads is carried').toBeNull();
   });
 
   it('names an attribute outside the carried set, and a carried one with another item size', () => {

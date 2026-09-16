@@ -119,7 +119,8 @@ export interface BakeSummary {
   keptDuplicateFaces: number;
   /**
    * Static meshes batched instead of baked because their geometry carries an attribute the bake does not carry
-   * faithfully (`unbakeableAttribute`: a four-component colour the material reads, or an attribute outside position,
+   * faithfully (`unbakeableAttribute`: a four-component colour the material reads, a colour its `vertexColors: false`
+   * ignores but a node, an instance function or a subclass may read, or an attribute outside position,
    * normal, tangent, uv to uv3 and colour).
    */
   unbakeableEntries: number;

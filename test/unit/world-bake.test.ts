@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AdditiveBlending, BackSide, BoxGeometry, BufferAttribute, DataTexture, DoubleSide, FrontSide, GreaterEqualDepth, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, Plane, Raycaster, Scene, ShaderMaterial, Vector3, type BufferGeometry, type Intersection, type Material } from 'three';
-import { Discard, Fn, positionLocal, vec4 } from 'three/tsl';
+import { attribute, Discard, Fn, positionLocal, vec4, vertexColor } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { World } from '../../src/compiler/World.js';
 import type { BakeReport } from '../../src/compiler/bake.js';
@@ -367,6 +367,38 @@ describe('World with bake', () => {
     const ignored = new World(wall(3, new MeshStandardMaterial({ vertexColors: false }), rgba).scene, { bake: true }).compile();
     expect(ignored.after).toEqual(expect.objectContaining({ baked: 1, batches: 0 }));
     expect(ignored.bake).toEqual(expect.objectContaining({ groups: 1, unbakeableEntries: 0 }));
+  });
+
+  /**
+   * Final re-review B, L3: `vertexColors: false` is what three's own code reads (NodeMaterial.setupDiffuseColor, the only
+   * reader of the attribute in r186), but a node graph, an instance function or a subclass can read `color` anyway, and
+   * the bake drops a colour the flag ignores: the baked mesh drew the default white. Only a material whose attribute reads
+   * are all three's own may lose the attribute; any other goes to batching, which keeps every attribute, and is counted.
+   */
+  it('batches instead of baking a group whose material may read a colour attribute its vertexColors flag ignores, and counts it', () => {
+    const rgb = (): BufferGeometry => {
+      const g = new BoxGeometry(1, 1, 1);
+      g.setAttribute('color', new BufferAttribute(new Float32Array(g.attributes.position!.count * 3).fill(0.25), 3));
+      return g;
+    };
+    const readers: Array<[string, () => Material]> = [
+      ['colorNode = vertexColor()', () => Object.assign(new MeshStandardNodeMaterial({ vertexColors: false }), { colorNode: vertexColor() })],
+      ['colorNode = attribute("color")', () => Object.assign(new MeshStandardNodeMaterial({ vertexColors: false }), { colorNode: attribute('color', 'vec3') })],
+      ['a node in an unrelated slot', () => Object.assign(new MeshStandardNodeMaterial({ vertexColors: false }), { emissiveNode: vertexColor() })],
+      ['an instance setupDiffuseColor', () => Object.assign(new MeshStandardNodeMaterial({ vertexColors: false }), { setupDiffuseColor: callThrough(MeshStandardNodeMaterial, 'setupDiffuseColor') })],
+      ['a subclass overriding setupDiffuseColor', () => new (subclassOverriding(MeshStandardNodeMaterial, 'setupDiffuseColor'))()],
+    ];
+    for (const [label, material] of readers) {
+      const report = new World(wall(3, material(), rgb).scene, { bake: true }).compile();
+      expect(report.after, label).toEqual(expect.objectContaining({ baked: 0, batches: 1 }));
+      expect(report.bake, label).toEqual(expect.objectContaining({ groups: 0, unbakeableEntries: 3 }));
+    }
+    // three's own code alone reads the geometry: vertexColors false provably ignores the attribute, so the group bakes.
+    for (const [label, material] of [['MeshStandardMaterial', new MeshStandardMaterial({ vertexColors: false })], ['MeshStandardNodeMaterial without nodes', new MeshStandardNodeMaterial({ vertexColors: false })]] as Array<[string, Material]>) {
+      const report = new World(wall(3, material, rgb).scene, { bake: true }).compile();
+      expect(report.after, label).toEqual(expect.objectContaining({ baked: 1, batches: 0 }));
+      expect(report.bake, label).toEqual(expect.objectContaining({ groups: 1, unbakeableEntries: 0 }));
+    }
   });
 
   it('keeps batch-synced dynamics in a BatchedMesh, never in a bake', () => {
