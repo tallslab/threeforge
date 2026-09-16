@@ -743,10 +743,24 @@ describe('DrawCallLedger pooled records', () => {
     scene.add(...extra);
     renderer.render(scene, camera);
     expect(ledger.frame().totals.submissions).toBe(6);
-    expect(ledger.frame({ items: true }).items!.map((i) => i.name)).toEqual(['a2', 'extra0', 'extra1', 'extra2', 'Mesh[1]', 'Output Color Transform']);
+    // Frame 3 writes into frame 1's buffer: extra1 reuses the record Mesh[1] filled with ['transparent'] there, so a
+    // flag count that shrinks must not leave the old flag behind (`flagsInto` truncates in place).
+    expect(ledger.frame({ items: true }).items!.map((i) => [i.name, i.flags])).toEqual([
+      ['a2', ['custom-hook']],
+      ['extra0', []],
+      ['extra1', []],
+      ['extra2', []],
+      ['Mesh[1]', ['transparent']],
+      ['Output Color Transform', []],
+    ]);
     scene.remove(...extra, b);
     renderer.render(scene, camera);
-    expect(ledger.frame({ items: true }).items!.map((i) => i.name)).toEqual(['a2', 'Output Color Transform']);
+    // Frame 4 writes into frame 2's buffer: Output Color Transform reuses the record Mesh[1] filled with ['transparent']
+    // there, and a renderer-internal record is cleared rather than passed through `flagsInto` (`begin`).
+    expect(ledger.frame({ items: true }).items!.map((i) => [i.name, i.flags])).toEqual([
+      ['a2', ['custom-hook']],
+      ['Output Color Transform', []],
+    ]);
     expect(ledger.frame().totals).toMatchObject({ submissions: 2, sceneSubmissions: 1, unattributed: 0 });
     expect(JSON.stringify(held)).toBe(heldJson);
     expect(JSON.stringify(second)).toBe(secondJson);
