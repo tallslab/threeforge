@@ -52,6 +52,11 @@ export interface WorldOptions {
    * group holding batch-synced movers gets no proxy (`report.occlusion.skippedSynced`). One outermost camera per frame
    * is assumed. Costs one cheap submission per target. Needs a renderer with `isOccluded()` (WebGPURenderer, either
    * backend).
+   *
+   * A skipped target is skipped in *every* pass of that frame, so it also disappears from shadow maps and reflections:
+   * a batch hidden behind a wall stops casting its shadow and stops appearing in a mirror, which is visible whenever
+   * the light or the mirror sees what the camera cannot. Leave `occlusion` off where those matter
+   * (`docs/threeforge.md`, "Occlusion").
    */
   occlusion?: boolean;
   /** Clips that will drive this scene (e.g. `gltf.animations`), or `{ root, clips }` per animated character. */
