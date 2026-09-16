@@ -102,15 +102,35 @@ test('analyze_asset rejects a bad enum value and a non-integer frames the same w
 });
 
 test('optimize_asset rejects an out path outside the allowed scope as an isError with code 2', { tag: '@corpus' }, async () => {
+  // Final review area 1, M1: this used '/tmp/x.txt', which the extension check refuses before the scope check ever runs.
+  // A valid extension outside both roots reaches the scope check itself; the extension case is the next test.
+  test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
+  await ready();
+  const outside = join(mkdtempSync(join(tmpdir(), 'forge-mcp-scope-')), 'x.glb');
+  const { client, close } = await connect();
+  try {
+    const result = await client.callTool({ name: 'optimize_asset', arguments: { file: fox(), out: outside, verify: false } });
+    expect(result.isError).toBe(true);
+    const body = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
+    expect(body.code).toBe(2);
+    expect(body.error).toMatch(/out must sit inside/);
+    expect(existsSync(outside)).toBe(false);
+  } finally {
+    await close();
+    rmSync(dirname(outside), { recursive: true, force: true });
+  }
+});
+
+test('optimize_asset rejects an out that does not end in .glb or .gltf as an isError with code 2', { tag: '@corpus' }, async () => {
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
   await ready();
   const { client, close } = await connect();
   try {
-    const result = await client.callTool({ name: 'optimize_asset', arguments: { file: fox(), out: '/tmp/x.txt', verify: false } });
+    const result = await client.callTool({ name: 'optimize_asset', arguments: { file: fox(), out: join(dirname(fox()), 'x.txt'), verify: false } });
     expect(result.isError).toBe(true);
     const body = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
     expect(body.code).toBe(2);
-    expect(body.error).toMatch(/\.glb or \.gltf|out must/);
+    expect(body.error).toMatch(/\.glb or \.gltf/);
   } finally {
     await close();
   }
