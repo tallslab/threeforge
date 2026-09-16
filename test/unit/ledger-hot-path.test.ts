@@ -495,15 +495,21 @@ describe('DrawCallLedger cost per submission', () => {
     // sizes afresh, so a stall has to land on the fast half of every attempt to matter, and the best ratio is taken.
     // The 3x bound itself is untouched: a real per-submission regression is in every attempt, so the best ratio shows
     // it just as plainly as a single reading would on an idle machine.
-    let best = Infinity;
-    const readings: string[] = [];
+    const smalls: number[] = [];
+    const larges: number[] = [];
     for (let attempt = 0; attempt < 3; attempt++) {
-      const small = msPerSubmission(2000);
-      const large = msPerSubmission(20000);
-      best = Math.min(best, large / small);
-      readings.push(`${(small * 1000).toFixed(3)} µs at 2k -> ${(large * 1000).toFixed(3)} µs at 20k = ${(large / small).toFixed(2)}x`);
+      smalls.push(msPerSubmission(2000));
+      larges.push(msPerSubmission(20000));
     }
-    expect(best, readings.join(' · ')).toBeLessThan(3);
+    // The statistic is best-of-N per size, not the best of the per-attempt ratios. Pairing each large with the small
+    // measured beside it lets a stall that inflated that attempt's small *lower* its ratio, and a minimum over ratios
+    // would then select exactly that attempt: a false pass under the very load the interleaving exists to survive.
+    // (larges [10, 20] with smalls [5, 20]: the best ratio is 1.0, while min/min is 2.0.) Taking each size's own
+    // minimum discards a stall in either measurement, and the 3x bound is unchanged.
+    const small = Math.min(...smalls);
+    const large = Math.min(...larges);
+    const readings = `2k ${smalls.map((v) => (v * 1000).toFixed(3)).join('/')} µs -> 20k ${larges.map((v) => (v * 1000).toFixed(3)).join('/')} µs; best ${(small * 1000).toFixed(3)} -> ${(large * 1000).toFixed(3)} = ${(large / small).toFixed(2)}x`;
+    expect(large / small, readings).toBeLessThan(3);
   }, 180_000);
 });
 

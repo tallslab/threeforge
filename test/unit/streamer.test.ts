@@ -141,6 +141,11 @@ describe('Streamer construction cost', () => {
    * array, so a construction walked every chunk once per object and its cost grew with the world. Counting the two
    * primitives such a walk needs — iterating a Map, and `Array.findIndex` — measures exactly that, with no clock in it:
    * deterministic, instant, and unaffected by what else the machine is doing.
+   *
+   * Limitation, so the proxy is not over-trusted: it counts only those two primitives, so a future rescan written as an
+   * indexed `for` loop over an array would not be counted at all. The absolute `< 10` bound below covers that only
+   * insofar as such a loop still had to reach the chunks through one of these; a walk built entirely from indexed loops
+   * would need a different probe.
    */
   function chunkScans(run: () => void): number {
     let scans = 0;
