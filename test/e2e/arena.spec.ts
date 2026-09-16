@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { expect, test } from './fixtures.js';
 import { pixelDiff } from './pixels.js';
 
-test('the fight arena (skinned fighters, weapons on bones, shadowed lights, VFX) compiles with the same pixels and every draw explained', async ({ forge }) => {
+test('the fight arena (skinned fighters, weapons on bones, shadowed lights, VFX) compiles with the same pixels and every draw explained', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   await forge.open('arena', { freeze: '1', dynamics: 'batch-sync', t: '1.1' });
   const naive = await forge.page.evaluate(async () => {
@@ -55,7 +55,7 @@ test('the fight arena (skinned fighters, weapons on bones, shadowed lights, VFX)
   expect(motion).toBeGreaterThan(0.005);
 });
 
-test('bloom post-processing: the scene is a nested main pass under fullscreen quads, all attributed', async ({ forge }) => {
+test('bloom post-processing: the scene is a nested main pass under fullscreen quads, all attributed', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   await forge.open('arena', { freeze: '1', dynamics: 'batch-sync', t: '1.1', bloom: '1', fighters: '4', blocky: '4' });
   const result = await forge.page.evaluate(async () => {
@@ -77,7 +77,7 @@ test('bloom post-processing: the scene is a nested main pass under fullscreen qu
   expect(result.compiled.sceneSubmissions).toBeLessThan(result.naive.sceneSubmissions * 0.6);
 });
 
-test('assembleCharacter on the Kenney fighters halves their skinned draws', async ({ forge }) => {
+test('assembleCharacter on the Kenney fighters halves their skinned draws', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   await forge.open('arena', { freeze: '1', t: '1.1', assemble: '1', blocky: '0', vfx: '0', shadows: '0' });
   const result = await forge.page.evaluate(async () => {

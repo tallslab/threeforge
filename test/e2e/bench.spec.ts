@@ -10,7 +10,7 @@ import { MEASURED, metricsOf, SCENE_IDS, WARM } from '../app/benchMetrics.js';
  */
 for (const id of SCENE_IDS) {
   for (const variant of ['naive', 'optimized'] as const) {
-    test(`bench ${id} ${variant}`, async ({ forge }) => {
+    test(`bench ${id} ${variant}`, { tag: '@bench' }, async ({ forge }) => {
       test.setTimeout(900_000);
       if (id === 'rpg') await forge.page.setViewportSize({ width: 450, height: 800 });
       await forge.open(id, { variant }); // no clock freeze: timings must be real; pixel parity is not checked here

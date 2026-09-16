@@ -38,7 +38,7 @@ test.beforeAll(() => {
   if (!existsSync(bin) || !existsSync('dist/cli-app/index.html')) execFileSync('pnpm', ['build'], { stdio: 'inherit' });
 });
 
-test('analyze renders a sample asset, compiles it and prints the document', async ({ forge }) => {
+test('analyze renders a sample asset, compiles it and prints the document', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   const r = run(['analyze', sample(), '--backend', forge.backend, '--frames', '5', '--json']);
   expect(r.status, r.stderr).toBe(0);
@@ -54,7 +54,7 @@ test('analyze renders a sample asset, compiles it and prints the document', asyn
   expect(r.stderr).toContain('PASS');
 });
 
-test('analyze reports no false unreferenced-resources hint for the Fox (harness environment disposal)', async ({ forge }) => {
+test('analyze reports no false unreferenced-resources hint for the Fox (harness environment disposal)', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   const r = run(['analyze', sample(), '--backend', forge.backend, '--frames', '5', '--json']);
   expect(r.status, r.stderr).toBe(0);
@@ -68,7 +68,7 @@ test('analyze reports no false unreferenced-resources hint for the Fox (harness 
   expect(unreferenced, JSON.stringify(snapshot.memory.unreferenced)).toBeLessThan(8);
 });
 
-test('analyze fails the verdict on a tiny budget (exit 1), usage on a missing file (exit 2), and --no-compile skips the compile', async ({ forge }) => {
+test('analyze fails the verdict on a tiny budget (exit 1), usage on a missing file (exit 2), and --no-compile skips the compile', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   // The Fox compiles to exactly one submission, so a budget of 0 is the smallest failing budget.
   const over = run(['analyze', sample(), '--backend', forge.backend, '--frames', '3', '--budget', '0', '--json']);
@@ -106,7 +106,7 @@ test('inspect reports a page without the hook as a page error (exit 4)', () => {
   expect(r.stderr).toMatch(/__threeforge|exposeToAgents|harness failed/);
 });
 
-test('analyze exits 3 promptly when Chromium cannot launch', ({ backend }) => {
+test('analyze exits 3 promptly when Chromium cannot launch', { tag: '@corpus' }, ({ backend }) => {
   const started = Date.now();
   const r = spawnSync('node', [bin, 'analyze', sample(), '--backend', backend, '--json'], { encoding: 'utf8', timeout: 20_000, env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: '/nonexistent' } });
   const ms = Date.now() - started;
@@ -171,7 +171,7 @@ test('explain, schema and help are pure and fast', () => {
   expect(help.stdout).toContain('analyze');
 });
 
-test('usage errors exit 2 with nothing on stdout, and a boolean flag never swallows the argument after it', () => {
+test('usage errors exit 2 with nothing on stdout, and a boolean flag never swallows the argument after it', { tag: '@corpus' }, () => {
   const typo = run(['explain', 'untagged', '--jsonn']);
   expect(typo.status, typo.stderr).toBe(2);
   expect(typo.stdout).toBe('');
@@ -189,7 +189,7 @@ test('usage errors exit 2 with nothing on stdout, and a boolean flag never swall
   expect(JSON.parse(swallowed.stdout).code).toBe('untagged');
 });
 
-test('analyze --bake --views keeps parity on a multi-part static asset and reports what the bake removed', async ({ forge }) => {
+test('analyze --bake --views keeps parity on a multi-part static asset and reports what the bake removed', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   const index = JSON.parse(readFileSync('test/assets/files/index.json', 'utf8')) as Array<{ name: string; entry: string }>;
   const engine = index.find((a) => a.name === '2CylinderEngine')!;
@@ -206,7 +206,7 @@ test('analyze --bake --views keeps parity on a multi-part static asset and repor
   expect(r.stderr).toContain('bake:');
 });
 
-test('analyze --bake --json output validates against ANALYZE_SCHEMA, compiled standalone in ajv (Task 29: self-contained $defs)', async ({ forge }) => {
+test('analyze --bake --json output validates against ANALYZE_SCHEMA, compiled standalone in ajv (Task 29: self-contained $defs)', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   const index = JSON.parse(readFileSync('test/assets/files/index.json', 'utf8')) as Array<{ name: string; entry: string }>;
   const engine = index.find((a) => a.name === '2CylinderEngine')!;
@@ -220,7 +220,7 @@ test('analyze --bake --json output validates against ANALYZE_SCHEMA, compiled st
   expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
 });
 
-test('optimize keeps the Fox pixel-identical at --parity 0, keeps its skin and clips, and shrinks the file', async ({ forge }) => {
+test('optimize keeps the Fox pixel-identical at --parity 0, keeps its skin and clips, and shrinks the file', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
@@ -265,7 +265,7 @@ test('optimize keeps the Fox pixel-identical at --parity 0, keeps its skin and c
   }
 });
 
-test('optimize collapses the Buggy to one material and still compiles to one submission', async ({ forge }) => {
+test('optimize collapses the Buggy to one material and still compiles to one submission', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
@@ -302,7 +302,7 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
  */
 const BALANCED_PARITY = 0.05;
 
-test('optimize --preset balanced quantizes and re-encodes the Fox, changing pixels but staying inside a measured 0.05 %', async ({ forge }) => {
+test('optimize --preset balanced quantizes and re-encodes the Fox, changing pixels but staying inside a measured 0.05 %', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
@@ -334,7 +334,7 @@ test('optimize --preset balanced quantizes and re-encodes the Fox, changing pixe
   }
 });
 
-test('optimize --preset aggressive --compress meshopt lowers triangles, needs the decoder, and loads through the harness', async ({ forge }) => {
+test('optimize --preset aggressive --compress meshopt lowers triangles, needs the decoder, and loads through the harness', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
@@ -353,7 +353,7 @@ test('optimize --preset aggressive --compress meshopt lowers triangles, needs th
   }
 });
 
-test('optimize --no-verify runs without a browser; a missing file, an out-of-directory resource URI and a non-glTF --out are usage errors', () => {
+test('optimize --no-verify runs without a browser; a missing file, an out-of-directory resource URI and a non-glTF --out are usage errors', { tag: '@corpus' }, () => {
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
     const r = run(['optimize', asset('Fox'), '--out', join(dir, 'fox.glb'), '--no-verify', '--json']);

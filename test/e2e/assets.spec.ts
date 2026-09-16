@@ -43,7 +43,7 @@ function saveRow(row: ReportRow, backend: string): void {
 }
 
 for (const asset of assets) {
-  test(`asset ${asset.name}`, async ({ forge }) => {
+  test(`asset ${asset.name}`, { tag: '@corpus' }, async ({ forge }) => {
     test.setTimeout(180_000);
     const row: ReportRow = { name: asset.name, tags: (asset.tags ?? []).join(' ') };
     try {

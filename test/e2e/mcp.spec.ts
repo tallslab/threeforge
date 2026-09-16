@@ -61,7 +61,7 @@ test('inspect_app takes no tier input; analyze_asset and optimize_asset still do
   }
 });
 
-test('analyze_asset rejects frames: 0 as an isError with code 2, without opening a browser', async () => {
+test('analyze_asset rejects frames: 0 as an isError with code 2, without opening a browser', { tag: '@corpus' }, async () => {
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
   await ready();
   const { client, close } = await connect();
@@ -76,7 +76,7 @@ test('analyze_asset rejects frames: 0 as an isError with code 2, without opening
   }
 });
 
-test('analyze_asset rejects a bad enum value and a non-integer frames the same way: isError with code 2', async () => {
+test('analyze_asset rejects a bad enum value and a non-integer frames the same way: isError with code 2', { tag: '@corpus' }, async () => {
   // Finding 4 (Important, Task 8 fix round 1): a tight z.enum()/`.int()` in the MCP schema made these two return
   // the SDK's own plain-text isError instead of threeforge's { error, code: 2 } JSON. Both now go through
   // validateInput (src/cli/args.ts), same as any other bad input.
@@ -100,7 +100,7 @@ test('analyze_asset rejects a bad enum value and a non-integer frames the same w
   }
 });
 
-test('optimize_asset rejects an out path outside the allowed scope as an isError with code 2', async () => {
+test('optimize_asset rejects an out path outside the allowed scope as an isError with code 2', { tag: '@corpus' }, async () => {
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
   await ready();
   const { client, close } = await connect();
@@ -115,7 +115,7 @@ test('optimize_asset rejects an out path outside the allowed scope as an isError
   }
 });
 
-test('optimize_asset refuses to silently overwrite an existing out file, matching /exists/', async () => {
+test('optimize_asset refuses to silently overwrite an existing out file, matching /exists/', { tag: '@corpus' }, async () => {
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
   await ready();
   const target = join(dirname(fox()), 'mcp-existing-out.glb');
@@ -133,7 +133,7 @@ test('optimize_asset refuses to silently overwrite an existing out file, matchin
   }
 });
 
-test('optimize_asset refuses a .gltf out whose resource file (not the out path itself) already exists, matching /exists/ with code 2 (Ruling R21)', async () => {
+test('optimize_asset refuses a .gltf out whose resource file (not the out path itself) already exists, matching /exists/ with code 2 (Ruling R21)', { tag: '@corpus' }, async () => {
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
   await ready();
   // Fox.glb has one buffer and one baseColor texture; glTF-Transform names a lone buffer "<out-basename>.bin"
@@ -159,7 +159,7 @@ test('optimize_asset refuses a .gltf out whose resource file (not the out path i
   }
 });
 
-test('optimize_asset with overwrite: true replaces both the out file and a pre-existing resource clash', async () => {
+test('optimize_asset with overwrite: true replaces both the out file and a pre-existing resource clash', { tag: '@corpus' }, async () => {
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
   await ready();
   const dir = dirname(fox());
@@ -209,7 +209,7 @@ test('a spawned mcp process exits within 5 s when stdin closes', async () => {
   expect(ms).toBeLessThan(5_000);
 });
 
-test('a real analyze_asset call on the Fox returns the document in content[0] and the data note in content[1]', async ({ forge }) => {
+test('a real analyze_asset call on the Fox returns the document in content[0] and the data note in content[1]', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(300_000);
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
   await ready();

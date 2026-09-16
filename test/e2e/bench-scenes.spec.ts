@@ -4,14 +4,17 @@ import { expect, test } from './fixtures.js';
  * Every benchmark scene builds in both variants with every draw attributed. Bounds are deliberately loose:
  * exact numbers live in bench/baselines and are gated by `pnpm bench`.
  */
-const scenes: Array<{ id: string; naiveMin: number; optimizedMax: number; counts: Record<string, number>; timeout?: number }> = [
+/** `tag: '@corpus'` marks a scene that cannot build without downloaded content, so a corpus-less CI must skip it. */
+const scenes: Array<{ id: string; naiveMin: number; optimizedMax: number; counts: Record<string, number>; timeout?: number; tag?: string }> = [
   { id: 'village', naiveMin: 300, optimizedMax: 40, counts: { props: 300, materials: 40 } },
   { id: 'forest', naiveMin: 5000, optimizedMax: 16, counts: { trees: 5000, grass: 2000 } },
   // Skinned meshes are not batched until SP4 (VAT): the optimized crowd only bounds the count.
-  { id: 'crowd', naiveMin: 200, optimizedMax: 420, counts: { characters: 200 } },
+  // Loads the eight Kenney mini-character GLBs (test/app/scenes/crowd.ts throws without the kit), so: @corpus.
+  { id: 'crowd', naiveMin: 200, optimizedMax: 420, counts: { characters: 200 }, tag: '@corpus' },
   { id: 'bossfight', naiveMin: 2000, optimizedMax: 480, counts: { effects: 30, fighters: 12 }, timeout: 240_000 },
   // Sprites are not batched until SP3 and the water reflection renders them twice: the lake's optimized bound is loose on purpose.
-  { id: 'lake', naiveMin: 1900, optimizedMax: 4200, counts: { rain: 2000 } },
+  // The water loads waternormals.jpg from the downloaded content (test/app/scenes/lake.ts), so: @corpus.
+  { id: 'lake', naiveMin: 1900, optimizedMax: 4200, counts: { rain: 2000 }, tag: '@corpus' },
   { id: 'daynight', naiveMin: 300, optimizedMax: 70, counts: { props: 300, shadowMap: 2048 } },
   // Fog ends the zen view at 600 m, so three's own frustum culling already drops most of the 50 000 objects in the naive variant.
   { id: 'zen', naiveMin: 3000, optimizedMax: 420, counts: { objects: 50000, chunks: 64 }, timeout: 600_000 },
@@ -20,7 +23,7 @@ const scenes: Array<{ id: string; naiveMin: number; optimizedMax: number; counts
 ];
 
 for (const s of scenes) {
-  test(`${s.id}: naive and optimized variants render with every draw attributed`, async ({ forge }) => {
+  test(`${s.id}: naive and optimized variants render with every draw attributed`, { tag: s.tag ?? [] }, async ({ forge }) => {
     if (s.timeout) test.setTimeout(s.timeout);
     await forge.open(s.id, { variant: 'naive' });
     // Measured snapshots come from frameAsync(): shadow maps re-render only once per animation-frame tick.

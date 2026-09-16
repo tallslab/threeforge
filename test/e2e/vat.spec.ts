@@ -35,7 +35,7 @@ function litSpread(shot: Buffer, empty: Buffer): { spread: number; covered: numb
   return { spread: covered === 0 ? 0 : max - min, covered };
 }
 
-test('vat: a two-part character whose parts sit at different offsets looks like its skinned original, under a placement that does not commute with those offsets', async ({ forge }) => {
+test('vat: a two-part character whose parts sit at different offsets looks like its skinned original, under a placement that does not commute with those offsets', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(120_000);
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   await forge.open('vat', { vatClip: 'walk', vatTime: '0.5', vatPartOffset: '0.2,0.3,0' });

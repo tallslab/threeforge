@@ -7,7 +7,7 @@ function note(description: string): void {
 
 /** createLoader decodes Draco and meshopt content; a tracked subtree, released, returns the renderer's counts to where they were. */
 for (const asset of ['Duck-Draco', 'BrainStem-Meshopt']) {
-  test(`memory: ${asset} loads through createLoader and releases without leaks`, async ({ forge }) => {
+  test(`memory: ${asset} loads through createLoader and releases without leaks`, { tag: '@corpus' }, async ({ forge }) => {
     await forge.open('empty');
     const r = await forge.page.evaluate(async (name) => {
       const f = window.__forge;

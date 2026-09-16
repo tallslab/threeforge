@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { expect, test } from './fixtures.js';
 import { pixelDiff } from './pixels.js';
 
-test('the biome (terrain, water, thousands of props, cars, hi-poly rocks) compiles to a few dozen submissions with the same pixels', async ({ forge }) => {
+test('the biome (terrain, water, thousands of props, cars, hi-poly rocks) compiles to a few dozen submissions with the same pixels', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   const extra: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (k.startsWith('FORGE_BIOME_Q_') && v) extra[k.slice('FORGE_BIOME_Q_'.length).toLowerCase()] = v;

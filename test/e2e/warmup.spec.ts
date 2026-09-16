@@ -16,7 +16,7 @@ const cases = [
 
 for (const mode of ['frame', 'async'] as const) {
   for (const c of cases) {
-    test(`warmup(${mode}) keeps ${c.what} pixel-identical to a cold frame`, async ({ forge }) => {
+    test(`warmup(${mode}) keeps ${c.what} pixel-identical to a cold frame`, { tag: '@corpus' }, async ({ forge }) => {
       test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
       await forge.open('gltf', { asset: c.asset });
       await forge.page.evaluate(async () => {
