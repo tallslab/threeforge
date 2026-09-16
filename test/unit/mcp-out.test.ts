@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -158,6 +158,40 @@ describe('resolveOptimizeOut symlink confinement (real filesystem)', () => {
     symlinkSync(join(inputDir, 'real.glb'), join(inputDir, 'alias.glb'));
     expect(() => resolveOptimizeOut(inputFile, join(inputDir, 'alias.glb'), false, projectDir)).toThrow(/exists/);
     expect(resolveOptimizeOut(inputFile, join(inputDir, 'alias.glb'), true, projectDir)).toBe(join(inputDir, 'alias.glb'));
+  });
+
+  /**
+   * Final re-review A, L3(b): a final-component link to an existing file outside both roots. `realpathSync` follows it
+   * today; a change that stopped following the final link (while still refusing dangling ones) would let
+   * `overwrite: true` write through it.
+   */
+  it('rejects an out that is a symlink to an existing file outside both roots, even with overwrite: true', () => {
+    setUp();
+    const victim = join(outsideDir, 'existing.glb');
+    writeFileSync(victim, 'outside bytes');
+    symlinkSync(victim, join(projectDir, 'link.glb'));
+    for (const overwrite of [false, true]) {
+      const error = refusal(() => resolveOptimizeOut(inputFile, join(projectDir, 'link.glb'), overwrite, projectDir));
+      expect(error, `overwrite: ${overwrite}`).toBeInstanceOf(UsageError);
+      expect((error as Error).message, `overwrite: ${overwrite}`).toMatch(/out must sit inside/);
+    }
+    expect(readFileSync(victim, 'utf8')).toBe('outside bytes');
+  });
+
+  /**
+   * Final re-review A, L1: the walk up to the nearest existing ancestor sliced each missing segment off its parent's
+   * path by length, which drops a character when the parent is the filesystem root (`/`, length 1, plus a separator
+   * that is not there). `/Xprivate/var/…/x.glb` then canonicalised to `/private/var/…/x.glb` and passed as inside the
+   * working directory. The working directory is canonical here (`realpathSync`), so the mangled path would match it.
+   */
+  it('keeps a missing top-level segment whole: an out under a non-existent "/X<cwd>" is outside, not the working directory', () => {
+    setUp();
+    const cwd = realpathSync(projectDir);
+    const out = `/X${cwd.slice(1)}/x.glb`;
+    expect(existsSync(`/X${cwd.slice(1).split('/')[0]}`)).toBe(false);
+    for (const overwrite of [false, true]) {
+      expect(() => resolveOptimizeOut(join(cwd, 'assets', 'Fox.glb'), out, overwrite, cwd), `overwrite: ${overwrite}`).toThrow(/out must sit inside/);
+    }
   });
 
   it('still accepts a plain out with no symlink involved (no false positives from the realpath check)', () => {

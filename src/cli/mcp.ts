@@ -1,5 +1,5 @@
 import { realpathSync } from 'node:fs';
-import { dirname, isAbsolute, relative, resolve as resolvePath } from 'node:path';
+import { basename, dirname, isAbsolute, relative, resolve as resolvePath } from 'node:path';
 import { analyzeAsset } from './analyze.js';
 import { DEFAULT_PARITY, validateInput } from './args.js';
 import { EnvironmentError, exitCodeFor, UsageError } from './errors.js';
@@ -90,7 +90,7 @@ function realish(target: string): string | null {
       if (entryExists(current)) return null;
       const parent = dirname(current);
       if (parent === current) return null;
-      pending.unshift(current.slice(parent.length + 1));
+      pending.unshift(basename(current));
       current = parent;
     }
   }
