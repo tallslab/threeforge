@@ -83,19 +83,30 @@ function isUserHook(object: Object3D, name: 'onBeforeRender' | 'onAfterRender'):
 }
 
 /**
- * The flags of one submission, pushed onto `flags` (the ledger reuses one array per pooled record). `sides` is the
- * pass's draws per call (`sideFactor()` in expectedDraws.ts), so `double-sided-transparent` follows the material three
- * draws in that pass.
+ * The flags of one submission, written over `flags` in place (the ledger reuses one array per pooled record): an element
+ * is written only where it differs and `length` only when it changes. V8 releases an array's backing store when its
+ * length is set to 0, so emptying a record's array and pushing its flags again allocated a new store for every flagged
+ * submission of every frame, most of the ledger's per-submission allocation. `sides` is the pass's draws per call
+ * (`sideFactor()` in expectedDraws.ts), so `double-sided-transparent` follows the material three draws in that pass.
  */
 export function flagsInto(object: Object3D, material: Material, sides: number, flags: Flag[]): Flag[] {
-  if (object.castShadow) flags.push('shadow-caster');
-  if (sides === 2) flags.push('double-sided-transparent');
+  let n = 0;
+  if (object.castShadow) n = putFlag(flags, n, 'shadow-caster');
+  if (sides === 2) n = putFlag(flags, n, 'double-sided-transparent');
   // Own-property hooks are user-installed; BatchedMesh defines its own on the prototype and threeforge marks its hooks.
-  if (isUserHook(object, 'onBeforeRender') || isUserHook(object, 'onAfterRender')) flags.push('custom-hook');
-  if (object.renderOrder !== 0) flags.push('render-order');
-  if (object.layers.mask !== 1) flags.push('layers');
-  if (material.transparent) flags.push('transparent');
+  if (isUserHook(object, 'onBeforeRender') || isUserHook(object, 'onAfterRender')) n = putFlag(flags, n, 'custom-hook');
+  if (object.renderOrder !== 0) n = putFlag(flags, n, 'render-order');
+  if (object.layers.mask !== 1) n = putFlag(flags, n, 'layers');
+  if (material.transparent) n = putFlag(flags, n, 'transparent');
+  if (flags.length !== n) flags.length = n;
   return flags;
+}
+
+/** Writes `flag` at index `n` of `flags` unless it is already there (appending at the end); returns `n + 1`. */
+function putFlag(flags: Flag[], n: number, flag: Flag): number {
+  if (n === flags.length) flags.push(flag);
+  else if (flags[n] !== flag) flags[n] = flag;
+  return n + 1;
 }
 
 /** The materials three r186's ShadowNode.vsmPass blurs a VSM shadow map with (ShadowNode.js, `material.name`). */

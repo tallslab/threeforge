@@ -710,8 +710,9 @@ export class DrawCallLedger {
     record.transparent = material.transparent;
     record.pass = context.pass;
     record.reason = reason;
-    record.flags.length = 0;
+    // In place: a record's flags are rewritten only where they change (see `flagsInto`).
     if (reason !== 'renderer-internal') flagsInto(object, material, sides, record.flags);
+    else if (record.flags.length !== 0) record.flags.length = 0;
     record.expectedGpuDraws = 0;
     record.instances = 0;
     record.instancesDrawn = 0;

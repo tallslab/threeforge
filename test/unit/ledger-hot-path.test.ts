@@ -37,7 +37,7 @@ import {
 } from 'three';
 import { World } from '../../src/compiler/World.js';
 import { DrawCallLedger, type LedgerRenderer } from '../../src/ledger/DrawCallLedger.js';
-import { displayName, reasonOf } from '../../src/ledger/reasons.js';
+import { displayName, flagsInto, reasonOf } from '../../src/ledger/reasons.js';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 import { tag } from '../../src/tags.js';
 import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
@@ -533,11 +533,27 @@ describe('DrawCallLedger cost per submission', () => {
  * scans every file under `src/ledger/` for an iterator-protocol walk rather than trusting a list, and then checks each
  * walk site that exists is an index loop. It matches the names the record array actually goes by (`items`,
  * `ctx.items`, `this.lastItems`, `state.buffer.items`) with flexible whitespace; it cannot see the array under a name
- * that is not on that list, so renaming it means adding the new name here. `Array.prototype.map`/`forEach` are not
- * flagged: they index internally and allocate no iterator result.
+ * that is not on that list, so renaming it means adding the new name here. Any binding counts, a destructuring pattern
+ * included (`for (const { pass } of items)` uses the same protocol), and so do `[...items]`, `Array.from(items)` and
+ * `new Set(items)`. `Array.prototype.map`/`forEach` are not flagged: they index internally and allocate no iterator
+ * result.
  */
 const RECORD_ARRAY = String.raw`(?:ctx\.items|this\.lastItems|state\.buffer\.items|items)\b`;
-const ITERATOR_WALK = new RegExp(String.raw`for\s*\(\s*(?:const|let|var)\s+[\w$]+\s+of\s+` + RECORD_ARRAY + String.raw`|\[\s*\.\.\.\s*` + RECORD_ARRAY);
+/** A `for…of` binding: a name, or an object or array destructuring pattern (the same iterator protocol either way). */
+const BINDING = String.raw`(?:[\w$]+|\{[^}]*\}|\[[^\]]*\])`;
+const ITERATOR_WALK = new RegExp(
+  String.raw`for\s*\(\s*(?:const|let|var)\s+` +
+    BINDING +
+    String.raw`\s+of\s+` +
+    RECORD_ARRAY +
+    String.raw`|\[\s*\.\.\.\s*` +
+    RECORD_ARRAY +
+    String.raw`|Array\.from\(\s*` +
+    RECORD_ARRAY +
+    String.raw`\s*[,)]|new\s+Set\(\s*` +
+    RECORD_ARRAY +
+    String.raw`\s*\)`,
+);
 const INDEX_WALK = /for\s*\(\s*let\s+([\w$]+)\s*=\s*0\s*;\s*\1\s*<\s*items\.length\s*;\s*\1\s*\+\+\s*\)/g;
 /** The walk sites that exist, and how many index loops over the record array each file must hold. */
 const RECORD_WALK_SITES: Record<string, number> = {
@@ -558,11 +574,66 @@ describe('DrawCallLedger per-frame allocations', () => {
     }
   });
 
+  it('flags every iterator-protocol form of a walk of the records, and none of the index-based ones', () => {
+    // Each allocates an iterator result per element when V8 stops eliding it (a destructuring binding uses the same
+    // protocol as a plain one); `Array.from` and `new Set` iterate their argument the same way.
+    const walks = [
+      'for (const item of items) {',
+      'for (const { pass, reason } of items) {',
+      'for (let [k, item] of items.entries()) {',
+      'for (var { name } of ctx.items) {',
+      'for (const {\n  pass,\n  reason,\n} of this.lastItems) {',
+      'for (const [first] of state.buffer.items) {',
+      'const copy = [...items];',
+      'const copy = Array.from(items);',
+      'const names = new Set(ctx.items);',
+    ];
+    for (const code of walks) expect(ITERATOR_WALK.test(code), code).toBe(true);
+    const indexed = ['for (let k = 0; k < items.length; k++) {', 'items.map((i) => i.name)', 'items.forEach((i) => count(i))', 'for (const light of lights) {', 'for (const { pass } of passes) {', 'Array.from(itemsByName)'];
+    for (const code of indexed) expect(ITERATOR_WALK.test(code), code).toBe(false);
+  });
+
   it('keeps every known walk of the records an index loop', () => {
     for (const [file, sites] of Object.entries(RECORD_WALK_SITES)) {
       const loops = readFileSync(file, 'utf8').match(INDEX_WALK)?.length ?? 0;
       expect.soft(loops, `${file}: index loops over the record array (see scripts/ledger-overhead.mjs)`).toBeGreaterThanOrEqual(sites);
     }
+  });
+});
+
+describe('flagsInto', () => {
+  /** An array that counts every write to it (elements and `length`). */
+  const counted = (): { flags: string[]; writes: () => number } => {
+    let writes = 0;
+    const flags = new Proxy([] as string[], {
+      set(target, key, value) {
+        writes++;
+        return Reflect.set(target, key, value);
+      },
+    });
+    return { flags, writes: () => writes };
+  };
+
+  it('rewrites a pooled record\'s flags in place, writing nothing when they are unchanged: no length = 0 per submission per frame', () => {
+    // V8 releases an array's backing store when its length is set to 0, so resetting a flagged record's array and pushing
+    // its flags again allocated a new store for every flagged submission of every frame (~40 bytes per submission at the
+    // ledger-overhead scenes, where a quarter of the meshes cast shadows and every shadow-pass record is flagged).
+    const caster = new Mesh(box, new MeshStandardMaterial({ transparent: true }));
+    caster.castShadow = true;
+    const { flags, writes } = counted();
+    flagsInto(caster, caster.material as Material, 1, flags as never);
+    expect(flags).toEqual(['shadow-caster', 'transparent']);
+    const first = writes();
+    flagsInto(caster, caster.material as Material, 1, flags as never);
+    expect(flags).toEqual(['shadow-caster', 'transparent']);
+    expect(writes(), 'the same flags again').toBe(first);
+    caster.castShadow = false;
+    flagsInto(caster, caster.material as Material, 2, flags as never);
+    expect(flags).toEqual(['double-sided-transparent', 'transparent']);
+    (caster.material as Material).transparent = false;
+    caster.renderOrder = 0;
+    flagsInto(caster, caster.material as Material, 1, flags as never);
+    expect(flags).toEqual([]);
   });
 });
 
