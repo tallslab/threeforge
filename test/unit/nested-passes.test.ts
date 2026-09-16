@@ -697,6 +697,63 @@ function expectInstancedPasses(r: InstancedRig, label: string): void {
   }
 }
 
+describe.each(backends)('more shadow cameras in a frame than the caster bitmask has bits (webgpu: $webgpu)', ({ webgpu }) => {
+  it('falls back to appending the whole union past the 32nd camera, and still draws every caster that camera needs', () => {
+    // `bitFor` (src/compiler/instancing.ts ~379) gives each shadow camera of the frame one bit of a Uint32, and
+    // `appendCasters` (~518) uses that bit to append only the casters the camera reaches. Past the 32nd camera there is
+    // no bit left, so `bitFor` returns 0, the per-light filter is skipped, and the pass appends the frame's whole union
+    // instead — the old, conservative superset. It may draw more than the light needs, but it must never drop a caster,
+    // which is the one failure mode here that would show as a missing shadow. Nothing covered this branch.
+    const COUNT = 33;
+    const r = instancedRig({
+      webgpu,
+      nested: 'auto',
+      buffers: 'uniform',
+      // Narrow suns spread along the rows, so each reaches a different few cubes and the slices stay distinguishable.
+      lights: (cs) => Array.from({ length: COUNT }, (_, i) => sunLight(`sun-${i}`, -96 + i * 6, cs, 3)),
+    });
+    expect(r.lights).toHaveLength(COUNT);
+    r.renderer.render(r.scene, r.main);
+    expect(passLabels(r.renderer)).toEqual(['render:0', ...Array<string>(COUNT).fill('shadow:1')]);
+    // The contract every pass keeps, the fallback included: every caster its own camera needs is drawn, and nothing
+    // that no light of the frame and not the main camera reaches.
+    expectInstancedPasses(r, `${COUNT} suns`);
+
+    const [main, ...shadows] = r.renderer.passes as [FakePass, ...FakePass[]];
+    const past = shadows[32]!;
+    expect(past.light!.name, 'the 33rd shadow camera').toBe('sun-32');
+    for (const mesh of [r.unlit, r.lit]) {
+      const name = mesh === r.unlit ? 'unlit' : 'lit';
+      const held = new Set(instancedIds(r, main, mesh, `${name}, main`));
+      const ids = instancedIds(r, past, mesh, `${name}, the 33rd sun`);
+      const own = reference(r, mesh, frustumOf(past, r.cs));
+      const drawn = new Set(ids);
+      expect(
+        own.must.filter((id) => !drawn.has(id)),
+        `${name}: casters the 33rd sun needs but did not draw`,
+      ).toEqual([]);
+      // It appended the other suns' casters too, which is what the missing bit costs: the superset, not a narrowed list.
+      const foreign = [...new Set(shadows.filter((p) => p !== past).flatMap((p) => reference(r, mesh, frustumOf(p, r.cs)).must))].filter((id) => !held.has(id) && !own.may.has(id));
+      expect(foreign.length, `${name}: the other suns have casters of their own`).toBeGreaterThan(15);
+      expect(
+        foreign.filter((id) => !drawn.has(id)),
+        `${name}: past the 32nd camera the pass appends the frame's whole union`,
+      ).toEqual([]);
+    }
+    // A camera inside the 32 still gets only its own casters, so the fallback is the exception and not the new rule.
+    for (const mesh of [r.unlit, r.lit]) {
+      const name = mesh === r.unlit ? 'unlit' : 'lit';
+      const held = new Set(instancedIds(r, main, mesh, `${name}, main`));
+      const first = shadows[0]!;
+      const own = reference(r, mesh, frustumOf(first, r.cs));
+      expect(
+        instancedIds(r, first, mesh, `${name}, the 1st sun`).filter((id) => !held.has(id) && !own.may.has(id)),
+        `${name}: the 1st sun appended only the casters it reaches`,
+      ).toEqual([]);
+    }
+  });
+});
+
 const bufferPaths = ['uniform', 'vertex'] as const;
 
 describe.each(backends)('compacted InstancedMesh in nested passes (webgpu: $webgpu)', ({ webgpu }) => {
