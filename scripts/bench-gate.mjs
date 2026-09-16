@@ -6,7 +6,13 @@ import { fileURLToPath } from 'node:url';
 export const DETERMINISTIC = ['sceneSubmissions', 'gpuDraws', 'triangles', 'programs', 'overdrawOpaque', 'overdrawTransparent', 'skinnedVertices', 'shadowCasters', 'shadowTexels', 'textureBytes', 'geometryBytes', 'renderTargetBytes', 'particles', 'fillMegapixels', 'objects', 'autoUpdatedMatrices', 'shadowPassesPerFrame'];
 export const TIMING = ['renderMs', 'frameMs'];
 
-/** Lower is better for every metric. A metric fails when it is worse by `tolerance` (fraction) or more. */
+/**
+ * Lower is better for every metric. A metric fails when it is worse by `tolerance` (fraction) or more.
+ *
+ * A gated metric must also be *present* and finite in the results. Absent, `NaN`, `Infinity` or a non-number all read
+ * false through the comparison below, so without this a regression could hide as a hole in the results rather than as
+ * a worse number. A metric the baseline does not carry yet is still skipped: that is how a newly added metric lands.
+ */
 export function compare(baseline, result, { gateTiming, tolerance }) {
   const rows = [];
   const failures = [];
@@ -22,16 +28,30 @@ export function compare(baseline, result, { gateTiming, tolerance }) {
         failures.push(`${scene} ${variant}: missing from results`);
         continue;
       }
+      // Neither side carries this variant: there is nothing to compare, and nothing is missing from the results.
+      if (!res[variant]) continue;
       for (const metric of [...DETERMINISTIC, ...TIMING]) {
         const before = base[variant]?.[metric];
         const after = res[variant]?.[metric];
         const ratio = res.naive?.[metric] > 0 && res.optimized?.[metric] > 0 ? res.naive[metric] / res.optimized[metric] : null;
         rows.push({ scene, variant, metric, before, after, ratio: variant === 'optimized' ? ratio : null });
-        if (!gated.includes(metric) || before === undefined || after === undefined) continue;
+        if (!gated.includes(metric)) continue;
+        if (!Number.isFinite(after)) {
+          failures.push(`${scene} ${variant} ${metric}: ${after === undefined ? 'missing from results' : `${String(after)} is not a finite number`}`);
+          continue;
+        }
+        if (before === undefined) continue;
+        if (!Number.isFinite(before)) {
+          failures.push(`${scene} ${variant} ${metric}: baseline ${String(before)} is not a finite number`);
+          continue;
+        }
         const worse = before === 0 ? after > 0 : after >= before * (1 + tolerance) - 1e-9;
         if (worse) failures.push(`${scene} ${variant} ${metric}: ${before} -> ${after} (+${(((after - before) / (before || 1)) * 100).toFixed(1)}%)`);
       }
-      if (res[variant]?.unattributed) failures.push(`${scene} ${variant}: ${res[variant].unattributed} unattributed draws`);
+      // `unattributed` is gated at 0, so it is held to the same rule: absent or non-finite is a hole, not a zero.
+      const unattributed = res[variant].unattributed;
+      if (!Number.isFinite(unattributed)) failures.push(`${scene} ${variant} unattributed: ${unattributed === undefined ? 'missing from results' : `${String(unattributed)} is not a finite number`}`);
+      else if (unattributed) failures.push(`${scene} ${variant}: ${unattributed} unattributed draws`);
     }
   }
   return { rows, failures };

@@ -45,4 +45,51 @@ describe('bench gate', () => {
     const { failures } = compare(file(), result, { gateTiming: false, tolerance: 0.1 });
     expect(failures).toEqual([expect.stringContaining('village naive: missing from results')]);
   });
+
+  it('fails a gated metric missing from the results, so a regression cannot hide as a hole', () => {
+    const result = file();
+    delete (result.scenes.village!.naive as unknown as Record<string, unknown>).gpuDraws;
+    expect(compare(file(), result, { gateTiming: false, tolerance: 0.1 }).failures).toEqual(['village naive gpuDraws: missing from results']);
+  });
+
+  it('fails a gated metric that is not a finite number', () => {
+    for (const bad of [NaN, Infinity, -Infinity]) {
+      expect(compare(file(), file({ triangles: bad }), { gateTiming: false, tolerance: 0.1 }).failures).toEqual([`village naive triangles: ${String(bad)} is not a finite number`]);
+    }
+    for (const bad of [null, 'x']) {
+      expect(compare(file(), file({ triangles: bad as unknown as number }), { gateTiming: false, tolerance: 0.1 }).failures).toEqual([`village naive triangles: ${String(bad)} is not a finite number`]);
+    }
+  });
+
+  it('fails a non-finite baseline value instead of comparing against it', () => {
+    expect(compare(file({ triangles: NaN }), file(), { gateTiming: false, tolerance: 0.1 }).failures).toEqual(['village naive triangles: baseline NaN is not a finite number']);
+  });
+
+  it('skips a metric the baseline does not carry yet, so a newly added metric is not a failure', () => {
+    const baseline = file();
+    delete (baseline.scenes.village!.naive as unknown as Record<string, unknown>).particles;
+    expect(compare(baseline, file(), { gateTiming: false, tolerance: 0.1 }).failures).toEqual([]);
+  });
+
+  it('leaves an ungated timing metric alone when it is missing or non-finite', () => {
+    const result = file({ renderMs: NaN });
+    delete (result.scenes.village!.naive as unknown as Record<string, unknown>).frameMs;
+    expect(compare(file(), result, { gateTiming: false, tolerance: 0.1 }).failures).toEqual([]);
+    expect(compare(file(), result, { gateTiming: true, tolerance: 0.1 }).failures).toEqual(['village naive renderMs: NaN is not a finite number', 'village naive frameMs: missing from results']);
+  });
+
+  it('fails a missing or non-finite unattributed rather than reading it as zero', () => {
+    const missing = file();
+    delete (missing.scenes.village!.naive as unknown as Record<string, unknown>).unattributed;
+    expect(compare(file(), missing, { gateTiming: false, tolerance: 0.1 }).failures).toEqual(['village naive unattributed: missing from results']);
+    expect(compare(file(), file({ unattributed: NaN }), { gateTiming: false, tolerance: 0.1 }).failures).toEqual(['village naive unattributed: NaN is not a finite number']);
+  });
+
+  it('does not invent failures for a variant neither the baseline nor the results carry', () => {
+    const baseline = file();
+    const result = file();
+    delete (baseline.scenes.village as Record<string, unknown>).optimized;
+    delete (result.scenes.village as Record<string, unknown>).optimized;
+    expect(compare(baseline, result, { gateTiming: false, tolerance: 0.1 }).failures).toEqual([]);
+  });
 });
