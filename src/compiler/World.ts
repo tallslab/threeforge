@@ -389,6 +389,21 @@ export class World {
     // culling the depth of the current pass, which passes are still open and the main camera, which sprite batches
     // also sync for (see below).
     this.sceneHookRestores.push(this.passes.install(this.scene));
+    try {
+      return this.compileWithHooks(coordinateSystem, nestedPasses);
+    } catch (error) {
+      // A compile that throws leaves `compiled` false, so neither `decompile()` nor `dispose()` would ever run the
+      // uninstallers, and a retried compile would install the tracker a second time (every outermost render then runs at
+      // depth 2). Undo them on this exit path too.
+      for (const restore of this.sceneHookRestores.reverse()) restore();
+      this.sceneHookRestores = [];
+      this.passes.reset();
+      throw error;
+    }
+  }
+
+  /** The body of `compile()` once the pass tracker's scene hooks are installed. */
+  private compileWithHooks(coordinateSystem: CoordinateSystem, nestedPasses: NestedPassPolicy): CompileReport {
     // Resolved once for the whole compile: `classify` makes animated subtrees dynamic, and the freeze pass below
     // keeps them and their ancestors auto-updating. Each track costs a `PropertyBinding.findNode` walk of the graph.
     const animated = animatedRoots(this.scene, this.animations);

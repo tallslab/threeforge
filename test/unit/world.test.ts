@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AnimationClip,
   BatchedMesh,
   Box3,
   BoxGeometry,
@@ -14,6 +15,7 @@ import {
   Mesh,
   PerspectiveCamera,
   MeshStandardMaterial,
+  NumberKeyframeTrack,
   Raycaster,
   RGBAFormat,
   Scene,
@@ -258,6 +260,39 @@ describe('World.compile', () => {
     expect(batches).toHaveLength(1);
     expect((batches[0]!.material as MeshStandardMaterial).transparent).toBe(true);
     expect(batches[0]!.sortObjects).toBe(true);
+  });
+});
+
+describe('World.compile that throws', () => {
+  const hookRestores = (world: World): number => (world as unknown as { sceneHookRestores: unknown[] }).sceneHookRestores.length;
+
+  it('uninstalls the pass tracker hooks when resolving the animations throws, so a retry installs them once', () => {
+    const { scene } = mixedScene();
+    const clip = new AnimationClip('broken', 1, [new NumberKeyframeTrack('.', [0, 1], [0, 1])]);
+    const animations: AnimationClip[] = [clip];
+    const world = new World(scene, { animations });
+    expect(() => world.compile()).toThrow();
+    expect(OWN(scene, 'onBeforeRender') || OWN(scene, 'onAfterRender'), 'pass tracker hooks left installed').toBe(false);
+    expect(hookRestores(world)).toBe(0);
+    animations.length = 0;
+    world.compile();
+    expect(OWN(scene, 'onBeforeRender') && OWN(scene, 'onAfterRender'), 'pass tracker hooks installed').toBe(true);
+    expect(hookRestores(world), 'the tracker is installed once').toBe(1);
+    world.decompile();
+    expect(OWN(scene, 'onBeforeRender') || OWN(scene, 'onAfterRender')).toBe(false);
+  });
+
+  it('uninstalls the pass tracker hooks when batching throws', () => {
+    const { scene } = mixedScene();
+    class Failing extends MaterialRegistry {
+      override register(material: Material): Material {
+        throw new Error(`refused ${material.type}`);
+      }
+    }
+    const world = new World(scene, { registry: new Failing() });
+    expect(() => world.compile()).toThrow('refused');
+    expect(OWN(scene, 'onBeforeRender') || OWN(scene, 'onAfterRender'), 'pass tracker hooks left installed').toBe(false);
+    expect(hookRestores(world)).toBe(0);
   });
 });
 
