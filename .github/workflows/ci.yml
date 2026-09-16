@@ -19,8 +19,9 @@ concurrency:
 
 jobs:
   # CONTRIBUTING.md rule 4 as a check: a commit touching a rendering path carries the budget it measured.
-  # Pull requests only: three commits on fix/audit-0.9.0 predate the rule and fail it, and history is not rewritten,
-  # so that branch must reach main by a direct push. docs/release.md ("seed main with a push") says how and why.
+  # Pull requests only: six commits on fix/audit-0.9.0 fail the rule (three predate it, three were committed after it
+  # without a Budget: line), and history is not rewritten, so that branch must reach main by a direct push.
+  # docs/release.md ("seed main with a push") names them and says how and why.
   commit-rules:
     name: Budget line on every rendering commit
     if: github.event_name == 'pull_request'
@@ -90,14 +91,17 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium chromium-headless-shell
       - run: pnpm build # cli.spec.ts and mcp.spec.ts drive the built CLI in dist/
       # COVERAGE, stated so a green run is not read as more than it is (Rulings R102, R110, R121). Measured at
-      # 8f9bc12 with `pnpm exec playwright test --list [--grep-invert "@corpus|@bench"]`: the suite is 251 tests in
-      # 36 files PER PROJECT (502 across the two); this selection runs 91 per project (182 across both) in 28 files.
-      # Dropped here and covered only by the weekly full-corpus `assets.yml`: 144 @corpus tests per project and the
+      # 5bf1fdf with `pnpm exec playwright test --list [--grep-invert "@corpus|@bench"]`: the suite is 258 tests in
+      # 36 files PER PROJECT (516 across the two); this selection runs 94 per project (188 across both) in 28 files.
+      # Dropped here and covered only by the weekly full-corpus `assets.yml`: 148 @corpus tests per project and the
       # 16 @bench ones. Concretely, a green run here does NOT cover
-      #   - 14 of cli.spec.ts's 19 tests and 7 of mcp.spec.ts's 10 (the CLI/MCP agent surface on real models),
+      #   - 15 of cli.spec.ts's 20 tests and 10 of mcp.spec.ts's 13 (the CLI/MCP agent surface on real models),
       #   - ParticleBudget at all (particles.spec.ts contributes zero tests here; it opens `bossfight`, which reaches
       #     the Kenney kits through buildArena), and only the naive half of shadow-budget.spec.ts,
-      #   - arena, assets, bench, biome, crowd, vat and warmup, which contribute zero tests here.
+      #   - arena, assets, bench, biome, crowd, vat and warmup, which contribute zero tests here,
+      #   - ANY WebGPU pixel: on the webgpu leg the adapter is SwiftShader, so test/e2e/fixtures.ts turns pixelChecks
+      #     off; 23 test.skip(!forge.pixelChecks) declarations skip whole tests and the rest skip their screenshots.
+      #     WebGPU pixel parity is proven only by a local run on a native adapter (docs/release.md, step 2).
       # `--forbid-only` so a stray test.only cannot quietly shrink this selection further.
       - name: e2e without downloaded content
         run: pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "@corpus|@bench" --forbid-only

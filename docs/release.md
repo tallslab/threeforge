@@ -3,13 +3,20 @@
 ## Before anything else: seed `main` with a push, not a pull request
 
 Everything already committed locally has to reach GitHub's `main` by a **direct push**, never through a pull
-request. CI's `commit-rules` job checks that every commit touching rendering code carries a `Budget:` line, and
-three commits predate that rule and fail it: `b037656`, `451ab9f` and `4b61bd6`, all touching `src/ledger/`.
-History is not rewritten to fix them, so the job runs on pull requests only — a push is never judged, while a pull
-request carrying those commits would be red on its very first CI run, on a rule nobody had seen.
+request. CI's `commit-rules` job checks that every commit touching rendering code carries a `Budget:` line, and six
+commits on `fix/audit-0.9.0` fail it (`node scripts/commit-rules.mjs fee4a17..fix/audit-0.9.0` exits 1 and names
+them):
 
-Those three commits are on `fix/audit-0.9.0`, **not** on the local `main` (which is still at 0.8.0, an ancestor of
-that branch). So pushing the local `main` first and then opening a pull request for the audit branch is exactly the
+- three predate the rule (added in `109a209`): `b037656`, `451ab9f` and `4b61bd6`, all touching `src/ledger/`;
+- three were committed after the rule existed, in the audit's final fix wave, without a `Budget:` line: `2e9b125`
+  (`src/registry/MaterialRegistry.ts`), `efb7464` (`src/ledger/DrawCallLedger.ts`, `src/ledger/reasons.ts`) and
+  `a485e57` (`src/ledger/DrawCallLedger.ts`).
+
+History is not rewritten to fix them. The job runs on pull requests only, so a push is never judged, while a pull
+request carrying those commits would be red on its very first CI run.
+
+All six commits are on `fix/audit-0.9.0`, **not** on the local `main` (which is still at 0.8.0, `fee4a17`, an
+ancestor of that branch). So pushing the local `main` first and then opening a pull request for the audit branch is exactly the
 flow that fails. Instead: bring the branch into `main` locally (`git checkout main && git merge --ff-only
 fix/audit-0.9.0`), then `git push origin main`. After that, open pull requests as normal; each is judged only on
 the commits it adds.
@@ -18,9 +25,24 @@ the commits it adds.
 
 1. Bump `version` in `package.json` and `src/version.ts` (a unit test keeps them equal), regenerate the agent docs
    with `pnpm build:lib && node scripts/agents-md.mjs`, update `CHANGELOG.md`.
-2. `pnpm typecheck && pnpm test && pnpm build && pnpm e2e && pnpm bench` on a machine with a GPU.
-3. `npm pack --dry-run` must list `dist/cli/index.js`, `dist/cli-app/index.html`, `AGENTS.md`, `llms.txt`.
-4. Commit, tag `vX.Y.Z`, push the tag. The `publish` job in `.github/workflows/ci.yml` runs `npm publish --provenance
+2. `pnpm typecheck && pnpm test && pnpm build && pnpm e2e --grep-invert "assets\.spec\.ts" && pnpm bench` on a
+   machine with a GPU (a native WebGPU adapter: this is the only run that checks WebGPU pixels, see below), with the
+   kits and the corpus downloaded. `assets.spec.ts` is left out on purpose: it rewrites the tracked
+   `docs/assets-report*` files, and run here, with step 1's edits uncommitted, it would stamp every row with the
+   previous commit and `-dirty`. (At `5bf1fdf` that selection is 154 of the 258 tests per project.)
+3. Refresh the corpus report as a deliberate step of its own, when the release should cite a report measured on its
+   own code (0.9.0's was: commit `a485e57`, run `fix-audit-0.9.0-corpus-20260916`):
+   1. Commit step 1's edits first. `git status --short` must print nothing, or every row is stamped `-dirty`.
+   2. Pick one run id and pin it: `FORGE_RUN_ID=<version>-corpus-<yyyymmdd>`.
+   3. Run `FORGE_RUN_ID=… pnpm exec playwright test test/e2e/assets.spec.ts --project=webgl2`, then the same with
+      `--project=webgpu`, with no `FORGE_ASSETS` filter: the Markdown is rewritten only after a run that measured
+      every asset in the index.
+   4. Check that each Markdown header names that commit and run id, that every row of both JSON files carries them,
+      and whether any asset failed. A failing asset is reported in the release notes, not hidden.
+   5. Commit exactly `docs/assets-report.json`, `docs/assets-report.md`, `docs/assets-report-webgpu.json` and
+      `docs/assets-report-webgpu.md`, naming the commit, the run id and the pass count per backend, before tagging.
+4. `npm pack --dry-run` must list `dist/cli/index.js`, `dist/cli-app/index.html`, `AGENTS.md`, `llms.txt`.
+5. Commit, tag `vX.Y.Z`, push the tag. The `publish` job in `.github/workflows/ci.yml` runs `npm publish --provenance
    --access public`; it needs the `NPM_TOKEN` repository secret (an npm automation token).
 
 Consumers: `npm i -D threeforge playwright && npx playwright install chromium`, then `npx threeforge`.
@@ -49,21 +71,33 @@ job would never fire.
   Deterministic cost metrics are gated; timing is recorded only, since the runner is SwiftShader, not a GPU.
 
 **A green pull-request run is not full coverage, and should not be read as one.** The `@corpus` tag takes every
-test that needs downloaded content out of the `e2e` job. Measured at `8f9bc12` with
-`pnpm exec playwright test --list`: the suite is 251 tests in 36 files **per project** (502 across the two
-backends), of which `e2e` runs **91 per project** (182 across both) in 28 files. Not covered there:
+test that needs downloaded content out of the `e2e` job. Measured at `5bf1fdf` with
+`pnpm exec playwright test --list`: the suite is 258 tests in 36 files **per project** (516 across the two
+backends), of which `e2e` runs **94 per project** (188 across both) in 28 files; 148 per project are `@corpus` and
+16 are `@bench`. Not covered there:
 
-- 14 of `cli.spec.ts`'s 19 tests and 7 of `mcp.spec.ts`'s 10 — most of the CLI and MCP agent surface on real models;
+- 15 of `cli.spec.ts`'s 20 tests and 10 of `mcp.spec.ts`'s 13 — most of the CLI and MCP agent surface on real models;
 - `ParticleBudget` entirely (`particles.spec.ts` contributes no tests to the run) and the boss-fight half of
   `shadow-budget.spec.ts`, because both open `bossfight`, which reaches the kits through `buildArena`;
 - `arena`, `assets`, `bench`, `biome`, `crowd`, `vat` and `warmup`, which contribute no tests to the run.
+
+**The `e2e` job on `webgpu` checks no pixels at all.** A Linux runner's WebGPU adapter is SwiftShader, and capturing
+its canvas in headless Chromium drops the device, so `test/e2e/fixtures.ts` turns `pixelChecks` off for `webgpu` on
+any adapter but a native one and says so in an annotation on every such test. There, 23 `test.skip(!forge.pixelChecks)`
+declarations skip their whole test (in `bake`, `compile`, `crowd`, `freeze`, `hidden-group`, `scene-space`,
+`sprites`, `streaming`, `vat` and `warmup`), and `compile`, `character`, `occlusion` and `nested-passes` run their
+counts but skip their screenshots. `nested-passes.spec.ts` also skips a test, with the loss message, once the adapter
+reports the device lost; on macOS SwiftShader that happens after the first step, so all ten skip there, and how long a
+Linux runner keeps the device is unknown until CI first runs. The `bench` job's `webgpu` gate is SwiftShader too and
+gates counts, not pixels. **WebGPU pixel parity is therefore proven only by a local run on a native adapter** (step 2
+of the release, where `FORGE_WEBGPU` defaults to `native` off Linux); a green `webgpu` job proves counts only.
 
 Those are covered by **`.github/workflows/assets.yml`**: weekly (Mondays 04:17 UTC) and on manual dispatch, the
 full corpus on both backends. It fails when any asset misbehaves **and when any asset failed to download**: the
 fetch steps run with `FORGE_FETCH_STRICT=1`, and `assets.spec.ts` builds its tests from `corpusPlan`, which keeps a
 model whose download errored in the run (its test fails naming the error) instead of dropping it, so a partial
 fetch can no longer pass as a smaller corpus. It uploads `docs/assets-report*` as a build artifact and
-**never commits** — the tracked report files are updated by hand from that artifact. It pins
+**never commits** — the tracked report files are updated by hand, from that artifact or by step 3 of the release. It pins
 `FORGE_RUN_ID` per job so a run crossing midnight UTC does not split its id and decline to publish the Markdown.
 
 `FORGE_FETCH_STRICT=1` makes `pnpm assets` and `pnpm assets:kits` exit 1, listing every failed download, after
