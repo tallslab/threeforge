@@ -232,8 +232,9 @@ items?:    per-submission records with ledger.frame({ items: true })
   byte), the size is the one `Textures.getSize` allocates (a cube's first face, a video's frame; three's `Info` reads 1
   for a cube's image array), and explicit mipmaps are the levels three uploads (every level in a 2D texture's
   `mipmaps`, the base plus the levels in a cube's). Geometries are Σ attribute and index bytes, render targets the
-  shadow maps three has built for casting lights (none for a light whose map three never built) and the renderer's
-  half-float frame-buffer target for the viewport.
+  shadow maps three has built for casting lights (none for a light whose map three never built), the two RG half-float
+  blur targets each built non-point map holds under `VSMShadowMap`, and the renderer's half-float frame-buffer target
+  for the viewport.
   `ledger.measureMemory()` recounts now.
 - **memory.measured** is three's own `renderer.info.memory` when the estimate was made: `textures` (count and
   `texturesSize`), `geometries` (count and `attributesSize + indexAttributesSize`), `renderTargets` (count) and `bytes`

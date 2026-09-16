@@ -158,6 +158,8 @@ const INTERNAL_GEOMETRIES = 1;
 const FRAME_BUFFER_TEXTURES = 2;
 /** A non-point VSM map's two colour-only RG half-float blur targets, kept on its shadow node (ShadowNode.js ~409-410). */
 const VSM_BLUR_TEXTURES = 2;
+/** Bytes a texel of a blur target: RG half-float is 2 channels of 2 bytes (ShadowNode.js ~391, ~409-410). */
+const VSM_BLUR_TEXEL_BYTES = 4;
 
 export function geometryBytes(geometry: BufferGeometry): number {
   let bytes = geometry.index?.array.byteLength ?? 0;
@@ -224,11 +226,21 @@ export function estimateMemory(scene: Object3D, info: RendererMemoryInfo, viewpo
     // VSM blurs every map but a point light's (ShadowNode.js ~383): an array map keeps its two blur targets on the map
     // (~389-403), a plain one on its shadow node (~409-410), where only the renderer's shadow-map type tells.
     if (light.shadow.isPointLightShadow === true) return;
+    let blurTargets = 0;
     if (map._vsmShadowMapVertical || map._vsmShadowMapHorizontal) {
-      for (const blur of [map._vsmShadowMapVertical, map._vsmShadowMapHorizontal]) if (blur) allowedTextures += renderTargetTextures(blur);
+      for (const blur of [map._vsmShadowMapVertical, map._vsmShadowMapHorizontal])
+        if (blur) {
+          allowedTextures += renderTargetTextures(blur);
+          blurTargets++;
+        }
     } else if (options.shadowMapType === VSMShadowMap) {
       allowedTextures += VSM_BLUR_TEXTURES;
+      blurTargets = VSM_BLUR_TEXTURES;
     }
+    // Each blur target is a render target of its own, sized like the map it blurs. An array map's layers are left out
+    // of its bytes, as they are left out of the map's own bytes above.
+    rtCount += blurTargets;
+    rtBytes += blurTargets * light.shadow.mapSize.x * light.shadow.mapSize.y * VSM_BLUR_TEXEL_BYTES;
   });
   for (const target of options.renderTargets ?? []) if (target) allowedTextures += renderTargetTextures(target);
   let textureTotal = 0;

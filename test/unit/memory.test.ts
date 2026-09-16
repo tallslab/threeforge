@@ -198,6 +198,34 @@ describe('memory estimate', () => {
     expect(estimateMemory(arrayScene, { textures: 1 + 2 + 2 + 2, geometries: 2 }, [800, 600], { shadowMapType: VSMShadowMap }).unreferenced.textures).toBe(0);
   });
 
+  it('counts the two blur targets of each built non-point VSM map in renderTargets, from the shadow node and from an array map', () => {
+    const { scene } = sceneWithMap();
+    const sun = new DirectionalLight();
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(256, 256);
+    allocateShadowMap(sun, 256);
+    const point = new PointLight(); // VSM blurs no point-light map (ShadowNode.js ~383), so it gets no blur targets
+    point.castShadow = true;
+    point.shadow.mapSize.set(256, 256);
+    allocateShadowMap(point, 256);
+    scene.add(sun, point);
+    const info = { textures: 1 + 2 + 2 + 2 + 2, geometries: 2 };
+    const maps = 256 * 256 * 4 + 256 * 256 * 4 * 6;
+    expect(estimateMemory(scene, info, [0, 0]).renderTargets, 'no VSM: the two maps only').toEqual({ count: 2, bytes: maps });
+    // Plus the sun's two RG half-float blur targets (ShadowNode.js ~409-410): 2 channels x 2 bytes a texel.
+    expect(estimateMemory(scene, info, [0, 0], { shadowMapType: VSMShadowMap }).renderTargets).toEqual({ count: 4, bytes: maps + 2 * 256 * 256 * 4 });
+    // An array map carries its blur targets itself (ShadowNode.js ~389-403): counted from them, once.
+    const { scene: arrayScene } = sceneWithMap();
+    const tiles = new DirectionalLight();
+    tiles.castShadow = true;
+    tiles.shadow.mapSize.set(256, 256);
+    const blur = { format: RGFormat, type: HalfFloatType, depthBuffer: false };
+    Object.assign(allocateShadowMap(tiles, 256), { _vsmShadowMapVertical: new RenderTarget(256, 256, blur), _vsmShadowMapHorizontal: new RenderTarget(256, 256, blur) });
+    arrayScene.add(tiles);
+    const arrayInfo = { textures: 1 + 2 + 2 + 2, geometries: 2 };
+    expect(estimateMemory(arrayScene, arrayInfo, [0, 0], { shadowMapType: VSMShadowMap }).renderTargets).toEqual({ count: 3, bytes: 256 * 256 * 4 + 2 * 256 * 256 * 4 });
+  });
+
   it('allows the textures the caller counts for the renderer itself (options.internalTextures)', () => {
     const { scene } = sceneWithMap();
     const info = { textures: 1 + 2 + 1, geometries: 2 };
