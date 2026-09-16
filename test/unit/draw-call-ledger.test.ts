@@ -1267,8 +1267,9 @@ describe('DrawCallLedger batch-local-space hint', () => {
    */
   it('fires for a batch whose material is a subclass or carries an own function, even with no node slot set', () => {
     class Ripple extends MeshStandardNodeMaterial {
-      setupPosition(builder: unknown): unknown {
-        return positionLocal.add(positionLocal.y.mul(0.1));
+      override setupPosition(...args: Parameters<MeshStandardNodeMaterial['setupPosition']>): ReturnType<MeshStandardNodeMaterial['setupPosition']> {
+        void args;
+        return positionLocal.add(positionLocal.y.mul(0.1)) as ReturnType<MeshStandardNodeMaterial['setupPosition']>;
       }
     }
     const subclass = Object.assign(new Ripple(), { name: 'ripple' }) as unknown as Material;
