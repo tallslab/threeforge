@@ -135,23 +135,50 @@ describe('Streamer construction cost', () => {
     return { world: new World(scene, { chunkSize: 20 }), camera };
   }
 
-  /** Milliseconds to place one object during construction, best of 7: other vitest workers share the CPU, so single runs are noisy. */
-  function msPerObject(n: number): number {
-    const { world: w, camera } = spread(n);
-    let best = Infinity;
-    for (let trial = 0; trial < 7; trial++) {
-      const start = performance.now();
-      const streamer = new Streamer({ world: w, camera });
-      best = Math.min(best, (performance.now() - start) / n);
-      expect(streamer.stats().chunks).toBe(1600);
+  /**
+   * How many collection walks `run` performs. `place()` has to know which chunk an object already sits in; before the
+   * object index (d614d4e) it found that by iterating every chunk and running `findIndex` over that chunk's `placed`
+   * array, so a construction walked every chunk once per object and its cost grew with the world. Counting the two
+   * primitives such a walk needs — iterating a Map, and `Array.findIndex` — measures exactly that, with no clock in it:
+   * deterministic, instant, and unaffected by what else the machine is doing.
+   */
+  function chunkScans(run: () => void): number {
+    let scans = 0;
+    const mapProto = Map.prototype as unknown as Record<PropertyKey, (...args: unknown[]) => unknown>;
+    const arrayProto = Array.prototype as unknown as Record<PropertyKey, (...args: unknown[]) => unknown>;
+    const keys: PropertyKey[] = ['values', 'entries', 'forEach', Symbol.iterator];
+    const originals = new Map<PropertyKey, (...args: unknown[]) => unknown>();
+    for (const key of [...keys, 'findIndex'] as PropertyKey[]) {
+      const proto = key === 'findIndex' ? arrayProto : mapProto;
+      const original = proto[key]!;
+      originals.set(key, original);
+      proto[key] = function (this: unknown, ...args: unknown[]) {
+        scans++;
+        return original.apply(this, args);
+      };
     }
-    return best;
+    try {
+      run();
+    } finally {
+      for (const [key, original] of originals) (key === 'findIndex' ? arrayProto : mapProto)[key] = original;
+    }
+    return scans;
   }
 
-  it('grows by less than 2x per object from 2k to 20k objects (best of 7)', () => {
-    msPerObject(2000); // JIT warm-up
-    const small = msPerObject(2000);
-    const large = msPerObject(20_000);
-    expect(large / small, `${(small * 1000).toFixed(3)} µs at 2k, ${(large * 1000).toFixed(3)} µs at 20k`).toBeLessThan(2);
-  }, 300_000);
+  it('places every object without walking the chunks, so construction scans do not grow with the object count', () => {
+    // Built outside the counted region: only the Streamer's own construction is measured.
+    const small = spread(2000);
+    const large = spread(20_000);
+    let smallStreamer: Streamer | undefined;
+    let largeStreamer: Streamer | undefined;
+    const smallScans = chunkScans(() => void (smallStreamer = new Streamer(small)));
+    const largeScans = chunkScans(() => void (largeStreamer = new Streamer(large)));
+
+    expect(smallStreamer!.stats().chunks).toBe(1600);
+    expect(largeStreamer!.stats().chunks).toBe(1600);
+    // Ten times the objects over the same 1600 cells must cost the same number of walks. Before the index this was one
+    // walk of every chunk per placed object, so these counts were roughly the object count and grew tenfold with it.
+    expect(largeScans, `${smallScans} scans placing 2k objects, ${largeScans} placing 20k`).toBe(smallScans);
+    expect(smallScans, `${smallScans} scans placing 2k objects`).toBeLessThan(10);
+  });
 });
