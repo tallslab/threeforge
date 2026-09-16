@@ -48,7 +48,7 @@ export function summarize(doc: AgentDocument): string {
     lines.push(
       `parity ${doc.parity.diffPct.toFixed(2)}% pixels changed over ${doc.parity.views.length} view${doc.parity.views.length === 1 ? '' : 's'} (threshold ${doc.parity.threshold}%) · ${doc.parity.views.reduce((most, v) => Math.max(most, v.changedPixels), 0)} changed pixels in the worst view`,
     );
-  if (doc.compile?.bake) lines.push(`bake: ${doc.compile.bake.groups} groups · ${doc.compile.bake.inputTriangles} → ${doc.compile.bake.triangles} tris · seams ${doc.compile.bake.contactFaces} · kept coincident ${doc.compile.bake.keptCoincidentFaces ?? 0} · duplicates ${doc.compile.bake.duplicateFaces} · buried ${doc.compile.bake.buriedFaces} · welded ${doc.compile.bake.weldedVertices}`);
+  if (doc.compile?.bake) lines.push(`bake: ${doc.compile.bake.groups} groups · ${doc.compile.bake.inputTriangles} → ${doc.compile.bake.triangles} tris · seams ${doc.compile.bake.contactFaces} · kept coincident ${doc.compile.bake.keptCoincidentFaces ?? 0} · duplicates ${doc.compile.bake.duplicateFaces} · kept duplicate ${doc.compile.bake.keptDuplicateFaces ?? 0} · buried ${doc.compile.bake.buriedFaces} · welded ${doc.compile.bake.weldedVertices} · unbakeable ${doc.compile.bake.unbakeableEntries ?? 0}`);
   lines.push(...formatCostRows(frame));
   lines.push(...formatHints(frame));
   lines.push(`${doc.timings.totalMs} ms total`);

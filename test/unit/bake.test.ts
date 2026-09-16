@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BackSide, BoxGeometry, BufferGeometry, Color, DoubleSide, Float32BufferAttribute, FrontSide, Matrix4, Mesh, MeshBasicMaterial, PlaneGeometry, Raycaster, Vector3 } from 'three';
-import { bakeGeometries, type BakeEntry } from '../../src/compiler/bake.js';
+import { bakeGeometries, unbakeableAttribute, type BakeEntry } from '../../src/compiler/bake.js';
 
 /**
  * An opaque, front-side box module that casts no shadow (an entry without `opaque`, `side` or `castShadow: false` loses
@@ -556,5 +556,151 @@ describe('bakeGeometries fix round 2: outlines of overlapping or non-manifold is
       expect(report.duplicateFaces).toBe(0);
       expect(report.triangles).toBe(24);
     }
+  });
+});
+
+describe('bakeGeometries duplicate rule: a copy goes only when every coincident copy draws the same pixels', () => {
+  const red = new Color(1, 0, 0);
+  const blue = new Color(0, 0, 1);
+  const green = new Color(0, 1, 0);
+  /** Colour per output triangle, read at its first corner. */
+  const colours = (geometry: BufferGeometry): string[] => {
+    const color = geometry.getAttribute('color');
+    const index = geometry.index!;
+    return Array.from({ length: index.count / 3 }, (_, t) => {
+      const v = index.getX(t * 3);
+      return [color.getX(v), color.getY(v), color.getZ(v)].map((c) => c.toFixed(2)).join(',');
+    });
+  };
+  /** The same box with its uvs shifted: the same triangles, a different texture lookup. */
+  const shiftedUv = (): BoxGeometry => {
+    const g = new BoxGeometry(1, 1, 1);
+    const uv = g.attributes.uv!;
+    for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) + 0.25);
+    return g;
+  };
+  /** The same box with every normal tilted: the same triangles, lit differently. */
+  const tiltedNormals = (): BoxGeometry => {
+    const g = new BoxGeometry(1, 1, 1);
+    const n = g.attributes.normal!;
+    const v = new Vector3();
+    for (let i = 0; i < n.count; i++) {
+      v.fromBufferAttribute(n, i).add(new Vector3(0.3, 0.3, 0)).normalize();
+      n.setXYZ(i, v.x, v.y, v.z);
+    }
+    return g;
+  };
+
+  it('keeps and counts a duplicate whose tint differs: three draws the later copy, so neither may go', () => {
+    const { geometry, report } = bakeGeometries([box(0, 1, { color: red }), box(0, 1, { color: blue })]);
+    expect(report.duplicateFaces).toBe(0);
+    expect(report.keptDuplicateFaces).toBe(24);
+    expect(report.triangles).toBe(24);
+    // The later copy is still later in the index, as it was later in three's opaque list.
+    expect(colours(geometry).slice(12)).toEqual(Array(12).fill('0.00,0.00,1.00'));
+  });
+
+  it('still removes a duplicate whose copies are interchangeable (same tint), and counts nothing kept', () => {
+    const { report } = bakeGeometries([box(0, 1, { color: green }), box(0, 1, { color: green })]);
+    expect(report.duplicateFaces).toBe(12);
+    expect(report.keptDuplicateFaces).toBe(0);
+    expect(report.triangles).toBe(12);
+  });
+
+  it.each([
+    ['uvs', shiftedUv],
+    ['normals', tiltedNormals],
+  ] as Array<[string, () => BufferGeometry]>)('keeps and counts a duplicate whose %s differ', (_label, geometry) => {
+    const { report } = bakeGeometries([box(0), { ...box(0), geometry: geometry() }]);
+    expect(report.duplicateFaces).toBe(0);
+    expect(report.keptDuplicateFaces).toBe(24);
+    expect(report.triangles).toBe(24);
+  });
+
+  it('keeps all three copies when the middle one differs: removing the last would show the middle one', () => {
+    const { report } = bakeGeometries([box(0, 1, { color: red }), box(0, 1, { color: blue }), box(0, 1, { color: red })]);
+    expect(report.duplicateFaces).toBe(0);
+    expect(report.keptDuplicateFaces).toBe(36);
+    expect(report.triangles).toBe(36);
+  });
+
+  it('keeps both removable copies when an excluded entry (bake: false) draws the same triangles between them', () => {
+    const { report } = bakeGeometries([box(0, 1, { color: green }), box(0, 1, { color: blue, bake: false }), box(0, 1, { color: green })]);
+    expect(report.duplicateFaces).toBe(0);
+    expect(report.keptDuplicateFaces).toBe(24);
+    expect(report.triangles).toBe(36);
+  });
+
+  it('keeps both removable copies when a double-sided copy with the opposite winding draws the same triangle', () => {
+    const quad = (reversed: boolean, extra: Partial<BakeEntry>): BakeEntry => ({ ...box(0), geometry: new PlaneGeometry(1, 1), matrix: new Matrix4().makeRotationY(reversed ? Math.PI : 0), ...extra });
+    const { report } = bakeGeometries([quad(false, { color: green }), quad(true, { color: blue, side: DoubleSide, doubleSided: true }), quad(false, { color: green })]);
+    expect(report.duplicateFaces).toBe(0);
+    expect(report.keptDuplicateFaces).toBe(4);
+    expect(report.triangles).toBe(6);
+  });
+
+  it('keeps and counts a triangle repeated inside one entry with different uvs', () => {
+    const g = new PlaneGeometry(1, 1);
+    const position = Array.from(g.attributes.position!.array as Float32Array);
+    const uv = Array.from(g.attributes.uv!.array as Float32Array);
+    const doubled = new BufferGeometry();
+    doubled.setAttribute('position', new Float32BufferAttribute([...position, ...position], 3));
+    doubled.setAttribute('normal', new Float32BufferAttribute([...Array.from(g.attributes.normal!.array as Float32Array), ...Array.from(g.attributes.normal!.array as Float32Array)], 3));
+    doubled.setAttribute('uv', new Float32BufferAttribute([...uv, ...uv.map((u) => u * 0.5)], 2));
+    const index = Array.from(g.index!.array);
+    doubled.setIndex([...index, ...index.map((i) => i + 4)]);
+    const { report } = bakeGeometries([{ ...box(0), geometry: doubled }]);
+    expect(report.duplicateFaces).toBe(0);
+    expect(report.keptDuplicateFaces).toBe(4);
+    expect(report.triangles).toBe(4);
+  });
+
+  it('keeps the copies when a triangle of another triangulation lies over them in between: removing the last would show it', () => {
+    const { report } = bakeGeometries([box(0, 1, { color: red }), box(0, 1, { color: blue, geometry: retriangulated(new BoxGeometry(1, 1, 1), FACE.py) }), box(0, 1, { color: red })]);
+    // Every face but +y is on the same points in all three: those copies differ in tint. The +y face of the first and
+    // last copies is interchangeable, but the retriangulated blue face lies over it.
+    expect(report.duplicateFaces).toBe(0);
+    expect(report.keptDuplicateFaces).toBe(34);
+    expect(report.triangles).toBe(36);
+  });
+
+  it('still removes the copies of a box placed twice beside a touching box: an edge-sharing neighbour does not lie over them', () => {
+    const { report } = bakeGeometries([box(0), box(0), box(1)]);
+    expect(report.duplicateFaces).toBe(12);
+    expect(report.keptDuplicateFaces).toBe(0);
+  });
+
+  it('counts kept duplicates only while the duplicate rule is on', () => {
+    const { report } = bakeGeometries([box(0, 1, { color: red }), box(0, 1, { color: blue })], { removeDuplicateFaces: false });
+    expect(report.duplicateFaces).toBe(0);
+    expect(report.keptDuplicateFaces).toBe(0);
+  });
+});
+
+describe('unbakeableAttribute: what the bake carries faithfully', () => {
+  const withAttribute = (name: string, itemSize: number): BufferGeometry => {
+    const g = new BoxGeometry(1, 1, 1);
+    g.setAttribute(name, new Float32BufferAttribute(new Float32Array(g.attributes.position!.count * itemSize).fill(0.5), itemSize));
+    return g;
+  };
+
+  it('accepts position, normal, a three- or four-component tangent, uv to uv3 and a three-component colour', () => {
+    expect(unbakeableAttribute(new BoxGeometry(1, 1, 1))).toBeNull();
+    for (const [name, size] of [['tangent', 4], ['tangent', 3], ['uv1', 2], ['uv2', 2], ['uv3', 2], ['color', 3]] as Array<[string, number]>) {
+      expect(unbakeableAttribute(withAttribute(name, size)), `${name}:${size}`).toBeNull();
+    }
+  });
+
+  it('names a four-component colour the material reads (three multiplies its alpha into the diffuse colour), not one it ignores', () => {
+    expect(unbakeableAttribute(withAttribute('color', 4))).toBe('color');
+    expect(unbakeableAttribute(withAttribute('color', 4), true)).toBe('color');
+    expect(unbakeableAttribute(withAttribute('color', 4), false)).toBeNull();
+  });
+
+  it('names an attribute outside the carried set, and a carried one with another item size', () => {
+    expect(unbakeableAttribute(withAttribute('_feature_id_0', 1))).toBe('_feature_id_0');
+    expect(unbakeableAttribute(withAttribute('uv4', 2))).toBe('uv4');
+    expect(unbakeableAttribute(withAttribute('uv', 3))).toBe('uv');
+    expect(unbakeableAttribute(withAttribute('normal', 4))).toBe('normal');
   });
 });

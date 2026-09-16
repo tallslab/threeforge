@@ -355,3 +355,100 @@ test('touching toon boxes that cast shadows keep their seam, lit along it with s
   expect(r.bake.keptCoincidentFaces).toBe(4);
   expect(diff).toBeLessThan(0.0005);
 });
+
+test('a tinted duplicate keeps the colour three draws on top, and an interchangeable duplicate still goes', async ({ forge }) => {
+  test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+  await forge.open('empty', { bake: '1' });
+  await forge.page.evaluate(() => {
+    const f = window.__forge;
+    const T = f.three;
+    const crate = (color: number, x: number, name: string) => {
+      const mesh = new T.Mesh(new T.BoxGeometry(1.5, 1.5, 1.5), new T.MeshStandardMaterial({ color, roughness: 0.8 }));
+      mesh.position.set(x, 0.75, 0);
+      mesh.name = name;
+      (mesh.userData as { forge?: string }).forge = 'static';
+      return mesh;
+    };
+    // Two crates in one place differing only by colour, red created first: at equal depth three draws the later object
+    // (opaque items sort by object id after depth), so the naive picture is blue. Two green crates in another place are
+    // interchangeable copies. All four share one material variant, so they bake into one group.
+    f.scene.add(crate(0xd04040, -1.2, 'crate-red'), crate(0x4060d0, -1.2, 'crate-blue'), crate(0x40b060, 1.2, 'crate-green-a'), crate(0x40b060, 1.2, 'crate-green-b'));
+    const sun = new T.DirectionalLight(0xffffff, 2);
+    sun.position.set(3, 6, 5);
+    f.scene.add(new T.AmbientLight(0xffffff, 0.6), sun);
+    f.scene.updateMatrixWorld(true);
+    f.camera.position.set(2.5, 3, 6);
+    f.camera.lookAt(0, 0.75, 0);
+    f.camera.updateMatrixWorld();
+  });
+  await settle(forge.page);
+  const before = await forge.page.screenshot({ type: 'png' });
+  const r = await compileAndSettle(forge);
+  const after = await forge.page.screenshot({ type: 'png' });
+  const diff = pixelDiff(before, after, { threshold: 4 });
+  note(`[${forge.backend}] tinted and interchangeable duplicate crates: ${r.bake.duplicateFaces} duplicate faces removed, ${r.bake.keptDuplicateFaces} kept, pixel diff ${(diff * 100).toFixed(4)}%`);
+  expect(diff).toBeLessThan(0.0005);
+  expect(r.after.baked).toBe(1);
+  expect(r.submissions).toBe(1);
+  expect(r.bake.duplicateFaces).toBe(12);
+  expect(r.bake.keptDuplicateFaces).toBe(24);
+});
+
+test('vertex colours with alpha and a custom attribute a node material reads stay out of the bake, batched at parity', async ({ forge }) => {
+  test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+  await forge.open('empty', { bake: '1' });
+  await forge.page.evaluate(() => {
+    const f = window.__forge;
+    const T = f.three;
+    const TSL = f.webgpu.TSL;
+    // glTF BLEND with an RGBA COLOR_0: three multiplies the vertex colour's alpha into the diffuse alpha.
+    const glass = new T.MeshStandardMaterial({ vertexColors: true, transparent: true, roughness: 0.6 });
+    const pane = (x: number, name: string) => {
+      const geometry = new T.PlaneGeometry(1.6, 1.6);
+      const count = geometry.attributes.position!.count;
+      const rgba = new Float32Array(count * 4);
+      for (let i = 0; i < count; i++) rgba.set([i % 2 ? 1 : 0.2, 0.7, i % 2 ? 0.2 : 1, 0.3], i * 4);
+      geometry.setAttribute('color', new T.BufferAttribute(rgba, 4));
+      const mesh = new T.Mesh(geometry, glass);
+      mesh.position.set(x, 1.6, 0.5);
+      mesh.name = name;
+      return mesh;
+    };
+    // A node material colouring each vertex from an attribute the bake does not carry.
+    const painted = new f.webgpu.MeshStandardNodeMaterial({ roughness: 0.7 });
+    painted.colorNode = TSL.attribute('paint', 'vec3');
+    const block = (x: number, name: string) => {
+      const geometry = new T.BoxGeometry(1.2, 1.2, 1.2);
+      const count = geometry.attributes.position!.count;
+      const paint = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) paint.set([(i % 3) / 2, 0.8 - (i % 4) / 5, 0.4], i * 3);
+      geometry.setAttribute('paint', new T.BufferAttribute(paint, 3));
+      const mesh = new T.Mesh(geometry, painted);
+      mesh.position.set(x, 0.6, -0.5);
+      mesh.name = name;
+      return mesh;
+    };
+    const backdrop = new T.Mesh(new T.BoxGeometry(6, 4, 0.2), new T.MeshStandardMaterial({ color: 0x303848 }));
+    backdrop.position.set(0, 1.5, -2);
+    backdrop.name = 'backdrop';
+    f.scene.add(pane(-0.9, 'pane-a'), pane(0.9, 'pane-b'), block(-1.2, 'block-a'), block(1.2, 'block-b'), backdrop);
+    f.scene.traverse((o) => { if ((o as { isMesh?: boolean }).isMesh) (o.userData as { forge?: string }).forge = 'static'; });
+    const sun = new T.DirectionalLight(0xffffff, 2);
+    sun.position.set(3, 6, 5);
+    f.scene.add(new T.AmbientLight(0xffffff, 0.6), sun);
+    f.scene.updateMatrixWorld(true);
+    f.camera.position.set(0, 2, 6);
+    f.camera.lookAt(0, 1, 0);
+    f.camera.updateMatrixWorld();
+  });
+  await settle(forge.page);
+  const before = await forge.page.screenshot({ type: 'png' });
+  const r = await compileAndSettle(forge);
+  const after = await forge.page.screenshot({ type: 'png' });
+  const diff = pixelDiff(before, after, { threshold: 4 });
+  note(`[${forge.backend}] RGBA vertex colours and a custom attribute: ${r.after.baked} baked, ${r.after.batches} batches, ${r.bake.unbakeableEntries} unbakeable, pixel diff ${(diff * 100).toFixed(4)}%`);
+  expect(diff).toBeLessThan(0.0005);
+  expect(r.after.baked).toBe(0);
+  expect(r.after.batches).toBe(2);
+  expect(r.bake.unbakeableEntries).toBe(4);
+});

@@ -115,6 +115,14 @@ export interface BakeSummary {
   buriedFaces: number;
   weldedVertices: number;
   excludedEntries: number;
+  /** Faces of exactly coincident copies the duplicate rule kept because they do not all draw the same pixels (see `BakeOptions.removeDuplicateFaces`). */
+  keptDuplicateFaces: number;
+  /**
+   * Static meshes batched instead of baked because their geometry carries an attribute the bake does not carry
+   * faithfully (`unbakeableAttribute`: a four-component colour the material reads, or an attribute outside position,
+   * normal, tangent, uv to uv3 and colour).
+   */
+  unbakeableEntries: number;
 }
 
 /** What `world.onDirty` reports: the graph changed in a way that needs a new frame. */
@@ -285,6 +293,8 @@ export class World {
    */
   private ownedMaterials = new Set<Material>();
   private compiled = false;
+  /** `BatchResult.unbakeable` of the current compile. */
+  private unbakeableEntries = 0;
   private disposed = false;
   private disposing = false;
 
@@ -430,6 +440,7 @@ export class World {
     this.batches = result.batches;
     this.instanced = result.instanced;
     this.baked = result.baked;
+    this.unbakeableEntries = result.unbakeable;
     this.slots = result.slots;
     this.originalsByBatch = result.originals;
     // A batch draws with its group's canonical when every instance is white (the app's registered material, or an
@@ -932,6 +943,7 @@ export class World {
       if (b.ownsMaterial) this.releaseMaterial(b.mesh.material as Material);
     }
     this.baked = [];
+    this.unbakeableEntries = 0;
     for (const batch of this.spriteBatchList) {
       batch.mesh.removeFromParent();
       // `SpriteBatch.dispose()` would dispose this material unconditionally; `releaseMaterial` decides instead, by
@@ -1052,7 +1064,7 @@ export class World {
   }
 
   private bakeSummary(): BakeSummary {
-    const sum: BakeSummary = { groups: this.baked.length, inputTriangles: 0, triangles: 0, contactFaces: 0, keptCoincidentFaces: 0, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 0, excludedEntries: 0 };
+    const sum: BakeSummary = { groups: this.baked.length, inputTriangles: 0, triangles: 0, contactFaces: 0, keptCoincidentFaces: 0, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 0, excludedEntries: 0, keptDuplicateFaces: 0, unbakeableEntries: this.unbakeableEntries };
     for (const { report } of this.baked) {
       sum.inputTriangles += report.inputTriangles;
       sum.triangles += report.triangles;
@@ -1062,6 +1074,7 @@ export class World {
       sum.buriedFaces += report.buriedFaces;
       sum.weldedVertices += report.weldedVertices;
       sum.excludedEntries += report.excludedEntries;
+      sum.keptDuplicateFaces += report.keptDuplicateFaces;
     }
     return sum;
   }

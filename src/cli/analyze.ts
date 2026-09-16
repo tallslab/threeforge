@@ -91,11 +91,12 @@ async function captureViews(page: PlaywrightPage, views: number, timeout: number
 }
 
 /**
- * The progress line of a compile that baked: faces each rule removed, coincident faces the seam guard kept, vertices
- * welded. A report from an older threeforge has no `keptCoincidentFaces`: it prints 0.
+ * The progress line of a compile that baked: faces each rule removed, coincident faces the seam guard kept, duplicate
+ * faces the duplicate rule kept, vertices welded, and meshes batched because the bake would drop an attribute. A report
+ * from an older threeforge lacks `keptCoincidentFaces`, `keptDuplicateFaces` or `unbakeableEntries`: each prints 0.
  */
 export function bakeProgressLine(bake: BakeSummary): string {
-  return `bake: ${bake.inputTriangles} -> ${bake.triangles} triangles (${bake.contactFaces} seam, ${bake.duplicateFaces} duplicate, ${bake.buriedFaces} buried faces removed; ${bake.keptCoincidentFaces ?? 0} coincident faces kept; ${bake.weldedVertices} vertices welded)`;
+  return `bake: ${bake.inputTriangles} -> ${bake.triangles} triangles (${bake.contactFaces} seam, ${bake.duplicateFaces} duplicate, ${bake.buriedFaces} buried faces removed; ${bake.keptCoincidentFaces ?? 0} coincident and ${bake.keptDuplicateFaces ?? 0} duplicate faces kept; ${bake.weldedVertices} vertices welded; ${bake.unbakeableEntries ?? 0} meshes batched for attributes the bake drops)`;
 }
 
 async function waitReady(page: PlaywrightPage, timeout: number): Promise<AssetFacts> {

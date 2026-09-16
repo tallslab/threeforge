@@ -345,6 +345,30 @@ describe('World with bake', () => {
     expect(beforeRebake.geometry.getAttribute('position').count).toBeGreaterThan(0);
   });
 
+  it('batches instead of baking a group whose geometry carries an attribute the bake drops, and counts its meshes', () => {
+    const rgba = (): BufferGeometry => {
+      const g = new BoxGeometry(1, 1, 1);
+      g.setAttribute('color', new BufferAttribute(new Float32Array(g.attributes.position!.count * 4).fill(0.4), 4));
+      return g;
+    };
+    const extra = (): BufferGeometry => {
+      const g = new BoxGeometry(1, 1, 1);
+      g.setAttribute('_feature_id_0', new BufferAttribute(new Float32Array(g.attributes.position!.count), 1));
+      return g;
+    };
+    const alpha = new World(wall(3, new MeshStandardMaterial({ vertexColors: true, transparent: true }), rgba).scene, { bake: true }).compile();
+    expect(alpha.after).toEqual(expect.objectContaining({ baked: 0, batches: 1 }));
+    expect(alpha.groups[0]!.kind).toBe('batched');
+    expect(alpha.bake).toEqual(expect.objectContaining({ groups: 0, unbakeableEntries: 3 }));
+    const custom = new World(wall(2, new MeshStandardMaterial(), extra).scene, { bake: true }).compile();
+    expect(custom.after).toEqual(expect.objectContaining({ baked: 0, batches: 1 }));
+    expect(custom.bake).toEqual(expect.objectContaining({ groups: 0, unbakeableEntries: 2 }));
+    // The material ignores the colour attribute: nothing it reads is dropped, so the group bakes.
+    const ignored = new World(wall(3, new MeshStandardMaterial({ vertexColors: false }), rgba).scene, { bake: true }).compile();
+    expect(ignored.after).toEqual(expect.objectContaining({ baked: 1, batches: 0 }));
+    expect(ignored.bake).toEqual(expect.objectContaining({ groups: 1, unbakeableEntries: 0 }));
+  });
+
   it('keeps batch-synced dynamics in a BatchedMesh, never in a bake', () => {
     const { scene, boxes } = wall(3);
     tag.dynamic(boxes[2]!);

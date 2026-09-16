@@ -212,7 +212,7 @@ describe('summarize', () => {
   };
 
   it('prints the true skipped count, not the length of the capped skipped list (final review F3)', () => {
-    const doc = bakeDoc({ groups: 0, inputTriangles: 0, triangles: 0, contactFaces: 0, keptCoincidentFaces: 0, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 0, excludedEntries: 0 });
+    const doc = bakeDoc({ groups: 0, inputTriangles: 0, triangles: 0, contactFaces: 0, keptCoincidentFaces: 0, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 0, excludedEntries: 0, keptDuplicateFaces: 0, unbakeableEntries: 0 });
     const compile = doc.compile as unknown as { skipped: unknown[]; skippedCount: number };
     compile.skipped = Array.from({ length: 256 }, (_, i) => ({ name: `mesh-${i}`, rule: 'singleton' }));
     compile.skippedCount = 300;
@@ -220,26 +220,26 @@ describe('summarize', () => {
     expect(summarize(doc)).not.toContain('256 skipped');
   });
 
-  it('prints the bake line with the coincident faces the seam guard kept', () => {
-    const doc = bakeDoc({ groups: 1, inputTriangles: 48, triangles: 36, contactFaces: 12, keptCoincidentFaces: 4, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 10, excludedEntries: 0 });
-    expect(summarize(doc)).toContain('bake: 1 groups · 48 → 36 tris · seams 12 · kept coincident 4 · duplicates 0 · buried 0 · welded 10');
+  it('prints the bake line with the coincident and duplicate faces kept and the meshes left unbaked', () => {
+    const doc = bakeDoc({ groups: 1, inputTriangles: 48, triangles: 36, contactFaces: 12, keptCoincidentFaces: 4, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 10, excludedEntries: 0, keptDuplicateFaces: 24, unbakeableEntries: 3 });
+    expect(summarize(doc)).toContain('bake: 1 groups · 48 → 36 tris · seams 12 · kept coincident 4 · duplicates 0 · kept duplicate 24 · buried 0 · welded 10 · unbakeable 3');
   });
 
-  it('prints 0 kept coincident faces for a bake report from an older threeforge that lacks the field', () => {
+  it('prints 0 for the kept and unbaked counts of a bake report from an older threeforge that lacks the fields', () => {
     const doc = bakeDoc({ groups: 1, inputTriangles: 48, triangles: 36, contactFaces: 12, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 10, excludedEntries: 0 });
-    expect(summarize(doc)).toContain('seams 12 · kept coincident 0 · duplicates 0');
+    expect(summarize(doc)).toContain('seams 12 · kept coincident 0 · duplicates 0 · kept duplicate 0 · buried 0 · welded 10 · unbakeable 0');
   });
 });
 
 describe('analyze bake progress line', () => {
   it('counts the removed faces and the coincident faces the seam guard kept', () => {
-    const bake = { groups: 1, inputTriangles: 48, triangles: 36, contactFaces: 12, keptCoincidentFaces: 4, duplicateFaces: 1, buriedFaces: 2, weldedVertices: 10, excludedEntries: 0 };
-    expect(bakeProgressLine(bake)).toBe('bake: 48 -> 36 triangles (12 seam, 1 duplicate, 2 buried faces removed; 4 coincident faces kept; 10 vertices welded)');
+    const bake = { groups: 1, inputTriangles: 48, triangles: 36, contactFaces: 12, keptCoincidentFaces: 4, duplicateFaces: 1, buriedFaces: 2, weldedVertices: 10, excludedEntries: 0, keptDuplicateFaces: 24, unbakeableEntries: 3 };
+    expect(bakeProgressLine(bake)).toBe('bake: 48 -> 36 triangles (12 seam, 1 duplicate, 2 buried faces removed; 4 coincident and 24 duplicate faces kept; 10 vertices welded; 3 meshes batched for attributes the bake drops)');
   });
 
   it('prints 0 kept coincident faces when an older report lacks the field', () => {
     const old = { groups: 1, inputTriangles: 48, triangles: 36, contactFaces: 12, duplicateFaces: 1, buriedFaces: 2, weldedVertices: 10, excludedEntries: 0 } as unknown as Parameters<typeof bakeProgressLine>[0];
-    expect(bakeProgressLine(old)).toBe('bake: 48 -> 36 triangles (12 seam, 1 duplicate, 2 buried faces removed; 0 coincident faces kept; 10 vertices welded)');
+    expect(bakeProgressLine(old)).toBe('bake: 48 -> 36 triangles (12 seam, 1 duplicate, 2 buried faces removed; 0 coincident and 0 duplicate faces kept; 10 vertices welded; 0 meshes batched for attributes the bake drops)');
   });
 });
 

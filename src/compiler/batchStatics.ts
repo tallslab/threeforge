@@ -15,7 +15,7 @@ import {
   type Scene,
 } from 'three';
 import { NodeMaterial } from 'three/webgpu';
-import { bakeGeometries, type BakeEntry, type BakeOptions, type BakeReport } from './bake.js';
+import { bakeGeometries, unbakeableAttribute, type BakeEntry, type BakeOptions, type BakeReport } from './bake.js';
 import { createCulledInstancedMesh } from './instancing.js';
 import type { NestedPassPolicy } from './culling.js';
 import type { PassTracker } from './passTracker.js';
@@ -115,6 +115,8 @@ export interface BatchResult {
   transparentKept: Mesh[];
   /** Per batch: base geometryId -> geometryIds per LOD level (present only when lodDistances is set). */
   lodGeometryIds: Map<BatchedMesh, Map<number, number[]>>;
+  /** Statics of groups `bake` left to batching because a geometry carries an attribute the bake drops (`unbakeableAttribute`). */
+  unbakeable: number;
 }
 
 interface Group {
@@ -154,7 +156,7 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
     group.meshes.push(mesh);
   }
 
-  const result: BatchResult = { batches: [], instanced: [], baked: [], groups: [], slots: new Map(), originals: new Map(), singletons: [], transparentKept: [], lodGeometryIds: new Map() };
+  const result: BatchResult = { batches: [], instanced: [], baked: [], groups: [], slots: new Map(), originals: new Map(), singletons: [], transparentKept: [], lodGeometryIds: new Map(), unbakeable: 0 };
   const perProgramBaked = new Map<string, number>();
   const perProgram = new Map<string, number>();
   const perProgramInstanced = new Map<string, number>();
@@ -244,7 +246,11 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
       result.singletons.push(...group.meshes);
       continue;
     }
-    if (options.bake && !group.meshes.some((m) => options.noBake?.has(m))) {
+    // A group whose geometry carries data the bake would drop (a vertex colour's alpha, a custom attribute) is batched
+    // instead: BatchedMesh keeps every attribute as it is. Counted, since `bake` asked for it.
+    const bakeable = !group.meshes.some((m) => unbakeableAttribute(m.geometry, group.canonical.vertexColors) !== null);
+    if (options.bake && !bakeable && !group.meshes.some((m) => options.noBake?.has(m))) result.unbakeable += group.meshes.length;
+    if (options.bake && bakeable && !group.meshes.some((m) => options.noBake?.has(m))) {
       const index = perProgramBaked.get(programHash) ?? 0;
       perProgramBaked.set(programHash, index + 1);
       const baked = bakeGroup(group, options.bake, shareCanonical, `forge:bake:${programHash}:${index}`, space);

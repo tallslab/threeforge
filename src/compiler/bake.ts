@@ -5,7 +5,7 @@
  * pair that is not provably a seam between two solids stays, and is counted) and every removal is counted and
  * returned as geometry (`removed`) that an agent can render to check.
  */
-import { BackSide, BufferAttribute, BufferGeometry, Color, DoubleSide, FrontSide, Matrix3, Matrix4, Ray, Vector3, type Side } from 'three';
+import { BackSide, Box3, BufferAttribute, BufferGeometry, Color, DoubleSide, FrontSide, Matrix3, Matrix4, Ray, Vector3, type Side } from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 
 export interface BakeEntry {
@@ -67,7 +67,13 @@ export interface BakeOptions {
    * `keptCoincidentFaces`.
    */
   removeContactFaces?: boolean;
-  /** Keep one of several exactly coincident, same-winding triangles of opaque, front-side, non-casting entries (default true). */
+  /**
+   * Keep one of several exactly coincident, same-winding triangles of opaque, front-side, non-casting entries (default
+   * true), only when every copy draws the same pixels: each corner's normal, tangent, uvs and colour (tint included)
+   * agree within the weld tolerances, and no other triangle on the same points is excluded (`bake: false`), not
+   * removable, or a copy that differs. three draws the later of two copies at equal depth, so removing a copy that
+   * differs changes what is drawn. Every other set of copies stays and is counted in `keptDuplicateFaces`.
+   */
   removeDuplicateFaces?: boolean;
   /** Remove faces of opaque, front-side, non-casting entries that cannot be seen because opaque geometry sits right in front of them (default false). */
   removeBuried?: boolean | BuriedOptions;
@@ -86,6 +92,12 @@ export interface BakeReport {
    */
   keptCoincidentFaces: number;
   duplicateFaces: number;
+  /**
+   * Faces of exactly coincident, same-winding copies the duplicate rule kept because the copies do not all draw the same
+   * pixels (see `removeDuplicateFaces`), outside excluded entries, and that no later rule removed. 0 while
+   * `removeDuplicateFaces` is off.
+   */
+  keptDuplicateFaces: number;
   buriedFaces: number;
   degenerateFaces: number;
   excludedEntries: number;
@@ -100,6 +112,26 @@ export interface BakeResult {
   triangleOrigins: Uint32Array;
   hasColor: boolean;
   hasUv: boolean;
+}
+
+/** Item sizes of the attributes `gather` carries into the baked geometry (colour: see `unbakeableAttribute`). */
+const CARRIED: Record<string, readonly number[]> = { position: [3], normal: [3], tangent: [3, 4], uv: [2], uv1: [2], uv2: [2], uv3: [2], color: [3] };
+
+/**
+ * The first attribute of `geometry` the bake does not carry faithfully, or null: one outside `position`, `normal`,
+ * `tangent` (three or four components), `uv` to `uv3` (two) and `color` (three), or one of those with another item
+ * size. The bake writes colour as three components, so a four-component colour (glTF's RGBA `COLOR_0`) loses its alpha,
+ * which three multiplies into the diffuse colour (NodeMaterial.setupDiffuseColor reads `vertexColor()` as a vec4); it
+ * counts only when the material reads vertex colours (`vertexColors`, default true), since three ignores the attribute
+ * otherwise. Any other attribute (a custom one a node material reads with `attribute()`, feature ids) is dropped.
+ */
+export function unbakeableAttribute(geometry: BufferGeometry, vertexColors = true): string | null {
+  for (const name of Object.keys(geometry.attributes)) {
+    const size = geometry.attributes[name]!.itemSize;
+    if (name === 'color' && !vertexColors) continue;
+    if (!CARRIED[name]?.includes(size)) return name;
+  }
+  return null;
 }
 
 const DEFAULTS = { tolerance: 1e-4, normalAngle: 0.5, colorTolerance: 1 / 255, removeContactFaces: true, removeDuplicateFaces: true };
@@ -539,6 +571,81 @@ function coincidentIslands(
   return { seams, duplicates, kept };
 }
 
+/**
+ * A test over every triangle of the gathered geometry (locked and degenerate ones included): whether any triangle other
+ * than `copies` (triangles on the same points) lies within a small distance of their plane and overlaps their region
+ * there by more than `tolerance`. A triangle facing the other way is skipped when `culledOpposite` holds for its first
+ * vertex: a front-side face turned away is not drawn where the copies are. Index order is kept per triangle, so a
+ * triangle of the tree is matched to a copy by its three vertex indices.
+ */
+function overlapTest(g: Gathered, posIds: Uint32Array, tolerance: number, culledOpposite: (vertex: number) => boolean): ((copies: number[]) => boolean) & { dispose(): void } {
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new BufferAttribute(g.position, 3));
+  // MeshBVH reorders the index it is given, whole triangles at a time: give it a copy, and read vertex indices from it.
+  geometry.setIndex(new BufferAttribute(new Uint32Array(g.index), 1));
+  const bvh = new MeshBVH(geometry);
+  const index = geometry.index!.array as Uint32Array;
+  const planeDistance = Math.max(tolerance * 10, 1e-5);
+  const a = new Vector3();
+  const b = new Vector3();
+  const c = new Vector3();
+  const n = new Vector3();
+  const e1 = new Vector3();
+  const e2 = new Vector3();
+  const u = new Vector3();
+  const v = new Vector3();
+  const box = new Box3();
+  const xy = new Float64Array(12);
+  const project = (slot: number, p: Vector3, q: Vector3, r: Vector3): void => {
+    xy[slot * 6] = p.dot(u);
+    xy[slot * 6 + 1] = p.dot(v);
+    xy[slot * 6 + 2] = q.dot(u);
+    xy[slot * 6 + 3] = q.dot(v);
+    xy[slot * 6 + 4] = r.dot(u);
+    xy[slot * 6 + 5] = r.dot(v);
+  };
+  const offPlane = (p: Vector3): boolean => Math.abs(e1.copy(p).sub(a).dot(n)) > planeDistance;
+  const test = (copies: number[]): boolean => {
+    const t = copies[0]!;
+    a.fromArray(g.position, g.index[t * 3]! * 3);
+    b.fromArray(g.position, g.index[t * 3 + 1]! * 3);
+    c.fromArray(g.position, g.index[t * 3 + 2]! * 3);
+    n.copy(b).sub(a).cross(e1.copy(c).sub(a));
+    if (n.lengthSq() < 1e-20) return true;
+    n.normalize();
+    u.set(1, 0, 0);
+    if (Math.abs(n.x) > 0.9) u.set(0, 1, 0);
+    u.cross(n).normalize();
+    v.crossVectors(n, u);
+    const isCopy = (i0: number, i1: number, i2: number): boolean => {
+      for (const copy of copies) if (g.index[copy * 3] === i0 && g.index[copy * 3 + 1] === i1 && g.index[copy * 3 + 2] === i2) return true;
+      return false;
+    };
+    box.makeEmpty().expandByPoint(a).expandByPoint(b).expandByPoint(c).expandByScalar(planeDistance);
+    project(0, a, b, c);
+    let found = false;
+    bvh.shapecast({
+      intersectsBounds: (bounds) => bounds.intersectsBox(box),
+      intersectsTriangle: (triangle, i) => {
+        const i0 = index[i * 3]!;
+        const i1 = index[i * 3 + 1]!;
+        const i2 = index[i * 3 + 2]!;
+        if (isCopy(i0, i1, i2)) return false;
+        if (posIds[i0] === posIds[i1] || posIds[i1] === posIds[i2] || posIds[i0] === posIds[i2]) return false;
+        if (offPlane(triangle.a) || offPlane(triangle.b) || offPlane(triangle.c)) return false;
+        const facing = e1.copy(triangle.b).sub(triangle.a).cross(e2.copy(triangle.c).sub(triangle.a)).dot(n);
+        if (facing < 0 && culledOpposite(i0)) return false;
+        project(1, triangle.a, triangle.b, triangle.c);
+        if (!trianglesOverlap(xy, 0, 1, tolerance)) return false;
+        found = true;
+        return true;
+      },
+    });
+    return found;
+  };
+  return Object.assign(test, { dispose: () => geometry.dispose() });
+}
+
 /** Merge modules into one geometry with the removals and welds described by `options`. */
 export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}): BakeResult {
   const opts = { ...DEFAULTS, ...options };
@@ -555,6 +662,7 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
     contactFaces: 0,
     keptCoincidentFaces: 0,
     duplicateFaces: 0,
+    keptDuplicateFaces: 0,
     buriedFaces: 0,
     degenerateFaces: 0,
     excludedEntries: entries.filter((e) => e.bake === false).length,
@@ -571,28 +679,54 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
     return e.opaque === true && (e.side === FrontSide || e.side === DoubleSide);
   };
   let kept: number[] = [];
+  let keptDuplicates: number[] = [];
 
-  // 1. Position identity: vertices within `tolerance` share a posId (locked vertices keep their own).
+  // 1. Position identity: vertices within `tolerance` share a place (`placeIds`, locked vertices included) and a posId
+  // (locked vertices keep their own, so no rule joins or removes their triangles).
   const inv = 1 / opts.tolerance;
-  const posIds = new Uint32Array(vertexCount);
+  const placeIds = new Uint32Array(vertexCount);
   const posMap = new Map<string, number>();
   let nextPos = 0;
   for (let i = 0; i < vertexCount; i++) {
-    if (g.locked[i]) {
-      posIds[i] = nextPos++;
-      continue;
-    }
     const key = `${Math.round(g.position[i * 3]! * inv)},${Math.round(g.position[i * 3 + 1]! * inv)},${Math.round(g.position[i * 3 + 2]! * inv)}`;
     let id = posMap.get(key);
     if (id === undefined) posMap.set(key, (id = nextPos++));
-    posIds[i] = id;
+    placeIds[i] = id;
   }
+  const posIds = new Uint32Array(vertexCount);
+  for (let i = 0; i < vertexCount; i++) posIds[i] = g.locked[i] ? nextPos++ : placeIds[i]!;
+
+  // Whether gathered vertices `i` and `j` draw the same: normal and tangent direction within `normalAngle`, identical
+  // tangent w and uv (1e-5), colour within `colorTolerance` (the weld's own rule, `matches` below).
+  const cosTol = Math.cos((opts.normalAngle * Math.PI) / 180);
+  const sameVertex = (i: number, j: number): boolean => {
+    if (g.normal[i * 3]! * g.normal[j * 3]! + g.normal[i * 3 + 1]! * g.normal[j * 3 + 1]! + g.normal[i * 3 + 2]! * g.normal[j * 3 + 2]! < cosTol) return false;
+    if (g.tangent) {
+      const x = g.tangent[i * 4]!, y = g.tangent[i * 4 + 1]!, z = g.tangent[i * 4 + 2]!;
+      const ox = g.tangent[j * 4]!, oy = g.tangent[j * 4 + 1]!, oz = g.tangent[j * 4 + 2]!;
+      if (g.tangent[i * 4 + 3] !== g.tangent[j * 4 + 3]) return false;
+      if (x * ox + y * oy + z * oz < cosTol && (x !== ox || y !== oy || z !== oz)) return false;
+    }
+    for (const set of g.uvs) if (Math.abs(set[i * 2]! - set[j * 2]!) > 1e-5 || Math.abs(set[i * 2 + 1]! - set[j * 2 + 1]!) > 1e-5) return false;
+    if (g.color) for (let k = 0; k < 3; k++) if (Math.abs(g.color[i * 3 + k]! - g.color[j * 3 + k]!) > opts.colorTolerance) return false;
+    return true;
+  };
+  // Whether triangles `s` and `t` on the same places draw the same: each corner of `s` against the corner of `t` at its place.
+  const sameTriangle = (s: number, t: number): boolean => {
+    for (let c = 0; c < 3; c++) {
+      const i = g.index[s * 3 + c]!;
+      let j = -1;
+      for (let d = 0; d < 3; d++) if (placeIds[g.index[t * 3 + d]!] === placeIds[i]) j = g.index[t * 3 + d]!;
+      if (j < 0 || !sameVertex(i, j)) return false;
+    }
+    return true;
+  };
 
   // 2. Contact seams and duplicates on coplanar islands (see coincidentIslands).
   const removedTriangle = new Uint8Array(triangleCount);
   const triangleLocked = (t: number): boolean => g.locked[g.index[t * 3]!] === 1;
-  const candidates: number[] = [];
-  const seen = new Set<string>();
+  // Triangles on the same three places, in index order, whatever their winding or entry (locked ones included).
+  const copies = new Map<string, number[]>();
   for (let t = 0; t < triangleCount; t++) {
     const a = posIds[g.index[t * 3]!]!;
     const b = posIds[g.index[t * 3 + 1]!]!;
@@ -602,22 +736,54 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
       report.degenerateFaces++;
       continue;
     }
-    if (triangleLocked(t)) continue;
-    // Exact duplicates (same points, same winding: a module placed twice) never reach the island pass, where
-    // their shared edges would fuse the copies into one island. Only copies in entries that may lose faces count:
-    // a copy that is not opaque, front-side and non-casting neither removes nor is removed.
-    if (opts.removeDuplicateFaces && removable(g.triangleEntry[t]!)) {
-      const sorted = [a, b, c].sort((x, y) => x - y);
-      const key = `${sorted[0]},${sorted[1]},${sorted[2]}|${parity(a, b, c)}`;
-      if (seen.has(key)) {
-        removedTriangle[t] = 1;
-        report.duplicateFaces++;
+    if (!opts.removeDuplicateFaces) continue;
+    const pa = placeIds[g.index[t * 3]!]!;
+    const pb = placeIds[g.index[t * 3 + 1]!]!;
+    const pc = placeIds[g.index[t * 3 + 2]!]!;
+    // A locked triangle collapsed onto fewer places draws a sliver no copy can hide or reveal.
+    if (pa === pb || pb === pc || pa === pc) continue;
+    const sorted = [pa, pb, pc].sort((x, y) => x - y);
+    const key = `${sorted[0]},${sorted[1]},${sorted[2]}`;
+    const list = copies.get(key);
+    if (list) list.push(t);
+    else copies.set(key, [t]);
+  }
+  // Exact duplicates (same points, same winding: a module placed twice) never reach the island pass, where their
+  // shared edges would fuse the copies into one island. three draws the later of two copies at equal depth (opaque
+  // items sort by object id after depth, and a mesh draws its index in order), so a copy may go only when nothing drawn
+  // at that depth could show in its place differently:
+  // - every copy of the winding is unlocked, in an entry that may lose faces, and draws the same as the first
+  //   (`sameTriangle`), else every copy stays and is counted;
+  // - no other triangle lies in the copies' plane over their region (`drawnOver`): a copy of another triangulation, an
+  //   excluded entry's triangle, a double- or back-side one. A removable triangle of the other winding is culled wherever
+  //   these are drawn, so it does not count.
+  const sets: number[][] = [];
+  for (const list of copies.values()) {
+    if (list.length < 2) continue;
+    for (const winding of [1, -1] as const) {
+      // Winding by place: a locked triangle's posIds are its own and say nothing about its winding against the others.
+      const same = list.filter((t) => parity(placeIds[g.index[t * 3]!]!, placeIds[g.index[t * 3 + 1]!]!, placeIds[g.index[t * 3 + 2]!]!) === winding);
+      if (same.length < 2) continue;
+      if (same.every((t) => !triangleLocked(t) && removable(g.triangleEntry[t]!) && sameTriangle(same[0]!, t))) sets.push(same);
+      else for (const t of same) if (!triangleLocked(t)) keptDuplicates.push(t);
+    }
+  }
+  if (sets.length > 0) {
+    const drawnOver = overlapTest(g, posIds, opts.tolerance, (vertex) => g.locked[vertex] === 0 && removable(g.vertexEntry[vertex]!));
+    for (const same of sets) {
+      if (drawnOver(same)) {
+        keptDuplicates.push(...same);
         continue;
       }
-      seen.add(key);
+      for (let k = 1; k < same.length; k++) {
+        removedTriangle[same[k]!] = 1;
+        report.duplicateFaces++;
+      }
     }
-    candidates.push(t);
+    drawnOver.dispose();
   }
+  const candidates: number[] = [];
+  for (let t = 0; t < triangleCount; t++) if (!removedTriangle[t] && !triangleLocked(t)) candidates.push(t);
   if (opts.removeContactFaces || opts.removeDuplicateFaces) {
     // An entry may lose seam faces only when it is opaque, front-side and a closed, manifold, outward shell (computed once).
     const shells = new Int8Array(entries.length); // 0 not yet computed, 1 closed and outward, -1 not
@@ -710,11 +876,12 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
     }
   }
 
-  // Kept coincident faces that no later rule removed.
+  // Kept coincident faces and kept duplicates that no later rule removed.
   if (opts.removeContactFaces) for (const t of kept) if (!removedTriangle[t]) report.keptCoincidentFaces++;
+  for (const t of keptDuplicates) if (!removedTriangle[t]) report.keptDuplicateFaces++;
+  keptDuplicates = [];
 
   // 4. Weld: same posId, normals and tangent directions within normalAngle, identical tangent w and uv, colours within colorTolerance.
-  const cosTol = Math.cos((opts.normalAngle * Math.PI) / 180);
   const remap = new Int32Array(vertexCount).fill(-1);
   const buckets = new Map<number, number[]>(); // posId -> output vertex ids
   const outPosition: number[] = [];
