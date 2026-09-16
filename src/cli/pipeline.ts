@@ -9,6 +9,7 @@ export type StepOptions =
   | { format: TextureFormat; size: number | null; quality: number }
   | { level: 'medium' | 'high' }
   | { min: number }
+  | { tolerance: number }
   | Record<string, never>;
 
 export interface Step {
@@ -39,6 +40,14 @@ const PRESET_STEPS: Record<Preset, StepName[]> = {
   balanced: ['dedup', 'palette', 'weld', 'resample', 'prune', 'textures', 'quantize'],
   aggressive: ['dedup', 'palette', 'weld', 'simplify', 'resample', 'prune', 'textures', 'quantize'],
 };
+/**
+ * `resample` drops a keyframe when it sits within `tolerance` of the value interpolated from its neighbours.
+ * glTF-Transform's default is **1e-4, not 0** (`RESAMPLE_DEFAULTS`, `@gltf-transform/functions`), so the default is
+ * lossy however its docstring reads: on the Fox it shifted the posed silhouette by 1-5 pixels of 921,600 on *both*
+ * backends, which is what kept `safe` from being pixel-identical once `weld` had moved out. `safe` therefore
+ * resamples at tolerance 0 — exact duplicate keyframes only — while the lossy presets keep the default. Ruling R104.
+ */
+const PRESET_RESAMPLE_TOLERANCE: Record<Preset, number> = { safe: 0, balanced: 1e-4, aggressive: 1e-4 };
 const PRESET_SIMPLIFY: Record<Preset, number | null> = { safe: null, balanced: null, aggressive: 0.5 };
 const PRESET_TEXTURE_SIZE: Record<Preset, number | null> = { safe: null, balanced: 2048, aggressive: 1024 };
 
@@ -71,6 +80,8 @@ export function planSteps(input: OptimizeInput): Step[] {
         return { min: 2 };
       case 'palette':
         return { min: 5 };
+      case 'resample':
+        return { tolerance: PRESET_RESAMPLE_TOLERANCE[input.preset] };
       default:
         return {};
     }

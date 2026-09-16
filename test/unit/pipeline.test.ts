@@ -49,4 +49,17 @@ describe('planSteps', () => {
     expect(names({ steps: { weld: true } })).toEqual(['dedup', 'palette', 'weld', 'resample', 'prune']);
     expect(names({ preset: 'balanced', steps: { weld: false } })).toEqual(['dedup', 'palette', 'resample', 'prune', 'textures', 'quantize']);
   });
+
+  /**
+   * Ruling R104: glTF-Transform's `resample` defaults to `tolerance: 1e-4`, which drops keyframes that merely sit
+   * near the value interpolated from their neighbours — lossy, whatever its docstring says, and enough to move the
+   * posed silhouette by a few pixels. `safe` therefore asks for tolerance 0 explicitly. Pinned per preset because
+   * the value is the entire fix: passing no options at all would silently restore the lossy default.
+   */
+  it('resamples at tolerance 0 under safe, and at the lossy 1e-4 default under the lossy presets', () => {
+    const resampleOptions = (preset: OptimizeInput['preset']): unknown => planSteps({ ...base, preset }).find((s) => s.name === 'resample')!.options;
+    expect(resampleOptions('safe')).toEqual({ tolerance: 0 });
+    expect(resampleOptions('balanced')).toEqual({ tolerance: 1e-4 });
+    expect(resampleOptions('aggressive')).toEqual({ tolerance: 1e-4 });
+  });
 });

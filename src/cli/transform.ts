@@ -150,7 +150,10 @@ export async function applySteps(doc: Document, steps: Step[], deps: Deps, log: 
         await doc.transform(fns.simplify({ simplifier: deps.simplifier, ratio: Number(o.ratio), error: Number(o.error) }));
         break;
       case 'resample':
-        await doc.transform(fns.resample());
+        // The tolerance comes from the preset (Ruling R104): 0 in `safe`, glTF-Transform's lossy 1e-4 default in the
+        // others. Passing it explicitly is the whole fix — `fns.resample()` with no options takes 1e-4 and moves
+        // posed geometry, which is not something the pixel-identical preset may do.
+        await doc.transform(fns.resample({ tolerance: Number((o as { tolerance?: number }).tolerance ?? 1e-4) }));
         break;
       case 'prune':
         await doc.transform(fns.prune());
