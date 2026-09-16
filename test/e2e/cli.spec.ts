@@ -367,7 +367,6 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
     // indexed) and no longer in `safe` anyway; what it covers is dedup, palette and prune -- `safe`'s steps since
     // R105 moved resample out of the preset -- on a many-material asset, where safe does measure 0 on both backends.
     const r = run(['optimize', asset('Buggy'), '--out', join(dir, 'buggy.glb'), '--parity', '0', '--backend', forge.backend, '--frames', '3', '--views', '1', '--json']);
-    expect(r.status, r.stderr).toBe(0);
     const doc = JSON.parse(r.stdout);
     expect(doc.stats.before.materials).toBe(148);
     expect(doc.stats.after.materials).toBe(1);
@@ -383,7 +382,29 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
       expect(v.diffPct, `${v.view}: --preset safe changed pixels`).toBe(0);
     }
     expect(doc.verify.parity.pass).toBe(true);
-    expect(doc.verdict.pass).toBe(true);
+
+    // CONTRIBUTING.md rule 7 is the block above and it holds: `safe` is pixel-identical on the Buggy, every view exactly 0
+    // changed pixels, on both backends. What follows is a *different* check, and this test is where the difference
+    // first became visible. Since R156's fix (independent review), `--parity 0` also bounds each file's own compile
+    // parity, and compiling the Buggy with threeforge moves a pixel or two of 921,600 — measured from the built
+    // binary, twice per backend, stable: webgl2 [1, 1], webgpu [0, 2], on the ORIGINAL file as much as on the
+    // optimized one. `threeforge analyze Buggy.glb --parity 0` already failed for exactly this before any of this
+    // work; all that changed is that `optimize --parity 0` now agrees with `analyze --parity 0` instead of holding
+    // its sibling checks at 0.5 % and reporting a pass. So the run exits 1, on that one reason, with the rewrite
+    // itself proven lossless above.
+    const compileDrift = (side: 'original' | 'optimized'): number[] => (doc.verify[side].parity.views as Array<{ changedPixels: number }>).map((v) => v.changedPixels);
+    expect(doc.verify.original.parity.threshold).toBe(0);
+    expect(doc.verify.optimized.parity.threshold).toBe(0);
+    test.info().annotations.push({ type: 'parity', description: `[${forge.backend}] Buggy compile drift: original ${JSON.stringify(compileDrift('original'))}, optimized ${JSON.stringify(compileDrift('optimized'))}` });
+    // Symmetric (the rewrite did not cause it) and tiny (well inside the 0.5 % that used to hide it).
+    expect(compileDrift('optimized')).toEqual(compileDrift('original'));
+    for (const changed of [...compileDrift('original'), ...compileDrift('optimized')]) expect(changed).toBeLessThanOrEqual(4);
+    expect(Math.max(...compileDrift('optimized')), 'if this reaches 0 the run should pass; drop the exit-1 expectation below').toBeGreaterThan(0);
+    expect(doc.verdict.pass).toBe(false);
+    expect(doc.verdict.reasons).toHaveLength(1);
+    // The reason names the raw count, not only the rounded percent, which reads 0.00 % for a change this small (R108).
+    expect(doc.verdict.reasons[0]).toMatch(/^the optimized file lost pixel parity when compiled \(\d+ changed pixels in the worst view, 0\.00%\)$/);
+    expect(r.status, r.stderr).toBe(1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

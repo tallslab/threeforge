@@ -1341,8 +1341,13 @@ swaps change data, not draw calls.
   render. The original's compile parity is reported and never judged. `--parity` governs the comparison of the two
   files as loaded; at the default 0.5 a compile of the optimized file that moves up to 0.5 % of its pixels still
   passes, visible only in `verify.optimized.parity.views[].changedPixels`. At `--parity 0` the compile checks are
-  bounded at zero too, so such a compile now fails — which is the information that run asked for. Deltas are never
-  judged: a palette texture can grow a file that then draws in one call.
+  bounded at zero too, so such a compile now fails — which is the information that run asked for, but note that it is
+  a statement about the **asset and threeforge's batching**, not about the rewrite: `verify.parity` is the rewrite.
+  The Buggy is the worked example: `--preset safe` is pixel-identical between its two files (every view 0 changed
+  pixels on both backends), while compiling either file moves 1 px on webgl2 and 2 px of 921,600 on webgpu, so
+  `optimize Buggy.glb --parity 0` exits 1 on the compile check — exactly as `analyze Buggy.glb --parity 0` already
+  did. The verdict reason names the raw count as well as the rounded percent, which reads 0.00 % at this size.
+  Deltas are never judged: a palette texture can grow a file that then draws in one call.
 - **Limits**: no atlasing across materials that differ by textures (the biome case still needs one batch per
   texture set), no KTX2 encoding (needs `toktx`), no `MSFT_lod` chains, no Draco output.
 

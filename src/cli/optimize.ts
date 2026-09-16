@@ -247,6 +247,13 @@ export function judgeOptimize(before: AssetStats, after: AssetStats, verify: Opt
     if (b.skinned < a.skinned) reasons.push(`the harness loaded ${b.skinned} of ${a.skinned} skinned meshes`);
     if (b.morph < a.morph) reasons.push(`the harness loaded ${b.morph} of ${a.morph} morph meshes`);
   }
-  if (verify.optimized.parity && !verify.optimized.parity.pass) reasons.push(`the optimized file lost pixel parity when compiled (${verify.optimized.parity.diffPct.toFixed(2)}%)`);
+  // The raw count as well as the percent (Ruling R108): `diffPct` is rounded, so at `--parity 0` — which now reaches
+  // this check too — a reason reading "0.00%" would say nothing about what actually moved. The count is what the
+  // threshold was judged on, and it is what tells a reader whether this is threeforge's own sub-pixel batching drift
+  // or a real loss from the rewrite.
+  if (verify.optimized.parity && !verify.optimized.parity.pass) {
+    const worst = Math.max(0, ...verify.optimized.parity.views.map((view) => view.changedPixels));
+    reasons.push(`the optimized file lost pixel parity when compiled (${worst} changed pixels in the worst view, ${verify.optimized.parity.diffPct.toFixed(2)}%)`);
+  }
   return { pass: reasons.length === 0, budget: optimized.budget, errors: optimized.errors, reasons: [...new Set(reasons)] };
 }
