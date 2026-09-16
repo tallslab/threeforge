@@ -52,9 +52,20 @@ that marker. Skinned parts sharing a skeleton or not both work (each part reads 
 
 What it does not do: per-instance clip blending (one clip per instance, switch with `setClipAt`), root motion,
 and frustum culling per instance (`frustumCulled = false`; use it for crowds that stay mostly on screen or split
-large crowds by region). The measured overdraw (`ledger.measureOverdraw`) counts animated instances in their animated
-pose: its count material is a node material, and three's override copies each material's `positionNode` onto it, so
-an instance covers the pixels its current frame covers, as a skinned original at the same time does.
+large crowds by region). Three more limits predate this module and still hold:
+
+- **The prototype must not move after baking.** Each part's `bind` / `bindInverse` uniforms wrap the prototype's
+  **live** `bindMatrix` and `bindMatrixInverse`, so moving, turning or scaling the prototype after
+  `bakeAnimationTexture` shifts every character drawn from it. The per-part offset is not affected: it reads the
+  baked `animation.parts[k].matrix` copy, not the prototype.
+- **Non-uniform scale shades wrongly.** Normals are turned by `mat3(model)`, which is correct only under a uniform
+  scale.
+- **Detached bind mode is not reproduced.** A part whose `SkinnedMesh` used `DetachedBindMode` draws as if it had
+  been attached.
+
+The measured overdraw (`ledger.measureOverdraw`) counts animated instances in their animated pose: its count material
+is a node material, and three's override copies each material's `positionNode` onto it, so an instance covers the
+pixels its current frame covers, as a skinned original at the same time does.
 
 ## Reading the section
 

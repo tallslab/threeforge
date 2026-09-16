@@ -39,8 +39,8 @@ Keys are computed at registration; a material mutated later is not re-keyed.
 - Every render-object function three installs, including `ShadowNode`'s, ends in `renderer.renderObject(...)`.
   The ledger replaces `renderObject` and `render` on the renderer **instance** and never touches
   `setRenderObjectFunction`, which `ShadowNode` swaps and restores every shadow pass.
-- `renderAsync` (deprecated since r181) is `await this.init()` followed by `this.render(scene, camera)`, so its frame
-  enters the patched `render` once, after the await; the ledger leaves it alone (a unit test checks three's source).
+- `renderAsync` (deprecated since r181) needs no patch of its own: the ledger leaves it alone, and a unit test checks
+  three's source for that. The mechanism is stated once, in `docs/threeforge.md` section 4 ("How it hooks in").
 - The outermost `render()` is a frame; nested `render()` calls are passes. A pass is `shadow:<light>` when its
   camera is a light's shadow camera, `override` under `scene.overrideMaterial`, `fullscreen` for non-Scene roots
   (post-processing quads), `main` for the frame's first Scene, `scene:<name>` for further scenes.

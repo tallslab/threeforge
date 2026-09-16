@@ -62,6 +62,25 @@ scene whose reachable textures never rendered reads low, never high: the count i
 has been on screen. It is recounted with the graph statistics (at most every 60 frames);
 `ledger.measureMemory()` recounts now.
 
+### Limits of the count
+
+three's `DFGLUT.js` keeps its lookup texture in a module variable it does not export. It *is* reachable through
+private internals (`DFGLUT.shaderNode.jsFunc`), but the ledger matches `info.createTexture` / `destroyTexture`
+against three's own name for it instead, because relying on those internals is fragile across revisions. Each limit
+below is bounded, and none of them is a leak:
+
+- An app `DataTexture` named exactly `DFG_LUT`, uploaded while the ledger is attached, is counted as three's and
+  hides at most one texture.
+- After `renderer.dispose()`, which zeroes `info.memory` without calling `destroyTexture`, the LUT count stays stale
+  until `detach()`, hiding at most one texture.
+- Right after a `renderer.shadowMap.type` change, the VSM allowance can be off by 2 until the next render.
+- Detach two ledgers attached to one renderer in **reverse attach order**. The second `attach()` wraps the wrappers
+  the first installed, for `info` and `render` alike, so detaching first-in-first-out restores a stale wrapper.
+- Tiled shadows (three's `TileShadowNode` addon) keep their tile lights outside the scene, so the reachable-resource
+  walk never sees those lights' array maps: such a scene over-reports `memory.unreferenced.textures`.
+- Array shadow maps under-report `memory.renderTargets.bytes` by their layer count, for the map and its VSM blur
+  targets alike (both are sized from width and height alone). No scene in the repo uses one.
+
 ## Streamer
 
 ```ts

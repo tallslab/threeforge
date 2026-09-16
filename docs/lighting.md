@@ -61,5 +61,20 @@ and keep one small map for the dynamics.
 | `point-light-shadow` hint | six faces per frame for one light | a spot light, or `ShadowBudget` on phones |
 | `shadowCasters` high after `compile()` | casters are not batched (it counts objects: a batch is one) | tag statics, check the compile report |
 
+**What each number covers.** `lights` and `shadowLights` describe the **main pass only**: the lights three projected
+for it. `shadowPasses`, `shadowSubmissions`, `shadowCasters` and `shadowTexels` cover every scene of the frame, nested
+scenes included. An object casting for several lights counts **once** in `shadowCasters` (a point light's six faces
+count once too), and a `BatchedMesh` or `InstancedMesh` is one caster whatever it draws.
+
+**`shadowTexels` is per frame, so the hint alternates.** A frozen or quantized map adds its texels only on the frames
+it actually renders on, so with a `DayNight` stepping the map every second frame the `shadow-texels` hint and the
+overlay appear on those frames and not on the others. A single-frame `inspect` therefore depends on which frame it
+lands on: average over a few frames before acting on it.
+
 Shadow pass ids are `shadow:<light name>`; lights that share a name get `shadow:<name>#1`, `#2`, …, so name lights
-you want to find in `passes`. With `VSMShadowMap`, `shadow:<id>:vsm` holds the map's two blur quads (renderer-internal).
+you want to find in `passes`. An id is not stable across frames: a light keeps the bare `shadow:lamp` only while no
+other shadow-casting light of its scene shares that name, so hiding a namesake, or turning its `castShadow` off,
+moves the id between `shadow:lamp` and `shadow:lamp#1`. Numbering is per scene, and an id another scene already took
+moves on to the next free number: two `sun` lights in the main scene become `shadow:sun#1` and `shadow:sun#2`, while a
+uniquely named `sun` in a nested scene keeps `shadow:sun`. With `VSMShadowMap`, `shadow:<id>:vsm` holds the map's two
+blur quads (renderer-internal).
