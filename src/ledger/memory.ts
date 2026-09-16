@@ -221,7 +221,10 @@ export function estimateMemory(scene: Object3D, info: RendererMemoryInfo, viewpo
     const map = light.isLight && light.castShadow ? light.shadow?.map : null;
     if (!map || !light.shadow) return;
     rtCount++;
-    rtBytes += light.shadow.mapSize.x * light.shadow.mapSize.y * 4 * (light.isPointLight ? 6 : 1);
+    // A point light's target is a cube three allocates from the map's width alone, six faces at width x width
+    // (PointShadowNode.js:227, :254), so its bytes are the texels `lighting.shadowTexels` counts for it, times 4.
+    const size = light.shadow.mapSize;
+    rtBytes += light.isPointLight ? size.x * size.x * 4 * 6 : size.x * size.y * 4;
     allowedTextures += renderTargetTextures(map);
     // VSM blurs every map but a point light's (ShadowNode.js ~383): an array map keeps its two blur targets on the map
     // (~389-403), a plain one on its shadow node (~409-410), where only the renderer's shadow-map type tells.

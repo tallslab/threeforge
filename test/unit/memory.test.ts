@@ -226,6 +226,19 @@ describe('memory estimate', () => {
     expect(estimateMemory(arrayScene, arrayInfo, [0, 0], { shadowMapType: VSMShadowMap }).renderTargets).toEqual({ count: 3, bytes: 256 * 256 * 4 + 2 * 256 * 256 * 4 });
   });
 
+  it("sizes a point light's shadow target by its map width on every face, agreeing with lighting.shadowTexels", () => {
+    const { scene } = sceneWithMap();
+    const lamp = new PointLight();
+    lamp.castShadow = true;
+    lamp.shadow.mapSize.set(512, 128); // non-square: three allocates the cube target from the width alone
+    allocateShadowMap(lamp, 512);
+    scene.add(lamp);
+    // three renders all six faces at 512 x 512 (PointShadowNode.js:227, :254), so the target is width x width x 6,
+    // which is exactly the texel count `lighting.shadowTexels` reports for this light, at 4 bytes a texel.
+    const texels = 512 * 512 * 6;
+    expect(estimateMemory(scene, { textures: 1 + 2 + 2, geometries: 2 }, [0, 0]).renderTargets).toEqual({ count: 1, bytes: texels * 4 });
+  });
+
   it('allows the textures the caller counts for the renderer itself (options.internalTextures)', () => {
     const { scene } = sceneWithMap();
     const info = { textures: 1 + 2 + 1, geometries: 2 };
