@@ -206,7 +206,11 @@ Documented in `docs/threeforge.md` (section 14 lists them), not fixed in 0.9.0:
   `a485e57` with run id `fix-audit-0.9.0-corpus-20260916`: 104 of 104 models pass on webgl2 and on webgpu (native
   Metal), with no table value changed from the 2026-09-13 report; every JSON row now carries that commit and run id.
   Its `diff` is the changed-pixel percentage at a per-channel tolerance of 24, rounded to two decimals, so a `diff` of
-  0 means under 0.005 %, not zero changed pixels.
+  0 means under 0.005 %, not zero changed pixels. On native WebGPU, `diff` for texture-heavy rows
+  (`polyhaven-CoffeeCart_01`, `Sponza`) varies by up to ~0.04 % between regenerations — capture-side texture/mip
+  residency noise on the Metal adapter that the fixed three-frame warm-up does not bound, not a rendering difference,
+  and still far under the 0.5 % gate; bounding texture residency before capture is a harness improvement not yet
+  made.
 - docs: pixel and size claims now say what their tests enforce. `optimize --preset`'s description (CLI, MCP,
   AGENTS.md, README) no longer says `safe` "never changes a pixel" and "no step costs bytes"; it states the
   measurement (0 changed pixels on the Fox and the Buggy) and what `palette` adds. `optimize --parity`'s description

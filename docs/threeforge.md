@@ -26,7 +26,11 @@ step 3); the current one was generated from 0.9.0 code at commit `a485e57`, run 
 passes 104 of 104 models on each backend: 0 unattributed draws, decompile restoring the naive count, and under 0.5 %
 of the pixels of one view changed at a per-channel tolerance of 24. Its `diff` column is that percentage rounded to
 two decimals, so the 0 every row reads means under 0.005 %, not zero changed pixels. Pixel claims below state the
-bound their test enforces.
+bound their test enforces. On native WebGPU, texture-heavy rows (`polyhaven-CoffeeCart_01`, `Sponza`) can show a
+non-zero `diff` of up to ~0.04 % that moves between regenerations with no code change: the two screenshots land at
+different points in the Metal adapter's texture and mip residency settling, which the fixed three-frame warm-up does
+not bound, so this is capture-side noise rather than a rendering difference and stays two orders of magnitude under
+the 0.5 % gate. Bounding texture residency before capture is a harness improvement not yet made.
 
 Principles: three.js renders; a wrong deletion is visible and a missed one is invisible (so every removal is
 conservative, counted and reversible); measurements are real, never estimated where a measurement is possible;
