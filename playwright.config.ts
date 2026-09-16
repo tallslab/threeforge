@@ -19,7 +19,18 @@ export default defineConfig<ForgeOptions>({
   webServer: [
     { command: 'pnpm exec vite --config vite.config.ts', url: 'http://localhost:5179', reuseExistingServer: true, timeout: 30_000 },
     // The device bench page (test/e2e/bench-app.spec.ts); its public dir is filled from the downloaded kits first.
-    { command: 'node scripts/bench-app-assets.mjs && pnpm exec vite --config vite.bench.config.ts', url: 'http://localhost:5180', reuseExistingServer: true, timeout: 60_000 },
+    // FORGE_BENCH_APP_OPTIONAL=1 (Ruling R101): a `webServer` command that exits non-zero fails the WHOLE Playwright
+    // run, not one spec, and bench-app-assets.mjs exits 1 without the Kenney kits. With the flag it warns and serves
+    // an empty kit index instead, so a kit-less runner still runs every non-corpus test; `village` and `rpg` — all
+    // this spec measures — are procedural, and `crowd`/`lake` fail closed rather than measuring absent assets.
+    // `pnpm build:bench-app` (the Pages deploy) does not set it and still fails hard.
+    {
+      command: 'node scripts/bench-app-assets.mjs && pnpm exec vite --config vite.bench.config.ts',
+      url: 'http://localhost:5180',
+      reuseExistingServer: true,
+      timeout: 60_000,
+      env: { FORGE_BENCH_APP_OPTIONAL: '1' },
+    },
   ],
   projects: [
     {
