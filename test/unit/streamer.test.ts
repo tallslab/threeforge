@@ -1,11 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BoxGeometry, DataTexture, Mesh, MeshStandardMaterial, PerspectiveCamera, RGBAFormat, Scene, UnsignedByteType } from 'three';
+import { BoxGeometry, DataTexture, Mesh, MeshStandardMaterial, PerspectiveCamera, RGBAFormat, Scene, UnsignedByteType, type Object3D } from 'three';
 import { World } from '../../src/compiler/World.js';
 import { Streamer } from '../../src/streaming/Streamer.js';
 import { tag } from '../../src/tags.js';
 
 const box = new BoxGeometry();
 const tex = () => new DataTexture(new Uint8Array(16), 2, 2, RGBAFormat, UnsignedByteType);
+
+/** Every object the streamer still holds in a chunk. */
+const placed = (streamer: Streamer): Object3D[] =>
+  [...(streamer as unknown as { chunks: Map<string, { placed: Array<{ object: Object3D }> }> }).chunks.values()].flatMap((c) => c.placed.map((p) => p.object));
+
+/** The chunk the streamer's object index maps an object to, if any. */
+const indexed = (streamer: Streamer, object: Object3D): unknown => (streamer as unknown as { index: WeakMap<Object3D, unknown> }).index.get(object);
 
 /** Cells 0..3 along x (chunkSize 20): two batched meshes per cell plus one unique ground tile per cell; tiles 0 and 2 share a texture. */
 function world() {
@@ -77,6 +84,25 @@ describe('Streamer', () => {
     expect((batch as unknown as { _matricesTexture: unknown })._matricesTexture).toBeTruthy(); // not BatchedMesh.dispose()
   });
 
+  it('releases its chunks and its object index on dispose, so a decompiled World is not kept alive by the streamer', () => {
+    const { scene, camera, world: w, tiles } = world();
+    const streamer = new Streamer({ world: w, camera, radius: 5, margin: 0 }); // only cell 0 stays
+    streamer.update();
+    expect(streamer.stats().chunks).toBe(4);
+    const batch = w.chunks().get('3,0,0')![0]!;
+    w.decompile();
+    streamer.dispose();
+    // Residency is restored first: what the streamer removed is back under the parent it had.
+    expect(tiles[3]!.parent).toBe(scene);
+    // Then the streamer lets go: no chunk, no placed object, and nothing of the decompiled World left in the index.
+    expect(streamer.stats()).toMatchObject({ chunks: 0, resident: 0 });
+    expect(placed(streamer)).toEqual([]);
+    expect(indexed(streamer, batch)).toBeUndefined();
+    expect(indexed(streamer, tiles[3]!)).toBeUndefined();
+    streamer.update(); // nothing left to load or unload
+    expect(streamer.stats()).toMatchObject({ chunks: 0, resident: 0 });
+  });
+
   it('honours assign, userData.forgeStream = false, and dispose restores everything', () => {
     const { scene, camera, world: w, tiles } = world();
     tiles[2]!.userData.forgeStream = false;
@@ -92,4 +118,40 @@ describe('Streamer', () => {
     expect(tiles[3]!.parent).toBe(scene);
     expect(w.chunks().get('3,0,0')![0]!.parent).toBe(scene);
   });
+});
+
+describe('Streamer construction cost', () => {
+  /** `n` static meshes over a 40 x 40 grid of cells in an uncompiled chunked World: construction places every one of them. */
+  function spread(n: number): { world: World; camera: PerspectiveCamera } {
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    for (let i = 0; i < n; i++) {
+      const mesh = tag.static(new Mesh(box, material));
+      mesh.position.set((i % 40) * 20, 0, (Math.floor(i / 40) % 40) * 20);
+      scene.add(mesh);
+    }
+    const camera = new PerspectiveCamera(60, 1, 0.1, 10_000);
+    camera.updateMatrixWorld();
+    return { world: new World(scene, { chunkSize: 20 }), camera };
+  }
+
+  /** Milliseconds to place one object during construction, best of 7: other vitest workers share the CPU, so single runs are noisy. */
+  function msPerObject(n: number): number {
+    const { world: w, camera } = spread(n);
+    let best = Infinity;
+    for (let trial = 0; trial < 7; trial++) {
+      const start = performance.now();
+      const streamer = new Streamer({ world: w, camera });
+      best = Math.min(best, (performance.now() - start) / n);
+      expect(streamer.stats().chunks).toBe(1600);
+    }
+    return best;
+  }
+
+  it('grows by less than 2x per object from 2k to 20k objects (best of 7)', () => {
+    msPerObject(2000); // JIT warm-up
+    const small = msPerObject(2000);
+    const large = msPerObject(20_000);
+    expect(large / small, `${(small * 1000).toFixed(3)} µs at 2k, ${(large * 1000).toFixed(3)} µs at 20k`).toBeLessThan(2);
+  }, 300_000);
 });

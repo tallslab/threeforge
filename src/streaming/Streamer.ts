@@ -56,6 +56,11 @@ export class Streamer {
   private readonly radius: number;
   private readonly margin: number;
   private readonly chunks = new Map<string, Chunk>();
+  /**
+   * The chunk each placed object sits in, so placing one costs a lookup instead of a scan of every chunk. Weak on
+   * purpose: the index alone never keeps an object alive, so the batches a `World.decompile()` drops are not held by it.
+   */
+  private readonly index = new WeakMap<Object3D, Chunk>();
   private readonly listeners = new Set<(event: StreamerEvent) => void>();
   private loads = 0;
   private unloads = 0;
@@ -95,16 +100,18 @@ export class Streamer {
   private place(object: Object3D, cellIn: [number, number, number]): void {
     // Streaming is horizontal: chunks are keyed by x and z, so a tile below y = 0 joins the batches above it.
     const cell: [number, number, number] = [cellIn[0], 0, cellIn[2]];
-    for (const chunk of this.chunks.values()) {
-      const i = chunk.placed.findIndex((p) => p.object === object);
-      if (i < 0) continue;
-      chunk.placed.splice(i, 1);
-      chunk.resources = this.resourcesOf(chunk);
+    // An object is placed in at most one chunk, so only the one the index names has to give it up.
+    const previous = this.index.get(object);
+    if (previous) {
+      const i = previous.placed.findIndex((p) => p.object === object);
+      if (i >= 0) previous.placed.splice(i, 1);
+      previous.resources = this.resourcesOf(previous);
     }
     const key = cell.join(',');
     let chunk = this.chunks.get(key);
     if (!chunk) this.chunks.set(key, (chunk = { key, cell, placed: [], resources: emptyResourceSets(), resident: true }));
     chunk.placed.push({ object, parent: object.parent });
+    this.index.set(object, chunk);
     collectResources(object, chunk.resources);
     if (!chunk.resident) object.removeFromParent();
   }
@@ -181,13 +188,16 @@ export class Streamer {
     for (const listener of this.listeners) listener(event);
   }
 
-  /** Every chunk resident again; listeners dropped. */
+  /** Every chunk resident again, then the chunks and the index released (`stats()` reports none) and listeners dropped. */
   dispose(): void {
     for (const chunk of this.chunks.values()) {
       if (chunk.resident) continue;
       for (const p of chunk.placed) p.parent?.add(p.object);
       chunk.resident = true;
     }
+    // Let go of the World's objects: a disposed Streamer holds none of what a later `decompile()` wants to drop.
+    for (const chunk of this.chunks.values()) for (const p of chunk.placed) this.index.delete(p.object);
+    this.chunks.clear();
     this.listeners.clear();
   }
 }

@@ -869,7 +869,9 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
   `camera.far`), unloaded past `radius + margin × chunkSize` (first update strict). Unload removes the objects and
   disposes the geometries and textures no resident chunk shares, including a BatchedMesh's matrix, indirect and
   colour textures (never `BatchedMesh.dispose()`, which nulls them); load re-adds them and three re-uploads. `assign`,
-  `userData.forgeStream = false`, `stats()`, `onChange`, `dispose()`. `ledger.attachStreamer(streamer)`.
+  `userData.forgeStream = false`, `stats()`, `onChange`, `dispose()` (every chunk resident again, then the chunks and
+  the object index released, so a disposed Streamer holds none of the World's objects and `stats()` reports none).
+  `ledger.attachStreamer(streamer)`.
 - **Ledger**: `memory.unreferenced`, `memory.chunks`, `memory.measured`; budget `geometryBytes` (256 / 96 / 48 MB); hints
   `geometry-bytes` and `unreferenced-resources` (eight or more). Authoring notes: `docs/memory.md`.
 - **Bench**: zen's ground is 64 tiles with a 512² texture each (85 MB) under fog to 600 m; the optimized variant
