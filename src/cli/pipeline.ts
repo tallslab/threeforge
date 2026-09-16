@@ -26,12 +26,6 @@ export interface Step {
  * can move a pixel does not belong in the preset that promises none, so weld rides with the lossy steps in
  * `balanced` and `aggressive`; `--weld` adds it back to any preset.
  *
- * `safe` is not bit-exact yet either, and this move does not make it so: `resample` takes glTF-Transform's default
- * `tolerance: 1e-4` (see `applySteps` in transform.ts), which drops keyframes within that distance and shifts the
- * Fox's posed silhouette by 1-5 pixels of 921,600 on *both* backends — under the reported figure's three-decimal
- * rounding on WebGL2, 0.001 % on one WebGPU view. `resample({ tolerance: 0 })` or a second preset move would close
- * it; see `test/e2e/cli.spec.ts` and the task-42 report.
- *
  * Measured cost of this move over 66 readable corpus assets: weld merges vertices on 11 and shrinks the file by
  * more than 0.5 % on 9, median 0.00 %.
  *
