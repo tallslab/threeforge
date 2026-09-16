@@ -70,6 +70,12 @@ export const SNAPSHOT_SCHEMA = {
   ...frameSnapshotDef(),
 };
 
+/**
+ * The `schemaVersion` of the analyze, inspect and optimize documents. Their `$id` and title are built from it, so a
+ * consumer caching schemas by `$id` never validates a v2 document against the v1 schema (final review F9).
+ */
+const DOCUMENT_SCHEMA_VERSION = 2;
+
 const runInput = (first: Record<string, Schema>): Schema => obj({ ...first, backend: { enum: ['webgl2', 'webgpu'] }, tier: { enum: ['auto', 'desktop', 'phone-mid', 'phone-low'] }, budget: nullable(number), frames: integer, compile: boolean, timeout: number, headed: boolean });
 const verdict = obj({ pass: boolean, budget: nullable(obj({ maxSubmissions: number, actual: integer, pass: boolean })), errors: arr(string), reasons: arr(string) });
 const asset = obj({ meshes: integer, materials: integer, vertices: integer, triangles: integer, animations: integer, skinned: integer, morph: integer, loadMs: number });
@@ -99,7 +105,7 @@ function documentBody(command: 'analyze' | 'inspect', input: Schema, assetSchema
   return {
     type: 'object',
     properties: {
-      schemaVersion: { const: 2 },
+      schemaVersion: { const: DOCUMENT_SCHEMA_VERSION },
       tool: { const: 'threeforge' },
       version: string,
       command: { const: command },
@@ -122,8 +128,8 @@ function documentBody(command: 'analyze' | 'inspect', input: Schema, assetSchema
 function document(command: 'analyze' | 'inspect', input: Schema, assetSchema: Schema, paritySchema: Schema) {
   return {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: `https://threeforge.dev/schema/${command}-v1.json`,
-    title: `threeforge ${command} document v1`,
+    $id: `https://threeforge.dev/schema/${command}-v${DOCUMENT_SCHEMA_VERSION}.json`,
+    title: `threeforge ${command} document v${DOCUMENT_SCHEMA_VERSION}`,
     $defs: { FrameSnapshot: frameSnapshotDef() },
     ...documentBody(command, input, assetSchema, paritySchema),
   };
@@ -163,7 +169,7 @@ const optimizeInput = optionalInput(obj({
   headed: boolean,
 }), { overwrite: { type: 'boolean', description: 'Allow the output to replace existing files (absent from CLI documents, where the CLI replaces).' } });
 const optimizeProperties: Record<string, Schema> = {
-  schemaVersion: { const: 2 },
+  schemaVersion: { const: DOCUMENT_SCHEMA_VERSION },
   tool: { const: 'threeforge' },
   version: string,
   command: { const: 'optimize' },
@@ -183,8 +189,8 @@ const optimizeProperties: Record<string, Schema> = {
  */
 export const OPTIMIZE_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
-  $id: 'https://threeforge.dev/schema/optimize-v1.json',
-  title: 'threeforge optimize document v1',
+  $id: `https://threeforge.dev/schema/optimize-v${DOCUMENT_SCHEMA_VERSION}.json`,
+  title: `threeforge optimize document v${DOCUMENT_SCHEMA_VERSION}`,
   $defs: { FrameSnapshot: frameSnapshotDef(), AnalyzeDocument: documentBody('analyze', analyzeInput, asset, nullable(parity)) },
   type: 'object',
   properties: optimizeProperties,

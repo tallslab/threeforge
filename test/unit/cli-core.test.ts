@@ -157,6 +157,15 @@ describe('schema', () => {
     // in both directions and the version had to move with it.
     for (const s of [ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA]) expect(s.properties.schemaVersion).toEqual({ const: 2 });
   });
+
+  it('names each document schema by the schemaVersion it validates, so a cache keyed by $id cannot serve the v1 schema (final review F9)', () => {
+    for (const [command, s] of [['analyze', ANALYZE_SCHEMA], ['inspect', INSPECT_SCHEMA], ['optimize', OPTIMIZE_SCHEMA]] as const) {
+      const version = (s.properties.schemaVersion as { const: number }).const;
+      expect(s.$id, command).toBe(`https://threeforge.dev/schema/${command}-v${version}.json`);
+      expect(s.title, command).toBe(`threeforge ${command} document v${version}`);
+    }
+    expect(ANALYZE_SCHEMA.$id).toBe('https://threeforge.dev/schema/analyze-v2.json');
+  });
 });
 
 describe('summarize', () => {
