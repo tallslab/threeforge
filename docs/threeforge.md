@@ -1325,17 +1325,20 @@ swaps change data, not draw calls.
   `diffPct` and the exact `changedPixels` behind it (the percent is rounded to three decimals, which at 1280x720 hides
   up to 4 changed pixels, so only `changedPixels: 0` means no pixel moved), `verify.original` / `verify.optimized` are
   the full analyze documents, each with its own compile parity (`verify.original.parity`, `verify.optimized.parity`)
-  judged at analyze's default 0.5 % whatever `--parity` is (`verifyPair`, `src/cli/optimize.ts`), `verify.delta` is
+  judged at the **stricter** of `--parity` and analyze's default 0.5 % (`verifyAnalyzeInput`, `src/cli/optimize.ts`):
+  a `--parity` above 0.5 leaves them at 0.5, and `--parity 0` carries into them, so a user who asked for zero does not
+  silently get 0.5 % on the sibling checks, `verify.delta` is
   after minus before for bytes, materials, vertices, triangles, naive and compiled scene submissions, load time and
   estimated GPU memory.
 - **Verdict**: fails on `verify.parity` over `--parity` (default 0.5 %), on the optimized file's own compile parity
-  over 0.5 % (`verify.optimized.parity`, when compiling), a lost animation, skin or morph target (checked in the glTF
-  document and, when verified, in what the harness loaded), `--budget` exceeded by the optimized file's compiled
-  submissions, an error-severity hint on the optimized file, or a page error in either verified render. The
-  original's compile parity is reported and never judged. So `--parity 0` guarantees zero changed pixels between the
-  two files as loaded, not after compiling: a compile of the optimized file that moves up to 0.5 % of its pixels
-  still passes, visible only in `verify.optimized.parity.views[].changedPixels`. Deltas are never judged: a palette
-  texture can grow a file that then draws in one call.
+  over `min(--parity, 0.5)` (`verify.optimized.parity`, when compiling), a lost animation, skin or morph target
+  (checked in the glTF document and, when verified, in what the harness loaded), `--budget` exceeded by the optimized
+  file's compiled submissions, an error-severity hint on the optimized file, or a page error in either verified
+  render. The original's compile parity is reported and never judged. `--parity` governs the comparison of the two
+  files as loaded; at the default 0.5 a compile of the optimized file that moves up to 0.5 % of its pixels still
+  passes, visible only in `verify.optimized.parity.views[].changedPixels`. At `--parity 0` the compile checks are
+  bounded at zero too, so such a compile now fails — which is the information that run asked for. Deltas are never
+  judged: a palette texture can grow a file that then draws in one call.
 - **Limits**: no atlasing across materials that differ by textures (the biome case still needs one batch per
   texture set), no KTX2 encoding (needs `toktx`), no `MSFT_lod` chains, no Draco output.
 
@@ -1494,8 +1497,9 @@ Each is documented where the mechanism is, and none has a fix in this release.
   created before `ledger.attach()` count as unreferenced, a render target drawn once and abandoned without
   `dispose()` is allowed as live, and transmission's and XR's viewport textures still count as unreferenced.
 - **WebGPU pixel parity is not checked in CI** (section 12): only a local run on a native adapter checks it.
-- **`optimize --parity 0` is zero only between the two files as loaded** (section 10, "Verdict"): each file's own
-  compile check stays at 0.5 %.
+- **`optimize --parity` above 0.5 does not loosen each file's own compile check** (section 10, "Verdict"): the
+  compile checks run at the stricter of `--parity` and 0.5 %, so `--parity 5` still holds them at 0.5 %. `--parity 0`
+  does bound them at zero.
 
 ## 15. Glossary
 

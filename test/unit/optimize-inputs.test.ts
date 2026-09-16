@@ -5,9 +5,9 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import pngjs from 'pngjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { parseArgs } from '../../src/cli/args.js';
+import { DEFAULT_PARITY, parseArgs } from '../../src/cli/args.js';
 import { UsageError } from '../../src/cli/errors.js';
-import { optimizeAsset } from '../../src/cli/optimize.js';
+import { optimizeAsset, verifyAnalyzeInput } from '../../src/cli/optimize.js';
 import type { OptimizeInput } from '../../src/cli/types.js';
 import { GLB_MAGIC, glbBytes } from './helpers/gltf-files.js';
 
@@ -407,5 +407,40 @@ describe("optimize never overwrites a .gltf input's resources", () => {
     expect((await new NodeIO().read(out)).getRoot().listTextures()).toHaveLength(1);
     await optimizeAsset(inputFor(file, '--out', out));
     expect(snapshotOf(dir)).toEqual(before);
+  });
+});
+
+/**
+ * R156, reopened by the independent review. `--parity` is the threshold between the two files, and each file's own
+ * compile check is a different question — but `verifyPair` hard-coded `DEFAULT_PARITY` for both inner analyses, so a
+ * user who explicitly asked for zero silently got sibling checks held at 0.5 %. The threshold now follows the flag
+ * when the flag is *stricter*, which can only tighten, never loosen. This is the decision path itself:
+ * `verifyAnalyzeInput` is the object `verifyPair` hands to each `analyzeAssetWithShots` call.
+ */
+describe('verifyAnalyzeInput: the inner compile checks follow --parity when it is stricter', () => {
+  const optimizeInput = (...extra: string[]): OptimizeInput => {
+    const command = parseArgs(['optimize', 'x.glb', ...extra]);
+    if (command.name !== 'optimize') throw new Error(`parsed as ${command.name}`);
+    return command.input;
+  };
+
+  it('passes 0 through when the user asked for 0', () => {
+    expect(verifyAnalyzeInput(optimizeInput('--parity', '0')).parity).toBe(0);
+  });
+
+  it('never loosens: a threshold above the default leaves the compile checks at the default', () => {
+    expect(verifyAnalyzeInput(optimizeInput()).parity).toBe(DEFAULT_PARITY);
+    expect(verifyAnalyzeInput(optimizeInput('--parity', '5')).parity).toBe(DEFAULT_PARITY);
+    expect(verifyAnalyzeInput(optimizeInput('--parity', '100')).parity).toBe(DEFAULT_PARITY);
+  });
+
+  it('tightens for any threshold under the default', () => {
+    for (const pct of ['0', '0.001', '0.1', '0.49']) expect(verifyAnalyzeInput(optimizeInput('--parity', pct)).parity, pct).toBe(Number(pct));
+    expect(verifyAnalyzeInput(optimizeInput('--parity', '0.5')).parity).toBe(DEFAULT_PARITY);
+  });
+
+  it('carries the run flags each file is rendered with, and never bakes', () => {
+    const input = optimizeInput('--backend', 'webgpu', '--frames', '7', '--views', '3', '--timeout', '9000', '--tier', 'phone-low');
+    expect(verifyAnalyzeInput(input)).toEqual({ backend: 'webgpu', tier: 'phone-low', budget: null, frames: 7, compile: true, bake: 'off', views: 3, parity: DEFAULT_PARITY, timeout: 9000, headed: false });
   });
 });

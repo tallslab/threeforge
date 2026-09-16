@@ -252,7 +252,7 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
         textures: z.string().optional().describe('Texture format: webp, avif or none (needs sharp); overrides the preset'),
         textureSize: z.number().optional().describe('Longest texture side in pixels'),
         verify: z.boolean().default(true).describe('Render both files and compare pixels; false runs without a browser'),
-        parity: z.number().default(DEFAULT_PARITY).describe(`Allowed percent of changed pixels between the original and the optimized file, each rendered before compiling, from 0 to 100 (default ${DEFAULT_PARITY}); 0 means no pixel may change, judged on the raw changed-pixel count of every view. Each file's own compile check stays at ${DEFAULT_PARITY}: the optimized file's fails the verdict (verify.optimized.parity), the original's is only reported (verify.original.parity)`),
+        parity: z.number().default(DEFAULT_PARITY).describe(`Allowed percent of changed pixels between the original and the optimized file, each rendered before compiling, from 0 to 100 (default ${DEFAULT_PARITY}); 0 means no pixel may change, judged on the raw changed-pixel count of every view. Each file's own compile check runs at the stricter of this and ${DEFAULT_PARITY}, so a higher value never loosens it and 0 bounds it at zero too: the optimized file's fails the verdict (verify.optimized.parity), the original's is only reported (verify.original.parity)`),
         views: z.number().default(2).describe('Extra orbit views for the comparison (an integer from 0 to 64, default 2)'),
         tier: tier.describe('Device tier for budgets and hints: auto, desktop, phone-mid or phone-low (default auto; auto detects from the machine)'),
         ...runShape,

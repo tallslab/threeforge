@@ -285,6 +285,16 @@ test('optimize changes zero pixels of the Fox at --parity 0 in every view, skin 
     const views = doc.verify.parity.views as Array<{ view: string; diffPct: number; changedPixels: number }>;
     expect(views.map((v) => v.view)).toEqual(['default', 'orbit-0', 'orbit-1']);
     expect(doc.verify.parity.threshold).toBe(0);
+    // R156, reopened by the independent review: `--parity` now bounds each file's *own* compile check as well when it
+    // is stricter than the 0.5 % default, so a run that asked for zero does not get 0.5 % on the sibling checks. The
+    // Fox's compile moves no pixel on either backend, so the verdict below is unchanged; if that ever stops being
+    // true this is the assertion that says so, rather than a silently looser threshold hiding it.
+    expect(doc.verify.original.input.parity).toBe(0);
+    expect(doc.verify.optimized.input.parity).toBe(0);
+    expect(doc.verify.original.parity.threshold).toBe(0);
+    expect(doc.verify.optimized.parity.threshold).toBe(0);
+    expect(doc.verify.optimized.parity.pass, JSON.stringify(doc.verify.optimized.parity)).toBe(true);
+    expect(doc.verify.original.parity.pass, JSON.stringify(doc.verify.original.parity)).toBe(true);
     test.info().annotations.push({ type: 'parity', description: `[${forge.backend}] safe Fox: ${views.map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct} %)`).join(', ')}` });
     // Two defects had to be fixed before this could assert zero, and both were found by measuring rather than by
     // reading: `weld` moved to `balanced` (Ruling R100) because it moves pixels on WebGPU on some assets even

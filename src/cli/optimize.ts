@@ -178,13 +178,27 @@ function writeExclusive(path: string, data: string | Uint8Array, flag: 'w' | 'wx
 }
 
 /**
+ * The input each of the two files is analyzed with. `input.parity` is the threshold between the two *files*; each
+ * file's own compile check is a different question and keeps the `analyze` default — except that a `--parity`
+ * *stricter* than the default carries into it as well (R156, reopened by the independent review). `Math.min` can only
+ * tighten, never loosen: `--parity 5` still holds each compile check at 0.5 %, while `--parity 0` no longer leaves a
+ * user who asked for zero with a sibling check silently at 0.5 %. The cost, which is the information that user asked
+ * for: a `--parity 0` run can now fail on the compiler's own sub-0.5 % drift on either file.
+ *
+ * Exported because it is the decision this function exists to make, and a unit test pins it
+ * (`test/unit/optimize-inputs.test.ts`) rather than re-deriving it.
+ */
+export function verifyAnalyzeInput(input: OptimizeInput): Omit<AnalyzeInput, 'file'> {
+  return { backend: input.backend, tier: input.tier, budget: null, frames: input.frames, compile: input.compile, bake: 'off', views: input.views, parity: Math.min(input.parity, DEFAULT_PARITY), timeout: input.timeout, headed: input.headed };
+}
+
+/**
  * Both files go through `analyzeAssetWithShots`, each with its own server and browser on its own resource stack
  * (closed before the next render starts). One shared browser would share GPU and shader caches between the two
  * renders and skew `delta.loadMs`.
  */
 async function verifyPair(original: string, optimized: string, input: OptimizeInput, log: (line: string) => void, deps: CliDeps): Promise<{ verify: OptimizeVerify; pageErrors: VerifyPageErrors }> {
-  // Each file's own compile parity keeps the analyze default: `input.parity` is the threshold between the two files.
-  const base: Omit<AnalyzeInput, 'file'> = { backend: input.backend, tier: input.tier, budget: null, frames: input.frames, compile: input.compile, bake: 'off', views: input.views, parity: DEFAULT_PARITY, timeout: input.timeout, headed: input.headed };
+  const base = verifyAnalyzeInput(input);
   log(`verifying on ${input.backend}: original`);
   const a = await analyzeAssetWithShots({ ...base, file: original }, log, true, deps);
   log(`verifying on ${input.backend}: optimized`);
