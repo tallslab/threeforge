@@ -158,10 +158,13 @@ Documented in `docs/threeforge.md` (section 14 lists them), not fixed in 0.9.0:
 - A node material that shades from `positionLocal`, three's `alphaHash`, and an object-space normal map draw differently
   once their static group is batched or instanced (or baked): `batch()` and `instance()` rewrite `positionLocal` into the
   batch's space, and the map's normals take the batch's normal matrix, not each module's. With `bake` off, a
-  `positionLocal` colour gradient on transformed boxes changed 3.32 % of the frame on both backends, an `alphaHash` pair
-  1.81 % (webgl2) and 1.82 % (webgpu), and an object-space normal map on four rotated boxes 6.19 %, the same batched,
-  instanced and baked. The `batch-local-space` hint names such batches, instanced groups and baked meshes. Tag such
-  meshes `dynamic` (without `dynamics: 'batch-sync'`) to keep them individual.
+  `positionLocal` colour gradient, an `alphaHash` pair and an object-space normal map on transformed statics each
+  changed a measurable share of the frame on both backends — 11.08 %, 5.56/5.59 % and 9.54 % of
+  `test/e2e/local-space.spec.ts`'s own scene, which is where the current numbers are recorded as annotations. The share
+  is scene-dependent (it scales with how much of the frame the affected meshes cover), so the spec asserts that the
+  hint fires and that the picture changed rather than a percentage. The `batch-local-space` hint names such batches,
+  instanced groups and baked meshes. Tag such meshes `dynamic` (without `dynamics: 'batch-sync'`) to keep them
+  individual.
 - The bake's seam and buried-face removals assume the camera stays outside the modules: a camera whose near plane cuts
   into a wall sees a hole where a removed contact face was.
 - `memory.unreferenced` still counts resources three created before `ledger.attach()` and transmission's and XR's

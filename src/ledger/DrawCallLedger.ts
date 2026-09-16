@@ -911,7 +911,8 @@ function frameBufferTargetsOf(renderer: LedgerRenderer | null): AllowedRenderTar
  * `positionLocal` is a varying (`Position.js:45`), a node may read it in either stage, and `alphaHash` hashes it
  * (`NodeMaterial.js:893`). An object-space normal map's normals go through the draw's `modelNormalMatrix`
  * (`NormalMapNode.js:120-122`, `Normal.js:183-197`), the batch's or baked mesh's, not each mesh's: a rotated module
- * shades as if unrotated (measured: 6.19 % of a frame, the same batched, instanced and baked). A tangent-space map
+ * shades as if unrotated (`test/e2e/local-space.spec.ts` measures the change on both backends and annotates the share
+ * of its own frame, which is scene-dependent). A tangent-space map
  * follows the batched normal and tangent, and changes nothing. The `batch-local-space` hint names these draws.
  * `userData` is guarded as in `reasonOf`: app code and loaders may null it.
  */

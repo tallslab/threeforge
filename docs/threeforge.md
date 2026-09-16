@@ -674,10 +674,13 @@ normal map's normals go through `transformNormalToView` (`NormalMapNode.js:120-1
 `modelNormalMatrix` (`Normal.js:183-197`): the batch's, instanced mesh's or baked mesh's, not each module's, so a rotated
 module is lit as if unrotated. `normalLocal` is not affected in the fragment stage: three redeclares it per stage
 (`Normal.js:23-35`, a `toVar`, not a varying), and a tangent-space normal map follows the batched normal and tangent.
-Measured on four translated, rotated and scaled boxes (a scratch probe, both backends, changed pixels at tolerance 4,
-the same within 0.001 % whether batched, instanced or, where the bake takes the group, baked): a `positionLocal` colour
-gradient 7.21 % (a node material, so `bake` batches it), `alphaHash` 3.66 %, an object-space normal map 6.19 %; a
-tangent-space normal map and a plain `MeshStandardMaterial` 0 %. The
+Measured by `test/e2e/local-space.spec.ts`, which compiles each case on four translated, rotated and scaled statics
+with `bake` off and records the share as a test annotation (changed pixels at tolerance 4, both backends): a
+`positionLocal` colour gradient 11.08 %, `alphaHash` 5.56 % (webgl2) / 5.59 % (webgpu), an object-space normal map
+9.54 %; a plain `MeshStandardMaterial` on the same boxes 0 pixels. **Those shares are that spec's scene**, not a
+property of the mechanism: how much of a frame changes depends on how much of it the affected meshes cover, so the
+figure to carry away is that the change is real and measurable on default settings, and the spec is where the current
+numbers are. It asserts only that the hint fires and that the count is non-zero, for that reason. The
 `batch-local-space` hint (warn) names every world-visible batch, instanced group and baked mesh World made whose
 material has a node in any slot (the test `spriteRule`'s `sprite-node-material` uses), code the hint cannot read (a
 class that is not one of three's own, or an own function — `spriteRule`'s `sprite-custom-material` test, and what
@@ -1527,14 +1530,16 @@ Each is documented where the mechanism is, and none has a fix in this release.
   same with the instance matrix, so a colour or hash computed from local position differs once a static group is
   batched or instanced, and the same once baked; an object-space normal map is transformed by the batch's (or baked
   mesh's) normal matrix, not each module's (`NormalMapNode.js:120-122`), so a rotated module is lit as if unrotated.
-  Measured with `bake` off: a `positionLocal` colour gradient on transformed boxes 3.32 % of the frame on both backends,
-  an `alphaHash` pair 1.81 % (webgl2) and 1.82 % (webgpu); on four rotated boxes an object-space normal map 6.19 %
-  (webgl2 6.1896 %, webgpu 6.1927 %), identical batched, instanced and baked. The `batch-local-space` hint (warn) names
+  Measured with `bake` off by `test/e2e/local-space.spec.ts` on both backends, on its own four transformed statics:
+  a `positionLocal` colour gradient 11.08 %, `alphaHash` 5.56 % (webgl2) / 5.59 % (webgpu), an object-space normal map
+  9.54 %, against a plain material on the same boxes at 0 changed pixels. The shares are scene-dependent — they scale
+  with how much of the frame the affected meshes cover — so the spec records them as annotations and asserts only that
+  the hint fires and that the picture changed. The `batch-local-space` hint (warn) names
   the batches, instanced groups and baked meshes whose material has a node in any slot, custom material code (a class
   that is not one of three's own, or an own function), `alphaHash` or an object-space normal map. Tag such meshes `dynamic` (without `dynamics: 'batch-sync'`) to keep them individual. All three cases are pinned on
   both backends by `test/e2e/local-space.spec.ts`, which compiles each on transformed statics and asserts that the hint
   fires and that the picture changed (with a plain material as the zero-change control); it records its own
-  arrangement's share as an annotation rather than re-asserting the percentages above, which are the probe's.
+  arrangement's share as an annotation rather than asserting a percentage, which would pin its camera.
 - **The bake's seam and buried-face removals leave a hole when the camera's near plane cuts into a module**
   (section 8, "Near-plane limitation").
 - **`memory.unreferenced` has residual blind spots** (section 4, "Limits of the memory section"): resources three
