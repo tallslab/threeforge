@@ -146,8 +146,57 @@ test('world.compile() takes the naive scene from 503 to 28 submissions with iden
     expect(compiledDraw.byPass[pass]!.instancesDrawn, `oblique, pass ${pass}: instances drawn`).toBe(naiveDraw.byPass[pass]!.instancesDrawn);
   }
   expect(compiledDraw.triangles, 'oblique: triangles drawn').toBe(naiveDraw.triangles);
+  // `expectedGpuDraws` used to be recorded in the annotation below and never asserted, so a backend-specific draw-count
+  // anomaly could only be found by reading a report. It cannot be compared naive-against-compiled — batching is
+  // *supposed* to change it — but each side has a per-backend law it must obey, and this scene is simple enough to
+  // state it: one pass (`main`), nothing nested, so no batch has slots an enclosing pass zeroed.
+  //   webgl2: WEBGL_multi_draw collapses a batch to one call, so every submission costs exactly one draw
+  //           (naive 500 -> 500, compiled 28 -> 28).
+  //   webgpu: the backend issues one call per multi-draw slot, so a pass costs one draw per drawn instance
+  //           (naive 500 -> 500, compiled 28 submissions -> 500).
+  //
+  // What this adds over `unattributed`, which is already asserted at 0 above: that assertion ties the ledger's cost
+  // *model* to the number the backend actually reported, so a model-only regression fails there (breaking the webgl2
+  // folding rule in `expectedDraws.ts` alone lands as `unattributed: -475`, not here). It says nothing about what the
+  // backend is doing. These two lines do: that WebGL2 really is folding each batch into a single call, and that WebGPU
+  // really is issuing one per drawn instance. If the platform stopped offering WEBGL_multi_draw, or three stopped
+  // using it, the compiled frame would cost 500 calls instead of 28, the ledger would report that faithfully,
+  // `unattributed` would stay 0 — and submissions, instances drawn, triangles and every pixel would be unchanged, so
+  // nothing else in this spec would notice a scene that got 18x more expensive to draw.
+  for (const [label, set] of [
+    ['naive', naiveDraw],
+    ['compiled', compiledDraw],
+  ] as const) {
+    for (const [pass, bucket] of Object.entries(set.byPass)) {
+      const expected = forge.backend === 'webgl2' ? bucket.submissions : bucket.instancesDrawn;
+      const law = forge.backend === 'webgl2' ? 'one draw per submission (multi-draw)' : 'one draw per drawn instance';
+      expect(bucket.expectedGpuDraws, `oblique, ${label}, pass ${pass}: ${forge.backend} costs ${law}`).toBe(expected);
+    }
+  }
   // And everything the compiler left as its own draw was drawn naively too, so nothing left the set under another name.
+  // Two relations, because the two sides are not comparable as sets: naively *nothing* is batched, so `naiveDraw.named`
+  // is every submission of that frame (500 at this camera) while `compiledDraw.named` is the 13 the compiler left
+  // alone. A subset is therefore the only relation that can hold between them, and on its own it is weak — a compiler
+  // that dropped one unbatched object and admitted another in its place satisfies it, since both names are in the
+  // naive 500. So the compiled side is pinned exactly as well: the ground (its material is unique), the ten movers and
+  // the two skinned dummies, which is the same 13 the `byReason` block above counts at the default camera. A swap
+  // moves a name in or out of this list and fails here.
   expect(naiveDraw.named, 'oblique: an object the compiler kept was not drawn naively').toEqual(expect.arrayContaining(compiledDraw.named));
+  expect(compiledDraw.named, 'oblique: exactly the submissions the compiler leaves as themselves').toEqual([
+    'ground',
+    'prop-136',
+    'prop-18',
+    'prop-203',
+    'prop-247',
+    'prop-267',
+    'prop-285',
+    'prop-356',
+    'prop-370',
+    'prop-421',
+    'prop-70',
+    'skinned-0',
+    'skinned-1',
+  ]);
   note(
     `[${forge.backend}] oblique draw set: triangles ${naiveDraw.triangles} naive / ${compiledDraw.triangles} compiled; ` +
       Object.keys(naiveDraw.byPass)
