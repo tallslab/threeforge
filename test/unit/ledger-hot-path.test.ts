@@ -488,12 +488,23 @@ describe('DrawCallLedger cost per submission', () => {
     return best;
   }
 
-  it('grows by less than 3x per submission from 2k to 20k submissions (best of 7)', () => {
+  it('grows by less than 3x per submission from 2k to 20k submissions (best ratio of 3 interleaved attempts)', () => {
     msPerSubmission(2000); // JIT warm-up
-    const small = msPerSubmission(2000);
-    const large = msPerSubmission(20000);
-    expect(large / small, `${(small * 1000).toFixed(3)} µs at 2k, ${(large * 1000).toFixed(3)} µs at 20k`).toBeLessThan(3);
-  }, 60_000);
+    // `msPerSubmission` is already a best-of-7, but another vitest worker can hold the CPU for the whole of one such
+    // call, which is what made a single small-then-large pair fail once under e2e load. Each attempt measures both
+    // sizes afresh, so a stall has to land on the fast half of every attempt to matter, and the best ratio is taken.
+    // The 3x bound itself is untouched: a real per-submission regression is in every attempt, so the best ratio shows
+    // it just as plainly as a single reading would on an idle machine.
+    let best = Infinity;
+    const readings: string[] = [];
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const small = msPerSubmission(2000);
+      const large = msPerSubmission(20000);
+      best = Math.min(best, large / small);
+      readings.push(`${(small * 1000).toFixed(3)} µs at 2k -> ${(large * 1000).toFixed(3)} µs at 20k = ${(large / small).toFixed(2)}x`);
+    }
+    expect(best, readings.join(' · ')).toBeLessThan(3);
+  }, 180_000);
 });
 
 describe('reasonOf', () => {
