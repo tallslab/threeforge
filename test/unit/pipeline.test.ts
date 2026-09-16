@@ -54,8 +54,8 @@ describe('planSteps', () => {
    * Ruling R105: `resample` left `safe` too, for the opposite reason to weld's. At `tolerance: 0` it is pixel-exact,
    * but it keeps every keyframe that is not an exact duplicate, so it can grow a file — swept over the 79 readable
    * corpus assets the median is 0.000 % but Xbot grows 1.248 %, past the 0.5 % bar the rule set. It earns its place
-   * in the lossy presets (Soldier -18.9 %, BrainStem -14.9 %), so `safe` is now the steps that are pixel-exact and
-   * never cost bytes.
+   * in the lossy presets (Soldier -18.9 %, BrainStem -14.9 %). `safe` is now dedup, palette and prune; `palette` was
+   * never swept for size on its own and adds a UV attribute to the primitives it merges (see `src/cli/pipeline.ts`).
    */
   it('keeps resample out of safe and in the lossy presets, with --resample able to add it back', () => {
     expect(names({})).not.toContain('resample');

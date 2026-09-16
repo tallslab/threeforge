@@ -172,7 +172,7 @@ export const COMMAND_SPECS: Readonly<Record<CommandName, CommandSpec>> = {
     positionals: [{ name: 'file', usage: '<file.glb|.gltf>', required: true }],
     flags: [
       { name: 'out', kind: 'value', value: 'out.glb', description: 'Output path ending in `.glb` or `.gltf` (default `<name>.forge.glb` next to the input; never the input file, not even through a link).' },
-      { name: 'preset', kind: 'value', value: 'safe|balanced|aggressive', choices: PRESETS, description: 'Step preset (default `safe`: dedup, palette, prune; never changes a pixel, and no step in it costs bytes).' },
+      { name: 'preset', kind: 'value', value: 'safe|balanced|aggressive', choices: PRESETS, description: 'Step preset (default `safe`: dedup, palette, prune; measured at 0 changed pixels, no channel moving by more than 24 of 255, on the Fox and the Buggy; `palette` stores merged material factors in 8-bit palette textures and adds a UV attribute to every primitive it merges, so it can add bytes: `--no-palette` drops it).' },
       ...STEP_FLAGS,
       { name: 'simplify', kind: 'optional-value', negatable: true, numeric: true, value: 'ratio', description: 'Add the simplify step with this ratio of vertices to keep, in (0, 1] (bare: 0.5); `--no-simplify` removes it from a preset.' },
       { name: 'simplify-error', kind: 'value', value: 'e', numeric: true, description: 'Simplify error limit as a fraction of the mesh radius, from 0 to 1 (default 0.001).' },
@@ -181,7 +181,7 @@ export const COMMAND_SPECS: Readonly<Record<CommandName, CommandSpec>> = {
       { name: 'texture-size', kind: 'value', value: 'N', numeric: true, description: "Longest texture side in pixels (an integer from 1 to 16384; default: the preset's size, no resize outside presets)." },
       { name: 'texture-quality', kind: 'value', value: 'Q', numeric: true, description: 'Texture encoder quality (an integer from 1 to 100, default 85).' },
       { name: 'verify', kind: 'boolean', negatable: true, defaultOn: true, description: 'Render the original and the optimized file and compare pixels. On by default; `--no-verify` runs without a browser (and cannot take `--budget`).' },
-      { name: 'parity', kind: 'value', value: 'pct', numeric: true, description: `Allowed percent of changed pixels between the original and the optimized render, from 0 to 100 (default ${DEFAULT_PARITY}). ${PARITY_ZERO}` },
+      { name: 'parity', kind: 'value', value: 'pct', numeric: true, description: `Allowed percent of changed pixels between the original and the optimized file, each rendered before compiling, from 0 to 100 (default ${DEFAULT_PARITY}). ${PARITY_ZERO} It does not tighten each file's own compile check, which stays at ${DEFAULT_PARITY}: the optimized file's fails the verdict (\`verify.optimized.parity\`), the original's is only reported (\`verify.original.parity\`).` },
       { name: 'views', kind: 'value', value: 'N', numeric: true, description: 'Extra orbit views for the comparison (an integer from 0 to 64, default 2).' },
       { ...BUDGET, description: "Fail the verdict (exit 1) when the optimized file compiles to more than N scene submissions (an integer ≥ 0); needs verification, so not with `--no-verify`." },
       ...RUN_FLAGS.filter((flag) => flag !== BUDGET),

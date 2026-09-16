@@ -35,10 +35,14 @@ export interface Step {
  * and the Fox 0.100 %. The rule applied was "keep it only if the median is <= 0 and nothing grows by more than
  * 0.5 %"; Xbot fails the second half. It stays in `balanced` and `aggressive` at the lossy default, where it earns
  * its place — Soldier -18.9 %, BrainStem -14.9 %, VirtualCity -9.5 % — and `--resample` adds it back to `safe`
- * losslessly. `safe` is therefore the steps that are pixel-exact *and* never cost bytes themselves. That is a claim
- * about the steps, not about the output size: glTF-Transform re-serializes the container either way, which on the
- * Fox is +0.86 % before any step runs (and on the Buggy, -27 %). A preset cannot promise a smaller file; it can
- * promise not to be the reason the file grew.
+ * losslessly.
+ *
+ * What `safe` is measured at: 0 changed pixels (no channel moving by more than 24) in every view, on both backends,
+ * for the Fox and the Buggy (`test/e2e/cli.spec.ts`, `--parity 0`). `palette` was not swept on its own the way weld
+ * and resample were, and its mechanism can cost bytes and shift shading: once 5 or more untextured materials differ
+ * (`transform.ts` passes `min: 5`), glTF-Transform writes their factors into 8-bit palette textures and gives every
+ * primitive it merges a new float UV attribute (8 bytes per vertex). The size effect of glTF-Transform re-serializing
+ * the container is separate: +0.86 % on the Fox before any step runs, -27 % on the Buggy.
  */
 const PRESET_STEPS: Record<Preset, StepName[]> = {
   safe: ['dedup', 'palette', 'prune'],

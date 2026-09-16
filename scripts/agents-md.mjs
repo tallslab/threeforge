@@ -20,7 +20,7 @@ const COMMAND_DESCRIPTIONS = {
   inspect:
     'Drives your running app (dev server) through `window.__threeforge`, compiling through the hook unless `--no-compile`; same document without asset facts and parity. The app measures itself at the tier its ledger detects, so there is no `tier` flag here.',
   optimize:
-    'Rewrites the asset with glTF-Transform and writes `<name>.forge.glb`. `safe` (default) never changes a pixel, and no step in it costs bytes: dedup, palette, prune. `balanced` adds weld, resample, quantize and WebP textures (2048 px); `aggressive` adds simplify to 50 % and 1024 px textures. Renders the original and the result, compares pixels, compiles both, and lists what the file needs at load time (`requires`).',
+    'Rewrites the asset with glTF-Transform and writes `<name>.forge.glb`. `safe` (default) is dedup, palette, prune, measured at 0 changed pixels (no channel moving by more than 24 of 255) on the Fox and the Buggy; `palette` adds a UV attribute to every primitive whose flat materials it merges, so it can make a file bigger. `balanced` adds weld, resample, quantize and WebP textures (2048 px); `aggressive` adds simplify to 50 % and 1024 px textures. Renders the original and the result, compares pixels, compiles both, and lists what the file needs at load time (`requires`).',
   explain: 'What a hint means, what to change, which API (a hint code or `--all`, not both).',
   schema: 'JSON Schemas (draft 2020-12) of everything the commands print.',
   mcp: 'Stdio MCP server with tools `analyze_asset`, `inspect_app`, `optimize_asset`, `explain_hint` (needs `npm i -D @modelcontextprotocol/sdk zod`).',
@@ -131,10 +131,12 @@ estimate, and \`hints\`. Read \`after\` when present, otherwise \`before\`.
 
 ${DATA_NOTE}
 
-Names and messages are capped (120 and 300 characters); an \`inspect\` page snapshot is additionally cleaned of
-ANSI escapes, control characters and invisible formatting characters (bidi, zero-width, Unicode tag characters and
-variation selectors), and capped in string and array size,
-because its target is any page, not only one built with threeforge. The MCP tools \`analyze_asset\`, \`inspect_app\`
+Names and messages are capped (120 and 300 characters); everything the CLI reads back from a page (\`inspect\`'s
+target, and the harness page \`analyze\` and \`optimize\` drive) is additionally cleaned of ANSI escapes, control
+characters and invisible characters (every Unicode format character, bidi and zero-width marks and the tag characters
+among them, plus variation selectors and invisible fillers), each string capped at 300 code points and each array at
+256 elements (\`compile.skippedCount\` and \`compile.groupCount\` are the true lengths of the two lists that can reach it),
+because \`inspect\`'s target is any page, not only one built with threeforge. The MCP tools \`analyze_asset\`, \`inspect_app\`
 and \`optimize_asset\` return this same paragraph as a second \`content\` block after the JSON; \`explain_hint\`'s
 result carries no asset or page text, so it has no such block. An error result (\`isError\`, \`{ error, code }\`) from
 those three tools carries a second block too, because an error can quote the asset or the page: "${ERROR_NOTE}"
@@ -151,10 +153,12 @@ ${hintRows}
 
 \`--bake\` turns each finished static group into one mesh: seams between touching modules and duplicated faces
 are removed and matching vertices welded. \`--bake-buried\` also removes faces with solid geometry within 0.1
-units in front of them. A wrong deletion is visible and a missed one is invisible, so: run with \`--views 6\`,
-read \`parity.views\` (every view must stay under the threshold; its \`changedPixels\` is the exact count behind the
-rounded \`diffPct\`, and only \`changedPixels: 0\` means no pixel moved) and \`compile.bake\` (seams, coincident faces kept,
-duplicates, buried, welded counts). If a view changed, retry without \`--bake-buried\`, or exclude modules with
+units in front of them. A wrong deletion is visible and a missed one is invisible, so: run with
+\`--views 6 --parity 0\`. The default \`--parity\` is 0.5, so without it the verdict passes a view with up to 0.5 % of its
+pixels changed; \`--parity 0\` fails the verdict unless every view has \`changedPixels: 0\` (no channel moving by more
+than 24 of 255). Read \`parity.views\` (\`changedPixels\` is the exact count behind the rounded \`diffPct\`) and
+\`compile.bake\` (seams, coincident faces kept, duplicates and duplicates kept, buried, welded, and meshes left unbaked
+for an attribute the bake does not carry). If a view changed, retry without \`--bake-buried\`, or exclude modules with
 \`mesh.userData.forgeBake = false\` in the app. In code: \`new World(scene, { bake: true | { removeBuried, tolerance } })\`,
 \`world.bakeDebug()\` returns the removed faces as meshes to render and screenshot.
 
@@ -166,8 +170,12 @@ duplicates, buried, welded counts). If a view changed, retry without \`--bake-bu
 Steps in order: dedup, instance, palette, flatten, join, weld, simplify, resample, prune, textures, quantize, meshopt;
 \`--no-<step>\` removes one, \`--<step>\` adds one. \`--instance\`, \`--join\` and \`--compress meshopt\` are never defaults: the
 first two change the node graph your code may address by name, the third needs a decoder. The verdict fails when the
-pixels moved past \`--parity\`, when a clip, skin or morph target was lost, when the optimized file fails \`--budget\`, or
-when either render raised a page error; size and count deltas are reported, not judged. If parity fails, go back to
+two files' uncompiled renders differ by more than \`--parity\`, when compiling the optimized file (unless \`--no-compile\`) changes more
+than 0.5 % of its pixels (\`verify.optimized.parity\`, whatever \`--parity\` says), when a clip, skin or morph target was lost, when
+the optimized file fails \`--budget\` or has an error-severity hint, or when either render raised a page error; size and
+count deltas are reported, not judged. So \`--parity 0\` guarantees zero changed pixels between the two files as loaded,
+not after compiling: read \`verify.optimized.parity.views[].changedPixels\` for that, and \`verify.original.parity\`,
+which is reported but never judged. If parity fails, go back to
 \`--preset safe\` or raise \`--parity\` only after looking at the views. The output never uses Draco. An image or buffer
 URI that is absolute, has a scheme other than \`data:\`, or leads outside the input's directory (symlinks included)
 exits \`2\` before anything is read, as does an \`--out\` that is the input file or does not end in \`.glb\`/\`.gltf\`, and

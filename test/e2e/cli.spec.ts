@@ -264,13 +264,13 @@ test('optimize leaves the Fox pixel-identical at --parity 0: zero changed pixels
     expect(r.status, r.stderr).toBe(0);
     const doc = JSON.parse(r.stdout);
     expect(doc).toMatchObject({ schemaVersion: 2, tool: 'threeforge', command: 'optimize', input: { preset: 'safe', parity: 0 } });
-    // R100 moved `weld` to `balanced` and R105 moved `resample` after it, so `safe` is the three steps that are
-    // both pixel-exact and never cost bytes. `--weld` / `--resample` add them back (pinned in pipeline.test.ts).
+    // R100 moved `weld` to `balanced` (it moved pixels) and R105 moved `resample` after it (it grew files), so `safe`
+    // is these three steps. `--weld` / `--resample` add them back (pinned in pipeline.test.ts).
     expect(doc.steps.map((s: { name: string }) => s.name)).toEqual(['dedup', 'palette', 'prune']);
     expect(statSync(out).size).toBe(doc.output.bytes);
     // A two-sided band around the measured figure, not a one-sided bound that anything from a total shrink to a
     // 5 % growth would satisfy. Measured: 162,852 -> 164,252 bytes, +0.86 %. None of safe's three steps costs bytes
-    // on this asset (the R105 sweep measures each against a re-serialized baseline); the growth is glTF-Transform
+    // on this asset (the Fox has one material, so `palette` does nothing here); the growth is glTF-Transform
     // rewriting the container, which lands the Fox at exactly the same 164,252 with no steps at all. Assets that
     // are not tiny and animation-heavy go the other way -- the Buggy is -27.4 % below.
     const sizeRatio = doc.output.bytes / doc.stats.before.bytes;
