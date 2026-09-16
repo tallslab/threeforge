@@ -504,3 +504,63 @@ test('a node material reading a colour attribute its vertexColors flag ignores s
   expect(r.after.batches).toBe(1);
   expect(r.bake.unbakeableEntries).toBe(2);
 });
+
+test('a node material shading from object-local normals, and a displacement map, stay out of the bake, batched at parity', async ({ forge }) => {
+  test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+  await forge.open('empty', { bake: '1' });
+  await forge.page.evaluate(() => {
+    const f = window.__forge;
+    const T = f.three;
+    const TSL = f.webgpu.TSL;
+    // Colour from the module's own normals: the bake turns them into scene space (a batch keeps them).
+    const facing = new f.webgpu.MeshStandardNodeMaterial({ roughness: 0.8 });
+    facing.colorNode = TSL.normalLocal.mul(0.5).add(0.5);
+    // three displaces along the local normal in local units (NodeMaterial.setupPosition): the bake's scene-space
+    // geometry rescales it by the module's scale (a batch displaces before its own transform).
+    const data = new Uint8Array(16 * 16 * 4);
+    for (let i = 0; i < 256; i++) data.set([(i * 37) % 256, (i * 37) % 256, (i * 37) % 256, 255], i * 4);
+    const bumps = new T.DataTexture(data, 16, 16);
+    bumps.needsUpdate = true;
+    const displaced = new T.MeshStandardMaterial({ color: 0xc8b078, roughness: 0.8, displacementMap: bumps, displacementScale: 0.3 });
+    // The control: three's own code alone reads the geometry, in a way the bake carries, so the same transforms bake.
+    const plain = new T.MeshStandardMaterial({ color: 0x8899aa, roughness: 0.8 });
+    const box = (material: InstanceType<typeof T.Material>, segments: number, x: number, y: number, turn: number, name: string) => {
+      const mesh = new T.Mesh(new T.BoxGeometry(1, 1, 1, segments, segments, segments), material);
+      mesh.position.set(x, y, 0);
+      mesh.rotation.set(0.3, turn, 0.4);
+      mesh.scale.set(1, 1.6, 0.8);
+      mesh.name = name;
+      return mesh;
+    };
+    const backdrop = new T.Mesh(new T.BoxGeometry(9, 7, 0.2), new T.MeshStandardMaterial({ color: 0x303848 }));
+    backdrop.position.set(0, 1.5, -2.5);
+    backdrop.name = 'backdrop';
+    f.scene.add(
+      box(facing, 1, -2.2, 0.4, 0.9, 'facing-a'),
+      box(facing, 1, 2.2, 0.9, -0.2, 'facing-b'),
+      box(displaced, 16, -2.2, 2.8, 0.5, 'displaced-a'),
+      box(displaced, 16, 2.2, 3.1, -0.7, 'displaced-b'),
+      box(plain, 1, 0, 0.6, 0.8, 'plain-a'),
+      box(plain, 1, 0, 2.8, -0.9, 'plain-b'),
+      backdrop,
+    );
+    f.scene.traverse((o) => { if ((o as { isMesh?: boolean }).isMesh) (o.userData as { forge?: string }).forge = 'static'; });
+    const sun = new T.DirectionalLight(0xffffff, 2);
+    sun.position.set(3, 6, 5);
+    f.scene.add(new T.AmbientLight(0xffffff, 0.6), sun);
+    f.scene.updateMatrixWorld(true);
+    f.camera.position.set(0, 1.6, 8);
+    f.camera.lookAt(0, 1.6, 0);
+    f.camera.updateMatrixWorld();
+  });
+  await settle(forge.page);
+  const before = await forge.page.screenshot({ type: 'png' });
+  const r = await compileAndSettle(forge);
+  const after = await forge.page.screenshot({ type: 'png' });
+  const diff = pixelDiff(before, after, { threshold: 4 });
+  note(`[${forge.backend}] normalLocal node material and displacement map: ${r.after.baked} baked, ${r.after.batches} batches, ${r.bake.unbakeableEntries} unbakeable, pixel diff ${(diff * 100).toFixed(4)}%`);
+  expect(diff).toBeLessThan(0.0005);
+  expect(r.after.baked).toBe(1);
+  expect(r.after.batches).toBe(2);
+  expect(r.bake.unbakeableEntries).toBe(4);
+});

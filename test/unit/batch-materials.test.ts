@@ -61,8 +61,25 @@ describe('tinted-group material clones keep the source material code', () => {
     instanced: { options: { instanceThreshold: 2 }, material: (world: World) => world.instancedMeshes[0]!.material as Material },
     baked: { options: { bake: true }, material: (world: World) => world.bakedMeshes[0]!.material as Material },
   } as const;
+  /**
+   * The paths a source with an instance function reaches: under `bake: true` such a group is batched, since the bake cannot
+   * prove what the function reads (Ruling R162, `bakeProvesReads`), so the clone these cases check is the batch's.
+   */
+  const functionPaths = ['batched', 'instanced'] as const;
 
-  it.each(Object.keys(paths) as Array<keyof typeof paths>)("the %s material keeps a classic source's onBeforeCompile, customProgramCacheKey, defines and alphaTest", (path) => {
+  it('a tinted group whose source carries an instance function is batched, not baked, under bake: true, and counted', () => {
+    const setupOutput = function (this: MeshStandardNodeMaterial, ...args: Parameters<MeshStandardNodeMaterial['setupOutput']>) {
+      return MeshStandardNodeMaterial.prototype.setupOutput.apply(this, args);
+    };
+    const { scene } = tintedScene((i) => Object.assign(new MeshStandardNodeMaterial({ color: tints[i]! }), { setupOutput }));
+    const world = new World(scene, { bake: true });
+    const report = world.compile();
+    expect(world.bakedMeshes).toHaveLength(0);
+    expect(world.batchedMeshes).toHaveLength(1);
+    expect(report.bake).toEqual(expect.objectContaining({ groups: 0, unbakeableEntries: 3 }));
+  });
+
+  it.each(functionPaths)("the %s material keeps a classic source's onBeforeCompile, customProgramCacheKey, defines and alphaTest", (path) => {
     const onBeforeCompile = (): void => {};
     const customProgramCacheKey = (): string => 'custom-program';
     const { scene, sources } = tintedScene((i) => Object.assign(new MeshStandardMaterial({ color: tints[i]!, alphaTest: 0.5 }), { onBeforeCompile, customProgramCacheKey, defines: { STANDARD: '', MY_DEFINE: '' } }));
@@ -77,7 +94,7 @@ describe('tinted-group material clones keep the source material code', () => {
     expect(material.alphaTest, 'alphaTest').toBe(0.5);
   });
 
-  it.each(Object.keys(paths) as Array<keyof typeof paths>)('the %s material keeps a node source\'s instance setupOutput and alphaTest', (path) => {
+  it.each(functionPaths)('the %s material keeps a node source\'s instance setupOutput and alphaTest', (path) => {
     const setupOutput = function (this: MeshStandardNodeMaterial, ...args: Parameters<MeshStandardNodeMaterial['setupOutput']>) {
       return MeshStandardNodeMaterial.prototype.setupOutput.apply(this, args);
     };
@@ -125,7 +142,7 @@ describe('tinted-group material clones keep the source material code', () => {
     expect(sources.map((source) => source.userData), "the clone's userData is its source's own object").toContain(material.userData);
   });
 
-  it.each(Object.keys(paths) as Array<keyof typeof paths>)('the %s material runs a classic onBeforeCompile that reads a user-added property through `this`', (path) => {
+  it.each(functionPaths)('the %s material runs a classic onBeforeCompile that reads a user-added property through `this`', (path) => {
     const extra = { uTint: { value: new Color(1, 0.5, 0.25) } };
     const onBeforeCompile = function (this: { extra: typeof extra }, shader: { uniforms: Record<string, unknown> }): void {
       shader.uniforms.uTint = this.extra.uTint;
@@ -141,7 +158,7 @@ describe('tinted-group material clones keep the source material code', () => {
     expect(shader.uniforms.uTint).toBe(extra.uTint);
   });
 
-  it.each(Object.keys(paths) as Array<keyof typeof paths>)("the %s material runs a node source's instance setupOutput that reads a user-added property through `this`", (path) => {
+  it.each(functionPaths)("the %s material runs a node source's instance setupOutput that reads a user-added property through `this`", (path) => {
     const extra = { darken: 0.35 };
     const seen: unknown[] = [];
     const setupOutput = function (this: { extra: typeof extra }, _builder: unknown, output: unknown): unknown {

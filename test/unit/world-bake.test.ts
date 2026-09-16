@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AdditiveBlending, BackSide, BoxGeometry, BufferAttribute, DataTexture, DoubleSide, FrontSide, GreaterEqualDepth, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, Plane, Raycaster, Scene, ShaderMaterial, Vector3, type BufferGeometry, type Intersection, type Material } from 'three';
-import { attribute, Discard, Fn, positionLocal, vec4, vertexColor } from 'three/tsl';
+import { attribute, Discard, Fn, normalLocal, positionLocal, vec4, vertexColor } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { World } from '../../src/compiler/World.js';
 import type { BakeReport } from '../../src/compiler/bake.js';
@@ -95,8 +95,6 @@ describe('World with bake', () => {
     expect(bake(new MeshStandardMaterial()).bake, 'control').toEqual(expect.objectContaining({ contactFaces: 4, keptCoincidentFaces: 0, buriedFaces: 12 }));
     const cases: Array<[string, () => Material]> = [
       ['BackSide', () => new MeshStandardMaterial({ side: BackSide })],
-      ['displacementMap', () => new MeshStandardMaterial({ displacementMap: new DataTexture(new Uint8Array(4), 1, 1) })],
-      ['positionNode', () => Object.assign(new MeshStandardNodeMaterial(), { positionNode: positionLocal })],
       ['clippingPlanes', () => new MeshStandardMaterial({ clippingPlanes: [new Plane(new Vector3(0, 1, 0), 0)] })],
       ['depthFunc', () => new MeshStandardMaterial({ depthFunc: GreaterEqualDepth })],
     ];
@@ -116,9 +114,6 @@ describe('World with bake', () => {
 
   it.each([
     ['a negative polygonOffset', () => new MeshStandardMaterial({ polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 })],
-    ['Discard() in a colorNode', () => Object.assign(new MeshStandardNodeMaterial(), { colorNode: Fn(() => { Discard(); return vec4(1, 1, 1, 1); })() })],
-    ['a custom onBeforeCompile', () => Object.assign(new MeshStandardMaterial(), { onBeforeCompile: () => {} })],
-    ['a customProgramCacheKey override', () => Object.assign(new MeshStandardMaterial(), { customProgramCacheKey: () => 'custom' })],
     ['extra shader defines', () => Object.assign(new MeshStandardMaterial(), { defines: { STANDARD: '', USE_ALPHAHASH: '' } })],
   ] as Array<[string, () => Material]>)('keeps seams and buried faces for a material with %s (an allowlist, not a denylist)', (_label, material) => {
     const report = bakeSealed(material());
@@ -171,10 +166,11 @@ describe('World with bake', () => {
     ['instance setup and setupOutput on a MeshStandardNodeMaterial', () => Object.assign(new MeshStandardNodeMaterial(), { setup: callThrough(MeshStandardNodeMaterial, 'setup'), setupOutput: callThrough(MeshStandardNodeMaterial, 'setupOutput') })],
     ['an instance onBeforeRender on a MeshStandardMaterial', () => Object.assign(new MeshStandardMaterial(), { onBeforeRender: () => {} })],
     ['a MeshStandardMaterial subclass overriding a method', () => new (subclassOverriding(MeshStandardMaterial, 'onBeforeRender'))()],
-  ] as Array<[string, () => Material]>)("keeps seams and buried faces for %s (only three's own material types, no own functions)", (_label, material) => {
+  ] as Array<[string, () => Material]>)("leaves the group to batching for %s: only three's own material types with no own functions bake (Ruling R162)", (_label, material) => {
+    // Before R162 these baked with every face kept (the opacity allowlist); the bake now cannot prove what such code reads.
     const report = bakeSealed(material());
-    expect(report.after.baked).toBe(1);
-    expect(report.bake).toEqual(expect.objectContaining({ contactFaces: 0, keptCoincidentFaces: 4, buriedFaces: 0 }));
+    expect(report.after.baked).toBe(0);
+    expect(report.bake).toEqual(expect.objectContaining({ groups: 0, contactFaces: 0, buriedFaces: 0, unbakeableEntries: 4 }));
   });
 
   it('does not pair outlines shortened by an edge used three times: the top of a longer box beside a doubled box stays covered', () => {
@@ -396,6 +392,36 @@ describe('World with bake', () => {
     // three's own code alone reads the geometry: vertexColors false provably ignores the attribute, so the group bakes.
     for (const [label, material] of [['MeshStandardMaterial', new MeshStandardMaterial({ vertexColors: false })], ['MeshStandardNodeMaterial without nodes', new MeshStandardNodeMaterial({ vertexColors: false })]] as Array<[string, Material]>) {
       const report = new World(wall(3, material, rgb).scene, { bake: true }).compile();
+      expect(report.after, label).toEqual(expect.objectContaining({ baked: 1, batches: 0 }));
+      expect(report.bake, label).toEqual(expect.objectContaining({ groups: 1, unbakeableEntries: 0 }));
+    }
+  });
+
+  /**
+   * Final rule-6 round (Ruling R162): the bake writes every module's geometry in scene space. three's own node-free
+   * materials read it in ways that survive that (model-view and normal matrices, world normals, uvs), except a
+   * `displacementMap`, which displaces along the local normal in local units (NodeMaterial.setupPosition). A node in any
+   * slot, an instance function or a subclass may read `positionLocal`, `normalLocal` or `positionGeometry` inside a
+   * `Fn` closure the bake cannot inspect. Such a group is batched, which keeps each geometry in its own space, and counted.
+   */
+  it('batches instead of baking a group whose material may read geometry in the module\'s own space, and counts it', () => {
+    const readers: Array<[string, () => Material]> = [
+      ['colorNode = normalLocal', () => Object.assign(new MeshStandardNodeMaterial(), { colorNode: normalLocal })],
+      ['positionNode = positionLocal', () => Object.assign(new MeshStandardNodeMaterial(), { positionNode: positionLocal })],
+      ['Discard() in a colorNode', () => Object.assign(new MeshStandardNodeMaterial(), { colorNode: Fn(() => { Discard(); return vec4(1, 1, 1, 1); })() })],
+      ['a displacementMap', () => new MeshStandardMaterial({ displacementMap: new DataTexture(new Uint8Array(4), 1, 1) })],
+      ['an instance setupPosition', () => Object.assign(new MeshStandardNodeMaterial(), { setupPosition: callThrough(MeshStandardNodeMaterial, 'setupPosition') })],
+      ['a subclass overriding setupPosition', () => new (subclassOverriding(MeshStandardNodeMaterial, 'setupPosition'))()],
+      ['an instance onBeforeCompile on a MeshStandardMaterial', () => Object.assign(new MeshStandardMaterial(), { onBeforeCompile: () => {} })],
+      ['a customProgramCacheKey override on a MeshStandardMaterial', () => Object.assign(new MeshStandardMaterial(), { customProgramCacheKey: () => 'custom' })],
+    ];
+    for (const [label, material] of readers) {
+      const report = new World(wall(3, material()).scene, { bake: true }).compile();
+      expect(report.after, label).toEqual(expect.objectContaining({ baked: 0, batches: 1 }));
+      expect(report.bake, label).toEqual(expect.objectContaining({ groups: 0, unbakeableEntries: 3 }));
+    }
+    for (const [label, material] of [['MeshStandardMaterial', new MeshStandardMaterial()], ['MeshStandardNodeMaterial without nodes', new MeshStandardNodeMaterial()], ['a null displacementMap', new MeshStandardMaterial({ displacementMap: null })]] as Array<[string, Material]>) {
+      const report = new World(wall(3, material).scene, { bake: true }).compile();
       expect(report.after, label).toEqual(expect.objectContaining({ baked: 1, batches: 0 }));
       expect(report.bake, label).toEqual(expect.objectContaining({ groups: 1, unbakeableEntries: 0 }));
     }

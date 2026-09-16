@@ -115,7 +115,10 @@ export interface BatchResult {
   transparentKept: Mesh[];
   /** Per batch: base geometryId -> geometryIds per LOD level (present only when lodDistances is set). */
   lodGeometryIds: Map<BatchedMesh, Map<number, number[]>>;
-  /** Statics of groups `bake` left to batching because a geometry carries an attribute the bake drops and the material may read (`unbakeableAttribute`). */
+  /**
+   * Statics of groups `bake` left to batching: the material may read the geometry in a way the bake cannot prove it keeps
+   * (`bakeProvesReads`), or a geometry carries an attribute the bake drops and the material may read (`unbakeableAttribute`).
+   */
   unbakeable: number;
 }
 
@@ -246,11 +249,13 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
       result.singletons.push(...group.meshes);
       continue;
     }
-    // A group whose geometry carries data the bake would drop (a vertex colour's alpha, a custom attribute, a colour a
-    // node graph reads although `vertexColors` is false) is batched instead: BatchedMesh keeps every attribute as it is.
-    // Counted, since `bake` asked for it.
-    const builtInReads = readsOnlyBuiltInAttributes(group.canonical);
-    const bakeable = !group.meshes.some((m) => unbakeableAttribute(m.geometry, group.canonical.vertexColors, builtInReads) !== null);
+    // A group is baked only when the bake can prove the merged mesh draws what the modules drew (an allowlist,
+    // `bakeProvesReads`): its material reads the geometry through three's own code alone, in ways the move into scene
+    // space keeps, and no geometry carries data the bake would drop (a vertex colour's alpha, a custom attribute).
+    // Otherwise it is batched: BatchedMesh keeps each geometry, in its own space, with every attribute. Counted, since
+    // `bake` asked for it.
+    const provenReads = bakeProvesReads(group.canonical);
+    const bakeable = provenReads && !group.meshes.some((m) => unbakeableAttribute(m.geometry, group.canonical.vertexColors, provenReads) !== null);
     if (options.bake && !bakeable && !group.meshes.some((m) => options.noBake?.has(m))) result.unbakeable += group.meshes.length;
     if (options.bake && bakeable && !group.meshes.some((m) => options.noBake?.has(m))) {
       const index = perProgramBaked.get(programHash) ?? 0;
@@ -353,14 +358,23 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
 export { isBuiltInMaterial };
 
 /**
- * Whether three's own code is all that reads the material's geometry attributes: exactly one of three's material classes
- * (`isBuiltInMaterial`: a subclass can override `setupDiffuseColor` or any other `setup*`), no function assigned to the
- * instance (`hasOwnFunctions`) and no node in any slot (`hasNoNodes`: a `colorNode = vertexColor()` reads `color`
- * whatever `vertexColors` says). Only then does `vertexColors: false` prove the `color` attribute unread
- * (`unbakeableAttribute`'s `builtInReads`).
+ * Whether the bake can prove that a material draws its merged, scene-space geometry as it drew each module: an allowlist
+ * of what reads the geometry.
+ * - Three's own code alone: exactly one of three's material classes (`isBuiltInMaterial`: a subclass can override
+ *   `setupPosition`, `setupDiffuseColor` or any other `setup*`), no function assigned to the instance
+ *   (`hasOwnFunctions`) and no node in any slot (`hasNoNodes`). A node graph can read `positionLocal`, `normalLocal`,
+ *   `positionGeometry` or `color` inside a `Fn` closure nothing can inspect before it builds: a `colorNode =
+ *   vertexColor()` reads `color` whatever `vertexColors` says, and a colour or position from local coordinates changes
+ *   once the bake writes them in scene space (Ruling R162).
+ * - Reads the move into scene space keeps. three r186's node-free mesh materials read position through the model-view
+ *   matrix and normals through the normal matrix, which the baked geometry already carries, except a `displacementMap`:
+ *   `setupPosition` displaces along the local normal in local units (NodeMaterial.js:788), so a scaled module's
+ *   displacement changes size once baked. A batch displaces before its own transform, and keeps it.
+ * Only then does `vertexColors: false` prove the `color` attribute unread (`unbakeableAttribute`'s `builtInReads`).
  */
-function readsOnlyBuiltInAttributes(material: Material): boolean {
-  return isBuiltInMaterial(material) && !hasOwnFunctions(material) && hasNoNodes(material);
+function bakeProvesReads(material: Material): boolean {
+  const displacementMap = (material as Material & { displacementMap?: unknown }).displacementMap ?? null;
+  return isBuiltInMaterial(material) && !hasOwnFunctions(material) && hasNoNodes(material) && displacementMap === null;
 }
 
 /**
