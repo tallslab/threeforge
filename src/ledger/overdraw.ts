@@ -307,7 +307,7 @@ function countObject(renderer: OverdrawRenderer, meshCount: MeshBasicNodeMateria
       return renderer.renderObject(object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId);
     }
     if (material.allowOverride !== true || material.colorWrite === false) return;
-    if ((object.userData.forge as { kind?: string } | undefined)?.kind === 'occlusion-proxy') return;
+    if ((object.userData?.forge as { kind?: string } | undefined)?.kind === 'occlusion-proxy') return;
     const source = material as SourceMaterial;
     // A sprite material places its quad in SpriteNodeMaterial.setupPositionView: a camera-facing billboard scaled by
     // `scaleNode`. With the mesh count material a Sprite's quad lies unrotated in its own plane, and a sprite batch's

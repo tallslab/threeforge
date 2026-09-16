@@ -174,6 +174,26 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     expect(frame.totals).toMatchObject({ sceneSubmissions: 1, gpuDraws: 1, reportedDrawCalls: 1, unattributed: 0 });
   });
 
+  it('files an InstancedMesh whose userData is null instead of throwing on the per-submission path', () => {
+    const { renderer, ledger, scene, camera } = attached();
+    const instanced = new InstancedMesh(box, new MeshStandardMaterial(), 4);
+    instanced.count = 3;
+    instanced.name = 'debris';
+    scene.add(instanced);
+    // The first frame also rescans the whole scene, which reads userData itself. Render it while userData is still an
+    // object so this test exercises the per-submission read — the instance counts every submission files — alone:
+    // the next periodic rescan is RESCAN_EVERY frames away, so the frame below reaches no other read.
+    renderer.render(scene, camera);
+    // app code and non-three loaders assign null, and Object3D.copy propagates it to every clone; three draws it fine.
+    (instanced as { userData: unknown }).userData = null;
+    renderer.render(scene, camera);
+
+    const frame = ledger.frame({ items: true });
+    // No `forge.instances` total to read, so the submitted count stands in for it, as it does for an untouched mesh.
+    expect(frame.items?.find((i) => i.name === 'debris')).toMatchObject({ reason: 'instanced', instances: 3, instancesDrawn: 3 });
+    expect(frame.totals).toMatchObject({ sceneSubmissions: 1, unattributed: 0 });
+  });
+
   it('expects two GPU draws for double-sided transparent materials', () => {
     const { renderer, ledger, scene, camera } = attached();
     scene.add(tag.static(new Mesh(box, new MeshStandardMaterial({ transparent: true, side: DoubleSide }))));
@@ -713,6 +733,31 @@ describe('DrawCallLedger snapshot, report and budget', () => {
     ledger.attachScheduler(null);
     renderer.render(scene, camera);
     expect(ledger.frame().js.skipped).toBe(0);
+  });
+
+  it('rescans a scene holding a node whose userData is null instead of throwing, and still fills the memory and hint sections', () => {
+    const { renderer, ledger, scene, camera } = attached();
+    const statics = ['a', 'b', 'c'].map((name) => {
+      const mesh = tag.static(new Mesh(box, new MeshStandardMaterial()));
+      mesh.name = name;
+      return mesh;
+    });
+    const stray = new Mesh(box, new MeshStandardMaterial());
+    stray.name = 'stray';
+    // The rescan walks every object in the scene, not only the drawn ones, so one such node anywhere throws it.
+    (stray as { userData: unknown }).userData = null;
+    scene.add(...statics, stray);
+
+    renderer.render(scene, camera); // the first frame rescans
+    const first = ledger.frame();
+    expect(first.js.objects).toBe(4);
+    expect(first.memory.geometries.bytes).toBeGreaterThan(0);
+    // Collected in the same traversal, right after the read that used to throw.
+    expect(first.hints.find((h) => h.code === 'static-auto-update')?.objects).toEqual(['a', 'b', 'c']);
+
+    // And again on the periodic rescan, RESCAN_EVERY frames later.
+    for (let i = 0; i < 60; i++) renderer.render(scene, camera);
+    expect(ledger.frame().js.objects).toBe(4);
   });
 
   it("reports the attached streamer's chunks in the memory section", () => {

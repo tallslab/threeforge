@@ -315,7 +315,7 @@ export class DrawCallLedger {
       if (o.layers.mask === HIDDEN_MASK) hidden++;
       if (o.matrixAutoUpdate && o.matrixWorldAutoUpdate) {
         auto++;
-        if ((o.userData as Record<string, unknown>)[FORGE_TAG_KEY] === 'static' && (o as { isMesh?: boolean }).isMesh) ctx.staticAutoUpdated.push(this.names.of(o, scene, paths));
+        if ((o.userData as Record<string, unknown> | null)?.[FORGE_TAG_KEY] === 'static' && (o as { isMesh?: boolean }).isMesh) ctx.staticAutoUpdated.push(this.names.of(o, scene, paths));
       }
       const light = o as Light & { isPointLight?: boolean };
       if (light.isLight && light.isPointLight && light.castShadow && light.visible) ctx.pointShadowLights.push(this.names.of(o, scene, paths));

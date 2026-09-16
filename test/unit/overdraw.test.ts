@@ -351,6 +351,22 @@ describe('measureOverdraw', () => {
     expect([count.map, count.alphaMap]).toEqual([null, null]); // no texture kept alive between measurements
   });
 
+  it('counts an object whose userData is null instead of throwing', async () => {
+    const { scene, camera } = sceneWithCamera();
+    const renderer = protocolRenderer([0, 0]);
+    const geometry = new PlaneGeometry();
+    const plain = new Mesh(geometry, new MeshBasicMaterial());
+    const stray = new Mesh(geometry, new MeshBasicMaterial());
+    // app code and non-three loaders assign null, and Object3D.copy propagates it to every clone; three draws it fine.
+    (stray as { userData: unknown }).userData = null;
+    drawEach(renderer, camera, [plain, stray]);
+
+    await measureOverdraw(renderer as never, scene, camera);
+
+    // Counted like any other object: a null userData simply carries no `forge` kind, so it is not an occlusion proxy.
+    expect(renderer.objectCalls.map((c) => c.object)).toEqual([plain, stray, plain, stray]);
+  });
+
   it("carries a node material's opacityNode, alphaTestNode and maskNode into the count for that draw only", async () => {
     const { scene, camera } = sceneWithCamera();
     const renderer = protocolRenderer([0, 0]);

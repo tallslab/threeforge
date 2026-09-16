@@ -90,7 +90,7 @@ export function writeInstanceCounts<T extends { instances: number; instancesDraw
     into.instances = n;
     into.instancesDrawn = n;
   } else if (o.isInstancedMesh) {
-    const total = (object.userData as { forge?: { instances?: number } }).forge?.instances;
+    const total = (object.userData as { forge?: { instances?: number } } | null)?.forge?.instances;
     into.instances = total ?? o.count ?? 0;
     into.instancesDrawn = o.count ?? 0;
   } else {
