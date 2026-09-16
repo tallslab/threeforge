@@ -85,8 +85,12 @@ test('analyze reports no false unreferenced-resources hint for the Fox (harness 
   const snapshot = doc.after ?? doc.before;
   const afterCodes = snapshot.hints.map((h: { code: string }) => h.code);
   expect(afterCodes).not.toContain('unreferenced-resources');
-  const unreferenced = snapshot.memory.unreferenced.geometries + snapshot.memory.unreferenced.textures;
-  expect(unreferenced, JSON.stringify(snapshot.memory.unreferenced)).toBeLessThan(8);
+  test.info().annotations.push({ type: 'memory', description: `[${forge.backend}] Fox analyze unreferenced: before ${JSON.stringify(doc.before.memory.unreferenced)}, after ${JSON.stringify(doc.after?.memory.unreferenced)}` });
+  // The measured residual, exactly, not the hint's own threshold (8), which the hint assertions above already cover: a
+  // regression that stopped disposing RoomEnvironment alone (one geometry) would stay under it. Measured on both backends
+  // before and after compiling: 0 and 0 (it was 0 geometries and 1 texture before three's own render targets were allowed).
+  expect(doc.before.memory.unreferenced).toEqual({ geometries: 0, textures: 0 });
+  expect(snapshot.memory.unreferenced).toEqual({ geometries: 0, textures: 0 });
 });
 
 test('analyze fails the verdict on a tiny budget (exit 1), usage on a missing file (exit 2), and --no-compile skips the compile', { tag: '@corpus' }, async ({ forge }) => {
