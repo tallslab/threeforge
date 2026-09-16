@@ -505,7 +505,10 @@ describe('DrawCallLedger frames and passes', () => {
     renderer.render(scene, camera);
     const frame = ledger.frame();
     expect(frame.passes.map((p) => p.id)).toEqual(['nested:reflection', 'main']);
-    expect(frame.passes.map((p) => p.submissions)).toEqual([2, 2]);
+    // The mesh in both passes; the output quad only in the main one. three converts colour space when it writes the
+    // output target, so the reflection's render into a target draws no "Output Color Transform" quad (Renderer.js:1563,
+    // :2686) — the nested pass is the mesh alone.
+    expect(frame.passes.map((p) => p.submissions)).toEqual([1, 2]);
     expect(frame.totals.sceneSubmissions).toBe(2);
   });
 

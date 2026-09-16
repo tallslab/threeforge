@@ -16,8 +16,10 @@
  *   draw per call, N per BatchedMesh on WebGPU or on WebGL without WEBGL_multi_draw; triangles = instances x count / 3.
  * - ShadowNode and PointShadowNode: shadow maps per light (see `shadowLights`), six faces per point light, VSM quads,
  *   and `light.shadow.map` built as a light's map first renders.
- * Every Scene render without an override material also draws an "Output Color Transform" quad, like three's output
- * pass (a QuadMesh: one fullscreen triangle). Not modelled: frustum culling, sorting, matrix updates (call `scene.updateMatrixWorld()`), pipeline readiness.
+ * Every render that writes the output target — one with no render target set — also draws an "Output Color Transform"
+ * quad, like three's output pass (a QuadMesh: one fullscreen triangle), whatever the root's type and whatever the
+ * scene's override material; a render into a target (a reflection, an overdraw count pass, a shadow map) draws none.
+ * Not modelled: frustum culling, sorting, matrix updates (call `scene.updateMatrixWorld()`), pipeline readiness.
  */
 import {
   BackSide,
@@ -382,6 +384,12 @@ export class FakeRenderer {
     const previousLights = lightsNode.getLights();
     // Renderer._renderScene: with no render target the pass draws into the frame-buffer target; both scene hooks get it.
     const hookTarget = this.renderTarget ?? this.frameBufferTarget;
+    // Whether this call writes the output target, decided once at its start as _renderScene decides it: the quad of
+    // Renderer._renderOutput is drawn only when _getFrameBufferTarget() returned one, which needs
+    // `needsFrameBufferTarget` (Renderer.js:1563, :2609) — tone mapping, or a colour space other than the working one.
+    // Both are read through `isOutputTarget` (:2686), so both are off whenever a render target is set. The root's type
+    // and the scene's override material do not enter into it.
+    const outputPass = this.renderTarget === null;
     const call: RenderCall = { kind, pass: null, pending: [], pendingInstances: [] };
     if (this.options.record) {
       call.pass = {
@@ -437,8 +445,14 @@ export class FakeRenderer {
     } else {
       renderList(transparent, null);
     }
-    if (plainScene) {
-      this.renderObject(this.outputQuad, root, camera, this.outputQuad.geometry, this.outputQuad.material as Material, null, this.defaultLights, null, null);
+    if (outputPass) {
+      // Renderer._renderOutput renders the quad as its own root (`_renderScene(quad, quad.camera, false)`), so it draws
+      // against three's internal scene: the user scene's override material never reaches it, and, with the frame-buffer
+      // target off for that call, it draws no output quad of its own.
+      const override = sceneRef.overrideMaterial;
+      sceneRef.overrideMaterial = null;
+      this.renderObject(this.outputQuad, sceneRef, camera, this.outputQuad.geometry, this.outputQuad.material as Material, null, this.defaultLights, null, null);
+      sceneRef.overrideMaterial = override;
     }
 
     // Backend.finishRender: WebGPU submits the pass now, so its batch draws read the index textures as uploaded by now.

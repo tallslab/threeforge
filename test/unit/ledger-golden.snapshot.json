@@ -115,17 +115,17 @@
       }
     ],
     "totals": {
-      "submissions": 37,
+      "submissions": 36,
       "sceneSubmissions": 34,
-      "gpuDraws": 35,
-      "reportedDrawCalls": 35,
+      "gpuDraws": 34,
+      "reportedDrawCalls": 34,
       "unattributed": 0,
       "programSwitches": 10,
       "programs": 0,
-      "triangles": 515,
+      "triangles": 514,
       "instances": 54,
       "instancesDrawn": 54,
-      "drawCommands": 39
+      "drawCommands": 38
     },
     "passes": [
       {
@@ -140,8 +140,8 @@
       },
       {
         "id": "nested:reflection",
-        "submissions": 16,
-        "gpuDraws": 15
+        "submissions": 15,
+        "gpuDraws": 14
       },
       {
         "id": "scene:portal-scene",
@@ -211,10 +211,9 @@
         ]
       },
       "renderer-internal": {
-        "submissions": 3,
-        "gpuDraws": 3,
+        "submissions": 2,
+        "gpuDraws": 2,
         "top": [
-          "Output Color Transform",
           "Output Color Transform",
           "Output Color Transform"
         ]
@@ -409,17 +408,17 @@
       }
     ],
     "totals": {
-      "submissions": 37,
+      "submissions": 36,
       "sceneSubmissions": 34,
-      "gpuDraws": 35,
-      "reportedDrawCalls": 35,
+      "gpuDraws": 34,
+      "reportedDrawCalls": 34,
       "unattributed": 0,
       "programSwitches": 10,
       "programs": 0,
-      "triangles": 515,
+      "triangles": 514,
       "instances": 54,
       "instancesDrawn": 54,
-      "drawCommands": 39
+      "drawCommands": 38
     },
     "passes": [
       {
@@ -434,8 +433,8 @@
       },
       {
         "id": "nested:reflection",
-        "submissions": 16,
-        "gpuDraws": 15
+        "submissions": 15,
+        "gpuDraws": 14
       },
       {
         "id": "scene:portal-scene",
@@ -505,10 +504,9 @@
         ]
       },
       "renderer-internal": {
-        "submissions": 3,
-        "gpuDraws": 3,
+        "submissions": 2,
+        "gpuDraws": 2,
         "top": [
-          "Output Color Transform",
           "Output Color Transform",
           "Output Color Transform"
         ]
@@ -703,17 +701,17 @@
       }
     ],
     "totals": {
-      "submissions": 37,
+      "submissions": 36,
       "sceneSubmissions": 34,
-      "gpuDraws": 35,
-      "reportedDrawCalls": 35,
+      "gpuDraws": 34,
+      "reportedDrawCalls": 34,
       "unattributed": 0,
       "programSwitches": 10,
       "programs": 0,
-      "triangles": 515,
+      "triangles": 514,
       "instances": 54,
       "instancesDrawn": 54,
-      "drawCommands": 39
+      "drawCommands": 38
     },
     "passes": [
       {
@@ -728,8 +726,8 @@
       },
       {
         "id": "nested:reflection",
-        "submissions": 16,
-        "gpuDraws": 15
+        "submissions": 15,
+        "gpuDraws": 14
       },
       {
         "id": "scene:portal-scene",
@@ -799,10 +797,9 @@
         ]
       },
       "renderer-internal": {
-        "submissions": 3,
-        "gpuDraws": 3,
+        "submissions": 2,
+        "gpuDraws": 2,
         "top": [
-          "Output Color Transform",
           "Output Color Transform",
           "Output Color Transform"
         ]
@@ -1460,25 +1457,6 @@
         "morphTargets": 0
       },
       {
-        "name": "Output Color Transform",
-        "kind": "mesh",
-        "material": 15,
-        "materialType": "Material",
-        "programHash": "b51912c4",
-        "variantHash": "097ab33f",
-        "transparent": false,
-        "pass": "nested:reflection",
-        "reason": "renderer-internal",
-        "flags": [],
-        "expectedGpuDraws": 1,
-        "instances": 1,
-        "instancesDrawn": 1,
-        "vertices": 3,
-        "bones": 0,
-        "skeleton": null,
-        "morphTargets": 0
-      },
-      {
         "name": "mirror",
         "kind": "mesh",
         "material": 13,
@@ -1502,7 +1480,7 @@
       {
         "name": "far-room",
         "kind": "mesh",
-        "material": 17,
+        "material": 16,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1521,7 +1499,7 @@
       {
         "name": "Output Color Transform",
         "kind": "mesh",
-        "material": 15,
+        "material": 17,
         "materialType": "Material",
         "programHash": "b51912c4",
         "variantHash": "097ab33f",
@@ -1540,7 +1518,7 @@
       {
         "name": "portal",
         "kind": "mesh",
-        "material": 16,
+        "material": 15,
         "materialType": "MeshStandardMaterial",
         "programHash": "9f81eb71",
         "variantHash": "5ba1fcd0",
@@ -1582,7 +1560,7 @@
       {
         "name": "Output Color Transform",
         "kind": "mesh",
-        "material": 15,
+        "material": 17,
         "materialType": "Material",
         "programHash": "b51912c4",
         "variantHash": "097ab33f",

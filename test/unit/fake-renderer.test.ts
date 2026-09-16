@@ -76,6 +76,52 @@ describe('FakeRenderer sceneHooks', () => {
   });
 });
 
+describe('FakeRenderer output quad', () => {
+  /** The names drawn by the outermost render() call. */
+  const drawn = (renderer: FakeRenderer): string[] => renderer.passes[0]!.draws.map((d) => d.object.name);
+
+  it('draws the output quad for every render that goes to the output target, whatever the root type or override material, and none for a render into a target', () => {
+    // Renderer._renderScene takes the frame-buffer target (and so calls _renderOutput) when _getFrameBufferTarget()
+    // returns one: `needsFrameBufferTarget` (Renderer.js:1563, :2609) is tone mapping or colour space against the
+    // working space, and both are read through `isOutputTarget` (:2686), which is `_renderTarget === null` here. So the
+    // quad follows the render's target alone — not the root's type, and not the scene's override material.
+    const quad = 'Output Color Transform';
+
+    // A Scene rendered to the canvas: one quad, as before.
+    const canvas = new FakeRenderer({ record: true });
+    const { scene, camera } = sceneWithCamera();
+    scene.add(cube('m'));
+    canvas.render(scene, camera);
+    expect(drawn(canvas), 'Scene to the canvas').toEqual(['m', quad]);
+
+    // The same Scene into an explicit render target (a reflection, an overdraw count target): three converts colour
+    // space only when writing the output target, so a nested render-target render draws no quad.
+    const nested = new FakeRenderer({ record: true });
+    nested.renderTarget = { name: 'reflection' };
+    nested.render(scene, camera);
+    expect(drawn(nested), 'Scene into a render target').toEqual(['m']);
+
+    // A Group rendered to the canvas still writes the output target, so it draws one.
+    const groupRenderer = new FakeRenderer({ record: true });
+    const group = new Group();
+    group.add(cube('in-group'));
+    group.updateMatrixWorld(true);
+    groupRenderer.render(group, camera);
+    expect(drawn(groupRenderer), 'Group to the canvas').toEqual(['in-group', quad]);
+
+    // An override material does not gate the quad either; and the quad itself is never drawn with that override,
+    // because three renders it as its own root against its internal scene (Renderer._renderOutputLayers).
+    const overridden = new FakeRenderer({ record: true });
+    const override = new MeshBasicMaterial();
+    scene.overrideMaterial = override;
+    overridden.render(scene, camera);
+    scene.overrideMaterial = null;
+    expect(drawn(overridden), 'Scene with an override to the canvas').toEqual(['m', quad]);
+    const quadDraw = overridden.passes[0]!.draws.find((d) => d.object.name === quad)!;
+    expect(quadDraw.material, 'the output quad is not drawn with the scene override').toBe(overridden.outputQuad.material);
+  });
+});
+
 describe("FakeRenderer shadowTrigger: 'first-receiver'", () => {
   it("renders the shadow map inside the first receiver's renderObject, after its onBeforeRender and before its draw", () => {
     const light = sun();

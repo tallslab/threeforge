@@ -459,6 +459,10 @@ describe('measureOverdraw', () => {
     expect(drawOf(overriddenSprite)?.material).toBe(appOverride);
     expect(nestedOverrides).toEqual([null, appOverride]);
     expect([bare.overrideMaterial, overridden.overrideMaterial]).toEqual([null, appOverride]);
+    // A count render draws into the count target, and so do the nested renders inside it: three applies its output
+    // colour transform only when writing the output target (Renderer.js:1563, :2686), so none of these passes draws an
+    // "Output Color Transform" quad and no count includes one.
+    expect(renderer.passes.flatMap((p) => p.draws).filter((d) => d.object === renderer.outputQuad)).toEqual([]);
     disposeOverdraw(renderer);
   });
 
