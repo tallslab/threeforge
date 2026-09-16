@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PNG } from 'pngjs';
 import { comparePixels, pixelDiffPct } from '../../src/cli/analyze.js';
-import { pixelDiff } from '../e2e/pixels.js';
+import { differingPixels, pixelDiff } from '../e2e/pixels.js';
 
 /** Encodes a flat RGBA pixel grid (row-major, 4 bytes per pixel) as a PNG buffer. */
 function png(width: number, height: number, pixels: number[][]): Buffer {
@@ -66,25 +66,17 @@ describe('pixelDiff', () => {
     expect(pixelDiff(a, b, { threshold: 15 })).toBe(0); // 15 is not > 15
   });
 
-  it('by default does not special-case mismatched dimensions (matches every copy but assets.spec.ts)', () => {
-    // a is 2x1 (n=2); b is 1x1, so the second pixel compares against undefined data and never counts as a hit.
+  it('reads images of different sizes as entirely different, whichever is smaller: a render-size change is not parity', () => {
+    // Before, a 2x1 image against a 1x1 one compared the second pixel against data past the end (NaN > threshold is
+    // false) and read 0; the other way round it compared the overlap only.
     const a = png(2, 1, [
       [0, 0, 0],
       [255, 255, 255],
     ]);
     const b = png(1, 1, [[0, 0, 0]]);
-    expect(pixelDiff(a, b)).toBe(0);
-  });
-
-  it('with requireSameSize, returns 1 immediately for mismatched dimensions (matches assets.spec.ts)', () => {
-    const a = png(2, 2, [
-      [0, 0, 0],
-      [0, 0, 0],
-      [0, 0, 0],
-      [0, 0, 0],
-    ]);
-    const b = png(1, 1, [[0, 0, 0]]);
-    expect(pixelDiff(a, b, { requireSameSize: true })).toBe(1);
+    expect(pixelDiff(a, b)).toBe(1);
+    expect(pixelDiff(b, a)).toBe(1);
+    expect(pixelDiff(png(2, 1, [[0, 0, 0], [0, 0, 0]]), png(1, 2, [[0, 0, 0], [0, 0, 0]])), 'same pixel count, other shape').toBe(1);
   });
 });
 
@@ -96,6 +88,25 @@ describe('pixelDiff', () => {
  * These cases pin that boundary, the percent scale and the mismatched-size behaviour, none of which had a unit test —
  * every number in `verify.parity` and in the docs' pixel-identical claim rests on them.
  */
+describe('differingPixels', () => {
+  it('counts the pixels pixelDiff would, as an integer, and every pixel of the larger image when the sizes differ', () => {
+    const a = png(3, 1, [
+      [0, 0, 0],
+      [0, 0, 0],
+      [0, 0, 0],
+    ]);
+    const b = png(3, 1, [
+      [25, 0, 0],
+      [4, 0, 0],
+      [5, 0, 0],
+    ]);
+    expect(differingPixels(a, b)).toBe(1);
+    expect(differingPixels(a, b, { threshold: 4 })).toBe(2);
+    expect(differingPixels(a, a)).toBe(0);
+    expect(differingPixels(a, png(1, 1, [[0, 0, 0]]))).toBe(3);
+  });
+});
+
 describe('pixelDiffPct (the CLI parity tolerance)', () => {
   it('returns 0 for identical images', () => {
     const pixels = [
@@ -190,19 +201,19 @@ describe('pixelDiffPct (the CLI parity tolerance)', () => {
       [0, 0, 0],
     ]);
     expect(comparePixels(a, b)).toEqual({ changedPixels: 2, comparedPixels: 4, diffPct: 50 });
-    // Mismatched sizes compare the overlap, and `comparedPixels` says how many that was.
-    expect(comparePixels(a, png(1, 1, [[0, 0, 0]]))).toEqual({ changedPixels: 0, comparedPixels: 1, diffPct: 0 });
   });
 
-  it('compares the pixels both images have instead of short-circuiting on mismatched dimensions', () => {
-    // Unlike the e2e helper's `requireSameSize`, the CLI's copy compares min(n) pixels: a resized canvas is
-    // reported from the overlap, not as a 100 % difference.
+  it('reports images of different sizes as every pixel of the larger changed, so no parity threshold passes them', () => {
+    // Before, the CLI's copy compared min(n) pixels by flat index: a resized canvas read as parity over the overlap,
+    // with rows misaligned when the widths differ, and `--parity 0` reported it pixel-identical.
     const a = png(2, 1, [
       [0, 0, 0],
-      [255, 255, 255],
+      [0, 0, 0],
     ]);
     const b = png(1, 1, [[0, 0, 0]]);
-    expect(pixelDiffPct(a, b)).toBe(0);
-    expect(pixelDiffPct(png(1, 1, [[255, 0, 0]]), a)).toBe(100);
+    expect(comparePixels(a, b)).toEqual({ changedPixels: 2, comparedPixels: 2, diffPct: 100 });
+    expect(comparePixels(b, a)).toEqual({ changedPixels: 2, comparedPixels: 2, diffPct: 100 });
+    expect(comparePixels(a, png(1, 2, [[0, 0, 0], [0, 0, 0]])), 'same pixel count, other shape').toEqual({ changedPixels: 2, comparedPixels: 2, diffPct: 100 });
+    expect(pixelDiffPct(a, b)).toBe(100);
   });
 });

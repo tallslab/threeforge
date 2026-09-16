@@ -25,7 +25,7 @@ function cliAppDir(): string {
 export interface PixelComparison {
   /** Pixels where any of R, G, B differs by more than 24. Exact, so `0` means "no pixel moved", with no rounding. */
   changedPixels: number;
-  /** Pixels compared: the smaller of the two images. */
+  /** Pixels compared: the image's pixels, or the larger image's when the sizes differ. */
   comparedPixels: number;
   /** `changedPixels` as a percent of `comparedPixels`, unrounded. */
   diffPct: number;
@@ -41,7 +41,13 @@ export interface PixelComparison {
 export function comparePixels(a: Buffer, b: Buffer): PixelComparison {
   const pa = pngjs.PNG.sync.read(a);
   const pb = pngjs.PNG.sync.read(b);
-  const n = Math.min(pa.width * pa.height, pb.width * pb.height);
+  // Images of different sizes differ everywhere: a render that changed size is not parity, and a flat-index compare of
+  // the overlap would misalign rows and pass `--parity 0`.
+  if (pa.width !== pb.width || pa.height !== pb.height) {
+    const larger = Math.max(pa.width * pa.height, pb.width * pb.height);
+    return { changedPixels: larger, comparedPixels: larger, diffPct: 100 };
+  }
+  const n = pa.width * pa.height;
   let differing = 0;
   for (let i = 0; i < n; i++) {
     const o = i * 4;

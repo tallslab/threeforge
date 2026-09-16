@@ -77,7 +77,7 @@ for (const asset of plan.attempt) {
       return { report: { batches: report.after.batches, instanced: report.after.instanced, meshes: report.after.meshes, groups: report.groups.length }, totals: frame.totals, byReason: frame.byReason, skipped: [...skipped.entries()] };
     });
     const after = await forge.page.screenshot({ type: 'png' });
-    const diff = pixelDiff(before, after, { requireSameSize: true });
+    const diff = pixelDiff(before, after);
     const restored = await forge.page.evaluate(() => {
       window.__forge.decompile();
       return window.__forge.frame().totals.sceneSubmissions;

@@ -1,5 +1,5 @@
 import { expect, test, type ForgePage } from './fixtures.js';
-import { pixelDiff, settle } from './pixels.js';
+import { differingPixels, pixelDiff, settle } from './pixels.js';
 
 /** Records a measurement on the test (visible in the JSON and HTML reports) instead of printing it. */
 function note(description: string): void {
@@ -38,10 +38,11 @@ test('baking the village keeps the pixels and draws one mesh per group', async (
   expect(r.totals.unattributed).toBe(0);
   expect(r.bake!.triangles).toBeLessThanOrEqual(r.bake!.inputTriangles);
   const diff = pixelDiff(before, after, { threshold: 4 });
-  const restoredDiff = pixelDiff(before, restored, { threshold: 4 });
-  note(`[${forge.backend}] village bake: ${r.after.baked} baked, pixel diff ${(diff * 100).toFixed(4)}%, after decompile ${(restoredDiff * 100).toFixed(4)}%`);
+  const restoredDiff = differingPixels(before, restored, { threshold: 4 });
+  note(`[${forge.backend}] village bake: ${r.after.baked} baked, pixel diff ${(diff * 100).toFixed(4)}%, after decompile ${restoredDiff} pixels`);
   expect(diff).toBeLessThan(0.0005);
-  expect(restoredDiff, 'decompile() did not restore the naive picture').toBeLessThan(0.0005);
+  // Measured 0 differing pixels on webgl2 and 3 on webgpu (two runs each): held at a few pixels, not the bake's bound.
+  expect(restoredDiff, 'decompile() did not restore the naive picture').toBeLessThanOrEqual(8);
 });
 
 /** A 6 x 3 wall of touching unit boxes (27 seams), optionally a block hidden inside a solid, optionally under a mirrored scene. */

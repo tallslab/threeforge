@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures.js';
-import { pixelDiff } from './pixels.js';
+import { differingPixels, pixelDiff } from './pixels.js';
 
 /**
  * three r186's `renderer.compileAsync()` builds render objects after `renderObject()` has restored
@@ -42,7 +42,13 @@ for (const mode of ['frame', 'async'] as const) {
       expect(result.unattributed).toBe(0);
       if (mode === 'async') expect(result.repaired).toBeGreaterThanOrEqual(c.repaired);
       expect(pixelDiff(cold, warmed, { threshold: 4 }), 'pixels changed by warm-up').toBeLessThan(0.0005);
-      expect(pixelDiff(cold, restored, { threshold: 4 }), 'pixels changed by decompile() after warm-up').toBeLessThan(0.0005);
+      // decompile() is held to what it measures rather than the warm-up bound: at most a few pixels beyond what the warm-up
+      // itself left. Measured (two runs each) 0 differing pixels against the cold frame everywhere except the glass on
+      // webgpu, where the 149 pixels are exactly the warm-up's own 0.0310% and decompile() adds none.
+      const warmedPixels = differingPixels(cold, warmed, { threshold: 4 });
+      const back = differingPixels(cold, restored, { threshold: 4 });
+      test.info().annotations.push({ type: 'warmup', description: `[${forge.backend}] ${mode} ${c.asset}: warm-up ${warmedPixels} pixels, decompile ${back} pixels` });
+      expect(back, 'pixels changed by decompile() after warm-up').toBeLessThanOrEqual(warmedPixels + 8);
     });
   }
 }

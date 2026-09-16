@@ -1,5 +1,5 @@
 import { expect, test, type ForgePage } from './fixtures.js';
-import { pixelDiff, settle } from './pixels.js';
+import { differingPixels, pixelDiff, settle } from './pixels.js';
 
 /** Records a measurement on the test (visible in the JSON and HTML reports) instead of printing it. */
 function note(description: string): void {
@@ -161,9 +161,9 @@ test('world.compile() takes the naive scene from 503 to 28 submissions with iden
   //   without it (WebGPU, and any WebGL2 context lacking the extension): one call per multi-draw slot, so a pass
   //           costs one draw per drawn instance (naive 500 -> 500, compiled 28 submissions -> 500).
   // The law keys on `frame.env.multiDraw`, the capability the ledger predicts from, not on the Playwright project
-  // name: a webgl2 context without `WEBGL_multi_draw` (a Linux runner, which is what CI uses for webgl2) obeys the
-  // second law, and selecting by backend name would fail there blaming a threeforge property for an environment
-  // condition.
+  // name: a webgl2 context without `WEBGL_multi_draw` would obey the second law, and selecting by backend name would
+  // fail there blaming a threeforge property for an environment condition. (The SwiftShader webgl2 context the bench
+  // baselines were recorded on does report `multiDraw: true`; the guard is for any context that does not.)
   //
   // What this adds over `unattributed`, asserted at 0 for each of these two draw sets just below: that assertion ties
   // the ledger's cost *model* to the number the backend actually reported, so a model-only regression fails there
@@ -226,15 +226,17 @@ test('world.compile() takes the naive scene from 503 to 28 submissions with iden
   if (naiveShots && compiledShots && restoredShots) {
     for (const view of VIEWS) {
       const compiled = pixelDiff(naiveShots[view.name]!, compiledShots[view.name]!, { threshold: 4 });
-      const back = pixelDiff(naiveShots[view.name]!, restoredShots[view.name]!, { threshold: 4 });
-      note(`[${forge.backend}] ${view.name} view: compile ${(compiled * 100).toFixed(4)}%, decompile ${(back * 100).toFixed(4)}%`);
+      const back = differingPixels(naiveShots[view.name]!, restoredShots[view.name]!, { threshold: 4 });
+      note(`[${forge.backend}] ${view.name} view: compile ${(compiled * 100).toFixed(4)}%, decompile ${back} pixels`);
       // The measured baseline, so whoever next sees this fail reads it against the known margin instead of rediscovering
       // it: at the 800x600 viewport pixelDiff divides by 480,000, and the oblique view sits at 0.0467% (webgl2) /
       // 0.0471% (webgpu) of the 0.0500% bound — 224 / 226 differing pixels, about 14 px of headroom. It is draw-order
       // tie-breaking among overlapping distant props, which the draw-set comparison above proves rather than infers.
-      // The default view sits at 0.0069% / 0.0071%, and both decompile diffs are 0.0000%.
+      // The default view sits at 0.0069% / 0.0071%. decompile() is held to what it measures, not to the compile bound
+      // (240 pixels, enough to hide a prop restored at a wrong transform, 30-200 px at this view): 0 differing pixels on
+      // both views and both backends (two runs each), bounded at a few pixels.
       expect(compiled, `${view.name} view: compile() changed the picture`).toBeLessThan(0.0005);
-      expect(back, `${view.name} view: decompile() did not restore the picture`).toBeLessThan(0.0005);
+      expect(back, `${view.name} view: decompile() did not restore the picture`).toBeLessThanOrEqual(8);
     }
   }
 });

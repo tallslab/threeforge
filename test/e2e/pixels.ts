@@ -16,19 +16,35 @@ export interface PixelDiffOptions {
   threshold?: number;
   /** When given, writes a diff PNG (dimmed original, differing pixels in red) to this path. */
   diffPath?: string;
-  /**
-   * When true, mismatched image dimensions short-circuit to a diff of 1 instead of comparing `b` against `a`'s
-   * bounds (which is what happens when this is left false, the behaviour every copy but assets.spec.ts had).
-   */
-  requireSameSize?: boolean;
 }
 
-/** Counts differing pixels between two PNG buffers and returns differing / total as a ratio in [0, 1]. */
+/**
+ * Counts differing pixels between two PNG buffers and returns differing / total as a ratio in [0, 1]. Images of
+ * different sizes differ entirely (1): a render that changed size is not parity, and comparing by index would read
+ * past the end of the smaller image (every such pixel reading as unchanged) or misalign rows.
+ */
 export function pixelDiff(a: Buffer, b: Buffer, options: PixelDiffOptions = {}): number {
-  const { threshold = 24, diffPath, requireSameSize = false } = options;
+  const { differing, total } = countDiffering(a, b, options);
+  return differing / total;
+}
+
+/**
+ * The number of differing pixels between two PNG buffers (same rule and options as `pixelDiff`): for a bound measured in
+ * pixels, such as a decompile that restores the picture exactly. Images of different sizes count every pixel of the
+ * larger one.
+ */
+export function differingPixels(a: Buffer, b: Buffer, options: PixelDiffOptions = {}): number {
+  return countDiffering(a, b, options).differing;
+}
+
+function countDiffering(a: Buffer, b: Buffer, options: PixelDiffOptions): { differing: number; total: number } {
+  const { threshold = 24, diffPath } = options;
   const pa = PNG.sync.read(a);
   const pb = PNG.sync.read(b);
-  if (requireSameSize && (pa.width !== pb.width || pa.height !== pb.height)) return 1;
+  if (pa.width !== pb.width || pa.height !== pb.height) {
+    const larger = Math.max(pa.width * pa.height, pb.width * pb.height);
+    return { differing: larger, total: larger };
+  }
   const out = diffPath ? new PNG({ width: pa.width, height: pa.height }) : undefined;
   let differing = 0;
   const n = pa.width * pa.height;
@@ -46,7 +62,7 @@ export function pixelDiff(a: Buffer, b: Buffer, options: PixelDiffOptions = {}):
     }
   }
   if (diffPath && out) writeFileSync(diffPath, PNG.sync.write(out));
-  return differing / n;
+  return { differing, total: n };
 }
 
 /** Advances the harness `frames` animation frames (default 3) so late-settling effects finish before a screenshot. */
