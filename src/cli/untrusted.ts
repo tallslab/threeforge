@@ -19,24 +19,39 @@ import { EnvironmentError, PageError, UsageError } from './errors.js';
 /** CSI (`ESC [ params intermediate final`), OSC (`ESC ] ... BEL` or `ESC ] ... ESC \`), and other Fe escape sequences. */
 const ANSI = /[\x1B\x9B](?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\)|[@-Z\\-_])/g;
 
-/** Bidi override/isolate marks and zero-width formatting characters: invisible, so useless except to disguise text. */
-const ZERO_WIDTH_AND_BIDI = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
+/**
+ * Invisible characters, useless in a name or a message except to disguise text (final review F5):
+ * - every format character (`\p{Cf}`): bidi marks, overrides and isolates (U+061C, U+200E-200F, U+202A-202E,
+ *   U+2066-2069), zero-width characters (U+200B-200D, U+2060-2064, U+FEFF), the soft hyphen, the deprecated format
+ *   controls U+206A-206F, interlinear annotation U+FFF9-FFFB, and the Unicode tag characters U+E0001 and
+ *   U+E0020-E007F, which mirror ASCII invisibly and are read by LLM tokenizers ("ASCII smuggling");
+ * - the rest of the tag block (U+E0000-E007F, unassigned code points included);
+ * - variation selectors (U+FE00-FE0F, U+E0100-E01EF) and the Mongolian ones (U+180B-180D, U+180F), which can carry
+ *   hidden bytes after a visible glyph;
+ * - characters that draw nothing although not `Cf`: the combining grapheme joiner U+034F, the Hangul fillers U+115F,
+ *   U+1160, U+3164 and U+FFA0, and the Khmer inherent vowels U+17B4-17B5.
+ */
+const INVISIBLE = /[\p{Cf}\u{E0000}-\u{E007F}\uFE00-\uFE0F\u{E0100}-\u{E01EF}\u180B-\u180D\u180F\u034F\u115F\u1160\u3164\uFFA0\u17B4\u17B5]/gu;
 
-/** C0 controls (incl. tab/newline/CR/ESC), DEL and C1 controls. Collapsing a line break to a space blocks fake log lines. */
-const CONTROL = /[\x00-\x1F\x7F-\x9F]/g;
+/**
+ * C0 controls (incl. tab/newline/CR/ESC), DEL, C1 controls, and the Unicode line and paragraph separators U+2028-2029.
+ * Collapsing a line break to a space blocks fake log lines.
+ */
+const CONTROL = /[\x00-\x1F\x7F-\x9F\u2028\u2029]/g;
 
 /** A cap generous enough for a normal CLI line, small enough to bound a hostile one. */
 export const DEFAULT_TEXT_MAX = 2000;
 
 /**
- * Strips ANSI escapes, zero-width and bidi-override characters, replaces remaining control characters (including
- * embedded newlines) with a space, then caps the result at `max` Unicode code points — never splitting a
- * surrogate pair, so an astral emoji within budget survives whole. A non-string is returned unchanged (defensive:
- * `sanitizeDeep` is the only caller that can hand this something other than a string).
+ * Strips ANSI escapes and invisible characters (`INVISIBLE`: format, tag and variation-selector characters, among
+ * them the zero-width and bidi ones), replaces remaining control characters (including embedded newlines) with a
+ * space, then caps the result at `max` Unicode code points — never splitting a surrogate pair, so an astral emoji
+ * within budget survives whole. A non-string is returned unchanged (defensive: `sanitizeDeep` is the only caller that
+ * can hand this something other than a string).
  */
 export function cleanText(s: string, max: number = DEFAULT_TEXT_MAX): string {
   if (typeof s !== 'string') return s;
-  const cleaned = s.replace(ANSI, '').replace(ZERO_WIDTH_AND_BIDI, '').replace(CONTROL, ' ');
+  const cleaned = s.replace(ANSI, '').replace(INVISIBLE, '').replace(CONTROL, ' ');
   if (cleaned.length <= max) return cleaned; // UTF-16 length >= code point count: a safe fast path.
   const chars = Array.from(cleaned);
   if (chars.length <= max) return cleaned;
