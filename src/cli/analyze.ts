@@ -5,8 +5,9 @@ import pngjs from 'pngjs';
 import type { BakeSummary } from '../compiler/World.js';
 import { VERSION } from '../version.js';
 import { DEFAULT_PARITY } from './args.js';
-import { launchBrowser, type PlaywrightPage } from './browser.js';
+import { launchBrowser, type PlaywrightPage, type PlaywrightRoute } from './browser.js';
 import { PageError, UsageError } from './errors.js';
+import { assertConfinedUris, readGltfJson } from './gltf-uris.js';
 import { Resources, type CliDeps } from './lifecycle.js';
 import { compileViaHook, evaluateWithin, measureViaHook, waitFor } from './measure.js';
 import { serveStatic } from './server.js';
@@ -121,11 +122,47 @@ export interface AnalysisWithShots {
   pageErrors: string[];
 }
 
+/** How many distinct blocked URLs the progress line names; a hostile asset can hold thousands. */
+const BLOCKED_SAMPLE_MAX = 5;
+
+/**
+ * A catch-all Playwright route handler that lets through only `origin` (the run's own static server) and refuses
+ * everything else. Belt and braces behind `assertConfinedUris`: a URI the JSON scan cannot see — one an extension
+ * holds, one a redirect produces, one a `fetch()` in a page script makes — still cannot leave the served origin.
+ * `data:` and `blob:` are answered inside the browser and never reach routing.
+ *
+ * The prefix test is on `${origin}/` as well as `origin` itself, so a host that merely *starts* with the served one
+ * (`http://127.0.0.1:65123.attacker.example/`) is refused rather than matched.
+ */
+export function routeGuard(origin: string): { handler: (route: PlaywrightRoute) => unknown; count: () => number; sample: () => string[] } {
+  const sample = new Set<string>();
+  let count = 0;
+  return {
+    handler: (route: PlaywrightRoute) => {
+      const url = route.request().url();
+      if (url === origin || url.startsWith(`${origin}/`)) return route.continue();
+      count++;
+      if (sample.size < BLOCKED_SAMPLE_MAX) sample.add(url);
+      return route.abort('blockedbyclient');
+    },
+    count: () => count,
+    sample: () => [...sample],
+  };
+}
+
 /** `analyzeAsset` plus the screenshots it took before compiling, so `optimize` can compare two files. */
 export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: string) => void = () => {}, wantShots = false, deps: CliDeps = {}): Promise<AnalysisWithShots> {
   const started = Date.now();
   const file = resolve(input.file);
   if (!existsSync(file) || !statSync(file).isFile()) throw new UsageError(`file not found: ${input.file}`);
+  // Independent review C1. The page loads this asset with `GLTFLoader`, and three r186's `LoaderUtils.resolveURL`
+  // (`node_modules/three/src/loaders/LoaderUtils.js`) returns an absolute `http(s)://` or protocol-relative `//host/`
+  // URI unchanged, so the browser fetches it itself instead of through the confined static server below. An untrusted
+  // asset would make headless Chromium issue requests from this machine's network (blind egress, and GET side effects
+  // against `127.0.0.1` services). Same scan `optimize` runs before glTF-Transform reads the file, so a violation is
+  // the same `UsageError` naming the URI, exit 2, before a browser is opened. `routeGuard` below covers what a JSON
+  // scan cannot see.
+  assertConfinedUris(readGltfJson(file), dirname(file));
   // `--parity` (Ruling R149), judged exactly as `optimize` judges its own: through `parityOf` and `failingViews`.
   const threshold = input.parity ?? DEFAULT_PARITY;
   const resources = new Resources();
@@ -140,6 +177,8 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
     const browser = await (deps.launch ?? launchBrowser)(input.backend, input.headed);
     resources.add('the browser', () => browser.close());
     const page = await browser.newPage();
+    const blocked = routeGuard(server.url);
+    await page.route('**/*', blocked.handler);
     const pageErrors: string[] = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
     const q = new URLSearchParams({ file: `/asset/${basename(file)}`, backend: input.backend, tier: input.tier, ...(input.bake === 'off' ? {} : { bake: input.bake === 'buried' ? 'buried' : '1' }) });
@@ -166,6 +205,7 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
       parity = parityOf(views, threshold);
       if (!parity.pass) log(`pixel parity lost: ${failingViews(views, threshold).map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct}%)`).join(', ')}`);
     }
+    if (blocked.count() > 0) log(`blocked ${blocked.count()} request(s) the page made outside ${server.url}: ${blocked.sample().join(', ')}`);
     if (pageErrors.length) log(`page errors: ${formatPageErrors(pageErrors)}`);
     const hints = (after ?? before.snapshot).hints;
     const verdict = verdictOf(after, before.snapshot, input.budget, parity, pageErrors);

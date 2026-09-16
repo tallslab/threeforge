@@ -8,12 +8,21 @@ export interface BrowserHandle {
   close(): Promise<void>;
 }
 
+/** The slice of Playwright's `Route` the CLI uses: enough to read a request's URL and let it through or refuse it. */
+export interface PlaywrightRoute {
+  request(): { url(): string };
+  continue(): Promise<void>;
+  abort(errorCode?: string): Promise<void>;
+}
+
 /** The slice of Playwright's Page the CLI uses (typed structurally so the package compiles without Playwright). */
 export interface PlaywrightPage {
   goto(url: string, options?: { timeout?: number; waitUntil?: 'load' | 'domcontentloaded' }): Promise<unknown>;
   waitForFunction(fn: string | ((...args: never[]) => unknown), arg?: unknown, options?: { timeout?: number }): Promise<unknown>;
   evaluate<R>(fn: string | ((...args: never[]) => R | Promise<R>), arg?: unknown): Promise<R>;
-  screenshot(options?: { type?: 'png' }): Promise<Buffer>;
+  screenshot(options?: { type?: 'png'; timeout?: number }): Promise<Buffer>;
+  /** Intercept matching requests. `analyze` installs one catch-all handler to confine the page to its static server. */
+  route(url: string, handler: (route: PlaywrightRoute) => unknown): Promise<void>;
   on(event: 'pageerror', handler: (error: Error) => void): unknown;
   on(event: 'console', handler: (message: { type(): string; text(): string }) => void): unknown;
   close(): Promise<void>;

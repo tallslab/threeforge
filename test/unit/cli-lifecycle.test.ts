@@ -11,6 +11,7 @@ import { armExitWatchdog, Resources, withTimeout } from '../../src/cli/lifecycle
 import { PageError as MeasurePageError } from '../../src/cli/measure.js';
 import { serveStatic, type StaticRoot } from '../../src/cli/server.js';
 import type { AnalyzeInput, InspectInput } from '../../src/cli/types.js';
+import { glbBytes } from './helpers/gltf-files.js';
 
 const settle = <T>(promise: Promise<T>): Promise<T | unknown> => promise.then((value) => value, (error: unknown) => error);
 
@@ -171,7 +172,7 @@ describe('Resources after an abort', () => {
     const dir = mkdtempSync(join(tmpdir(), 'forge-lifecycle-'));
     try {
       const file = join(dir, 'a.glb');
-      writeFileSync(file, 'glb');
+      writeFileSync(file, glbBytes({ asset: { version: '2.0' } }));
       const { serve, state } = countingServe();
       const controller = new AbortController();
       let browserClosed = 0;
@@ -238,6 +239,7 @@ function stuckPage(): PlaywrightPage {
     goto: async () => null,
     waitForFunction: async () => true,
     evaluate: () => new Promise(() => {}),
+    route: async () => {},
     screenshot: async () => Buffer.alloc(0),
     on: () => page,
     close: async () => {},
@@ -250,7 +252,7 @@ describe('analyze and inspect release what they opened', () => {
     const dir = mkdtempSync(join(tmpdir(), 'forge-lifecycle-'));
     try {
       const file = join(dir, 'a.glb');
-      writeFileSync(file, 'glb');
+      writeFileSync(file, glbBytes({ asset: { version: '2.0' } }));
       const { serve, state } = countingServe();
       const launch = async (): Promise<BrowserHandle> => {
         throw new EnvironmentError('could not launch Chromium');
@@ -268,7 +270,7 @@ describe('analyze and inspect release what they opened', () => {
     const dir = mkdtempSync(join(tmpdir(), 'forge-lifecycle-'));
     try {
       const file = join(dir, 'a.glb');
-      writeFileSync(file, 'glb');
+      writeFileSync(file, glbBytes({ asset: { version: '2.0' } }));
       const { serve, state } = countingServe();
       const launch = async (): Promise<BrowserHandle> => ({
         newPage: async () => {
@@ -291,7 +293,7 @@ describe('analyze and inspect release what they opened', () => {
     const dir = mkdtempSync(join(tmpdir(), 'forge-lifecycle-'));
     try {
       const file = join(dir, 'a.glb');
-      writeFileSync(file, 'glb');
+      writeFileSync(file, glbBytes({ asset: { version: '2.0' } }));
       const { serve, state } = countingServe();
       let browserClosed = 0;
       const launch = async (): Promise<BrowserHandle> => ({

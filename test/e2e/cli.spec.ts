@@ -510,3 +510,38 @@ test('optimize --no-verify runs without a browser; a missing file, an out-of-dir
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+/**
+ * Independent review C1. three r186's `LoaderUtils.resolveURL` returns an absolute `http://` URI unchanged, so before
+ * the fix `analyze` handed one straight to headless Chromium: the page issued the request from this machine's network,
+ * outside the confined static server. The whole run is the temporary file below, so this test needs no downloaded
+ * content and runs in CI's `--grep-invert "@corpus|@bench"` selection.
+ */
+test('analyze refuses an asset whose buffer URI points off the served origin (exit 2, before a browser opens)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'forge-analyze-uri-'));
+  try {
+    const hostile = join(dir, 'hostile.gltf');
+    writeFileSync(hostile, JSON.stringify({ asset: { version: '2.0' }, buffers: [{ uri: 'http://127.0.0.1:1/x.bin', byteLength: 4 }] }));
+    const started = Date.now();
+    const r = run(['analyze', hostile, '--json']);
+    const ms = Date.now() - started;
+    expect(r.status, r.stderr).toBe(2);
+    expect(r.stdout).toBe('');
+    expect(r.stderr).toContain('buffers[0].uri');
+    expect(r.stderr).toContain('http://127.0.0.1:1/x.bin');
+    expect(r.stderr).toMatch(/URI scheme/);
+    // No browser is launched for this, so it is an argument-check-speed failure, not a page one.
+    expect(ms).toBeLessThan(20_000);
+    // The same for an image URI that climbs out of the asset's directory, and for a protocol-relative host.
+    const climbing = join(dir, 'climbing.gltf');
+    writeFileSync(climbing, JSON.stringify({ asset: { version: '2.0' }, images: [{ uri: '../../../../etc/passwd' }] }));
+    expect(run(['analyze', climbing, '--json']).status).toBe(2);
+    const relative = join(dir, 'relative.gltf');
+    writeFileSync(relative, JSON.stringify({ asset: { version: '2.0' }, images: [{ uri: '//attacker.example/beacon.png' }] }));
+    const protocolRelative = run(['analyze', relative, '--json']);
+    expect(protocolRelative.status, protocolRelative.stderr).toBe(2);
+    expect(protocolRelative.stderr).toContain('//attacker.example/beacon.png');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

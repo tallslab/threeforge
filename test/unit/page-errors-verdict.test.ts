@@ -9,6 +9,7 @@ import type { BrowserHandle, PlaywrightPage } from '../../src/cli/browser.js';
 import { judgeOptimize } from '../../src/cli/optimize.js';
 import type { AgentDocument, AnalyzeInput, AssetFacts, AssetStats, OptimizeVerify } from '../../src/cli/types.js';
 import { emptyFrame } from '../../src/ledger/snapshot.js';
+import { glbBytes } from './helpers/gltf-files.js';
 
 /** Page errors (uncaught exceptions in the harness page) fail `analyze` and `optimize` verdicts; `inspect` only logs them. */
 const env = { three: '186', backend: 'webgl2' as const, multiDraw: true, tier: 'phone-low' as const, gpu: 'x', dpr: 1, viewport: [800, 600] as [number, number] };
@@ -20,6 +21,7 @@ function pageRaising(messages: string[]): PlaywrightPage {
     goto: async () => null,
     waitForFunction: async () => true,
     evaluate: async (expression: unknown) => (String(expression).includes('__threeforgeCli') ? { ready: true, asset } : { snapshot: emptyFrame(env), renderMs: 1, frameMs: 16 }),
+    route: async () => {},
     screenshot: async () => Buffer.alloc(0),
     on: (event: string, listener: (error: Error) => void) => {
       if (event === 'pageerror') for (const message of messages) listener(new Error(message));
@@ -35,7 +37,7 @@ describe('page errors fail the analyze verdict', () => {
     const dir = mkdtempSync(join(tmpdir(), 'forge-page-errors-'));
     try {
       const file = join(dir, 'a.glb');
-      writeFileSync(file, 'glb');
+      writeFileSync(file, glbBytes({ asset: { version: '2.0' } }));
       const command = parseArgs(['analyze', file, '--no-compile']);
       if (command.name !== 'analyze') throw new Error(`parsed as ${command.name}`);
       const run = async (messages: string[]) => {
@@ -80,7 +82,8 @@ describe('analyze --parity judges the compile parity like optimize', () => {
         if (text.includes('__threeforgeCli')) return { ready: true, asset };
         return undefined;
       },
-      screenshot: async () => shots[shot++]!,
+      route: async () => {},
+    screenshot: async () => shots[shot++]!,
       on: () => page,
       close: async () => {},
     };
@@ -90,7 +93,7 @@ describe('analyze --parity judges the compile parity like optimize', () => {
     const dir = mkdtempSync(join(tmpdir(), 'forge-analyze-parity-'));
     try {
       const file = join(dir, 'a.glb');
-      writeFileSync(file, 'glb');
+      writeFileSync(file, glbBytes({ asset: { version: '2.0' } }));
       const command = parseArgs(['analyze', file, ...args]);
       if (command.name !== 'analyze') throw new Error(`parsed as ${command.name}`);
       const launch = async (): Promise<BrowserHandle> => ({ newPage: async () => comparingPage(shots), close: async () => {} });

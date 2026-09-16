@@ -11,8 +11,12 @@ import { cleanText } from './untrusted.js';
  * the URIs (`assertConfinedUris`) before `io.read`, and checks the URIs the writer will use before `io.write` of a
  * `.gltf` (`src/cli/optimize.ts`).
  *
- * `analyze` needs none of this: the browser fetches the asset's resources only through the static server
- * (`src/cli/server.ts`), which confines every request to its roots by real path.
+ * `analyze` needs it too, and said the opposite until the independent review (C1). The static server
+ * (`src/cli/server.ts`) does confine every request to its roots by real path, but three's `LoaderUtils.resolveURL`
+ * (r186, `node_modules/three/src/loaders/LoaderUtils.js`) returns an absolute `http(s)://` or protocol-relative
+ * `//host/` URI *unchanged*, so `GLTFLoader` fetches it from the page and never reaches that server at all. So
+ * `analyze` (and the MCP `analyze_asset`) runs the same `assertConfinedUris` before it opens a browser, and confines
+ * the page to the served origin with a catch-all route as well (`routeGuard`, `src/cli/analyze.ts`).
  */
 
 const GLB_MAGIC = 0x46546c67; // 'glTF'

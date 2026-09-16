@@ -1178,6 +1178,14 @@ swaps change data, not draw calls.
     view's raw `changedPixels` (a pixel whose R, G or B moved by more than 24), any other on the percentage. So the
     default passes a view with up to 0.5 % of its pixels changed, and `--parity 0` fails unless no pixel changed.
     Two renders of different sizes count as every pixel changed. `input.parity` records the threshold used.
+    Before any of that, the asset's `images[].uri` and `buffers[].uri` go through the same `assertConfinedUris` check
+    `optimize` runs (`src/cli/gltf-uris.ts`): an absolute URI, any scheme but `data:`, a backslash, a NUL, text that is
+    not valid percent-encoding, or a path resolving outside the asset's directory exits 2 naming the URI, before a
+    browser is opened. three's `LoaderUtils.resolveURL` returns an absolute `http(s)://` or protocol-relative `//host/`
+    URI unchanged, so without that check `GLTFLoader` fetched it from the page instead of through the static server,
+    and an untrusted asset could make headless Chromium issue requests from this machine's network. The page is also
+    held to the served origin by a catch-all Playwright route that aborts every other request and names up to five of
+    them on the progress line, so a URI the JSON scan cannot see cannot escape either.
   - `inspect <url> [--backend webgl2|webgpu] [--budget N] [--frames N] [--no-compile] [--timeout ms] [--headed]
     [--json]`: drives the agent's own dev server through the hook, compiling through it unless `--no-compile`
     (`--compile` is accepted and is the default); same document without asset facts and parity. There is no

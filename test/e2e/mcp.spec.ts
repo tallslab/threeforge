@@ -328,3 +328,29 @@ test('a real analyze_asset call on the Fox returns the document in content[0] an
     await close();
   }
 });
+
+/**
+ * Independent review C1, through the surface an agent actually calls. `analyze_asset` handed an untrusted asset's
+ * absolute `http://` resource URIs straight to headless Chromium; it now returns the CLI's `{ error, code: 2 }` before
+ * a browser opens. No downloaded content, so this runs in CI's `--grep-invert "@corpus|@bench"` selection.
+ */
+test('analyze_asset refuses an asset whose buffer URI points off the served origin: isError with code 2', async () => {
+  test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
+  await ready();
+  const dir = mkdtempSync(join(tmpdir(), 'forge-mcp-uri-'));
+  const { client, close } = await connect();
+  try {
+    const hostile = join(dir, 'hostile.gltf');
+    writeFileSync(hostile, JSON.stringify({ asset: { version: '2.0' }, buffers: [{ uri: 'http://127.0.0.1:1/x.bin', byteLength: 4 }] }));
+    const result = await client.callTool({ name: 'analyze_asset', arguments: { file: hostile, frames: 1 } });
+    expect(result.isError, JSON.stringify(result.content)).toBe(true);
+    const body = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
+    expect(body.code).toBe(2);
+    expect(body.error).toContain('buffers[0].uri');
+    expect(body.error).toContain('http://127.0.0.1:1/x.bin');
+    expect((result.content as Array<{ text: string }>)[1]?.text).toBe(ERROR_NOTE);
+  } finally {
+    await close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -97,6 +97,7 @@ entries of [All changes](#all-changes), which also lists every fix that needs no
 |---|---|---|---|
 | rejected | The parser rejects the inputs in the usage-error table under [All changes](#all-changes): unknown flags, flags of another command, values on boolean flags, repeated flags, flags before the command, extra positionals, malformed or out-of-range numbers, `optimize --budget` with `--no-verify`. | Those invocations exit 2 with nothing on stdout, where 0.8.0 ignored, clamped or rounded them. | Fix the invocation; the message names the problem. |
 | rejected | `optimize` exits 2 before reading anything when an `images[].uri` or `buffers[].uri` is absolute, has a scheme other than `data:`, contains a backslash or NUL, is not valid percent-encoding, or resolves outside the input's directory (by real path too), or when a `.gltf` output's resource URIs would leave its directory. | Such inputs fail where 0.8.0 embedded or wrote the resolved files. | Keep every resource inside the input's directory, or embed it as `data:`. |
+| rejected | `analyze` (and the MCP `analyze_asset`) applies the same resource-URI check to its input before it opens a browser, and confines the harness page to its own static server with a catch-all route. | An asset with an absolute, scheme-carrying, backslashed, NUL-carrying, undecodable or directory-escaping `images[].uri`/`buffers[].uri` exits 2 naming the URI, where 0.8.0 let headless Chromium fetch it from this machine's network; a file that is not readable glTF JSON exits 2 instead of 4. | Keep every resource inside the asset's directory, or embed it as `data:`. |
 | rejected | `optimize --out` must end in `.glb` or `.gltf` and must not be the input (by device and inode) or one of a `.gltf` input's resources; a `.gltf` output's resources must not land on the input or its resources. A `.GLB` output is written as binary glTF. | Those runs exit 2 before writing: `optimize scene.gltf --out scene.opt.gltf` fails instead of rewriting `scene.bin`, and `--out x.txt` fails instead of writing glTF JSON. | Write a `.gltf` output to another directory, or as `.glb`. |
 | default | `optimize --preset safe` runs dedup, palette and prune; `weld` and `resample` move to `balanced` and `aggressive`. | `safe` outputs lose weld's and lossy resampling's savings. | Add `--weld`, or `--resample` (lossless under `safe`), or use `balanced`. |
 | rejected | `--parity 0` is judged on every view's raw `changedPixels` (a pixel whose R, G or B moved by more than 24), in `optimize` and in `analyze`'s new `--parity` (below), both through `parityOf`. `optimize --parity` governs the comparison of the two files as loaded; each file's own compile parity stays at 0.5 %. | An `optimize --parity 0` run that moved up to 4 of 921,600 pixels between the files, which reported `pass: true` and exited 0, now fails. | Pass a non-zero `--parity` to allow a small change; read `verify.optimized.parity` for the optimized file's compile. |
@@ -165,6 +166,12 @@ Documented in `docs/threeforge.md` (section 14 lists them), not fixed in 0.9.0:
 
 ### All changes
 
+- `analyze` and the MCP `analyze_asset` refuse an asset whose `images[].uri` or `buffers[].uri` leaves its directory, before a
+  browser is opened (`assertConfinedUris`, the check `optimize` already ran), and install a catch-all Playwright route that lets
+  the harness page reach only the run's own static server. three r186's `LoaderUtils.resolveURL` returns an absolute `http(s)://`
+  or protocol-relative `//host/` URI unchanged, so `GLTFLoader` fetched it directly: an untrusted `.gltf` made headless Chromium
+  issue requests from the developer's or CI runner's network. The comment in `src/cli/gltf-uris.ts` that said `analyze` needed no
+  such check is corrected. A blocked request is named on the progress line (at most five distinct URLs).
 - `MainPassObjects` and `HintItem`, the types of `HintContext.objects` and `HintContext.items`, are exported from the
   package entry point beside `HintContext`, so a TypeScript consumer can name them.
 - `NO_SHADOW_WORK` is exported from the package entry point. The `lightingOf` entry below and `lightingOf`'s own doc
