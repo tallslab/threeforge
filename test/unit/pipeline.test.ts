@@ -8,7 +8,7 @@ const names = (input: Partial<OptimizeInput>) => planSteps({ ...base, ...input }
 describe('planSteps', () => {
   it('lists the presets in pipeline order', () => {
     expect(PRESETS).toEqual(['safe', 'balanced', 'aggressive']);
-    expect(names({})).toEqual(['dedup', 'palette', 'resample', 'prune']);
+    expect(names({})).toEqual(['dedup', 'palette', 'prune']);
     expect(names({ preset: 'balanced' })).toEqual(['dedup', 'palette', 'weld', 'resample', 'prune', 'textures', 'quantize']);
     expect(names({ preset: 'aggressive' })).toEqual(['dedup', 'palette', 'weld', 'simplify', 'resample', 'prune', 'textures', 'quantize']);
   });
@@ -25,8 +25,8 @@ describe('planSteps', () => {
 
   it('applies overrides: --no-<step>, --<step>, join implies flatten, meshopt replaces quantize, textures none', () => {
     expect(names({ steps: { palette: false, resample: false } })).toEqual(['dedup', 'prune']);
-    expect(names({ steps: { quantize: true, instance: true } })).toEqual(['dedup', 'instance', 'palette', 'resample', 'prune', 'quantize']);
-    expect(names({ steps: { join: true } })).toEqual(['dedup', 'palette', 'flatten', 'join', 'resample', 'prune']);
+    expect(names({ steps: { quantize: true, instance: true } })).toEqual(['dedup', 'instance', 'palette', 'prune', 'quantize']);
+    expect(names({ steps: { join: true } })).toEqual(['dedup', 'palette', 'flatten', 'join', 'prune']);
     expect(names({ preset: 'balanced', compress: 'meshopt' })).toEqual(['dedup', 'palette', 'weld', 'resample', 'prune', 'textures', 'meshopt']);
     expect(names({ preset: 'balanced', textures: 'none' })).toEqual(['dedup', 'palette', 'weld', 'resample', 'prune', 'quantize']);
     expect(names({ preset: 'aggressive', steps: { simplify: false } })).not.toContain('simplify');
@@ -46,8 +46,22 @@ describe('planSteps', () => {
     expect(names({})).not.toContain('weld');
     expect(names({ preset: 'balanced' })).toContain('weld');
     expect(names({ preset: 'aggressive' })).toContain('weld');
-    expect(names({ steps: { weld: true } })).toEqual(['dedup', 'palette', 'weld', 'resample', 'prune']);
+    expect(names({ steps: { weld: true } })).toEqual(['dedup', 'palette', 'weld', 'prune']);
     expect(names({ preset: 'balanced', steps: { weld: false } })).toEqual(['dedup', 'palette', 'resample', 'prune', 'textures', 'quantize']);
+  });
+
+  /**
+   * Ruling R105: `resample` left `safe` too, for the opposite reason to weld's. At `tolerance: 0` it is pixel-exact,
+   * but it keeps every keyframe that is not an exact duplicate, so it can grow a file — swept over the 79 readable
+   * corpus assets the median is 0.000 % but Xbot grows 1.248 %, past the 0.5 % bar the rule set. It earns its place
+   * in the lossy presets (Soldier -18.9 %, BrainStem -14.9 %), so `safe` is now the steps that are pixel-exact and
+   * never cost bytes.
+   */
+  it('keeps resample out of safe and in the lossy presets, with --resample able to add it back', () => {
+    expect(names({})).not.toContain('resample');
+    expect(names({ preset: 'balanced' })).toContain('resample');
+    expect(names({ preset: 'aggressive' })).toContain('resample');
+    expect(names({ steps: { resample: true } })).toEqual(['dedup', 'palette', 'resample', 'prune']);
   });
 
   /**
@@ -56,9 +70,11 @@ describe('planSteps', () => {
    * posed silhouette by a few pixels. `safe` therefore asks for tolerance 0 explicitly. Pinned per preset because
    * the value is the entire fix: passing no options at all would silently restore the lossy default.
    */
-  it('resamples at tolerance 0 under safe, and at the lossy 1e-4 default under the lossy presets', () => {
-    const resampleOptions = (preset: OptimizeInput['preset']): unknown => planSteps({ ...base, preset }).find((s) => s.name === 'resample')!.options;
-    expect(resampleOptions('safe')).toEqual({ tolerance: 0 });
+  it('resamples at tolerance 0 when added to safe, and at the lossy 1e-4 default under the lossy presets', () => {
+    const resampleOptions = (preset: OptimizeInput['preset'], steps: OptimizeInput['steps'] = {}): unknown =>
+      planSteps({ ...base, preset, steps }).find((s) => s.name === 'resample')!.options;
+    // `safe` no longer runs it (R105), but `--resample` under `safe` must still be the lossless one.
+    expect(resampleOptions('safe', { resample: true })).toEqual({ tolerance: 0 });
     expect(resampleOptions('balanced')).toEqual({ tolerance: 1e-4 });
     expect(resampleOptions('aggressive')).toEqual({ tolerance: 1e-4 });
   });
