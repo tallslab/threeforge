@@ -152,7 +152,7 @@ export async function applySteps(doc: Document, steps: Step[], deps: Deps, log: 
       case 'resample':
         // The tolerance comes from the preset (Ruling R104): 0 in `safe`, glTF-Transform's lossy 1e-4 default in the
         // others. Passing it explicitly is the whole fix — `fns.resample()` with no options takes 1e-4 and moves
-        // posed geometry, which is not something the pixel-identical preset may do.
+        // posed geometry, which `safe`, held to zero changed pixels at `--parity 0` on the Fox and the Buggy, must not do.
         await doc.transform(fns.resample({ tolerance: Number((o as { tolerance?: number }).tolerance ?? 1e-4) }));
         break;
       case 'prune':

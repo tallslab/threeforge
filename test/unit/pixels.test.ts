@@ -86,7 +86,7 @@ describe('pixelDiff', () => {
  * report the count as a percent of the pixels compared. So `--parity 0` means "no pixel moved by more than 24 on any
  * channel in any view", not "the two PNGs are byte-identical": a run reported as 0 can still differ by 24 everywhere.
  * These cases pin that boundary, the percent scale and the mismatched-size behaviour, none of which had a unit test —
- * every number in `verify.parity` and in the docs' pixel-identical claim rests on them.
+ * every number in `verify.parity` and the docs' measurement of `safe` at zero changed pixels rest on them.
  */
 describe('differingPixels', () => {
   it('counts the pixels pixelDiff would, as an integer, and every pixel of the larger image when the sizes differ', () => {

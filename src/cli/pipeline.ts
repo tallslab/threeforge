@@ -23,8 +23,8 @@ export interface Step {
  * up to 0.014 % of its pixels on WebGPU, where the same run reports 0 on WebGL2. Measured the same way, weld also
  * moves pixels on PotOfCoals (0.004 %) and VirtualCity (0.011 %), both fully indexed and carrying normals, so the
  * effect follows the asset rather than either structural property and the mechanism is not established. A step that
- * can move a pixel does not belong in the preset that promises none, so weld rides with the lossy steps in
- * `balanced` and `aggressive`; `--weld` adds it back to any preset.
+ * can move a pixel does not belong in the preset held to zero changed pixels at `--parity 0` on the Fox and the Buggy,
+ * so weld rides with the lossy steps in `balanced` and `aggressive`; `--weld` adds it back to any preset.
  *
  * Measured cost of this move over 66 readable corpus assets: weld merges vertices on 11 and shrinks the file by
  * more than 0.5 % on 9, median 0.00 %.

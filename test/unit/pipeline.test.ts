@@ -37,9 +37,10 @@ describe('planSteps', () => {
   /**
    * Ruling R100: `weld` is a lossy-preset step, not a `safe` one. It changes no drawn value, yet it moves pixels on
    * WebGPU — on the Fox, and also on PotOfCoals and VirtualCity, which are fully indexed and carry normals — so the
-   * preset that promises pixel identity must not run it (see `test/e2e/cli.spec.ts`). That does not by itself make
-   * `safe` bit-exact: `resample` still takes glTF-Transform's default 1e-4 keyframe tolerance, which shifts a few
-   * silhouette pixels on both backends. Pinned here so a future preset edit cannot quietly put weld back: `safe` is
+   * preset held to zero changed pixels at `--parity 0` on the Fox and the Buggy must not run it (see
+   * `test/e2e/cli.spec.ts`). When R100 was made that alone did not bring `safe` to zero: `resample` then ran there at
+   * glTF-Transform's default 1e-4 keyframe tolerance, which shifts a few silhouette pixels on both backends (R104 set
+   * it to 0 and R105 moved it out of `safe`). Pinned here so a future preset edit cannot quietly put weld back: `safe` is
    * the one preset without it, and `--weld` is still the way to ask for it anywhere.
    */
   it('keeps weld out of safe and in the lossy presets, with --weld able to add it back in pipeline order', () => {

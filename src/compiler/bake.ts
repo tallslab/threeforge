@@ -93,8 +93,10 @@ export interface BakeReport {
   keptCoincidentFaces: number;
   duplicateFaces: number;
   /**
-   * Faces of exactly coincident, same-winding copies the duplicate rule kept because the copies do not all draw the same
-   * pixels (see `removeDuplicateFaces`), outside excluded entries, and that no later rule removed. 0 while
+   * Faces of exactly coincident, same-winding copies the duplicate rule kept, for any of its reasons (see
+   * `removeDuplicateFaces`): a copy in an excluded entry (`bake: false`) or in one that may lose no faces (not opaque,
+   * not front-side, or casting shadows), a copy that draws differently from the first, or another triangle drawn over
+   * the copies. Only copies outside excluded entries count, and only those no later rule removed. 0 while
    * `removeDuplicateFaces` is off.
    */
   keptDuplicateFaces: number;

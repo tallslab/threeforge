@@ -245,13 +245,13 @@ test('analyze --bake --json output validates against ANALYZE_SCHEMA, compiled st
   expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
 });
 
-test('optimize leaves the Fox pixel-identical at --parity 0: zero changed pixels in every view, skin and clips kept', { tag: '@corpus' }, async ({ forge }) => {
+test('optimize changes zero pixels of the Fox at --parity 0 in every view, skin and clips kept', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
     const out = join(dir, 'fox.glb');
-    // --parity 0, and every view asserted at zero *changed pixels* on both backends: `safe` is documented as never
-    // changing a pixel (CONTRIBUTING.md rule 7), and neither the 0.5 % default this test began with nor the rounded
+    // --parity 0, and every view asserted at zero *changed pixels* on both backends: `safe` is held to zero changed
+    // pixels at --parity 0 on the Fox and the Buggy (CONTRIBUTING.md rule 7), and neither the 0.5 % default this test began with nor the rounded
     // `diffPct` that replaced it could prove that — `diffPct` is rounded to three decimals, which at 1280x720
     // absorbs up to 4 changed pixels of 921,600. `changedPixels` (Ruling R104) is the exact count, so these rows
     // are the first form of this assertion that actually tests rule 7.
@@ -318,7 +318,7 @@ test('optimize leaves the Fox pixel-identical at --parity 0: zero changed pixels
  * `diffPct`'s three-decimal rounding on WebGL2, so even a percentage-based parity check would have missed it. The
  * raw changed-pixel count on both backends is the guard.
  */
-test('optimize --preset safe --resample keeps the Fox pixel-identical: the flag runs resample losslessly', { tag: '@corpus' }, async ({ forge }) => {
+test('optimize --preset safe --resample changes zero pixels of the Fox at --parity 0: the flag runs resample losslessly', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
@@ -351,7 +351,7 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
   test.setTimeout(600_000);
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
-    // --parity 0: the same pixel-identical claim as the Fox above, on the asset whose 148 materials the palette step
+    // --parity 0: the same zero-changed-pixels measurement as the Fox above, on the asset whose 148 materials the palette step
     // collapses to one. Every view must be exactly 0, not merely inside the 0.5 % default. This asset corroborates
     // nothing about weld, which is a measured no-op on it (245,673 vertices in and out, all 148 primitives already
     // indexed) and no longer in `safe` anyway; what it covers is dedup, palette and prune -- `safe`'s steps since

@@ -115,7 +115,10 @@ export interface BakeSummary {
   buriedFaces: number;
   weldedVertices: number;
   excludedEntries: number;
-  /** Faces of exactly coincident copies the duplicate rule kept because they do not all draw the same pixels (see `BakeOptions.removeDuplicateFaces`). */
+  /**
+   * Faces of exactly coincident copies the duplicate rule kept, for any of its reasons: an excluded or non-removable copy
+   * among them, a copy that draws differently, or another triangle drawn over them (`BakeReport.keptDuplicateFaces`).
+   */
   keptDuplicateFaces: number;
   /**
    * Static meshes batched instead of baked because their geometry carries an attribute the bake does not carry
