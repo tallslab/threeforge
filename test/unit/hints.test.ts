@@ -3,6 +3,8 @@ import { BUDGETS, budgetsFor, detectTier, tierInputFromNavigator, type TierInput
 import { hintsFor } from '../../src/ledger/hints.js';
 import { emptyFrame } from '../../src/ledger/snapshot.js';
 import type { Tier } from '../../src/ledger/snapshot.js';
+// The package entry, not the module: `HintContext` (exported there) types `objects` as a `MainPassObjects`, so a consumer must be able to name it.
+import type { MainPassObjects } from '../../src/index.js';
 
 const env = { three: '0.186.0', backend: 'webgl2' as const, multiDraw: true, tier: 'phone-low' as const, gpu: 'Adreno 610', dpr: 2, viewport: [390, 844] as [number, number] };
 
@@ -169,7 +171,7 @@ describe('hintsFor', () => {
       'static-unbatched': { submissions: 30, gpuDraws: 30, top: ['rock-1'] },
       sprite: { submissions: 8, gpuDraws: 8, top: ['spark'] },
     };
-    const objects = { untagged: 1, 'unique-material': 21, 'static-unbatched': 15, sprite: 7 };
+    const objects: MainPassObjects = { untagged: 1, 'unique-material': 21, 'static-unbatched': 15, sprite: 7 };
     const hints = hintsFor(f, budgetsFor('desktop'), { objects });
     expect(hints.find((h) => h.code === 'untagged')?.message).toBe('1 untagged meshes: tag.static() or tag.dynamic() them');
     expect(hints.find((h) => h.code === 'unique-materials')?.message).toBe('21 meshes each with a material used once: share materials through the registry');
@@ -177,6 +179,15 @@ describe('hintsFor', () => {
     expect(hints.map((h) => h.code)).not.toContain('sprites-unbatched');
     // A reason drawn only outside the main pass names no main-pass object: no hint.
     expect(hintsFor(f, budgetsFor('desktop'), { objects: { ...objects, untagged: 0 } }).map((h) => h.code)).not.toContain('untagged');
+  });
+
+  it('counts unsupported-material by the distinct objects the ledger passes, and by submissions without them', () => {
+    const f = emptyFrame(env);
+    // One ShaderMaterial mesh drawn in the main pass and in a reflection: two submissions, one mesh.
+    f.byReason = { 'unsupported-material': { submissions: 2, gpuDraws: 2, top: ['fx-panel', 'fx-panel'] } };
+    const message = (ctx: Parameters<typeof hintsFor>[2]) => hintsFor(f, budgetsFor('desktop'), ctx).find((h) => h.code === 'unsupported-material')?.message;
+    expect(message({ unsupportedObjects: 1 })).toBe('1 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer');
+    expect(message({})).toBe('2 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer');
   });
 
   it('reports static-unbatched above 20 statics that draw alone although their material is shared, apart from unique-materials', () => {

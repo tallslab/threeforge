@@ -14,7 +14,7 @@ export { DrawCallLedger, type DrawCallLedgerOptions, type LedgerRenderer } from 
 export type { Flag, Reason, SubmissionKind } from './ledger/reasons.js';
 export type { BudgetOffender, BudgetResult, FrameEnv, FrameSnapshot, FrameTotals, Hint, HintCategory, JsSnapshot, LightingSnapshot, MeasuredMemory, MemorySnapshot, OverdrawSnapshot, PassSnapshot, ProgramSnapshot, ReasonSnapshot, SkinningSnapshot, SubmissionRecord, Tier } from './ledger/snapshot.js';
 export { BUDGETS, budgetsFor, detectTier, tierInputFromNavigator, type Budgets, type TierInput, type TierNavigator } from './ledger/budgets.js';
-export { hintsFor, type HintContext } from './ledger/hints.js';
+export { hintsFor, type HintContext, type MainPassObjects } from './ledger/hints.js';
 export { disposeOverdraw, measureOverdraw, overdrawTargetOf, type OverdrawOptions, type OverdrawRenderer, type OverdrawResult } from './ledger/overdraw.js';
 export { estimateMemory, geometryBytes, textureBytes, type AllowedRenderTarget, type MemoryEstimateOptions, type RendererMemoryInfo } from './ledger/memory.js';
 export { lightingOf, NO_SHADOW_WORK, scanLights, skinningOf, type LightInfo, type ShadowWork } from './ledger/sections.js';

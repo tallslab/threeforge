@@ -1115,6 +1115,35 @@ describe('DrawCallLedger hints count objects, not submissions', () => {
     expect(hint(ledger, 'untagged')?.message).toBe('1 untagged meshes: tag.static() or tag.dynamic() them');
   });
 
+  it('counts unsupported-material by distinct objects over every pass: one caster under a point light is one mesh, and one drawn only into its shadow map still counts', () => {
+    const lamp = new PointLight(0xffffff, 1);
+    lamp.name = 'lamp';
+    lamp.castShadow = true;
+    const { renderer, ledger, scene, camera } = attached({ shadowLight: lamp });
+    const panel = tag.static(new Mesh(box, new ShaderMaterial()));
+    panel.name = 'panel';
+    panel.castShadow = true;
+    scene.add(lamp, panel);
+    renderer.render(scene, camera);
+    expect(ledger.frame().byReason['unsupported-material']?.submissions, 'the main pass and six cube faces').toBe(7);
+    expect(hint(ledger, 'unsupported-material')?.message).toBe('1 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer');
+    // On a layer the main camera does not see, so only the six shadow faces draw it. Its material renders nowhere on
+    // WebGPU either, so it is still a mesh this error hint names, although no main-pass record carries it.
+    const offCamera = tag.static(new Mesh(box, new ShaderMaterial()));
+    offCamera.name = 'off-camera';
+    offCamera.castShadow = true;
+    offCamera.layers.set(1);
+    lamp.shadow!.camera.layers.enable(1);
+    scene.add(offCamera);
+    renderer.render(scene, camera);
+    const drawn = ledger.frame({ items: true }).items!.filter((i) => i.name === 'off-camera');
+    expect(drawn.map((i) => i.pass)).toEqual(Array(6).fill('shadow:lamp'));
+    expect(ledger.frame().byReason['unsupported-material']?.submissions).toBe(13);
+    expect(hint(ledger, 'unsupported-material')?.message).toBe('2 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer');
+    ledger.rescan();
+    expect(hint(ledger, 'unsupported-material')?.message).toBe('2 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer');
+  });
+
   it('counts sprites drawn one by one as objects for sprites-unbatched, and keeps the counts on a rescan between frames', () => {
     const { renderer, ledger, scene, camera } = attached();
     const material = new SpriteMaterial();

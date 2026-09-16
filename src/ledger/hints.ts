@@ -27,6 +27,13 @@ export interface HintContext {
    * `byReason` submissions, which count an object again in every shadow map and nested pass that draws it.
    */
   objects?: MainPassObjects;
+  /**
+   * Distinct objects drawn with a ShaderMaterial or RawShaderMaterial on WebGPU this frame, over every pass (the ledger
+   * fills it), which the `unsupported-material` hint counts. Not main-pass objects like `objects`: the material renders in
+   * no pass, so an object drawn only into a shadow map or a nested pass is one of them too. Without it the hint falls back
+   * to `byReason` submissions.
+   */
+  unsupportedObjects?: number;
 }
 
 /** Distinct main-pass objects per reason, for the draw-call hints (`HintContext.objects`). */
@@ -64,7 +71,7 @@ export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): H
   const unbatchedObjects = objectsOf('static-unbatched');
   if (unbatched && unbatchedObjects > 20) push('drawCalls', 'info', 'static-unbatched', `${unbatchedObjects} static meshes draw one by one although other draws share their material: batch them with World (the draw that shares it may be one nothing can batch with: skinned, dynamic or already batched)`, unbatched.top);
   const unsupported = f.byReason['unsupported-material'];
-  if (unsupported) push('drawCalls', 'error', 'unsupported-material', `${unsupported.submissions} ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer`, unsupported.top);
+  if (unsupported) push('drawCalls', 'error', 'unsupported-material', `${ctx.unsupportedObjects ?? unsupported.submissions} ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer`, unsupported.top);
   if (t.programs > 40) push('drawCalls', 'warn', 'programs', `${t.programs} shader programs: fewer material variants means fewer compiles and switches`);
   if (f.overdraw.measured && f.overdraw.transparent > b.transparentOverdraw) push('overdraw', 'warn', 'transparent-overdraw', `${f.overdraw.transparent.toFixed(2)} transparent fragments per pixel, budget ${b.transparentOverdraw}`);
   if (f.overdraw.particles > b.particles) push('overdraw', 'warn', 'particles-over-budget', `${f.overdraw.particles} particles drawn per frame, budget ${b.particles} for this tier: apply a ParticleBudget`);

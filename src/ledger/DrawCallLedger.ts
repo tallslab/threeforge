@@ -125,6 +125,8 @@ interface FrameState {
   shadowTexels: number;
   /** Distinct objects drawn into a shadow map this frame. */
   shadowCasters: number;
+  /** Distinct objects filed as `unsupported-material` this frame, in any pass. */
+  unsupportedObjects: number;
   /** The last shadow-map pass entered: three renders a map's VSM blur quads right after the map. */
   lastShadowPass: string | null;
   scannedScenes: Set<Object3D>;
@@ -186,6 +188,8 @@ export class DrawCallLedger {
   private frameStamp = 0;
   /** The frame each object was last counted as a shadow caster in. */
   private readonly casterFrames = new WeakMap<Object3D, number>();
+  /** The frame each object was last counted as drawn with an unsupported material in, over every pass. */
+  private readonly unsupportedFrames = new WeakMap<Object3D, number>();
   /** The frame each light's shadow-map texels were last counted in. */
   private readonly shadowMapFrames = new WeakMap<Light, number>();
   /** This frame's material uses: `SubmissionRecord.material` and the main-pass users behind `static-unbatched`. */
@@ -225,6 +229,8 @@ export class DrawCallLedger {
   private hintContext: HintContext = {};
   /** Distinct objects the last frame's main pass drew, per reason the draw-call hints count (filled in `exit()`). */
   private readonly mainObjects: MainPassObjects = { untagged: 0, 'unique-material': 0, 'static-unbatched': 0, sprite: 0 };
+  /** Distinct objects the last frame drew with an unsupported material, over every pass (`HintContext.unsupportedObjects`). */
+  private unsupportedObjects = 0;
   private overdraw: OverdrawResult | null = null;
   private paused = false;
   private readonly budgetOverrides: Partial<Budgets>;
@@ -363,7 +369,7 @@ export class DrawCallLedger {
     let objects = 0;
     let auto = 0;
     let hidden = 0;
-    const ctx: Required<Omit<HintContext, 'items' | 'objects'>> = { staticAutoUpdated: [], pointShadowLights: [], transmissive: [] };
+    const ctx: Required<Omit<HintContext, 'items' | 'objects' | 'unsupportedObjects'>> = { staticAutoUpdated: [], pointShadowLights: [], transmissive: [] };
     const paths = this.names.forRoot(scene);
     // three renders no shadow map with shadow maps off (ShadowNode builds none), so no point light's six faces.
     const shadowMapsOn = this.renderer?.shadowMap?.enabled !== false;
@@ -409,7 +415,7 @@ export class DrawCallLedger {
       ...(frameBuffers ? { frameBufferTargets: frameBuffers } : {}),
     });
     this.last = { ...this.last, js: { ...this.last.js, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals }, memory: this.memoryNow() };
-    this.last = { ...this.last, hints: hintsFor(this.last, this.budgets(), { ...this.hintContext, items: this.lastItems, objects: this.mainObjects }) };
+    this.last = { ...this.last, hints: hintsFor(this.last, this.budgets(), { ...this.hintContext, items: this.lastItems, objects: this.mainObjects, unsupportedObjects: this.unsupportedObjects }) };
   }
 
   /** A RenderScheduler whose skipped ticks the js section reports; null detaches. */
@@ -530,6 +536,7 @@ export class DrawCallLedger {
         shadowIds: new Set(),
         shadowTexels: 0,
         shadowCasters: 0,
+        unsupportedObjects: 0,
         lastShadowPass: null,
         scannedScenes: new Set(),
         nestedScenes: 0,
@@ -658,7 +665,8 @@ export class DrawCallLedger {
         measured: this.overdraw !== null,
       },
     });
-    this.last.hints = hintsFor(this.last, this.budgets(), { ...this.hintContext, items, objects: this.mainObjects });
+    this.unsupportedObjects = state.unsupportedObjects;
+    this.last.hints = hintsFor(this.last, this.budgets(), { ...this.hintContext, items, objects: this.mainObjects, unsupportedObjects: this.unsupportedObjects });
     this.current = null;
     // `js` is this frame's own object (buildFrame keeps it): no earlier snapshot shares it.
     js.ledgerMs = this.now() - renderEnd;
@@ -745,6 +753,12 @@ export class DrawCallLedger {
       // One caster per object per frame, across every shadow map: a batch or an instanced mesh is one, whatever it draws.
       this.casterFrames.set(object, this.frameStamp);
       state.shadowCasters++;
+    }
+    // One per object per frame, across every pass: the material renders in none of them on WebGPU, so an object drawn only
+    // into a shadow map or a nested pass is one more mesh the hint names, and one drawn in several passes is still one.
+    if (reason === 'unsupported-material' && this.unsupportedFrames.get(object) !== this.frameStamp) {
+      this.unsupportedFrames.set(object, this.frameStamp);
+      state.unsupportedObjects++;
     }
     const geometry = (object as { geometry?: { attributes?: { position?: { count: number } }; morphAttributes?: { position?: unknown[] }; drawRange?: { start: number; count: number } } }).geometry;
     // three drew this outside every scene (the background sphere): its geometry is three's. The output pass's and the VSM

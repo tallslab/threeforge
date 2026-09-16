@@ -94,7 +94,7 @@
         "category": "drawCalls",
         "severity": "error",
         "code": "unsupported-material",
-        "message": "2 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer",
+        "message": "1 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer",
         "objects": [
           "fx-panel",
           "fx-panel"
@@ -387,7 +387,7 @@
         "category": "drawCalls",
         "severity": "error",
         "code": "unsupported-material",
-        "message": "2 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer",
+        "message": "1 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer",
         "objects": [
           "fx-panel",
           "fx-panel"
@@ -680,7 +680,7 @@
         "category": "drawCalls",
         "severity": "error",
         "code": "unsupported-material",
-        "message": "2 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer",
+        "message": "1 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer",
         "objects": [
           "fx-panel",
           "fx-panel"
