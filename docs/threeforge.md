@@ -1086,13 +1086,15 @@ swaps change data, not draw calls.
   of pixels on WebGPU; measured the same way, weld also moves pixels on PotOfCoals (0.004 %) and VirtualCity
   (0.011 %), which are indexed and carry normals, so the effect is not tied to either property. `--weld` adds it
   back to any preset.
-- **What `safe` is measured at**: the Buggy is 0 % in every view on both backends. The Fox is 0 % in every view on
-  WebGL2 and 0.001 % on one view on WebGPU, from `resample` alone — glTF-Transform's `resample` defaults to
-  `tolerance: 1e-4`, not 0, so it drops keyframes within that distance of the interpolated value and the posed
-  silhouette shifts by a few pixels. Raw counts past the comparison threshold are 1-3 pixels of 921,600 on WebGL2
-  and 3-5 on WebGPU; the reported figure rounds to three decimals, so only WebGPU's crosses to 0.001. Restoring
-  bit-exactness needs `resample({ tolerance: 0 })` or moving the step to `balanced`; until then `--no-resample`
-  gives a `safe` run that measures 0 in every view on both backends. `--<step>` / `--no-<step>` override a preset; `--simplify`,
+- **What `safe` is measured at**: **0 changed pixels in every view, on both backends**, for the Fox and the Buggy.
+  The e2e asserts the raw `changedPixels` per view, not the rounded percent, because `diffPct` is rounded to three
+  decimals and at 1280x720 that absorbs up to 4 changed pixels of 921,600 — the old assertion could not have caught
+  a handful of moved pixels, and did not. Two fixes were needed to get there: `weld` left the preset (above), and
+  `resample` now runs at `tolerance: 0` instead of glTF-Transform's 1e-4 default, which had been dropping keyframes
+  near the interpolated value and shifting the posed silhouette by 1-3 pixels on WebGL2 and 3-5 on WebGPU.
+  The cost is file size on animation-dominated assets: keeping every keyframe takes the Fox from 162,852 to
+  **164,416** bytes, a 1 % increase, where the lossy default reached 152,864. Assets that are not mostly animation
+  are unaffected — the Buggy still shrinks 27 % under `safe` — and `balanced` keeps the 1e-4 default. `--<step>` / `--no-<step>` override a preset; `--simplify`,
   `--textures`, `--compress meshopt` enable their step with the given value. `--instance`, `--join` and
   `--compress meshopt` are never in a preset: the first two change the node graph game code may address by name,
   the third needs `loader.setMeshoptDecoder`. A preset's texture step without `sharp` installed is skipped with a
@@ -1112,7 +1114,9 @@ swaps change data, not draw calls.
   before and after and the time, `requires[]` (each extension of the output with the loader piece it needs and the
   line of code, `code: null` when `GLTFLoader` handles it alone), and `verify` when on (default): the original and
   the optimized file go through `analyze` with the same framing, frames and views; `verify.parity` compares the two
-  naive renders view by view, `verify.original` / `verify.optimized` are the full analyze documents, `verify.delta`
+  naive renders view by view, each view carrying the rounded `diffPct` and the exact `changedPixels` behind it
+  (the percent is rounded to three decimals, which at 1280x720 hides up to 4 changed pixels, so only
+  `changedPixels: 0` means no pixel moved), `verify.original` / `verify.optimized` are the full analyze documents, `verify.delta`
   is after minus before for bytes, materials, vertices, triangles, naive and compiled scene submissions, load time
   and estimated GPU memory.
 - **Verdict**: fails on parity over `--parity` (default 0.5 %), a lost animation, skin or morph target (checked in
