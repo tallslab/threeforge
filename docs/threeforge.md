@@ -306,8 +306,11 @@ items?:    per-submission records with ledger.frame({ items: true })
   `unique-materials`, `static-unbatched` and `sprites-unbatched` hints count distinct objects the main pass drew
   (`HintContext.objects`, a `MainPassObjects`), not submissions across every pass, in their messages and against
   their thresholds: a shadow map or a reflection drawing the same object again does not add to them, and a reason
-  whose objects were drawn only outside the main pass (casters out of view) raises no hint that frame. `byReason`
-  still counts submissions in every pass. The `point-light-shadow` and `transmission` hints name only lights and
+  whose objects were drawn only outside the main pass (casters out of view) raises no hint that frame. The
+  `unsupported-material` hint (an `error`) counts distinct objects over every pass instead
+  (`HintContext.unsupportedObjects`): the material renders in none of them on WebGPU, so a mesh drawn only into a
+  shadow map still counts, one drawn in several passes counts once, and the hint appears whenever such a submission
+  exists. `byReason` still counts submissions in every pass. The `point-light-shadow` and `transmission` hints name only lights and
   meshes three renders (world-visible; no point light while `renderer.shadowMap.enabled` is false).
 - **programHash / variantHash** (the `programs` keys, and each item's hashes) come from the material registry
   (section 5). A hash for a material with instance code, a class that is not one of three's own, or identity-keyed
@@ -374,8 +377,9 @@ back-to-back runs (a range where the runs differ; bytes move by under 1 KB betwe
 The same runs measured the nested scene at 15.5–18.0 KB per frame and the shadow scene at 19.0–29.4 KB. Before the
 flags were rewritten in place, the flat scene allocated 0.10, 0.40 and 0.79 MB per frame at 2k, 10k and 20k. The
 `0.8.0` columns are the audit numbers recorded before the hot-path work, on the machine of the day: they show the
-scale of that change rather than a same-run comparison. (`scripts/ledger-overhead.mjs` prints a different 0.8.0
-figure in its footer, 3.8 µs and 8.7 MB at 10k: two 0.8.0 baselines exist, and neither is a same-machine comparison.)
+scale of that change rather than a same-run comparison. (The 0.8.0 audit also quoted 3.8 µs and 8.7 MB at 10k from
+another run: two 0.8.0 baselines exist, and neither is a same-machine comparison. The script prints neither; its
+footer gives only the targets.)
 
 The unit guards in `test/unit/ledger-hot-path.test.ts` count registry reads (at most one per material per frame),
 traversals (at most one on a frame without a rescan) and `children.indexOf` calls (none), and check that µs per
@@ -1063,11 +1067,15 @@ is carried and compared by the weld):
    never changes.
 
 **Groups the bake leaves to batching**: `World` batches, rather than bakes, a group where any geometry carries an
-attribute the bake does not carry faithfully (`unbakeableAttribute(geometry, vertexColors)` in `src/compiler/bake.ts`,
-not exported from the package entry point): a four-component `color` the material reads (the bake writes three
-components, and three multiplies the alpha into the diffuse colour, so a glTF `BLEND` material with an RGBA `COLOR_0`
-would render more opaque), or any attribute outside `position`, `normal`, `tangent`, `uv` to `uv3` and `color` (a
-custom attribute a node material reads). `BakeSummary.unbakeableEntries` counts those meshes.
+attribute the bake does not carry faithfully (`unbakeableAttribute(geometry, vertexColors, builtInReads)` in
+`src/compiler/bake.ts`, not exported from the package entry point): a four-component `color` the material reads (the
+bake writes three components, and three multiplies the alpha into the diffuse colour, so a glTF `BLEND` material with
+an RGBA `COLOR_0` would render more opaque), a `color` the material's `vertexColors: false` ignores but something
+other than three's own code may read, or any attribute outside `position`, `normal`, `tangent`, `uv` to `uv3` and
+`color` (a custom attribute a node material reads). The bake drops a `color` its flag ignores only when the material is
+one of three's own classes with no instance function and no node in any slot: an allowlist, since a `colorNode =
+vertexColor()` or an overridden `setupDiffuseColor` reads the attribute whatever the flag says. `BakeSummary.unbakeableEntries`
+counts those meshes.
 
 **Near-plane limitation (known in 0.9.0).** Seam and buried-face removal judge what a camera outside the modules can
 see. A camera whose near plane cuts into a module (a first-person camera pressed against a wall, near 0.1) clips that
