@@ -195,6 +195,17 @@ describe('lighting section: shadow texels', () => {
     expect(renderer.passes.filter((p) => p.kind === 'shadow')).toHaveLength(14);
     expect(ledger.frame().lighting).toMatchObject({ shadowTexels: 256 * 256 * 6 + 1024 * 1024, shadowCasters: 1, shadowPasses: 2 });
   });
+
+  it('sizes a point light by its map width on every face: three renders each cube face at mapSize.width squared', () => {
+    // PointShadowNode allocates the cube target at `shadow.mapSize.width` and renders each face at that size
+    // (node_modules/three/src/nodes/lighting/PointShadowNode.js:227 and :254): the height is never read.
+    const lamp = casting(new PointLight(), 'lamp', 256);
+    lamp.shadow.mapSize.set(256, 64);
+    const { renderer, ledger, scene, camera } = attached({ shadowLights: [lamp] });
+    scene.add(lamp, caster('crate'));
+    renderer.render(scene, camera);
+    expect(ledger.frame().lighting.shadowTexels).toBe(256 * 256 * 6);
+  });
 });
 
 describe('lighting section: shadow casters', () => {

@@ -60,6 +60,22 @@ describe('ShadowBudget', () => {
     expect(point3.castShadow).toBe(false);
   });
 
+  it('budgets a point light by its map width on every face, as three renders it', () => {
+    // PointShadowNode sizes the cube target and every face from `mapSize.width` alone (PointShadowNode.js:227, :254),
+    // so a non-square point map costs width squared per face, not width x height.
+    const scene = new Scene();
+    const point = new PointLight();
+    point.name = 'lamp';
+    point.castShadow = true;
+    point.shadow.mapSize.set(512, 128);
+    scene.add(point);
+    const report = new ShadowBudget({ tier: 'desktop' }).apply(scene);
+    expect(report.before).toBe(512 * 512 * 6);
+    expect(report.after).toBe(512 * 512 * 6); // 1.5 MiB, inside the 4 MiB desktop budget: nothing shrinks
+    expect(point.shadow.mapSize.x).toBe(512);
+    expect(point.shadow.mapSize.y).toBe(128);
+  });
+
   it('release restores sizes and flags; freeze turns a light into a frozen map with a refresh', () => {
     const { scene, sun, spot, point } = lit();
     const budget = new ShadowBudget({ tier: 'phone-low' });

@@ -98,7 +98,7 @@ interface FrameState {
   shadowCameras: Map<Camera, ShadowPass>;
   /** The shadow pass ids given out this frame, across scenes. */
   shadowIds: Set<string>;
-  /** Σ mapSize.x · mapSize.y · faces over the lights whose shadow map rendered this frame, each light once. */
+  /** Σ mapSize.x · mapSize.y over the lights whose shadow map rendered this frame (mapSize.x² · 6 for a point light), each light once. */
   shadowTexels: number;
   /** Distinct objects drawn into a shadow map this frame. */
   shadowCasters: number;
@@ -493,7 +493,10 @@ export class DrawCallLedger {
       // map again for each other camera of the frame (ShadowNode keys its once-per-frame check by camera).
       if (light.shadow && this.shadowMapFrames.get(light) !== this.frameStamp) {
         this.shadowMapFrames.set(light, this.frameStamp);
-        state.shadowTexels += light.shadow.mapSize.x * light.shadow.mapSize.y * (light.isPointLight ? 6 : 1);
+        // A point light's six cube faces are each rendered at the map's width, the height never (three r186,
+        // nodes/lighting/PointShadowNode.js:227 allocates the cube target and :254 sizes it, both from mapSize.width).
+        const map = light.shadow.mapSize;
+        state.shadowTexels += light.isPointLight ? map.x * map.x * 6 : map.x * map.y;
       }
     } else if (state.lastShadowPass !== null && isVsmBlur(scene)) {
       // ShadowNode.vsmPass blurs the map it just rendered with two quads, each its own render() call.

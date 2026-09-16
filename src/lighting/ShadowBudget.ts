@@ -62,7 +62,9 @@ export class ShadowBudget {
       if (light.isLight && light.visible && light.castShadow && light.shadow) lights.push(light);
     });
     const faces = (l: ShadowLight): number => (l.isPointLight ? 6 : 1);
-    const texels = (l: ShadowLight): number => (l.castShadow ? l.shadow!.mapSize.x * l.shadow!.mapSize.y * faces(l) : 0);
+    // three renders each of a point light's six cube faces at the map's width and never reads its height (three r186,
+    // nodes/lighting/PointShadowNode.js:227 and :254); every other map costs width x height.
+    const texels = (l: ShadowLight): number => (l.castShadow ? (l.isPointLight ? l.shadow!.mapSize.x * l.shadow!.mapSize.x * 6 : l.shadow!.mapSize.x * l.shadow!.mapSize.y) : 0);
     const entries = lights.map((light) => ({ light, from: [light.shadow!.mapSize.x, light.shadow!.mapSize.y] as [number, number], castShadow: true }));
     const before = lights.reduce((sum, l) => sum + texels(l), 0);
     const disable = (light: ShadowLight): void => {

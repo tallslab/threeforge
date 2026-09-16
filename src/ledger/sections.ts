@@ -14,8 +14,9 @@ export interface LightInfo {
 /** What the ledger saw of the frame's shadow maps, beyond its submission records. */
 export interface ShadowWork {
   /**
-   * Σ `mapSize.x · mapSize.y · faces` (6 faces for a point light) over the lights whose shadow map rendered this frame,
-   * each light once: a frozen map that did not refresh, or a disabled shadow map, adds nothing.
+   * Σ `mapSize.x · mapSize.y` over the lights whose shadow map rendered this frame, each light once, and
+   * `mapSize.x² · 6` for a point light (three renders each of its six cube faces at the map's width): a frozen map
+   * that did not refresh, or a disabled shadow map, adds nothing.
    */
   texels: number;
   /** Distinct objects drawn into any shadow map this frame: a BatchedMesh or an InstancedMesh is one, whatever it draws. */

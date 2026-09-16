@@ -113,8 +113,9 @@ export interface LightingSnapshot {
   /** Distinct objects drawn into any shadow map this frame: a batch or an instanced mesh is one. */
   shadowCasters: number;
   /**
-   * Shadow-map texels rendered this frame: Σ mapSize.x · mapSize.y · faces (6 for point lights) over the lights whose map
-   * rendered, each light once. A frozen map that did not refresh, or a disabled shadow map, adds 0.
+   * Shadow-map texels rendered this frame over the lights whose map rendered, each light once: Σ mapSize.x · mapSize.y,
+   * and mapSize.x² · 6 for a point light (three renders each of its six cube faces at the map's width). A frozen map
+   * that did not refresh, or a disabled shadow map, adds 0.
    */
   shadowTexels: number;
   /** Scene submissions in shadow passes (VSM blur quads are renderer-internal and not counted). */

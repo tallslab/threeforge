@@ -212,8 +212,9 @@ items?:    per-submission records with ledger.frame({ items: true })
   scene submission's `renderObject` call; a light under a hidden group, on a layer the camera does not see, or with
   `renderer.lighting.enabled = false` is not lit), else the main scene's world-visible lights (hidden subtrees skipped,
   as `scanLights` does). `shadowLights` counts those set to cast. `shadowPasses` and `shadowSubmissions` count the scene
-  submissions of `shadow:*` passes, not the renderer-internal `:vsm` quads. `shadowTexels` = Σ `mapSize.x · mapSize.y ·
-  faces` (6 faces for a point light, a cube target) over the lights whose shadow map rendered this frame, each light
+  submissions of `shadow:*` passes, not the renderer-internal `:vsm` quads. `shadowTexels` = Σ `mapSize.x ·
+  mapSize.y`, and `mapSize.x² · 6` for a point light (three renders each of its six cube faces at the map's width and
+  never reads its height), over the lights whose shadow map rendered this frame, each light
   once: a frozen map (`autoUpdate` off and no `needsUpdate`) or a disabled `renderer.shadowMap` adds 0, and a map three
   renders again for another camera of the frame counts once. `shadowCasters` counts the distinct objects drawn into any
   shadow map this frame: a `BatchedMesh` or `InstancedMesh` is one object whatever slots or instances it draws, and an
