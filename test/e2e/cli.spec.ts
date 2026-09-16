@@ -329,8 +329,8 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
     // --parity 0: the same pixel-identical claim as the Fox above, on the asset whose 148 materials the palette step
     // collapses to one. Every view must be exactly 0, not merely inside the 0.5 % default. This asset corroborates
     // nothing about weld, which is a measured no-op on it (245,673 vertices in and out, all 148 primitives already
-    // indexed) and no longer in `safe` anyway; what it covers is palette, dedup, resample and prune on a
-    // many-material asset, where the safe preset does measure 0 on both backends.
+    // indexed) and no longer in `safe` anyway; what it covers is dedup, palette and prune -- `safe`'s steps since
+    // R105 moved resample out of the preset -- on a many-material asset, where safe does measure 0 on both backends.
     const r = run(['optimize', asset('Buggy'), '--out', join(dir, 'buggy.glb'), '--parity', '0', '--backend', forge.backend, '--frames', '3', '--views', '1', '--json']);
     expect(r.status, r.stderr).toBe(0);
     const doc = JSON.parse(r.stdout);

@@ -62,7 +62,8 @@ export function ancestorExclusionRule(object: Object3D, root: Object3D): string 
 
 /**
  * The two material classes a sprite batch reproduces: `buildSpriteBatch` builds a plain `SpriteNodeMaterial` and copies the
- * source's fields into it. `isBuiltInMaterial` (`batchStatics.ts`) accepts every three material type, so it does not fit.
+ * source's fields into it. `isBuiltInMaterial` (`src/registry/builtInMaterials.ts`, which `batchStatics.ts` only
+ * re-exports) accepts every three material type, so it does not fit.
  */
 const SPRITE_PROTOTYPES = new Set<object>([SpriteMaterial.prototype, SpriteNodeMaterial.prototype]);
 

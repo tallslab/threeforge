@@ -147,7 +147,7 @@ function markRows(attribute: BufferAttribute, start: number, count: number, mode
  *   a point light's cube of half-size `light.distance || shadow.camera.far` (the six faces of `PointShadowNode`; its
  *   filter shadows up to that distance along the dominant axis). Every light of the frame is queried once, at the
  *   first shadow pass (rebuilt only when a light, its view or the instances changed: the nested key), into one
- *   deduplicated list in which each entry records the lights that reach it (`unionBits`, one bit per shadow camera of
+ *   deduplicated list in which each entry records the lights that reach it (`casterLightBits`, one bit per shadow camera of
  *   the frame; a camera past the 32nd carries no bit and its pass appends the whole list, a correct superset).
  *   A pass then appends its own light's entries **in that list's order**, so a light whose casters are the rows the
  *   tail already holds writes nothing — a point light's six faces always do, and so does any light whose set is a
@@ -354,42 +354,47 @@ export function createCulledInstancedMesh(
   };
 
   // ---- the frame's shadow casters ----
+  // The caster pool: every instance any shadow-casting light of the frame reaches, deduplicated, built once per frame
+  // at the first shadow pass. It is not a draw list -- no pass draws the pool itself. Each pass appends only the
+  // entries its own light reaches, which `casterLightBits` records as one bit per shadow camera (see `appendCasters`).
+  // These names were `union*` while every pass did append the whole set; they are the caster pool and its per-light
+  // bits now.
   /** Every instance a shadow-casting light of the frame reaches, each once, in query order. */
-  const unionIds = new Int32Array(n);
-  let unionLength = 0;
-  const unionMarks = new Uint32Array(n);
-  let unionMark = 0;
-  /** Per instance in the list: a bit per shadow camera of the frame that reaches it (bit i = `unionCameras[i]`). */
-  const unionBits = new Uint32Array(n);
+  const casterIds = new Int32Array(n);
+  let casterCount = 0;
+  const casterMarks = new Uint32Array(n);
+  let casterMark = 0;
+  /** Per instance in the list: a bit per shadow camera of the frame that reaches it (bit i = `shadowCameras[i]`). */
+  const casterLightBits = new Uint32Array(n);
   /** The bit the running query sets; 0 for a camera past the 32nd, whose pass appends the whole list instead. */
   let queryBit = 0;
-  /** The tracker frame the union was checked for. */
-  let unionFrame = -1;
-  /** The shadow cameras the union covers this frame (a point light's one camera covers its six faces). */
-  const unionCameras: Camera[] = [];
-  /** The nested key: the lights the union was built from, and 16 numbers per light after the group's matrix. */
-  const unionLights: Light[] = [];
-  let unionKey = new Float64Array(16);
+  /** The tracker frame the caster pool was checked for. */
+  let casterFrame = -1;
+  /** The shadow cameras the caster pool covers this frame (a point light's one camera covers its six faces). */
+  const shadowCameras: Camera[] = [];
+  /** The nested key: the lights the caster pool was built from, and 16 numbers per light after the group's matrix. */
+  const shadowLights: Light[] = [];
+  let casterKey = new Float64Array(16);
   let nextKey = new Float64Array(16);
   const nextLights: Light[] = [];
-  /** Visibility, a matrix or an extra camera changed the union since it was built. */
-  let unionDirty = true;
+  /** Visibility, a matrix or an extra camera changed the caster pool since it was built. */
+  let castersDirty = true;
 
-  /** The bit of the `i`th shadow camera of the frame; 0 past the 32nd (see `unionBits`). */
+  /** The bit of the `i`th shadow camera of the frame; 0 past the 32nd (see `casterLightBits`). */
   const bitFor = (i: number): number => (i < 32 ? (1 << i) >>> 0 : 0);
 
-  const addToUnion = (id: number): void => {
+  const addCaster = (id: number): void => {
     if (!visibleMask[id]) return;
-    if (unionMarks[id] === unionMark) {
-      unionBits[id] = unionBits[id]! | queryBit;
+    if (casterMarks[id] === casterMark) {
+      casterLightBits[id] = casterLightBits[id]! | queryBit;
       return;
     }
-    unionMarks[id] = unionMark;
-    unionBits[id] = queryBit;
-    unionIds[unionLength++] = id;
+    casterMarks[id] = casterMark;
+    casterLightBits[id] = queryBit;
+    casterIds[casterCount++] = id;
   };
   const visitIntersecting = (id: number): boolean => {
-    addToUnion(id);
+    addCaster(id);
     return false;
   };
   /** `bvh.traverse` visitor: skips the subtrees whose box misses `_frustum`. */
@@ -398,7 +403,7 @@ export function createCulledInstancedMesh(
     _nodeBox.min.set(b[0]!, b[2]!, b[4]!);
     _nodeBox.max.set(b[1]!, b[3]!, b[5]!);
     if (!_frustum.intersectsBox(_nodeBox)) return true;
-    if (node.object !== undefined) addToUnion(node.object);
+    if (node.object !== undefined) addCaster(node.object);
     return false;
   };
   /** What `camera` sees, with three's frustum in the camera's own coordinate system and depth convention. */
@@ -423,11 +428,11 @@ export function createCulledInstancedMesh(
 
   /**
    * Brings the frame's caster list up to date at its first shadow pass, and covers `camera` if no listed light does.
-   * Returns the index of `camera` among the frame's shadow cameras, whose bit its casters carry in `unionBits`.
+   * Returns the index of `camera` among the frame's shadow cameras, whose bit its casters carry in `casterLightBits`.
    */
-  const ensureUnion = (renderer: RendererLike, scene: Scene, camera: Camera, group: Object3D): number => {
-    if (unionFrame !== passes!.frame) {
-      unionFrame = passes!.frame;
+  const ensureCasterPool = (renderer: RendererLike, scene: Scene, camera: Camera, group: Object3D): number => {
+    if (casterFrame !== passes!.frame) {
+      casterFrame = passes!.frame;
       // The lights of this render (Lighting.getNode(scene).getLights(): what the shadow render projected), filtered by
       // ShadowNode.updateBefore's own gate.
       const lights = renderer?.lighting?.getNode?.(scene)?.getLights?.() ?? [];
@@ -453,41 +458,44 @@ export function createCulledInstancedMesh(
         }
         nextLights[used++] = light;
       }
-      let same = !unionDirty && used === unionLights.length && unionKey.length >= 16 * (used + 1);
-      for (let i = 0; same && i < used; i++) same = nextLights[i] === unionLights[i];
-      for (let e = 0; same && e < 16 * (used + 1); e++) same = nextKey[e] === unionKey[e];
+      let same = !castersDirty && used === shadowLights.length && casterKey.length >= 16 * (used + 1);
+      for (let i = 0; same && i < used; i++) same = nextLights[i] === shadowLights[i];
+      for (let e = 0; same && e < 16 * (used + 1); e++) same = nextKey[e] === casterKey[e];
       if (!same) {
-        if (unionMark >= 0xfffffffe) {
-          unionMarks.fill(0);
-          unionMark = 0;
+        if (casterMark >= 0xfffffffe) {
+          casterMarks.fill(0);
+          casterMark = 0;
         }
-        unionMark++;
-        unionLength = 0;
+        casterMark++;
+        casterCount = 0;
         for (let i = 0; i < used; i++) {
           const light = nextLights[i] as ShadowLight;
           const offset = 16 * (i + 1);
           queryBit = bitFor(i);
           if (light.isPointLight) addCube(group, nextKey[offset]!, nextKey[offset + 1]!, nextKey[offset + 2]!, nextKey[offset + 3]!);
           else addFrustum(group, light.shadow!.camera);
-          unionLights[i] = light;
+          shadowLights[i] = light;
         }
-        unionLights.length = used;
-        const key = unionKey;
-        unionKey = nextKey;
+        shadowLights.length = used;
+        const key = casterKey;
+        casterKey = nextKey;
         nextKey = key;
-        unionDirty = false;
+        castersDirty = false;
       }
-      unionCameras.length = 0;
-      for (let i = 0; i < used; i++) unionCameras.push((unionLights[i] as ShadowLight).shadow!.camera);
+      shadowCameras.length = 0;
+      for (let i = 0; i < used; i++) shadowCameras.push((shadowLights[i] as ShadowLight).shadow!.camera);
     }
-    let index = unionCameras.indexOf(camera);
+    // Identity, not equality: two lights sharing one `LightShadow.camera` object would give the second the first's
+    // bit and lose its own casters. three's own API never shares a shadow camera (`Light.copy` clones the shadow), so
+    // this is theoretical -- but it was harmless before each pass appended only its own light's entries, and is not now.
+    let index = shadowCameras.indexOf(camera);
     if (index < 0) {
       // A shadow camera no listed light owns (or a renderer without `lighting`): cover it too, and rebuild next frame.
-      index = unionCameras.length;
+      index = shadowCameras.length;
       queryBit = bitFor(index);
       addFrustum(group, camera);
-      unionCameras.push(camera);
-      unionDirty = true;
+      shadowCameras.push(camera);
+      castersDirty = true;
     }
     return index;
   };
@@ -516,9 +524,9 @@ export function createCulledInstancedMesh(
       else setEye(group, camera);
     }
     const bit = bitFor(index);
-    for (let j = 0; j < unionLength; j++) {
-      const id = unionIds[j]!;
-      if (bit !== 0 && (unionBits[id]! & bit) === 0) continue; // a caster this shadow camera does not reach
+    for (let j = 0; j < casterCount; j++) {
+      const id = casterIds[j]!;
+      if (bit !== 0 && (casterLightBits[id]! & bit) === 0) continue; // a caster this shadow camera does not reach
       if (marks[id] !== mark) place(id);
     }
     for (let L = 0; L < levelCount; L++) writeRows(L, layerBase[at + L]!);
@@ -572,7 +580,10 @@ export function createCulledInstancedMesh(
     const at = layers.push(depth) * levelCount;
     for (let L = 0; L < levelCount; L++) layerBase[at + L] = layerCount[from + L]!;
     if (scene !== null && (scene.overrideMaterial as { isShadowPassMaterial?: boolean } | null)?.isShadowPassMaterial === true) {
-      appendCasters(at, this, camera, ensureUnion(renderer as RendererLike, scene, camera, this));
+      // `ensureCasterPool` brings the pool up to date and must run before `appendCasters` reads it; hoisted so the
+      // order is visible instead of resting on arguments being evaluated first.
+      const index = ensureCasterPool(renderer as RendererLike, scene, camera, this);
+      appendCasters(at, this, camera, index);
     } else {
       for (let L = 0; L < levelCount; L++) setCount(L, layerBase[at + L]!);
     }
@@ -593,7 +604,7 @@ export function createCulledInstancedMesh(
       }
       rowsStale = true;
       mainDirty = true;
-      unionDirty = true;
+      castersDirty = true;
     },
     refreshBounds() {
       bounds.makeEmpty();
@@ -614,7 +625,7 @@ export function createCulledInstancedMesh(
       if (visibleMask[id] === value) return;
       visibleMask[id] = value;
       mainDirty = true;
-      unionDirty = true;
+      castersDirty = true;
     },
     getVisibleAt(id) {
       return visibleMask[id] === 1;

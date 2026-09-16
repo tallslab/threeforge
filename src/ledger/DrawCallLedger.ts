@@ -130,8 +130,8 @@ function acquire(buffer: RecordBuffer): SubmissionRecord {
  * Attributes every render item to a reason. Patches `renderObject` and `render` on the renderer instance: every
  * render-object function three installs (including ShadowNode's) ends in `renderer.renderObject`, so this sees main,
  * shadow and post-processing passes without composing `setRenderObjectFunction`.
- * The outermost `render()` call is a frame; nested calls are passes of it. `renderAsync` needs no patch: three r186's
- * awaits `init()` and then calls `this.render()`.
+ * The outermost `render()` call is a frame; nested calls are passes of it. `renderAsync` needs no patch of its own
+ * (docs/threeforge.md section 4, "How it hooks in").
  *
  * The per-submission path allocates nothing in a steady scene: records are pooled, material hashes and the canonical a
  * drawn material resolves to are read once per material per frame, display names come from a validated cache, and a
@@ -234,10 +234,10 @@ export class DrawCallLedger {
       }
     };
     this.wrapTextureInfo(renderer);
-    // `renderAsync` stays three's own. r186's is `await this.init(); this.render(scene, camera);`, so its frame enters the
-    // wrapper above once, after the await, and every enter() is paired with an exit() inside one synchronous call. A wrapper
-    // of its own opened the frame before the await: the render inside became a nested pass, and any render() made during
-    // the await merged into that frame.
+    // `renderAsync` stays three's own: its frame enters the wrapper above once, so every enter() is paired with an
+    // exit() inside one synchronous call (the mechanism is in docs/threeforge.md section 4, "How it hooks in"). A
+    // wrapper of its own opened the frame before the await instead: the render inside became a nested pass, and any
+    // render() made during the await merged into that frame.
   }
 
   detach(): void {

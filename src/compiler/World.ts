@@ -810,9 +810,9 @@ export class World {
    */
   async warmup(renderer: WarmupRenderer, camera: Camera, options: WarmupOptions = {}): Promise<WarmupResult> {
     this.assertLive();
-    // three r186 deprecates `renderAsync` (r181), which is `await this.init()` then `render()`. Awaiting init here, before
-    // any state is read or changed, leaves no yield between the suspension and scissor below and the render: a queued
-    // re-enable (or any other microtask) cannot run in between.
+    // Awaiting init here, before any state is read or changed, leaves no yield between the suspension and scissor
+    // below and the render: a queued re-enable (or any other microtask) cannot run in between. That is why warm-up
+    // renders with `render()` rather than the deprecated `renderAsync` (docs/threeforge.md section 4, "How it hooks in").
     if (renderer.init) await renderer.init();
     // A proxy parked by a depth-0 render waits for its queued re-enable, which would re-enable it after the suspension
     // list below was built without it if anything yielded before the render. Resume now, so the list holds every proxy;

@@ -280,9 +280,13 @@ test('tinted node-material statics keep an instance setupOutput, alphaTest, a us
       // Alpha in stripes that alphaTest cuts out, and an instance setupOutput that darkens the colour by a user-added own
       // property and mixes in a uniform node kept in userData, both read through `this`. NodeMaterial.copy() carries none
       // of them: alphaTest is an accessor on Material.prototype, instance functions and user-added properties are not on
-      // a fresh instance, and userData is JSON-copied, which turns the uniform node into a plain object. (three r186 takes
-      // the value of a uniform read inside a setup method when the material builds, also in the naive render, so this
-      // cell keeps it fixed; the classic cell animates its userData uniform.)
+      // a fresh instance, and userData is JSON-copied, which turns the uniform node into a plain object. (A uniform
+      // reached only from inside a setup method is uploaded once, on the render object's first frame, in the naive
+      // render too, so this cell keeps its value fixed while the classic cell animates its userData uniform. The
+      // mechanism is NodeMaterialObserver.containsNode (r186, ~325-342): it walks the material's own properties and
+      // reports the material as holding nodes only when one of those properties is itself a node, so a node reachable
+      // only through a closure leaves hasNode false and needsRefresh returns FULL only on the render object's first
+      // frame. The uniform -- objectGroup, UniformNode's default -- is uploaded in that refresh and never again.)
       const size = 32;
       const data = new Uint8Array(size * size * 4);
       for (let y = 0; y < size; y++) {
