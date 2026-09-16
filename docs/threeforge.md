@@ -1032,8 +1032,8 @@ is carried and compared by the weld):
       or no blending; no `alphaTest`, `alphaHash`, `alphaToCoverage` or
       `transmission`; not a `ShaderMaterial`; every node slot empty (every `*Node` property, such as `colorNode`,
       `opacityNode`, `outputNode`, `positionNode` or `fragmentNode`, and any other own property holding a node, is
-      null, because `Discard()` can sit in any of them: node-material statics authored with custom nodes keep all their
-      faces); `onBeforeCompile` and `customProgramCacheKey` are three's own (`Material`'s, or `NodeMaterial`'s for a
+      null, because `Discard()` can sit in any of them; under `World` such a material never reaches this test, since its
+      group is not baked at all: see "Groups the bake leaves to batching"); `onBeforeCompile` and `customProgramCacheKey` are three's own (`Material`'s, or `NodeMaterial`'s for a
       node material); `defines` holds only three's material defines (`STANDARD`, `PHYSICAL`, `TOON`, `MATCAP`); no
       `displacementMap`, material `clippingPlanes` or `polygonOffset`; `depthFunc` is `LessEqualDepth`; depth write and
       depth test on; no `wireframe` or `stencilWrite`. Renderer-level clipping (`renderer.clippingPlanes`) is outside
@@ -1069,8 +1069,14 @@ is carried and compared by the weld):
    shading by at most those tolerances; `bake.spec.ts` holds every baked scene it renders under 0.05 % changed pixels
    at a per-channel tolerance of 4.
 
-**Groups the bake leaves to batching**: `World` batches, rather than bakes, a group where any geometry carries an
-attribute the bake does not carry faithfully (`unbakeableAttribute(geometry, vertexColors, builtInReads)` in
+**Groups the bake leaves to batching**: `World` batches, rather than bakes, a group whose material the bake cannot
+prove draws the merged, scene-space geometry as it drew each module (`bakeProvesReads` in `src/compiler/batchStatics.ts`,
+Ruling R162): one that is not exactly one of three's own material classes, has a function assigned to the instance,
+has a node in any slot, or has a `displacementMap`. A node graph can read `positionLocal`, `normalLocal` or
+`positionGeometry` inside a `Fn` closure nothing inspects before it builds, and three displaces along the local normal
+in local units, so all of these may change once the geometry is in scene space (a `normalLocal` colour node and a
+displacement map on scaled, rotated boxes changed 4.40 % of the frame on both backends when baked, and 0 once
+batched). It also batches a group where any geometry carries an attribute the bake does not carry faithfully (`unbakeableAttribute(geometry, vertexColors, builtInReads)` in
 `src/compiler/bake.ts`, not exported from the package entry point): a four-component `color` the material reads (the
 bake writes three components, and three multiplies the alpha into the diffuse colour, so a glTF `BLEND` material with
 an RGBA `COLOR_0` would render more opaque), a `color` the material's `vertexColors: false` ignores but something
@@ -1435,6 +1441,12 @@ Each is documented where the mechanism is, and none has a fix in this release.
   originals, the batches stay in the scene and the originals stay hidden, while `compiled` stays false, so
   neither `decompile()` nor `dispose()` undoes any of it. Only the pass tracker's scene hooks are removed on that path. Rebuild the
   scene (or reload) rather than retrying `compile()` on it.
+- **Batching moves `positionLocal` for node materials that shade from it, and `alphaHash`** (section 8, "Groups the
+  bake leaves to batching"): `batch()` (three r186 `Batch.js:148`) assigns `positionLocal = batchingMatrix *
+  positionLocal`, so a colour or hash computed from local position differs once a static group is batched, and the
+  same once baked. Measured with `bake` off: a `positionLocal` colour gradient on transformed boxes 3.32 % of the frame
+  on both backends, an `alphaHash` pair 1.81 % (webgl2) and 1.82 % (webgpu). Tag such meshes `dynamic` (without
+  `dynamics: 'batch-sync'`) to keep them individual.
 - **The bake's seam and buried-face removals leave a hole when the camera's near plane cuts into a module**
   (section 8, "Near-plane limitation").
 - **`memory.unreferenced` has residual blind spots** (section 4, "Limits of the memory section"): resources three
