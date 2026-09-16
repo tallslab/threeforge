@@ -246,6 +246,50 @@ describe('memory estimate', () => {
     expect(estimateMemory(scene, info, [800, 600], { internalTextures: 1 }).unreferenced.textures).toBe(0);
   });
 
+  it('allows the geometries the renderer drew for itself (options.internalGeometries), once when a mesh also reaches one', () => {
+    const { scene, geometry } = sceneWithMap();
+    // Two of PMREM's LOD planes and a background sphere, three's own; the output quad is INTERNAL_GEOMETRIES.
+    const planes = [new BoxGeometry(), new BoxGeometry()];
+    const sphere = new BoxGeometry();
+    const info = { textures: 1 + 2, geometries: 1 + 1 + 3 };
+    expect(estimateMemory(scene, info, [0, 0]).unreferenced.geometries).toBe(3);
+    expect(estimateMemory(scene, info, [0, 0], { internalGeometries: [...planes, sphere] }).unreferenced.geometries).toBe(0);
+    // One listed that the scene reaches as well is one geometry: the allowance adds only the others.
+    expect(estimateMemory(scene, info, [0, 0], { internalGeometries: [...planes, geometry] }).unreferenced.geometries).toBe(1);
+  });
+
+  it('allows the textures the renderer created for itself by identity (options.rendererTextures), once when the scene reaches one', () => {
+    const { scene } = sceneWithMap();
+    const pmrem = [new DataTexture(), new DataTexture()]; // the ping-pong and the cube-UV targets' textures
+    const info = { textures: 1 + 2 + 2, geometries: 2 };
+    expect(estimateMemory(scene, info, [0, 0]).unreferenced.textures).toBe(2);
+    expect(estimateMemory(scene, info, [0, 0], { rendererTextures: pmrem }).unreferenced.textures).toBe(0);
+    // The app's own pmrem.fromScene() output set as scene.environment is reachable: it is not allowed twice, so a texture
+    // removed without dispose() beside it still counts (allowing it twice would hide that one).
+    scene.environment = pmrem[1]!;
+    expect(estimateMemory(scene, { ...info, textures: info.textures + 1 }, [0, 0], { rendererTextures: pmrem }).unreferenced.textures).toBe(1);
+  });
+
+  it("allows one morph texture per reachable geometry with morph attributes (three r186 Morph.js ~93, keyed by geometry)", () => {
+    const { scene } = sceneWithMap();
+    const morphed = new BoxGeometry();
+    morphed.morphAttributes.position = [morphed.attributes.position!.clone()];
+    const material = new MeshStandardMaterial();
+    scene.add(new Mesh(morphed, material), new Mesh(morphed, material));
+    const info = { textures: 1 + 2 + 1, geometries: 3 };
+    expect(estimateMemory(scene, info, [0, 0]).unreferenced).toEqual({ geometries: 0, textures: 0 });
+    expect(estimateMemory(scene, { ...info, textures: info.textures + 1 }, [0, 0]).unreferenced.textures).toBe(1);
+  });
+
+  it('counts a held render target\'s colour texture once when a material reaches it (options.renderTargets)', () => {
+    const { scene } = sceneWithMap();
+    const mirror = new RenderTarget(64, 64); // colour and depth
+    scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial({ map: mirror.texture })));
+    const info = { textures: 1 + 2 + 2, geometries: 3 };
+    expect(estimateMemory(scene, info, [0, 0], { renderTargets: [mirror] }).unreferenced.textures).toBe(0);
+    expect(estimateMemory(scene, { ...info, textures: info.textures + 1 }, [0, 0], { renderTargets: [mirror] }).unreferenced.textures).toBe(1);
+  });
+
   it("memory.measured copies renderer.info.memory's counts and byte sizes, and is null without them", () => {
     const { scene } = sceneWithMap();
     const info = { textures: 9, geometries: 6, texturesSize: 4096, attributesSize: 3000, indexAttributesSize: 500, renderTargets: 2, total: 9000 };
@@ -311,6 +355,101 @@ describe('the ledger memory section', () => {
     ledger.detach();
     expect(info.createTexture).toBe(createTexture);
     expect(info.destroyTexture).toBe(destroyTexture);
+  });
+
+  it("allows three's PMREM planes and textures, the background sphere and the targets a pass draws into, and counts them again once gone", () => {
+    const renderer = new FakeRenderer();
+    const memory = Object.assign(renderer.info.memory, { textures: 0, geometries: 0 });
+    const info = Object.assign(renderer.info, {
+      createTexture(texture: unknown) {
+        void texture;
+        memory.textures++;
+      },
+      destroyTexture(texture: unknown) {
+        void texture;
+        memory.textures--;
+      },
+    });
+    const ledger = new DrawCallLedger();
+    ledger.attach(renderer as never);
+    const { scene, camera } = sceneWithCamera();
+    // three r186 Background.js ~131: the background sphere, drawn in the main pass as an object outside the scene.
+    const sphere = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+    sphere.name = 'Background.mesh';
+    const map = new Mesh(new BoxGeometry(), new MeshBasicMaterial({ map: new DataTexture(new Uint8Array(4), 1, 1) }));
+    map.onBeforeRender = (r) => void (r as unknown as FakeRenderer).renderObject(sphere, scene, camera, sphere.geometry, sphere.material, null, null, null, null);
+    scene.add(map);
+    scene.updateMatrixWorld();
+    // PMREMGenerator (renderers/common/extras/PMREMGenerator.js): a LOD plane with an `outputDirection` attribute, rendered as
+    // the root of its own render() into a target whose texture carries `isPMREMTexture` (~821, ~850-853).
+    const plane = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+    plane.geometry.setAttribute('outputDirection', plane.geometry.attributes.position!.clone());
+    const cubeUv = new RenderTarget(48, 64, { depthBuffer: false });
+    (cubeUv.texture as unknown as { isPMREMTexture: boolean }).isPMREMTexture = true;
+    // A post-processing pass: the scene drawn into a colour and depth target every frame (PassNode.updateBefore).
+    const passTarget = new RenderTarget(32, 32);
+    const frame = (pmrem: boolean): void => {
+      if (pmrem) {
+        renderer.renderTarget = cubeUv;
+        renderer.render(plane as never, camera);
+      }
+      renderer.renderTarget = passTarget;
+      renderer.render(scene, camera);
+      renderer.renderTarget = null;
+      renderer.render(scene, camera);
+    };
+    info.createTexture(cubeUv.texture);
+    frame(true);
+    Object.assign(memory, {
+      // the map, the frame buffer's colour and depth, the cube-UV texture, the pass target's colour and depth
+      textures: 1 + 2 + 1 + 2,
+      // the map's mesh, the output quad, the background sphere, the PMREM plane
+      geometries: 1 + 1 + 1 + 1,
+    });
+    expect(ledger.measureMemory().unreferenced).toEqual({ geometries: 0, textures: 0 });
+    // Gone from three: nothing is allowed for them any more, so the same counts read as unreferenced.
+    info.destroyTexture(cubeUv.texture);
+    cubeUv.dispose();
+    plane.geometry.dispose();
+    sphere.geometry.dispose();
+    passTarget.dispose();
+    Object.assign(memory, { textures: 1 + 2 + 1 + 2, geometries: 1 + 1 + 1 + 1 });
+    expect(ledger.measureMemory().unreferenced).toEqual({ geometries: 2, textures: 3 });
+    ledger.detach();
+  });
+
+  it('allows a render target a render drew into until it is disposed, and none that no render drew into', () => {
+    const renderer = new FakeRenderer();
+    const memory = Object.assign(renderer.info.memory, { textures: 0, geometries: 0 });
+    const ledger = new DrawCallLedger();
+    ledger.attach(renderer as never);
+    const { scene, camera } = sceneWithCamera();
+    scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial()));
+    scene.updateMatrixWorld();
+    // Drawn once and kept, as CubeMapNode keeps the cube it renders an equirect background into (nodes/utils/CubeMapNode.js ~115).
+    const cube = new RenderTarget(16, 16, { depthBuffer: false });
+    renderer.renderTarget = cube;
+    renderer.render(scene, camera);
+    renderer.renderTarget = null;
+    // Created and uploaded, never drawn into (renderer.initRenderTarget): nothing tells it apart from a leak.
+    const idle = new RenderTarget(16, 16, { depthBuffer: false });
+    Object.assign(memory, { textures: 2 + 1 + 1, geometries: 1 + 1 }); // the frame buffer, the cube's colour, the idle target's colour
+    for (let i = 0; i < 61; i++) renderer.render(scene, camera);
+    expect(ledger.measureMemory().unreferenced.textures, 'the idle target').toBe(1);
+    cube.dispose();
+    expect(ledger.measureMemory().unreferenced.textures, 'the idle target and the disposed cube').toBe(2);
+    void idle;
+    ledger.detach();
+  });
+
+  it("allows the frame-buffer targets the renderer shows by identity, and none when it drew into none", () => {
+    const { scene } = sceneWithMap();
+    const info = { textures: 1 + 2, geometries: 2 };
+    const frameBuffer = new RenderTarget(800, 600); // colour, and the depth texture three creates for its depth buffer
+    expect(estimateMemory(scene, info, [800, 600], { frameBufferTargets: [frameBuffer] }).unreferenced.textures).toBe(0);
+    // A RenderPipeline rendering the output itself: three draws into no frame-buffer target, so nothing is allowed for one.
+    expect(estimateMemory(scene, info, [800, 600], { frameBufferTargets: [] }).unreferenced.textures).toBe(2);
+    expect(estimateMemory(scene, info, [800, 600]).unreferenced.textures, 'without the map: the usual colour and depth').toBe(0);
   });
 
   it("allows three's DFG_LUT when info's texture hooks are prototype methods, and detach() makes the prototype's own visible again", () => {

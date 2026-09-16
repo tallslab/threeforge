@@ -6,7 +6,7 @@ import { DisplayNames, type PathCache } from './names.js';
 import { budgetsFor, type Budgets } from './budgets.js';
 import { Vector2 } from 'three';
 import { hintsFor, type HintContext, type MainPassObjects } from './hints.js';
-import { estimateMemory } from './memory.js';
+import { estimateMemory, type AllowedRenderTarget } from './memory.js';
 import { disposeOverdraw, measureOverdraw, overdrawTargetOf, type OverdrawRenderer, type OverdrawResult } from './overdraw.js';
 import { formatCostRows, formatHints } from '../overlay/index.js';
 import { FORGE_TAG_KEY } from '../tags.js';
@@ -32,9 +32,23 @@ export interface LedgerRenderer {
    */
   shadowMap?: { type?: number; enabled?: boolean };
   backend?: unknown;
-  getRenderTarget?(): { name?: string; texture?: { name?: string } } | null;
+  getRenderTarget?(): DrawnTarget | null;
   /** Drawing-buffer size in pixels; `overdraw.pixels` stays 0 without it. */
   getDrawingBufferSize?(target: Vector2): Vector2;
+}
+
+/** The render target current when a render starts: its name for the pass id, its textures for the memory section. */
+interface DrawnTarget {
+  name?: string;
+  texture?: { name?: string };
+  textures?: readonly unknown[];
+  depthTexture?: unknown;
+  depthBuffer?: boolean;
+  stencilBuffer?: boolean;
+  /** Renderer.js ~1587 marks the frame-buffer target it draws a canvas frame into, which the allowance counts on its own. */
+  isPostProcessingRenderTarget?: boolean;
+  addEventListener?(type: string, listener: (event: { target: unknown }) => void): void;
+  removeEventListener?(type: string, listener: (event: { target: unknown }) => void): void;
 }
 
 interface BackendLike {
@@ -188,6 +202,25 @@ export class DrawCallLedger {
   private memoryStats: MemorySnapshot = emptySections().memory;
   /** Live DFG_LUT textures three created on the attached renderer (see `wrapTextureInfo`). */
   private readonly internalTextures = new Set<object>();
+  /** Live render-target textures three's PMREMGenerator created on the attached renderer (`isPMREMTexture`, see `wrapTextureInfo`). */
+  private readonly pmremTextures = new Set<object>();
+  /**
+   * Geometries three draws for itself outside every scene, until disposed: PMREMGenerator's LOD planes (a render whose root
+   * is a mesh with an `outputDirection` attribute) and renderer-internal objects other than the shared output quad (the
+   * background sphere). Held weakly. See `noteGeometry`.
+   */
+  private readonly internalGeometries = new WeakMembers<object>();
+  /**
+   * Render targets a render drew into while attached (shadow maps, their blur passes and the frame-buffer target
+   * excepted), until disposed: held by a pass or a cache of three's (post-processing, CubeMapNode's cube, a mirror).
+   * Held weakly.
+   */
+  private readonly drawnTargets = new WeakMembers<DrawnTarget>();
+  /** One listener for every noted geometry and target: a disposed one is no longer three's to hold. */
+  private readonly onResourceDispose = (event: { target: unknown }): void => {
+    this.internalGeometries.delete(event.target as object);
+    this.drawnTargets.delete(event.target as DrawnTarget);
+  };
   private textureInfo: { info: LedgerRenderer['info']; create: (texture: unknown) => void; destroy: (texture: unknown) => void; own: { create: boolean; destroy: boolean } } | null = null;
   private hintContext: HintContext = {};
   /** Distinct objects the last frame's main pass drew, per reason the draw-call hints count (filled in `exit()`). */
@@ -215,6 +248,7 @@ export class DrawCallLedger {
    */
   attach(renderer: LedgerRenderer): void {
     if (this.renderer) this.detach();
+    this.forgetInternalResources();
     this.renderer = renderer;
     this.backendInfo = detectBackend(renderer);
     this.last = emptyFrame(this.env());
@@ -259,6 +293,7 @@ export class DrawCallLedger {
     this.renderer.render = this.originals.render;
     this.renderer.renderObject = this.originals.renderObject;
     this.unwrapTextureInfo();
+    this.forgetInternalResources();
     disposeOverdraw(this.renderer);
     this.renderer = null;
     this.originals = null;
@@ -281,14 +316,19 @@ export class DrawCallLedger {
     this.internalTextures.clear();
     if (typeof create !== 'function' || typeof destroy !== 'function') return;
     const internal = this.internalTextures;
+    const pmrem = this.pmremTextures;
     const own = { create: Object.prototype.hasOwnProperty.call(info, 'createTexture'), destroy: Object.prototype.hasOwnProperty.call(info, 'destroyTexture') };
     info.createTexture = function (this: unknown, texture: unknown) {
-      const t = texture as { name?: string; isDataTexture?: boolean } | null;
+      const t = texture as { name?: string; isDataTexture?: boolean; isPMREMTexture?: boolean } | null;
       if (t && t.isDataTexture === true && t.name === 'DFG_LUT') internal.add(t);
+      // three r186 PMREMGenerator's `_createRenderTarget` (renderers/common/extras/PMREMGenerator.js ~850-853) marks both
+      // of its targets' textures, the ping-pong and the cube-UV output; PMREMNode keeps them for as long as it lives.
+      else if (t && t.isPMREMTexture === true) pmrem.add(t);
       return create.apply(this, arguments as unknown as [unknown]);
     };
     info.destroyTexture = function (this: unknown, texture: unknown) {
       internal.delete(texture as object);
+      pmrem.delete(texture as object);
       return destroy.apply(this, arguments as unknown as [unknown]);
     };
     this.textureInfo = { info, create, destroy, own };
@@ -298,6 +338,7 @@ export class DrawCallLedger {
     const wrapped = this.textureInfo;
     this.textureInfo = null;
     this.internalTextures.clear();
+    this.pmremTextures.clear();
     if (!wrapped) return;
     // three's own are prototype methods: removing the wrappers exposes them again; a renderer's own methods are put back.
     if (wrapped.own.create) wrapped.info.createTexture = wrapped.create;
@@ -352,10 +393,20 @@ export class DrawCallLedger {
     const memory = this.renderer?.info.memory;
     const info = { textures: memory?.textures ?? 0, geometries: memory?.geometries ?? 0, texturesSize: memory?.texturesSize, attributesSize: memory?.attributesSize, indexAttributesSize: memory?.indexAttributesSize, renderTargets: memory?.renderTargets, total: memory?.total };
     // The overdraw count target is the renderer's own, held while nothing in the scene reaches it.
+    // A target a render drew into and nobody disposed is held by a pass or by three (post-processing, CubeMapNode's cube
+    // of an equirect background, a mirror). One drawn once and then abandoned undisposed is not told apart: it is allowed
+    // too, a missed hint rather than a false one.
+    const renderTargets: Array<AllowedRenderTarget | null> = [this.renderer ? overdrawTargetOf(this.renderer) : null, ...this.drawnTargets.live()];
+    // three r186 keeps its frame-buffer targets in `_frameBufferTargets` (Renderer.js ~1561-1601) and draws none when a
+    // RenderPipeline renders the output itself; without the map the estimate allows the usual colour and depth.
+    const frameBuffers = (this.renderer as { _frameBufferTargets?: unknown } | null)?._frameBufferTargets;
     this.memoryStats = estimateMemory(scene, info, this.environment.viewport, {
-      renderTargets: [this.renderer ? overdrawTargetOf(this.renderer) : null],
+      renderTargets,
       internalTextures: this.internalTextures.size,
+      rendererTextures: this.pmremTextures,
+      internalGeometries: this.internalGeometries.live(),
       shadowMapType: this.renderer?.shadowMap?.type,
+      ...(frameBuffers instanceof Map ? { frameBufferTargets: [...(frameBuffers.values() as Iterable<AllowedRenderTarget>)] } : {}),
     });
     this.last = { ...this.last, js: { ...this.last.js, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals }, memory: this.memoryNow() };
     this.last = { ...this.last, hints: hintsFor(this.last, this.budgets(), { ...this.hintContext, items: this.lastItems, objects: this.mainObjects }) };
@@ -531,6 +582,15 @@ export class DrawCallLedger {
       const name = target?.texture?.name || target?.name;
       pass = `nested:${name || ++state.nestedScenes}`;
     } else pass = `scene:${scene.name || ++state.nestedScenes}`;
+    // What the memory section allows for three's own resources: the target this render draws into, unless it is a shadow
+    // map, a VSM blur target or the frame-buffer target (each allowed on its own), and PMREMGenerator's LOD planes, which it
+    // renders as the root of their own render() (PMREMGenerator.js `_textureToCubeUV`, `_applyGGXFilter`, `_halfBlur`).
+    if (!shadow && !isScene) {
+      const geometry = (scene as { geometry?: { attributes?: Record<string, unknown> } }).geometry;
+      if (geometry?.attributes?.outputDirection !== undefined) this.noteGeometry(geometry);
+    }
+    const target = shadow || pass.endsWith(':vsm') ? null : (this.renderer?.getRenderTarget?.() ?? null);
+    if (target !== null && target.isPostProcessingRenderTarget !== true && this.drawnTargets.add(target)) target.addEventListener?.('dispose', this.onResourceDispose);
     this.contexts.push({ root: scene, pass, paths: this.names.forRoot(scene), shadow });
     this.depth++;
   }
@@ -687,6 +747,9 @@ export class DrawCallLedger {
       state.shadowCasters++;
     }
     const geometry = (object as { geometry?: { attributes?: { position?: { count: number } }; morphAttributes?: { position?: unknown[] }; drawRange?: { start: number; count: number } } }).geometry;
+    // three drew this outside every scene (the background sphere): its geometry is three's. The output pass's and the VSM
+    // blur's QuadMesh share one geometry the memory section always allows.
+    if (reason === 'renderer-internal' && geometry !== undefined && (object as { isQuadMesh?: boolean }).isQuadMesh !== true && !this.internalGeometries.has(geometry)) this.noteGeometry(geometry);
     const positionCount = geometry?.attributes?.position?.count ?? 0;
     const range = geometry?.drawRange;
     // Points draw what drawRange allows (ParticleBudget caps them there); meshes count their whole geometry.
@@ -723,6 +786,19 @@ export class DrawCallLedger {
     return record;
   }
 
+  /** Remembers a geometry three draws for itself until it is disposed (`internalGeometries`). */
+  private noteGeometry(geometry: object): void {
+    if (this.internalGeometries.add(geometry)) (geometry as DrawnTarget).addEventListener?.('dispose', this.onResourceDispose);
+  }
+
+  /** Drops the noted geometries and targets and their dispose listeners (attach and detach). */
+  private forgetInternalResources(): void {
+    for (const geometry of this.internalGeometries.live()) (geometry as DrawnTarget).removeEventListener?.('dispose', this.onResourceDispose);
+    for (const target of this.drawnTargets.live()) target.removeEventListener?.('dispose', this.onResourceDispose);
+    this.internalGeometries.clear();
+    this.drawnTargets.clear();
+  }
+
   /** Snapshots the draw state into the record once the renderer returned, then files it as this frame's next item. */
   private file(record: SubmissionRecord, object: Object3D, sides: number, hashes: MaterialHashes, backSide: boolean): void {
     record.expectedGpuDraws = expectedGpuDraws(object, sides, this.backendInfo);
@@ -738,6 +814,50 @@ export class DrawCallLedger {
     buffer.backSide[state.count] = backSide ? 1 : 0;
     buffer.items[state.count++] = record;
     if (!state.descriptions.has(record.programHash)) state.descriptions.set(record.programHash, { type: record.materialType, description: hashes.description });
+  }
+}
+
+/**
+ * A set that holds its members weakly and can still be walked: what the memory section notes about three's own resources
+ * must not keep a resource the app dropped alive. `add` says whether the member is new.
+ */
+class WeakMembers<T extends object> {
+  private refs = new Set<WeakRef<T>>();
+  private byMember = new WeakMap<T, WeakRef<T>>();
+
+  has(member: T): boolean {
+    return this.byMember.has(member);
+  }
+
+  add(member: T): boolean {
+    if (this.byMember.has(member)) return false;
+    const ref = new WeakRef(member);
+    this.refs.add(ref);
+    this.byMember.set(member, ref);
+    return true;
+  }
+
+  delete(member: T): void {
+    const ref = this.byMember.get(member);
+    if (ref === undefined) return;
+    this.refs.delete(ref);
+    this.byMember.delete(member);
+  }
+
+  /** The members still alive (collected ones are dropped). */
+  live(): T[] {
+    const out: T[] = [];
+    for (const ref of this.refs) {
+      const member = ref.deref();
+      if (member === undefined) this.refs.delete(ref);
+      else out.push(member);
+    }
+    return out;
+  }
+
+  clear(): void {
+    this.refs = new Set();
+    this.byMember = new WeakMap();
   }
 }
 

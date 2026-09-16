@@ -328,3 +328,64 @@ test('memory: a VSM shadow light: its map, depth and two blur targets are allowe
   expect(r.textures).toBe(7);
   expect(r.unreferenced).toEqual({ geometries: 0, textures: 0 });
 });
+
+/*
+ * Resources three creates for itself that nothing in the scene reaches, identified from three r186's source:
+ * - PMREM (an equirect `scene.environment` and `background`): PMREMNode's own PMREMGenerator (nodes/pmrem/PMREMNode.js
+ *   ~323) renders LOD plane meshes with an `outputDirection` attribute (renderers/common/extras/PMREMGenerator.js ~821)
+ *   into render targets whose textures carry `isPMREMTexture` (~850-853);
+ * - the background sphere (renderers/common/Background.js ~131), drawn as an object outside the scene;
+ * - morph targets: one float DataArrayTexture per morphed geometry (nodes/accessors/Morph.js ~93);
+ * - post-processing: PassNode's and BloomNode's render targets, drawn into every frame.
+ */
+test("memory: three's own PMREM, background, morph and post-processing resources are not unreferenced, while a real leak still is", async ({ forge }) => {
+  await forge.open('empty', { bloom: '1' });
+  const r = await forge.page.evaluate(async () => {
+    const f = window.__forge;
+    const T = f.three;
+    const width = 256;
+    const height = 128;
+    const sky = new Float32Array(width * height * 4);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const o = (y * width + x) * 4;
+        const up = y / height;
+        sky.set([0.4 + 2.5 * up, 0.5 + 2 * up, 0.9 + 3 * up, 1], o);
+      }
+    }
+    const hdr = new T.DataTexture(sky, width, height, T.RGBAFormat, T.FloatType);
+    hdr.mapping = T.EquirectangularReflectionMapping;
+    hdr.needsUpdate = true;
+    f.scene.environment = hdr;
+    f.scene.background = hdr;
+    const body = new T.BoxGeometry(1, 1, 1);
+    const position = body.attributes.position!;
+    const inflated = new Float32Array(position.count * 3);
+    for (let i = 0; i < position.count; i++) inflated.set([position.getX(i) * 1.3, position.getY(i) * 1.3, position.getZ(i) * 1.3], i * 3);
+    body.morphAttributes.position = [new T.Float32BufferAttribute(inflated, 3)];
+    const blob = new T.Mesh(body, new T.MeshStandardMaterial({ color: 0x8090c0, roughness: 0.2, metalness: 0.8 }));
+    blob.morphTargetInfluences = [0.5];
+    blob.position.set(-1, 0, 0);
+    const ball = new T.Mesh(new T.SphereGeometry(0.6, 32, 16), new T.MeshStandardMaterial({ color: 0xc09060, roughness: 0.4 }));
+    ball.position.set(1, 0, 0);
+    f.scene.add(blob, ball);
+    f.camera.position.set(0, 1, 4);
+    f.camera.lookAt(0, 0, 0);
+    f.camera.updateMatrixWorld();
+    for (let i = 0; i < 4; i++) await f.frameAsync();
+    const memory = f.renderer.info.memory;
+    const clean = { unreferenced: f.ledger.measureMemory().unreferenced, textures: memory.textures, geometries: memory.geometries, hints: f.frame().hints.map((h) => h.code) };
+    const map = new T.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+    map.needsUpdate = true;
+    const probe = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ map }));
+    f.scene.add(probe);
+    await f.frameAsync();
+    probe.removeFromParent(); // without dispose(): three keeps its texture and geometry
+    await f.frameAsync();
+    return { clean, leaked: f.ledger.measureMemory().unreferenced };
+  });
+  note(`[${forge.backend}] PMREM + background + morph + bloom: ${JSON.stringify(r)}`);
+  expect(r.clean.unreferenced).toEqual({ geometries: 0, textures: 0 });
+  expect(r.clean.hints).not.toContain('unreferenced-resources');
+  expect(r.leaked).toEqual({ geometries: 1, textures: 1 });
+});

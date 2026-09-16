@@ -150,6 +150,31 @@ function renderTargetTextures(target: AllowedRenderTarget): number {
   return (Array.isArray(target.textures) ? target.textures.length : 1) + (target.depthTexture || target.depthBuffer || target.stencilBuffer ? 1 : 0);
 }
 
+/**
+ * `renderTargetTextures` for a target the renderer holds, by identity where the target shows its textures: a colour
+ * texture or a depth texture the scene reaches (a mirror's `rt.texture` in a material) or already allowed is not allowed
+ * again. A depth texture three creates for a depth buffer lives in its own data, not on the target, and counts one.
+ */
+function heldTargetTextures(target: AllowedRenderTarget, reachable: ReadonlySet<unknown>, allowed: Set<unknown>): number {
+  const once = (texture: unknown): number => {
+    if (reachable.has(texture) || allowed.has(texture)) return 0;
+    allowed.add(texture);
+    return 1;
+  };
+  let count = 0;
+  if (Array.isArray(target.textures)) for (const texture of target.textures) count += once(texture);
+  else count += 1;
+  if (target.depthTexture) count += once(target.depthTexture);
+  else if (target.depthBuffer || target.stencilBuffer) count += 1;
+  return count;
+}
+
+/** three r186 NodeMaterial.setupPosition (~770) morphs a geometry with any of these, and Morph.js (~93) gives it one texture. */
+function hasMorphTexture(geometry: BufferGeometry): boolean {
+  const morph = geometry.morphAttributes as { position?: unknown; normal?: unknown; color?: unknown } | undefined;
+  return Boolean(morph && (morph.position || morph.normal || morph.color));
+}
+
 /** A built shadow map: an array map carries its VSM blur targets (ShadowNode.js ~389-403). */
 type ShadowMapTarget = AllowedRenderTarget & { _vsmShadowMapVertical?: AllowedRenderTarget | null; _vsmShadowMapHorizontal?: AllowedRenderTarget | null };
 
@@ -189,8 +214,25 @@ export interface MemoryEstimateOptions {
    * three's `DFG_LUT` through `renderer.info.createTexture` and `destroyTexture` while it is attached.
    */
   internalTextures?: number;
+  /**
+   * Textures the renderer created for itself, by identity: one the scene also reaches counts once. The ledger passes the
+   * live render-target textures three's PMREMGenerator created (`isPMREMTexture`).
+   */
+  rendererTextures?: Iterable<unknown>;
+  /**
+   * Geometries the renderer drew for itself outside every scene, by identity: one a mesh also reaches counts once. The
+   * ledger passes PMREMGenerator's LOD planes and what three draws as a renderer-internal object (the background sphere);
+   * the output pass's shared quad is always allowed.
+   */
+  internalGeometries?: Iterable<unknown>;
   /** `renderer.shadowMap.type`: under `VSMShadowMap` each built non-point shadow map also holds two blur targets. */
   shadowMapType?: number;
+  /**
+   * The renderer's frame-buffer targets when it shows them (three r186 `renderer._frameBufferTargets`): their textures are
+   * allowed by identity. Without it the estimate allows a colour and a depth texture, what a canvas render draws into;
+   * with it, none when three drew into none (a RenderPipeline that renders the output itself).
+   */
+  frameBufferTargets?: Iterable<AllowedRenderTarget>;
 }
 
 /** three's own counts and byte sizes, null when `info` does not carry them. */
@@ -215,7 +257,7 @@ export function estimateMemory(scene: Object3D, info: RendererMemoryInfo, viewpo
   // light's map when a receiver's lighting first builds and sets `shadow.map` (ShadowNode.js ~529): a casting light whose
   // map three never built (shadow maps disabled, never lit) holds none, and counts as no render target either. A map
   // built but not rendered yet is allowed textures three creates on its first render, so the count reads low until then.
-  let allowedTextures = FRAME_BUFFER_TEXTURES + (options.internalTextures ?? 0);
+  let allowedTextures = (options.frameBufferTargets ? 0 : FRAME_BUFFER_TEXTURES) + (options.internalTextures ?? 0);
   scene.traverse((o) => {
     const light = o as Object3D & { isLight?: boolean; isPointLight?: boolean; castShadow: boolean; shadow?: { mapSize: { x: number; y: number }; isPointLightShadow?: boolean; map?: ShadowMapTarget | null } };
     const map = light.isLight && light.castShadow ? light.shadow?.map : null;
@@ -245,7 +287,18 @@ export function estimateMemory(scene: Object3D, info: RendererMemoryInfo, viewpo
     rtCount += blurTargets;
     rtBytes += blurTargets * light.shadow.mapSize.x * light.shadow.mapSize.y * VSM_BLUR_TEXEL_BYTES;
   });
-  for (const target of options.renderTargets ?? []) if (target) allowedTextures += renderTargetTextures(target);
+  // By identity from here: a texture the scene reaches, or one already allowed, is not allowed again.
+  const allowed = new Set<unknown>();
+  for (const target of options.frameBufferTargets ?? []) allowedTextures += heldTargetTextures(target, textures, allowed);
+  for (const target of options.renderTargets ?? []) if (target) allowedTextures += heldTargetTextures(target, textures, allowed);
+  for (const texture of options.rendererTextures ?? []) if (!textures.has(texture as Texture) && !allowed.has(texture)) {
+    allowed.add(texture);
+    allowedTextures++;
+  }
+  // Morph targets: one float DataArrayTexture per morphed geometry, which nothing in the scene reaches.
+  for (const g of geometries) if (hasMorphTexture(g)) allowedTextures++;
+  let internalGeometries = INTERNAL_GEOMETRIES;
+  for (const g of options.internalGeometries ?? []) if (!geometries.has(g as BufferGeometry)) internalGeometries++;
   let textureTotal = 0;
   for (const t of textures) textureTotal += textureBytes(t);
   let geometryTotal = 0;
@@ -261,7 +314,7 @@ export function estimateMemory(scene: Object3D, info: RendererMemoryInfo, viewpo
     renderTargets: { count: rtCount, bytes: rtBytes },
     // Reachable textures that never rendered are not uploaded, so the count clamps at zero and is exact once everything
     // reachable has been on screen. One geometry is three's own: the output pass's quad.
-    unreferenced: { geometries: Math.max(0, info.geometries - geometries.size - INTERNAL_GEOMETRIES), textures: Math.max(0, info.textures - textures.size - allowedTextures) },
+    unreferenced: { geometries: Math.max(0, info.geometries - geometries.size - internalGeometries), textures: Math.max(0, info.textures - textures.size - allowedTextures) },
     chunks: { total: 0, resident: 0 },
     measured: measuredOf(info),
     estimated: true,
