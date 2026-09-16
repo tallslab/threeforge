@@ -433,6 +433,34 @@ describe('DrawCallLedger shadow passes on the hot path', () => {
     expect(frame.lighting).toMatchObject({ shadowPasses: 2, shadowCasters: 40 });
     expect(reads).toBeLessThanOrEqual(4);
   });
+
+  it('resolves a drawn material to its registry canonical at most once per unique material, across the passes of a frame', () => {
+    const registry = new MaterialRegistry();
+    const materials = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00].map((color) => registry.register(new MeshStandardMaterial({ color })));
+    const { scene, camera } = sceneWithCamera();
+    const lights = [shadowLight('sun'), shadowLight('lamp')];
+    scene.add(...lights);
+    for (let i = 0; i < 40; i++) {
+      const mesh = tag.static(new Mesh(box, materials[i % 4]!));
+      mesh.castShadow = true;
+      scene.add(mesh);
+    }
+    const renderer = new ListRenderer();
+    renderer.shadowLights = lights;
+    const ledger = new DrawCallLedger({ registry });
+    ledger.attach(renderer);
+    renderer.render(scene, camera); // the first frame rescans
+
+    const canonicalOf = vi.spyOn(registry, 'canonicalOf');
+    renderer.render(scene, camera);
+    const resolves = canonicalOf.mock.calls.length;
+    canonicalOf.mockRestore();
+
+    // 120 submissions (40 in the main pass and in each of the two shadow passes) over 4 unique materials: the
+    // per-frame index and the shared mark each submission carries cost one resolve per material, not one per draw.
+    expect(ledger.frame().totals.sceneSubmissions).toBe(120);
+    expect(resolves).toBeLessThanOrEqual(4);
+  });
 });
 
 describe('DrawCallLedger cost per submission', () => {

@@ -269,6 +269,9 @@ per-submission path allocates nothing, and none of the following changes a numbe
   items stay intact in the other, so a read between frames or inside one (a hook) sees whole frames. `frame({ items: true })` returns copies, valid however long they are held.
 - **Material hashes** come from `registry.hashesOf()` (the registry's key cache, section 5), read at most once per
   material per frame, and again after `invalidate()` or `forget()` (`registry.keysRevision`), even within a frame.
+- **Material uses** (`materialUses.ts`: the per-frame `material` index every record carries and the main-pass users
+  behind `static-unbatched`) resolve each drawn material to the registry's canonical at most once per material per
+  frame, memoized and invalidated on that same revision, rather than once per submission.
 - **Display names** come from a cache checked against the live graph on every read: the object's name, type and
   sibling index, and its parent's path. A sibling index is trusted only while `parent.children[index] === object`, so
   a rename, reorder, reparent or removal (even from a hook between two submissions) gives `displayName()`'s answer

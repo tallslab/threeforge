@@ -820,6 +820,54 @@ describe('DrawCallLedger shared materials: unique-material and static-unbatched'
     expect(reasonsIn(ledger, 'scene:room')).toEqual({ 'far-wall': 'unique-material' });
   });
 
+  it("counts no use for renderer-internal work: a static sharing the output quad's material stays unique-material", () => {
+    const { renderer, ledger, scene, camera } = attached();
+    const shared = new MeshStandardMaterial({ color: 0x66aa44 });
+    // three's output quad is the renderer's own object, drawn in the main pass and filed as renderer-internal.
+    renderer.outputQuad.material = shared;
+    scene.add(named(tag.static(new Mesh(box, shared)), 'alone'));
+    renderer.render(scene, camera);
+
+    const items = ledger.frame({ items: true }).items!;
+    const quad = items.find((i) => i.name === 'Output Color Transform')!;
+    const alone = items.find((i) => i.name === 'alone')!;
+    expect(quad.reason).toBe('renderer-internal');
+    // The quad's submission is still indexed — every record carries a material index, and it is the same canonical —
+    // but it counts as no user, so the scene's static is still the only object drawing that material.
+    expect(quad.material).toBe(alone.material);
+    expect(reasonsIn(ledger)).toEqual({ alone: 'unique-material' });
+  });
+
+  it("counts no use from a measureOverdraw() a hook of the frame starts: its count renders are not submissions", async () => {
+    const { renderer, ledger, scene, camera } = attached();
+    const stone = new MeshStandardMaterial({ color: 0x777777 });
+    const a = named(tag.static(new Mesh(box, stone)), 'a');
+    const b = named(tag.static(new Mesh(box, stone)), 'b');
+    scene.add(a, b, named(tag.static(new Mesh(box, new MeshStandardMaterial({ color: 0x224466 }))), 'alone'));
+    renderer.render(scene, camera);
+    const plain = ledger.frame({ items: true });
+
+    let pending: Promise<unknown> | null = null;
+    let started = false;
+    a.onBeforeRender = () => {
+      // Measure once: the count render draws `a` again and calls this hook with it.
+      if (started) return;
+      started = true;
+      pending = ledger.measureOverdraw(scene, camera);
+    };
+    renderer.render(scene, camera);
+    const hooked = ledger.frame({ items: true });
+    a.onBeforeRender = () => {};
+    expect(pending).not.toBeNull();
+    await pending;
+
+    // The count renders drew every object again with the count material; none of it was filed, so the frame's
+    // material indices and reasons are exactly those of the frame before it.
+    const keyed = (frame: typeof plain) => frame.items!.map((i) => [i.name, i.material, i.reason]);
+    expect(keyed(hooked)).toEqual(keyed(plain));
+    expect(reasonsIn(ledger)).toEqual({ a: 'static-unbatched', b: 'static-unbatched', alone: 'unique-material' });
+  });
+
   it('indexes materials per frame in first-draw order and decides shared per frame; items held from an earlier frame keep their values', () => {
     const { renderer, ledger, scene, camera } = attached();
     const red = new MeshStandardMaterial({ color: 0xff0000 });

@@ -12,6 +12,7 @@ import { formatCostRows, formatHints } from '../overlay/index.js';
 import { FORGE_TAG_KEY } from '../tags.js';
 import { lightInfoOf, type LightInfo } from './sections.js';
 import { shadowPassIds } from './shadowPasses.js';
+import { MaterialUses } from './materialUses.js';
 import { buildFrame, emptyFrame, emptySections, type BudgetResult, type FrameEnv, type FrameSnapshot, type JsSnapshot, type MemorySnapshot, type SubmissionRecord, type Tier } from './snapshot.js';
 
 /** The slice of three's common Renderer the ledger patches and reads. Structural so tests can fake it. */
@@ -115,21 +116,6 @@ interface FrameState {
   startedAt: number;
 }
 
-/**
- * A canonical material's marks for the frame in progress: one per material the ledger has seen, reused frame after frame
- * and reset when first read in a new frame. It holds no material or object, so a mark outliving its frame retains nothing.
- */
-interface MaterialMark {
-  /** The `frameStamp` the fields below belong to. */
-  frame: number;
-  /** `SubmissionRecord.material`: the order this frame first drew the material in. */
-  index: number;
-  /** The `Object3D.id` of the first object that drew the material in this frame's main pass, or -1. */
-  user: number;
-  /** Another object drew it in this frame's main pass too. */
-  shared: boolean;
-}
-
 /** A blank record; the property order is `SubmissionRecord`'s, which `frame({ items: true })` copies. */
 function newRecord(): SubmissionRecord {
   return { name: '', kind: 'other', material: 0, materialType: '', programHash: '', variantHash: '', transparent: false, pass: '', reason: 'unclassified', flags: [], expectedGpuDraws: 0, instances: 0, instancesDrawn: 0, vertices: 0, bones: 0, skeleton: null, morphTargets: 0 };
@@ -147,9 +133,9 @@ function acquire(buffer: RecordBuffer): SubmissionRecord {
  * The outermost `render()` call is a frame; nested calls are passes of it. `renderAsync` needs no patch: three r186's
  * awaits `init()` and then calls `this.render()`.
  *
- * The per-submission path allocates nothing in a steady scene: records are pooled, material hashes are read from the
- * registry's key cache once per material per frame, display names come from a validated cache, and a frame walks
- * each scene once (docs/threeforge.md section 4, "Overhead").
+ * The per-submission path allocates nothing in a steady scene: records are pooled, material hashes and the canonical a
+ * drawn material resolves to are read once per material per frame, display names come from a validated cache, and a
+ * frame walks each scene once (docs/threeforge.md section 4, "Overhead").
  */
 export class DrawCallLedger {
   readonly registry: MaterialRegistry;
@@ -179,11 +165,8 @@ export class DrawCallLedger {
   private readonly casterFrames = new WeakMap<Object3D, number>();
   /** The frame each light's shadow-map texels were last counted in. */
   private readonly shadowMapFrames = new WeakMap<Light, number>();
-  /** Canonical material → its marks (`MaterialMark`): main-pass users and `SubmissionRecord.material`. */
-  private readonly materialMarks = new WeakMap<Material, MaterialMark>();
-  /** This frame's marks by index; entries from `markCount` on are earlier frames' and never read. */
-  private readonly frameMarks: MaterialMark[] = [];
-  private markCount = 0;
+  /** This frame's material uses: `SubmissionRecord.material` and the main-pass users behind `static-unbatched`. */
+  private readonly uses: MaterialUses;
   private backendInfo: BackendInfo = { backend: 'unknown', multiDraw: false };
   private environment: { tier: Tier; gpu: string; dpr: number; viewport: [number, number] } = { tier: 'desktop', gpu: 'unknown', dpr: 1, viewport: [0, 0] };
   private readonly now: () => number;
@@ -204,6 +187,7 @@ export class DrawCallLedger {
 
   constructor(options: DrawCallLedgerOptions = {}) {
     this.registry = options.registry ?? new MaterialRegistry();
+    this.uses = new MaterialUses(this.registry);
     this.now = options.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
     this.budgetOverrides = options.budgets ?? {};
     this.last = emptyFrame(this.env());
@@ -486,8 +470,8 @@ export class DrawCallLedger {
         startedAt: this.now(),
       };
       this.frameStamp++;
-      // Material marks reset lazily against frameStamp; the frame's indices start again at 0.
-      this.markCount = 0;
+      // Material marks reset lazily against the uses' own frame stamp; the frame's indices start again at 0.
+      this.uses.beginFrame();
       this.frameStarts.push(this.current.startedAt);
       if (this.frameStarts.length > FRAME_WINDOW + 1) this.frameStarts.shift();
     }
@@ -540,13 +524,12 @@ export class DrawCallLedger {
     const items = state.buffer.items;
     if (items.length !== state.count) items.length = state.count;
     // One pass over the frame's items, before anything reads their reasons (the rescan's hints included).
-    const marks = this.frameMarks;
     let transparentSubmissions = 0;
     let particles = 0;
     for (const i of items) {
       // Drawn alone is `unique-material` only while no other object of the main pass draws the material; every pass's
       // record of the object follows, since its index names the same mark.
-      if (i.reason === 'unique-material' && marks[i.material]!.shared) i.reason = 'static-unbatched';
+      if (i.reason === 'unique-material' && this.uses.shared(i.material)) i.reason = 'static-unbatched';
       if (i.pass !== 'main') continue;
       if (i.transparent && i.reason !== 'renderer-internal') transparentSubmissions++;
       particles += i.kind === 'points' ? i.vertices : i.reason === 'sprite-batch' ? i.instances : i.kind === 'sprite' ? 1 : 0;
@@ -651,33 +634,12 @@ export class DrawCallLedger {
     return hashes;
   }
 
-  /** Between frames nothing here holds a material. */
+  /** Between frames nothing here holds a material: neither the hash memo nor the uses' resolved canonicals. */
   private clearHashes(): void {
     this.hashes.clear();
     this.lastMaterial = null;
     this.lastHashes = null;
-  }
-
-  /**
-   * This frame's marks of `material`'s canonical (the registry's, else the instance itself): identity, not hashes, so
-   * materials the registry keeps apart (instance functions, own data) stay apart. Two lookups per submission; nothing is
-   * allocated once a material has been seen, and a new frame resets a mark on its first read.
-   */
-  private markOf(material: Material): MaterialMark {
-    const canonical = this.registry.canonicalOf(material) ?? material;
-    let mark = this.materialMarks.get(canonical);
-    if (mark === undefined) {
-      mark = { frame: -1, index: 0, user: -1, shared: false };
-      this.materialMarks.set(canonical, mark);
-    }
-    if (mark.frame !== this.frameStamp) {
-      mark.frame = this.frameStamp;
-      mark.index = this.markCount;
-      mark.user = -1;
-      mark.shared = false;
-      this.frameMarks[this.markCount++] = mark;
-    }
-    return mark;
+    this.uses.clear();
   }
 
   /** Fills a pooled record with everything known before the renderer processes the object; `sides` is `sideFactor()`. */
@@ -704,16 +666,12 @@ export class DrawCallLedger {
       if (!known.has(skinned.skeleton)) known.set(skinned.skeleton, known.size);
       skeleton = known.get(skinned.skeleton)!;
     }
-    const mark = this.markOf(material);
     // Main-pass uses count per object: a mesh drawn twice there (a transmissive material's back-side pass) is one use.
-    if (context.pass === 'main' && reason !== 'renderer-internal') {
-      if (mark.user === -1) mark.user = object.id;
-      else if (mark.user !== object.id) mark.shared = true;
-    }
+    const materialIndex = this.uses.use(material, object.id, context.pass === 'main' && reason !== 'renderer-internal');
     const record = acquire(state.buffer);
     record.name = this.names.of(object, context.root, context.paths);
     record.kind = kindOf(object);
-    record.material = mark.index;
+    record.material = materialIndex;
     record.materialType = material.type;
     record.programHash = hashes.programHash;
     record.variantHash = hashes.variantHash;
