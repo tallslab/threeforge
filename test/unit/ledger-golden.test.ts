@@ -216,7 +216,10 @@ describe('DrawCallLedger golden output', () => {
     const renderer = new FakeRenderer({ shadowLights: [light] });
     ledger.annotate(mirroredProp, 'excluded:mirrored');
 
-    // render() takes a fixed 3 ms; matches the pattern in js-section.test.ts.
+    // render() takes a fixed 3 ms; matches the pattern in js-section.test.ts. This clock ticks only inside render(), so
+    // the snapshot's `js.renderMs: 12` (4 renders x 3) and `js.ledgerMs: 0` are what the injection dictates and cannot
+    // fail on the renderMs/ledgerMs split (independent review M7). That split is covered by the two clock tests in
+    // js-section.test.ts: one charges the ledger's filing time through rescan(), the other on every frame.
     const originalRender = renderer.render.bind(renderer);
     (renderer as { render: typeof originalRender }).render = (s, c) => {
       t += 3;

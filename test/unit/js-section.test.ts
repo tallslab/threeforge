@@ -67,6 +67,53 @@ describe('js section', () => {
     expect(ledger.frame().js).toMatchObject({ renderMs: 3, ledgerMs: 20 });
   });
 
+  /**
+   * M7 (independent review): the golden snapshot pins `js.renderMs: 12` and `js.ledgerMs: 0` with a clock that ticks
+   * only inside `render`, so it can never fail on the split — which is the accounting the audit's defect 22 is about.
+   * The case above charges the ledger's filing time through `rescan()`, which happens on 2 of 61 frames; this one
+   * charges it on **every** frame, so the ordinary filing path (the item walk, `buildFrame`, the hints) is covered too.
+   *
+   * The clock returns the current reading and *then* advances it while the ledger is filing: the ledger reads it once
+   * at `renderEnd` (the value the render cost alone produced) and once when filing is done, so a correct split reports
+   * renderMs 3 and ledgerMs 7. Charging the ledger's own work to `renderMs`, as 0.8.0 did, makes this test red.
+   */
+  it('charges the ledger\'s own filing work to ledgerMs on an ordinary frame, and leaves renderMs the render alone', () => {
+    let t = 0;
+    let filing = false;
+    // Post-increment: the reading is what the clock said before the ledger's own 7 ms of filing began.
+    const ledger = new DrawCallLedger({
+      now: () => {
+        const reading = t;
+        if (filing) t += 7;
+        return reading;
+      },
+    });
+    const renderer = new FakeRenderer();
+    const origRender = renderer.render.bind(renderer);
+    (renderer as { render: typeof origRender }).render = (s, c) => {
+      t += 3; // the render itself
+      const result = origRender(s, c);
+      filing = true; // everything from here to the end of the ledger's exit() is the ledger's own work
+      return result;
+    };
+    ledger.attach(renderer as never);
+    const { scene, camera } = sceneWithCamera();
+    scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial()));
+    const frames: Array<{ renderMs: number; ledgerMs: number }> = [];
+    for (let i = 0; i < 4; i++) {
+      renderer.render(scene, camera);
+      filing = false;
+      const js = ledger.frame().js;
+      frames.push({ renderMs: js.renderMs, ledgerMs: js.ledgerMs });
+      t += 13;
+    }
+    // Frame 0 rescans as well, which this clock does not charge separately; every frame files, so every frame pays.
+    for (const [i, f] of frames.entries()) {
+      expect(f.ledgerMs, `frame ${i}: the ledger's own work must be measured`).toBeGreaterThan(0);
+      expect(f, `frame ${i}`).toEqual({ renderMs: 3, ledgerMs: 7 });
+    }
+  });
+
   it('rescan() refreshes the graph statistics between the periodic recounts', () => {
     const ledger = new DrawCallLedger({ now: () => 0 });
     const renderer = new FakeRenderer();
