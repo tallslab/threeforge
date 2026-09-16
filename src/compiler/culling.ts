@@ -23,9 +23,17 @@ export type NestedPassPolicy = 'per-pass' | 'reuse-main';
 
 export interface CullingOptions {
   /**
-   * Box margin for instances that move; 0 (default) is fastest for statics. Leaf boxes are built and refitted this
-   * much larger, so `move` can leave a leaf alone while the instance's new box still fits inside it. It never changes
-   * which instances are drawn: a candidate the BVH offers still has to pass three's own bounding-sphere test.
+   * Box margin for instances that move; 0 (default) is fastest for statics, and `World` always uses 0.
+   *
+   * Leaf boxes are built and refitted this much larger, so `move` can leave a leaf alone while the instance's new box
+   * still fits inside it. **It changes which instances are drawn.** The BVH prefilters candidates by their box, and
+   * only the candidates it offers go on to three's bounding-sphere test (`sphereMeets`); since a bounding sphere
+   * circumscribes its box, that prefilter is strictly the tighter of the two. Enlarging the boxes loosens it, so an
+   * instance whose sphere meets the frustum while its exact box does not is now offered, passes the sphere test and
+   * is drawn — costing a draw call and its triangles, all of them clipped. A margin also rebuilds the tree
+   * differently, so the traversal order changes, which can flip depth tie-breaks between coincident surfaces.
+   * Measured on the bossfight bench scene: +2 draw calls and +24 triangles per frame in a point light's shadow pass,
+   * and 1-4 pixels of 480000. Use it only where a refit saving is measured and both effects are acceptable.
    */
   margin?: number;
   /** Pick a coarser geometry range for distant instances (batches only). */
@@ -116,7 +124,7 @@ export function levelFor(distance: number, distances: number[]): number {
 
 export interface CullingHandle {
   bvh: BVH<object, number>;
-  /** The box margin the tree was built with, and that `move`/`insert` refit by (`CullingOptions.margin`). */
+  /** The box margin the tree was built with, and that `move`/`insert` refit by; 0 for every batch `World` compiles. */
   readonly margin: number;
   /** Re-read an instance's matrix and update its leaf. */
   move(id: number): void;
@@ -184,8 +192,10 @@ function pushItem(start: number, count: number, z: number, index: number): void 
  * Replaces a BatchedMesh's linear per-instance frustum scan with a BVH query (O(log n + visible)).
  * Mirrors three r186's `BatchedMesh.onBeforeRender` in what it writes: `_multiDrawStarts`, `_multiDrawCounts`,
  * `_multiDrawCount`, the indirect texture and `_multiDrawBytesPerElement`. Candidates from the BVH still pass three's
- * own bounding-sphere test, so the result is a subset of what the linear scan would draw, never a superset. Array
- * cameras, reversed depth and `perObjectFrustumCulled = false` use three's own scan.
+ * own bounding-sphere test, so the result is a subset of what the linear scan would draw, never a superset — and at
+ * the default `margin` of 0 it is a strict subset, because the tree's exact boxes reject instances whose
+ * circumscribing sphere would meet the frustum. A non-zero `margin` gives some of those back (see
+ * `CullingOptions.margin`). Array cameras, reversed depth and `perObjectFrustumCulled = false` use three's own scan.
  *
  * **Nested passes keep a stable prefix.** Every material of a batch reads the same `_indirectTexture` (three r186
  * `nodes/accessors/Batch.js:130`). Renders nest: a shadow map renders from inside the first `receiveShadow` object's

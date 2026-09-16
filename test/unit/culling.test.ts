@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BatchedMesh, Box3, BoxGeometry, Frustum, Matrix4, MeshStandardMaterial, PerspectiveCamera, Scene, Vector3, WebGLCoordinateSystem } from 'three';
+import { BatchedMesh, Box3, BoxGeometry, Frustum, Matrix4, MeshStandardMaterial, PerspectiveCamera, Scene, Sphere, Vector3, WebGLCoordinateSystem } from 'three';
 import { attachBvhCulling, FORGE_HOOK } from '../../src/compiler/culling.js';
 import { mulberry32 } from '../../test/scenes/naive.js';
 
@@ -123,73 +123,48 @@ describe('attachBvhCulling', () => {
   });
 });
 
-describe('attachBvhCulling margin', () => {
-  it('only adds candidates: the drawn set is exactly the one a marginless tree gives', () => {
-    const none = field(4000);
-    attachBvhCulling(none.batch, WebGLCoordinateSystem);
-    none.cull();
-    const expected = none.drawn();
-    expect(expected.length).toBeGreaterThan(10);
-    expect(expected.length).toBeLessThan(4000);
-    const margined = field(4000); // the same seed, so the same instances
-    attachBvhCulling(margined.batch, WebGLCoordinateSystem, { margin: 25 });
-    margined.cull();
-    expect(margined.drawn()).toEqual(expected);
-  });
-});
-
-describe('attachBvhCulling margin: draw order', () => {
-  /** The indirect rows in slot order, not sorted: the order a sorted batch blends its instances in. */
-  const rows = (batch: BatchedMesh): number[] => {
-    const b = batch as unknown as { _multiDrawCount: number; _indirectTexture: { image: { data: Uint32Array } } };
-    return Array.from(b._indirectTexture.image.data.subarray(0, b._multiDrawCount));
-  };
-
-  /** Instances on eight planes perpendicular to the view, so forty of them share a sort key exactly. */
-  function tied(perPlane = 40, planes = 8) {
-    const count = perPlane * planes;
-    const batch = new BatchedMesh(count, box.attributes.position!.count, box.index!.count, new MeshStandardMaterial());
+describe('attachBvhCulling margin changes what is drawn', () => {
+  /**
+   * One instance in plain view and one parked just outside a frustum side plane, in the gap where its circumscribing
+   * sphere still reaches in but its exact box does not. The BVH prefilters by box and only then applies three's
+   * sphere test, so the box prefilter is the tighter of the two: at margin 0 the parked instance is never offered,
+   * and widening the boxes hands it back. This is the case a margined tree has to be tested against — a scattered
+   * field is not, since there box and sphere agree on almost every instance.
+   */
+  function parked(margin: number) {
+    const batch = new BatchedMesh(2, box.attributes.position!.count, box.index!.count, new MeshStandardMaterial());
     const id = batch.addGeometry(box);
-    const m = new Matrix4();
-    for (let p = 0; p < planes; p++) {
-      for (let i = 0; i < perPlane; i++) {
-        const instance = batch.addInstance(id);
-        m.makeTranslation((i - perPlane / 2) * 1.5, 1, -(20 + p * 20));
-        batch.setMatrixAt(instance, m);
-      }
-    }
+    const inView = batch.addInstance(id);
+    batch.setMatrixAt(inView, new Matrix4().makeTranslation(0, 0, -10));
+    const outside = batch.addInstance(id);
+    batch.setMatrixAt(outside, new Matrix4().makeTranslation(-11.1, 0, -10));
     batch.computeBoundingSphere();
-    const camera = new PerspectiveCamera(70, 1.5, 0.1, 400);
-    camera.position.set(0, 1, 0);
-    camera.lookAt(0, 1, -1);
+    const camera = new PerspectiveCamera(90, 1, 0.1, 100);
+    camera.position.set(0, 0, 0);
+    camera.lookAt(0, 0, -1);
     camera.updateMatrixWorld();
     camera.updateProjectionMatrix();
-    const scene = new Scene();
-    const cull = () => batch.onBeforeRender({ coordinateSystem: WebGLCoordinateSystem } as never, scene, camera, batch.geometry, batch.material as never, null as never);
-    return { batch, cull };
+    const handle = attachBvhCulling(batch, WebGLCoordinateSystem, margin > 0 ? { margin } : {});
+    batch.onBeforeRender({ coordinateSystem: WebGLCoordinateSystem } as never, new Scene(), camera, batch.geometry, batch.material as never, null as never);
+    const b = batch as unknown as { _multiDrawCount: number; _indirectTexture: { image: { data: Uint32Array } } };
+    return { batch, camera, handle, outside, drawn: Array.from(b._indirectTexture.image.data.subarray(0, b._multiDrawCount)) };
   }
 
-  it('leaves the row order of a sorted batch alone, tie-breaks included', () => {
-    const none = tied();
-    expect(none.batch.sortObjects, 'three sorts a BatchedMesh by default').toBe(true);
-    attachBvhCulling(none.batch, WebGLCoordinateSystem);
-    none.cull();
-    const expected = rows(none.batch);
-    expect(expected.length).toBeGreaterThan(100);
-    const margined = tied(); // the same instances
-    attachBvhCulling(margined.batch, WebGLCoordinateSystem, { margin: 25 });
-    margined.cull();
-    expect(rows(margined.batch)).toEqual(expected);
-  });
+  it('leaves out an instance whose sphere meets the frustum but whose exact box does not, and a margin draws it', () => {
+    const none = parked(0);
+    // The precondition, checked with three's own maths rather than assumed.
+    const frustum = new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(none.camera.projectionMatrix, none.camera.matrixWorldInverse));
+    const matrix = new Matrix4();
+    none.batch.getMatrixAt(none.outside, matrix);
+    const sphere = none.batch.getBoundingSphereAt(0, new Sphere())!.clone().applyMatrix4(matrix);
+    const exact = none.batch.getBoundingBoxAt(0, new Box3())!.clone().applyMatrix4(matrix);
+    expect(frustum.intersectsSphere(sphere), "the parked instance's sphere reaches into the frustum").toBe(true);
+    expect(frustum.intersectsBox(exact), 'while its exact box stays outside').toBe(false);
 
-  it('leaves the row order of the scattered field alone too', () => {
-    const none = field(4000);
-    attachBvhCulling(none.batch, WebGLCoordinateSystem);
-    none.cull();
-    const expected = rows(none.batch);
-    const margined = field(4000);
-    attachBvhCulling(margined.batch, WebGLCoordinateSystem, { margin: 25 });
-    margined.cull();
-    expect(rows(margined.batch)).toEqual(expected);
+    expect(none.handle.margin).toBe(0);
+    expect(none.drawn, 'margin 0 never offers it as a candidate').toEqual([0]);
+    const margined = parked(1);
+    expect(margined.handle.margin).toBe(1);
+    expect(margined.drawn.slice().sort((a, b) => a - b), 'a margin offers it, and three\'s sphere test admits it').toEqual([0, 1]);
   });
 });

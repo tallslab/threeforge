@@ -572,11 +572,15 @@ a threeforge transparent batch shares the main pass with another transparent sub
 - **BVH culling** (`attachBvhCulling`): a `bvh.js` tree of instance boxes replaces `BatchedMesh`'s linear
   per-instance test. The hook mirrors three's own `onBeforeRender` (fills `_multiDrawStarts/Counts`, the indirect
   texture) and is prepended with `prependRenderHook`, never overwriting the object's hook; hooks are marked with
-  `FORGE_HOOK`. The handle offers `move(id)`, `insert(id)`, `remove(id)`, `detach()` and reports its `margin`: 0 for
-  a batch of statics, and for one carrying batch-synced movers the largest extent a mover has in the scene's space,
-  so a mover's leaf is left where it is while its new box still fits inside the enlarged one instead of being
-  refitted on every sync. A margin never changes what is drawn: a BVH candidate still has to pass three's own
-  bounding-sphere test, so a wider box only offers more candidates.
+  `FORGE_HOOK`. The handle offers `move(id)`, `insert(id)`, `remove(id)`, `detach()` and reports its `margin`, which
+  is 0 for every batch `World` compiles, batch-synced movers included: a mover refits its own leaf on each sync.
+  `CullingOptions.margin` is available to direct `attachBvhCulling` callers, but **it changes what is drawn**. The BVH
+  prefilters candidates by their exact box and only the candidates it offers reach three's bounding-sphere test, and
+  a sphere circumscribes its box, so the prefilter is the tighter of the two; enlarging the boxes admits instances
+  whose sphere meets the frustum while their box does not, each costing a draw call and its (fully clipped)
+  triangles. It also rebuilds the tree, so the traversal order changes and depth tie-breaks between coincident
+  surfaces can flip. Measured on the bossfight bench scene when `World` briefly did this during 0.9.0: +2 draw calls
+  and +24 triangles per frame in a point light's shadow pass, and 1-4 pixels of 480000.
 - **Instancing** (`createCulledInstancedMesh`): master matrices and colours are kept aside; every frame the visible
   instances are compacted to the front of `instanceMatrix`/`instanceColor` and `count` is set, so culled instances
   cost nothing. LOD levels are separate InstancedMeshes chosen by distance. Handle: `setMatrixAt` (a master matrix, in

@@ -1,4 +1,4 @@
-import { Box3, BoxGeometry, DoubleSide, Group, Matrix4, Mesh, MeshBasicMaterial, Vector3, Vector4, WebGLCoordinateSystem, type BatchedMesh, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Sprite, type Texture } from 'three';
+import { BoxGeometry, DoubleSide, Group, Matrix4, Mesh, MeshBasicMaterial, Vector3, Vector4, WebGLCoordinateSystem, type BatchedMesh, type Box3, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Sprite, type Texture } from 'three';
 import type { DrawCallLedger } from '../ledger/DrawCallLedger.js';
 import { displayName } from '../ledger/reasons.js';
 import { MaterialRegistry, type RegistryStats } from '../registry/MaterialRegistry.js';
@@ -20,7 +20,6 @@ export const FORGE_HIDDEN_LAYER = 31;
 const _local = new Matrix4();
 const _size = new Vector3();
 const _center = new Vector3();
-const _box = new Box3();
 
 export interface WorldOptions {
   registry?: MaterialRegistry;
@@ -425,27 +424,18 @@ export class World {
       const shared = (result.originals.get(target) ?? []).some((o) => o.material === material || this.registry.canonicalOf(o.material as Material) === material);
       if (!shared) this.ownedMaterials.add(material);
     }
-    for (const [mesh, rule] of syncRule) if (rule === null && result.slots.has(mesh)) this.syncedSet.add(mesh);
+    // Every batch is culled through a marginless tree, movers included: the BVH prefilters candidates by their exact
+    // box, which is strictly tighter than three's bounding-sphere test applied after it, so enlarging the boxes does
+    // not merely cost a refit — it admits instances whose sphere meets the frustum while their exact box does not.
+    // See `CullingOptions.margin`. A synced mover refits its own leaf instead, which is correct and cheaper.
     if (this.cullingMode === 'bvh') {
-      // Batch-synced movers are written into their batch before every cull, so each one refits its BVH leaf whenever
-      // it moves. Those batches get a margin of one mover's own size: bvh.js then leaves a leaf where it is while the
-      // new box still fits inside the enlarged one. It cannot change what is drawn — a BVH candidate still has to
-      // pass three's own bounding-sphere test (`attachBvhCulling`), so a wider box only offers more candidates.
-      const moversByBatch = new Map<BatchedMesh, Mesh[]>();
-      for (const mesh of this.syncedSet) {
-        const target = result.slots.get(mesh)?.batch as BatchedMesh | undefined;
-        if (!target?.isBatchedMesh) continue;
-        const movers = moversByBatch.get(target);
-        if (movers) movers.push(mesh);
-        else moversByBatch.set(target, [mesh]);
-      }
       for (const batch of this.batches) {
         const geometryIds = result.lodGeometryIds.get(batch);
         const lod = this.lod && geometryIds ? { distances: this.lod.distances, geometryIds } : undefined;
-        const movers = moversByBatch.get(batch);
-        this.cullingHandles.set(batch, attachBvhCulling(batch, coordinateSystem, { margin: movers ? this.moverMargin(movers) : 0, nestedPasses, passes: this.passes, ...(lod ? { lod } : {}) }));
+        this.cullingHandles.set(batch, attachBvhCulling(batch, coordinateSystem, { nestedPasses, passes: this.passes, ...(lod ? { lod } : {}) }));
       }
     }
+    for (const [mesh, rule] of syncRule) if (rule === null && result.slots.has(mesh)) this.syncedSet.add(mesh);
     this.installSync(result.slots);
     if (this.occlusion) this.installOcclusion();
 
@@ -525,22 +515,6 @@ export class World {
       occlusion: this.occlusion ? { proxies: this.occluders.length, skippedSynced: this.occlusionSkippedSynced } : null,
       nestedPasses,
     };
-  }
-
-  /**
-   * The BVH box margin for a batch carrying these movers: the largest extent any of them has in the scene's space,
-   * which is where their instance boxes live. A mover then has a whole body length of slack before its leaf has to
-   * be refitted. Read from each mover's geometry as it stands at compile (`boundingBox`, computed once by three).
-   */
-  private moverMargin(movers: Mesh[]): number {
-    let extent = 0;
-    for (const mover of movers) {
-      const geometry = mover.geometry;
-      if (geometry.boundingBox === null) geometry.computeBoundingBox();
-      _box.copy(geometry.boundingBox!).applyMatrix4(this.space.toLocal(mover.matrixWorld, _local)).getSize(_size);
-      extent = Math.max(extent, _size.x, _size.y, _size.z);
-    }
-    return extent;
   }
 
   private installOcclusion(): void {

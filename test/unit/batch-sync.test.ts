@@ -168,20 +168,21 @@ describe('World.setVisible', () => {
   });
 });
 
-describe('World BVH margin for batch-synced movers', () => {
-  it('gives a batch carrying synced movers a margin and leaves a static-only batch at none', () => {
+describe('World BVH margins', () => {
+  it('leaves every batch at margin 0, batch-synced movers included', () => {
     const synced = sceneWithDynamics();
     const world = new World(synced.scene, { dynamics: 'batch-sync' });
     world.compile();
+    // A mover refits its own BVH leaf on each sync. Widening the leaf instead would spare the refit but loosen the
+    // box prefilter, which is tighter than three's sphere test, so instances whose sphere clips the frustum and whose
+    // exact box does not would be drawn (measured on bossfight: +2 draw calls, +24 triangles, 1-4 pixels).
     const batch = world.slotOf(synced.mover)!.batch as BatchedMesh;
-    // A mover is written into the batch before every cull, so its leaf is refitted each time it moves: a margin lets
-    // bvh.js keep the leaf where it is while the box still fits, without changing which instances the cull draws.
-    expect(world.cullingOf(batch)!.margin).toBeGreaterThan(0);
+    expect(world.cullingOf(batch)!.margin).toBe(0);
+    for (const b of batchesIn(synced.scene)) expect(world.cullingOf(b)!.margin, b.name).toBe(0);
 
     const statics = sceneWithDynamics();
     const plain = new World(statics.scene);
     plain.compile();
-    const staticBatch = batchesIn(statics.scene)[0]!;
-    expect(plain.cullingOf(staticBatch)!.margin, 'statics only move through markDirty').toBe(0);
+    for (const b of batchesIn(statics.scene)) expect(plain.cullingOf(b)!.margin, b.name).toBe(0);
   });
 });
