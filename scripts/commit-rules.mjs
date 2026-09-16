@@ -12,29 +12,45 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 /**
- * The directories whose contents run inside a frame, plus the scenes `pnpm budget` measures. Every entry ends with
- * `/` so matching is by whole path segment: `src/cli/compiler.ts` and `src/compiler-notes.md` are not rendering.
- * Deliberately excluded: `src/cli` and `src/agent` (node-side), `docs`, `scripts`, `bench-app`, `cli-app`.
+ * What counts as a rendering change. An entry ending in `/` matches everything under that directory, by whole path
+ * segment (`src/cli/compiler.ts` and `src/compiler-notes.md` are not `src/compiler/`); any other entry matches that
+ * one file exactly, which is how `src/tags.ts` is listed. Every top-level entry of `src/` must appear here or in
+ * `EXCLUDED_PATHS`: `test/unit/commit-rules.test.ts` enumerates `src/` and fails on one that is in neither, so a new
+ * directory cannot escape the rule by being forgotten.
  */
 export const RENDERING_PATHS = [
-  'src/compiler/',
-  'src/ledger/',
-  'src/registry/',
-  'src/lighting/',
-  'src/skinning/',
-  'src/overdraw/',
-  'src/scheduler/',
-  'src/streaming/',
-  'src/memory/',
-  'src/lod/',
-  'src/load/',
-  'test/scenes/',
-  'test/app/',
+  'src/compiler/', // classify, batch, bake, culling, instancing, World: what gets drawn and how often
+  'src/ledger/', // the frame ledger and its hooks into the renderer; `pnpm budget` reads its count
+  'src/registry/', // material dedup: fewer canonical materials, fewer batches
+  'src/lighting/', // DayNight and ShadowBudget: shadow passes and their casters
+  'src/skinning/', // baked animation textures and AnimatedInstances: skinned draws become instanced ones
+  'src/overdraw/', // ParticleBudget and ResolutionScaler: what is drawn and at what size
+  'src/scheduler/', // RenderScheduler: whether a frame renders at all
+  'src/streaming/', // the chunk Streamer: which objects are in the scene
+  'src/memory/', // ResourceTracker: disposes geometry, textures and materials the scene draws with
+  'src/lod/', // meshoptimizer LODs: which geometry each draw uses
+  'src/load/', // createLoader: decoders and the geometry and textures a loaded scene draws
+  'src/character/', // assembleCharacter: merges skinned parts and gear onto one mesh and one atlas
+  'src/tags.ts', // tag.static / tag.dynamic: decides what world.compile() batches
+  'test/scenes/', // the deterministic scenes, the naive one being what `pnpm budget` measures
+  'test/app/', // the harness page and bench scenes the budget and bench specs render
 ];
 
-/** The subset of `files` that lies under a rendering path, in the order given. */
+/**
+ * The top-level entries of `src/` that are deliberately not rendering, each with the reason. A path here needs no
+ * `Budget:` line; a reason that stops being true means the entry belongs in `RENDERING_PATHS`.
+ */
+export const EXCLUDED_PATHS = {
+  'src/cli/': 'the agent CLI and MCP server: node-side tooling that drives a page from outside and never runs inside a frame',
+  'src/agent/': 'the exposeToAgents hook: forwards to the app\'s own renderer, world and ledger and defines no scene content, material, tag or pass of its own',
+  'src/overlay/': 'a fixed-position DOM text panel that reads ledger.frame() on a timer: type-only imports, no three.js object, no render, no submission',
+  'src/index.ts': 'the package barrel: export statements only, so it can change what is reachable but not what a frame draws',
+  'src/version.ts': 'the version string, mirrored from package.json',
+};
+
+/** The subset of `files` that lies under a rendering path (or is a listed rendering file), in the order given. */
 export function touchesRendering(files) {
-  return files.filter((file) => RENDERING_PATHS.some((prefix) => file.startsWith(prefix)));
+  return files.filter((file) => RENDERING_PATHS.some((path) => (path.endsWith('/') ? file.startsWith(path) : file === path)));
 }
 
 /** Any line of the body that looks like a budget declaration, however malformed, so a typo is named, not ignored. */

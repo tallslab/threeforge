@@ -12,9 +12,11 @@ export interface BudgetViolation {
 }
 export type BudgetDeclaration = { kind: 'count'; value: number; line: string } | { kind: 'n/a'; reason: string; line: string };
 
-/** Path prefixes, each ending in `/`, whose contents run inside a frame or feed the scene `pnpm budget` measures. */
+/** Rendering paths: an entry ending in `/` matches its whole directory, any other entry that one file exactly. */
 export const RENDERING_PATHS: readonly string[];
-/** The subset of `files` that lies under a rendering path, in the order given. */
+/** The top-level `src/` entries that are deliberately not rendering, each mapped to the reason. */
+export const EXCLUDED_PATHS: Readonly<Record<string, string>>;
+/** The subset of `files` that lies under a rendering path (or is a listed rendering file), in the order given. */
 export function touchesRendering(files: readonly string[]): string[];
 /** The budget a commit message declares on a body line, or `null` when absent or malformed. */
 export function budgetDeclaration(message: string): BudgetDeclaration | null;
