@@ -671,9 +671,15 @@ function row(scene: Scene, name: string, z: number, material: Material, receiveS
   }
 }
 
+/**
+ * What this rig pins, in CONTRIBUTING.md rule 5's terms. `reportedDrawCalls` used to be a field here and
+ * `frame.totals.reportedDrawCalls` was asserted at 5 (webgl2) and 167 (webgpu) — the raw backend draw count rule 5
+ * says not to assert on, and redundant besides: `unattributed` is `reportedDrawCalls - gpuDraws` and is asserted to
+ * be 0, so pinning `passes[].gpuDraws` pins `reportedDrawCalls` exactly. Keeping the raw number as well only added a
+ * second place to edit when a backend changed how it counts a BatchedMesh, with nothing extra guarded.
+ */
 interface NestedObservation {
   passes: { id: string; submissions: number; gpuDraws: number }[];
-  reportedDrawCalls: number;
   batches: { pass: string; instances: number; instancesDrawn: number; expectedGpuDraws: number }[];
 }
 
@@ -698,7 +704,6 @@ const NESTED_EXPECTED: Record<'webgl2' | 'webgpu', NestedObservation> = {
       { id: 'main', submissions: 3, gpuDraws: 3 },
       { id: 'shadow:sun', submissions: 2, gpuDraws: 2 },
     ],
-    reportedDrawCalls: 5,
     batches: BATCHES.map((b) => ({ ...b, expectedGpuDraws: 1 })),
   },
   // One call per slot, zeroed prefix slots included (Info.js counts every slot).
@@ -707,7 +712,6 @@ const NESTED_EXPECTED: Record<'webgl2' | 'webgpu', NestedObservation> = {
       { id: 'main', submissions: 3, gpuDraws: 33 },
       { id: 'shadow:sun', submissions: 2, gpuDraws: 134 },
     ],
-    reportedDrawCalls: 167,
     batches: BATCHES,
   },
 };
@@ -736,19 +740,21 @@ describe('DrawCallLedger reads draw state after renderObject returns', () => {
       const frame = ledger.frame({ items: true });
       const items = frame.items!;
       const isBatch = (object: object): boolean => (object as { isBatchedMesh?: boolean }).isBatchedMesh === true;
+      // Nothing the ledger costed is missing from what the backend reported, which is also what ties the pinned
+      // `passes[].gpuDraws` below to the renderer's own count without asserting that raw count itself (rule 5).
       expect(frame.totals.unattributed).toBe(0);
-      // Every batched submission predicts the draw calls the fake issued for it, pass by pass, in order.
+      // Every batched submission lines up with the draw the fake issued for it, pass by pass, in order. The link is
+      // the drawn instances -- the slots with a non-zero count, in every pass (the shadow pass zeroes main-list
+      // slots) -- not the backend's draw count: `expectedGpuDraws` is pinned per item by BATCHES below, and pinning
+      // it again against `d.drawCalls` restated the same numbers in backend terms.
       for (const kind of ['render', 'shadow'] as const) {
         const draws = renderer.passes.filter((p) => p.kind === kind).flatMap((p) => p.draws.filter((d) => isBatch(d.object)));
         const batchItems = items.filter((i) => i.kind === 'batched' && i.pass.startsWith('shadow:') === (kind === 'shadow'));
         expect(draws.length, `${backend} ${kind}: batch draws`).toBe(2);
-        expect(batchItems.map((i) => i.expectedGpuDraws), `${backend} ${kind}: draw calls`).toEqual(draws.map((d) => d.drawCalls));
-        // Drawn instances are the slots with a non-zero count, in every pass (the shadow pass zeroes main-list slots).
         expect(batchItems.map((i) => i.instancesDrawn), `${backend} ${kind}: instances drawn`).toEqual(draws.map((d) => d.batchIds!.length));
       }
       const observed: NestedObservation = {
         passes: frame.passes,
-        reportedDrawCalls: frame.totals.reportedDrawCalls,
         batches: items.filter((i) => i.kind === 'batched').map(({ pass, instances, instancesDrawn, expectedGpuDraws }) => ({ pass, instances, instancesDrawn, expectedGpuDraws })),
       };
       expect(observed).toEqual(NESTED_EXPECTED[backend]);
