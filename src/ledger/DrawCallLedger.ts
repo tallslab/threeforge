@@ -122,8 +122,8 @@ interface FrameState {
   trianglesStart: number;
   /** Shadow camera → its light and pass id, for every world-visible shadow-casting light this frame's walks found. */
   shadowCameras: Map<Camera, ShadowPass>;
-  /** The shadow pass ids given out this frame, across scenes. */
-  shadowIds: Set<string>;
+  /** Every pass id given out this frame, across scenes: shadow ids (`shadowPassIds`) and nested/scene ids alike. */
+  passIds: Set<string>;
   /** Σ mapSize.x · mapSize.y over the lights whose shadow map rendered this frame (mapSize.x² · 6 for a point light), each light once. */
   shadowTexels: number;
   /** Distinct objects drawn into a shadow map this frame. */
@@ -538,7 +538,7 @@ export class DrawCallLedger {
         drawCallsStart: this.renderer.info.render.drawCalls,
         trianglesStart: this.renderer.info.render.triangles,
         shadowCameras: new Map(),
-        shadowIds: new Set(),
+        passIds: new Set(),
         shadowTexels: 0,
         shadowCasters: 0,
         unsupportedObjects: 0,
@@ -592,8 +592,8 @@ export class DrawCallLedger {
       // A nested render of the main scene: reflections, portals, picking passes. Name it after its target.
       const target = this.renderer?.getRenderTarget?.();
       const name = target?.texture?.name || target?.name;
-      pass = `nested:${name || ++state.nestedScenes}`;
-    } else pass = `scene:${scene.name || ++state.nestedScenes}`;
+      pass = uniquePassId(`nested:${name || ++state.nestedScenes}`, state.passIds);
+    } else pass = uniquePassId(`scene:${scene.name || ++state.nestedScenes}`, state.passIds);
     // What the memory section allows for three's own resources: the target this render draws into, unless it is a shadow
     // map, a VSM blur target or the frame-buffer target (each allowed on its own), and PMREMGenerator's LOD planes, which it
     // renders as the root of their own render() (PMREMGenerator.js `_textureToCubeUV`, `_applyGGXFilter`, `_halfBlur`).
@@ -696,9 +696,9 @@ export class DrawCallLedger {
     });
     if (casting === null) return;
     const lights: WalkedLight[] = casting;
-    // The naming rules are `shadowPassIds` (shadowPasses.ts), which also files the ids it hands out in `shadowIds`.
+    // The naming rules are `shadowPassIds` (shadowPasses.ts), which also files the ids it hands out in `passIds`.
     // Only the frame state stays here: which ids the frame has taken, and the camera each pass renders with.
-    const ids = shadowPassIds(lights, state.shadowIds);
+    const ids = shadowPassIds(lights, state.passIds);
     for (let i = 0; i < lights.length; i++) {
       const light = lights[i]!;
       state.shadowCameras.set(light.shadow!.camera!, { light, id: ids[i]! });
@@ -924,6 +924,26 @@ function compiledLocalSpaceReader(object: Object3D): Material | null {
   const m = material as Material & { alphaHash?: boolean; normalMap?: unknown; normalMapType?: number };
   const opaqueCode = !isBuiltInMaterial(material) || hasOwnFunctions(material);
   return hasNodeSlot(material) || opaqueCode || m.alphaHash === true || (!!m.normalMap && m.normalMapType === ObjectSpaceNormalMap) ? material : null;
+}
+
+/**
+ * A pass id no other pass of this frame has, and the frame's record that it is taken. The first pass of a name keeps
+ * the bare id; a later one of the same name gets `#2`, `#3` and so on, so two reflectors whose render targets are both
+ * named `reflection` are `nested:reflection` and `nested:reflection#2` instead of one row summing both (independent
+ * review M5). This is `shadowPassIds`' rule (`shadowPasses.ts`) over the same frame-wide set, which is why the set
+ * holds every kind of id. The fixed ids — `main`, `override`, `fullscreen` and a VSM blur's `:vsm` — deliberately do
+ * not go through it: several post-processing quads share `fullscreen` by design.
+ */
+function uniquePassId(base: string, taken: Set<string>): string {
+  if (!taken.has(base)) {
+    taken.add(base);
+    return base;
+  }
+  let k = 2;
+  while (taken.has(`${base}#${k}`)) k++;
+  const id = `${base}#${k}`;
+  taken.add(id);
+  return id;
 }
 
 /** Whether `object` and every ancestor up to and including `root` is visible: what three's render lists test. */

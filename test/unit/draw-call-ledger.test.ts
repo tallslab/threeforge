@@ -630,6 +630,52 @@ describe('DrawCallLedger frames and passes', () => {
     expect(frame.totals.sceneSubmissions).toBe(2);
   });
 
+  /**
+   * M5 (independent review): `shadowPasses.ts` disambiguates two lights of one name against a frame-wide `taken` set;
+   * the `nested:` and `scene:` ids did not, so two reflectors whose targets are both named `reflection` (or two portal
+   * Scenes both named `portal`) collapsed into one row of `frame().passes` and one `pass` string on every record. The
+   * totals stayed right; the attribution the ledger exists to give did not.
+   */
+  it('disambiguates two nested passes of the same target name, and two scenes of the same name', () => {
+    const renderer = new FakeRenderer();
+    const { scene, camera } = sceneWithCamera();
+    scene.add(tag.static(new Mesh(box, new MeshStandardMaterial())));
+    const portalA = new Scene();
+    portalA.name = 'portal';
+    portalA.add(tag.static(new Mesh(box, new MeshStandardMaterial())));
+    const portalB = new Scene();
+    portalB.name = 'portal';
+    portalB.add(tag.static(new Mesh(box, new MeshStandardMaterial())));
+    const mirror = camera.clone();
+    const original = renderer.render.bind(renderer);
+    let nested = false;
+    (renderer as { render: typeof renderer.render }).render = function (s, c) {
+      if (!nested) {
+        nested = true;
+        // Two water reflectors, each with its own render target, both named `reflection`.
+        for (let i = 0; i < 2; i++) {
+          renderer.renderTarget = { name: 'reflection' };
+          renderer.render(s, mirror);
+          renderer.renderTarget = null;
+        }
+        for (const portal of [portalA, portalB]) renderer.render(portal, mirror);
+        nested = false;
+      }
+      original(s, c);
+    };
+    const ledger = new DrawCallLedger();
+    ledger.attach(renderer as never);
+    renderer.render(scene, camera);
+    const frame = ledger.frame({ items: true });
+    expect(frame.passes.map((p) => p.id)).toEqual(['nested:reflection', 'nested:reflection#2', 'scene:portal', 'scene:portal#2', 'main']);
+    // One row each, and every record carries its own pass, so per-pass submissions are not summed under one label.
+    // A reflector's render into a target draws no "Output Color Transform" quad; a portal Scene rendered to the default
+    // target does, so those passes are the mesh plus the quad.
+    expect(frame.passes.map((p) => p.submissions)).toEqual([1, 1, 2, 2, 2]);
+    expect(new Set(frame.items!.map((i) => i.pass)).size).toBe(5);
+    expect(frame.totals.unattributed).toBe(0);
+  });
+
   it('counts program switches over scene submissions in submission order', () => {
     const { renderer, ledger, scene, camera } = attached();
     const a = new MeshStandardMaterial();

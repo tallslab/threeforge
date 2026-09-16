@@ -114,7 +114,12 @@ shadow-casting light; its type when it has no name; `shadow:<name>#k`, k from 1 
 lights of a scene share a name, and an id another scene of the frame already took moves on to the next free k),
 `shadow:<id>:vsm` (the two VSM blur quads three renders right after that map), `override` (a scene with
 `overrideMaterial`), `fullscreen` (a non-scene root, for example a post-processing quad), `nested:<render target name>`
-(a nested render of the main scene, for example a reflector), `scene:<name>` (a different scene). Renderer-internal
+(a nested render of the main scene, for example a reflector), `scene:<name>` (a different scene). `nested:` and
+`scene:` ids are disambiguated against the same frame-wide set the shadow ids use: the first pass of a name keeps the
+bare id and a later one of that name gets `#2`, `#3` and so on, so two reflectors whose targets are both named
+`reflection` are `nested:reflection` and `nested:reflection#2` rather than one row summing both. `main`, `override`,
+`fullscreen` and the `:vsm` blur ids are fixed and not disambiguated: several post-processing quads share `fullscreen`
+by design. Renderer-internal
 work (three's output colour transform quad, the VSM blur quads) is attributed as `renderer-internal` and excluded from
 `sceneSubmissions`.
 
