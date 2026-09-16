@@ -1057,7 +1057,7 @@ swaps change data, not draw calls.
     for the MCP server): `frames` an integer ≥ 1, `timeout` an integer from 1000 to 2147483647 (a longer Node timer
     fires at once), `budget` an integer ≥ 0, `views` an integer from 0 to 64, `parity` 0 to 100, `simplify` in
     (0, 1], `simplifyError` 0 to 1, `textureSize` an integer from 1 to 16384, `textureQuality` an integer from 1 to 100.
-- **The document**: `{ schemaVersion: 1, tool, version, command, input, env, asset, before, after, compile, parity,
+- **The document**: `{ schemaVersion: 2, tool, version, command, input, env, asset, before, after, compile, parity,
   hints, verdict, timings }`. `verdict.pass` is false over the budget, with an error-severity hint, when parity is
   lost, or when the harness page raised an error (`analyze`; one reason quotes up to five, cleaned and capped; `inspect`
   does not judge its app's page errors). Exit codes: 0 pass, 1 verdict failed, 2 usage/input, 3 environment (install command in the message),
@@ -1079,22 +1079,29 @@ swaps change data, not draw calls.
   (meshoptimizer, ratio and error), `resample` (redundant animation keyframes), `prune` (unused properties),
   `textures` (sharp: WebP or AVIF, longest side, quality), `quantize` (`KHR_mesh_quantization`), `meshopt`
   (`EXT_meshopt_compression`, replaces quantize because it quantizes itself).
-- **Presets**: `safe` = dedup, palette, resample, prune. `balanced` = safe + weld + quantize + textures webp
+- **Presets**: `safe` = dedup, palette, prune. `balanced` = safe + weld + resample + quantize + textures webp
   2048 px; being lossy, its Fox e2e states a measured tolerance of 0.05 %, about 3x the worst view measured.
-  `aggressive` = balanced + simplify 0.5 + textures 1024 px. `weld` merges only bitwise-identical vertices and
-  changes no drawn value, but it left `safe` (Ruling R100) because welding the Fox's primitive moves up to 0.014 %
-  of pixels on WebGPU; measured the same way, weld also moves pixels on PotOfCoals (0.004 %) and VirtualCity
-  (0.011 %), which are indexed and carry normals, so the effect is not tied to either property. `--weld` adds it
-  back to any preset.
+  `aggressive` = balanced + simplify 0.5 + textures 1024 px. Two steps were measured out of `safe`, for opposite
+  reasons. `weld` merges only bitwise-identical vertices and changes no drawn value, but it left (Ruling R100)
+  because welding the Fox's primitive moves up to 0.014 % of pixels on WebGPU; measured the same way it also moves
+  pixels on PotOfCoals (0.004 %) and VirtualCity (0.011 %), which are indexed and carry normals, so the effect is
+  not tied to either property. `resample` left because it can make a file *bigger* (Ruling R105): at `tolerance: 0`
+  it is pixel-exact but keeps every keyframe that is not an exact duplicate, and swept over the 79 readable corpus
+  assets against a re-serialized baseline the median asset is 0.000 % while Xbot grows 1.248 % and the Fox 0.100 %.
+  It pays for itself in the lossy presets, where the 1e-4 default applies — Soldier −18.9 %, BrainStem −14.9 %,
+  VirtualCity −9.5 %. `--weld` and `--resample` add either back to any preset, and `--resample` under `safe` runs
+  at tolerance 0. So `safe` is the steps that are pixel-exact **and** never cost bytes themselves — which is a claim
+  about the steps, not a promise about output size: glTF-Transform re-serializes the container whatever runs, and on
+  the Fox that alone is +0.86 % (the Buggy, −27.4 %). Every percentage above is measured against that re-serialized
+  baseline, so it isolates the step from the container.
 - **What `safe` is measured at**: **0 changed pixels in every view, on both backends**, for the Fox and the Buggy.
-  The e2e asserts the raw `changedPixels` per view, not the rounded percent, because `diffPct` is rounded to three
-  decimals and at 1280x720 that absorbs up to 4 changed pixels of 921,600 — the old assertion could not have caught
-  a handful of moved pixels, and did not. Two fixes were needed to get there: `weld` left the preset (above), and
-  `resample` now runs at `tolerance: 0` instead of glTF-Transform's 1e-4 default, which had been dropping keyframes
-  near the interpolated value and shifting the posed silhouette by 1-3 pixels on WebGL2 and 3-5 on WebGPU.
-  The cost is file size on animation-dominated assets: keeping every keyframe takes the Fox from 162,852 to
-  **164,416** bytes, a 1 % increase, where the lossy default reached 152,864. Assets that are not mostly animation
-  are unaffected — the Buggy still shrinks 27 % under `safe` — and `balanced` keeps the 1e-4 default. `--<step>` / `--no-<step>` override a preset; `--simplify`,
+  Precisely: no pixel's R, G or B differs by **more than 24** between the two renders (`comparePixels`,
+  `src/cli/analyze.ts`). Alpha is never compared, and a uniform shift of 24 or less on every pixel would still read
+  0 — the claim is "nothing visibly moved", not bitwise equality of the framebuffer. The e2e asserts that raw
+  `changedPixels` count per view rather than the percent, because `diffPct` is rounded to three decimals and at
+  1280x720 that absorbs up to 4 changed pixels of 921,600; the percent-based assertion could not have caught a
+  handful of moved pixels, and did not. `--parity 0` is judged the same way (Ruling R108), so the shipped tool
+  means zero when it says zero. `--<step>` / `--no-<step>` override a preset; `--simplify`,
   `--textures`, `--compress meshopt` enable their step with the given value. `--instance`, `--join` and
   `--compress meshopt` are never in a preset: the first two change the node graph game code may address by name,
   the third needs `loader.setMeshoptDecoder`. A preset's texture step without `sharp` installed is skipped with a

@@ -20,7 +20,7 @@ const COMMAND_DESCRIPTIONS = {
   inspect:
     'Drives your running app (dev server) through `window.__threeforge`, compiling through the hook unless `--no-compile`; same document without asset facts and parity. The app measures itself at the tier its ledger detects, so there is no `tier` flag here.',
   optimize:
-    'Rewrites the asset with glTF-Transform and writes `<name>.forge.glb`. `safe` (default) never changes a pixel: dedup, palette, resample, prune. `balanced` adds weld, quantize and WebP textures (2048 px); `aggressive` adds simplify to 50 % and 1024 px textures. Renders the original and the result, compares pixels, compiles both, and lists what the file needs at load time (`requires`).',
+    'Rewrites the asset with glTF-Transform and writes `<name>.forge.glb`. `safe` (default) never changes a pixel, and no step in it costs bytes: dedup, palette, prune. `balanced` adds weld, resample, quantize and WebP textures (2048 px); `aggressive` adds simplify to 50 % and 1024 px textures. Renders the original and the result, compares pixels, compiles both, and lists what the file needs at load time (`requires`).',
   explain: 'What a hint means, what to change, which API (a hint code or `--all`, not both).',
   schema: 'JSON Schemas (draft 2020-12) of everything the commands print.',
   mcp: 'Stdio MCP server with tools `analyze_asset`, `inspect_app`, `optimize_asset`, `explain_hint` (needs `npm i -D @modelcontextprotocol/sdk zod`).',
@@ -108,7 +108,7 @@ other bundlers need their own.
 
 \`\`\`json
 {
-  "schemaVersion": 1, "tool": "threeforge", "version": "${VERSION}", "command": "analyze",
+  "schemaVersion": 2, "tool": "threeforge", "version": "${VERSION}", "command": "analyze",
   "input": { "file": "scene.glb", "backend": "webgpu", "tier": "phone-mid", "budget": null, "frames": 30, "compile": true },
   "env": { "three": "186", "backend": "webgpu", "gpu": "apple metal-3", "tier": "phone-mid" },
   "asset": { "meshes": 12, "materials": 5, "vertices": 40210, "triangles": 38000, "animations": 1, "skinned": 1, "morph": 0, "loadMs": 120 },

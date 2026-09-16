@@ -20,7 +20,7 @@ such dependency. `optimize` works out of the box (glTF-Transform is a dependency
 |---|---|
 | `npx threeforge analyze <file.glb\|.gltf> [--backend webgl2\|webgpu] [--tier auto\|desktop\|phone-mid\|phone-low] [--budget N] [--frames N] [--no-compile] [--timeout ms] [--headed] [--bake] [--bake-buried] [--views N] [--json]` | Renders the asset headlessly, measures every cost category, compiles (batches, or bakes with `--bake`) it, measures again, checks pixel parity from the default framing plus `--views` orbit views, returns hints and a verdict. |
 | `npx threeforge inspect <url> [--backend webgl2\|webgpu] [--budget N] [--frames N] [--no-compile] [--timeout ms] [--headed] [--json]` | Drives your running app (dev server) through `window.__threeforge`, compiling through the hook unless `--no-compile`; same document without asset facts and parity. The app measures itself at the tier its ledger detects, so there is no `tier` flag here. |
-| `npx threeforge optimize <file.glb\|.gltf> [--out out.glb] [--preset safe\|balanced\|aggressive] [--no-<step>\|--<step>] [--simplify [ratio]] [--simplify-error e] [--compress none\|meshopt] [--textures [webp\|avif\|none]] [--texture-size N] [--texture-quality Q] [--no-verify] [--parity pct] [--views N] [--budget N] [--backend webgl2\|webgpu] [--tier auto\|desktop\|phone-mid\|phone-low] [--frames N] [--no-compile] [--timeout ms] [--headed] [--json]` | Rewrites the asset with glTF-Transform and writes `<name>.forge.glb`. `safe` (default) never changes a pixel: dedup, palette, resample, prune. `balanced` adds weld, quantize and WebP textures (2048 px); `aggressive` adds simplify to 50 % and 1024 px textures. Renders the original and the result, compares pixels, compiles both, and lists what the file needs at load time (`requires`). |
+| `npx threeforge optimize <file.glb\|.gltf> [--out out.glb] [--preset safe\|balanced\|aggressive] [--no-<step>\|--<step>] [--simplify [ratio]] [--simplify-error e] [--compress none\|meshopt] [--textures [webp\|avif\|none]] [--texture-size N] [--texture-quality Q] [--no-verify] [--parity pct] [--views N] [--budget N] [--backend webgl2\|webgpu] [--tier auto\|desktop\|phone-mid\|phone-low] [--frames N] [--no-compile] [--timeout ms] [--headed] [--json]` | Rewrites the asset with glTF-Transform and writes `<name>.forge.glb`. `safe` (default) never changes a pixel, and no step in it costs bytes: dedup, palette, prune. `balanced` adds weld, resample, quantize and WebP textures (2048 px); `aggressive` adds simplify to 50 % and 1024 px textures. Renders the original and the result, compares pixels, compiles both, and lists what the file needs at load time (`requires`). |
 | `npx threeforge explain [<hint-code>] [--all] [--json]` | What a hint means, what to change, which API (a hint code or `--all`, not both). |
 | `npx threeforge schema [snapshot\|analyze\|inspect\|optimize\|all] [--json]` | JSON Schemas (draft 2020-12) of everything the commands print. |
 | `npx threeforge mcp` | Stdio MCP server with tools `analyze_asset`, `inspect_app`, `optimize_asset`, `explain_hint` (needs `npm i -D @modelcontextprotocol/sdk zod`). |
@@ -54,14 +54,14 @@ nothing on stdout.
 | `--views N` | analyze | Extra orbit views for pixel parity on top of the default framing (an integer from 0 to 64, default 0). |
 | `--json` | analyze, inspect, optimize, explain, schema | Print JSON on stdout. `analyze`, `inspect` and `optimize` print the document and move the human summary to stderr; `schema` prints JSON either way. |
 | `--out out.glb` | optimize | Output path ending in `.glb` or `.gltf` (default `<name>.forge.glb` next to the input; never the input file, not even through a link). |
-| `--preset safe\|balanced\|aggressive` | optimize | Step preset (default `safe`: dedup, palette, resample, prune; never changes a pixel). |
+| `--preset safe\|balanced\|aggressive` | optimize | Step preset (default `safe`: dedup, palette, prune; never changes a pixel, and no step in it costs bytes). |
 | `--dedup`, `--no-dedup` | optimize | Add (`--dedup`) or remove (`--no-dedup`) the dedup step: identical accessors, meshes, materials and textures become one (in every preset). |
 | `--instance`, `--no-instance` | optimize | Add (`--instance`) or remove (`--no-instance`) the instance step: repeated meshes become `EXT_mesh_gpu_instancing` (never in a preset: changes the node graph). |
 | `--palette`, `--no-palette` | optimize | Add (`--palette`) or remove (`--no-palette`) the palette step: materials that differ only by factors become one material sampling a palette texture (in every preset). |
 | `--flatten`, `--no-flatten` | optimize | Add (`--flatten`) or remove (`--no-flatten`) the flatten step: flatten the node hierarchy. |
 | `--join`, `--no-join` | optimize | Add (`--join`) or remove (`--no-join`) the join step: meshes sharing a material merge, implies flatten (never in a preset: changes the node graph). |
-| `--weld`, `--no-weld` | optimize | Add (`--weld`) or remove (`--no-weld`) the weld step: merge exact duplicate vertices (in every preset). |
-| `--resample`, `--no-resample` | optimize | Add (`--resample`) or remove (`--no-resample`) the resample step: drop redundant animation keyframes (in every preset). |
+| `--weld`, `--no-weld` | optimize | Add (`--weld`) or remove (`--no-weld`) the weld step: merge exact duplicate vertices (`balanced`, `aggressive`). |
+| `--resample`, `--no-resample` | optimize | Add (`--resample`) or remove (`--no-resample`) the resample step: drop redundant animation keyframes (`balanced`, `aggressive`; lossless when added to `safe`). |
 | `--prune`, `--no-prune` | optimize | Add (`--prune`) or remove (`--no-prune`) the prune step: remove unused properties (in every preset). |
 | `--quantize`, `--no-quantize` | optimize | Add (`--quantize`) or remove (`--no-quantize`) the quantize step: `KHR_mesh_quantization` (`balanced`, `aggressive`). |
 | `--meshopt`, `--no-meshopt` | optimize | Add (`--meshopt`) or remove (`--no-meshopt`) the meshopt step: `EXT_meshopt_compression`, replaces quantize; the app needs `loader.setMeshoptDecoder` (same as `--compress meshopt`). |
@@ -100,7 +100,7 @@ other bundlers need their own.
 
 ```json
 {
-  "schemaVersion": 1, "tool": "threeforge", "version": "0.8.0", "command": "analyze",
+  "schemaVersion": 2, "tool": "threeforge", "version": "0.8.0", "command": "analyze",
   "input": { "file": "scene.glb", "backend": "webgpu", "tier": "phone-mid", "budget": null, "frames": 30, "compile": true },
   "env": { "three": "186", "backend": "webgpu", "gpu": "apple metal-3", "tier": "phone-mid" },
   "asset": { "meshes": 12, "materials": 5, "vertices": 40210, "triangles": 38000, "animations": 1, "skinned": 1, "morph": 0, "loadMs": 120 },

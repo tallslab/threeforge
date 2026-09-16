@@ -43,7 +43,7 @@ test('analyze renders a sample asset, compiles it and prints the document', { ta
   const r = run(['analyze', sample(), '--backend', forge.backend, '--frames', '5', '--json']);
   expect(r.status, r.stderr).toBe(0);
   const doc = JSON.parse(r.stdout);
-  expect(doc).toMatchObject({ schemaVersion: 1, tool: 'threeforge', command: 'analyze' });
+  expect(doc).toMatchObject({ schemaVersion: 2, tool: 'threeforge', command: 'analyze' });
   expect(doc.env.backend).toBe(forge.backend);
   expect(doc.asset.skinned).toBeGreaterThan(0);
   expect(doc.before.totals.unattributed).toBe(0);
@@ -231,21 +231,26 @@ test('optimize leaves the Fox pixel-identical at --parity 0: zero changed pixels
     // absorbs up to 4 changed pixels of 921,600. `changedPixels` (Ruling R104) is the exact count, so these rows
     // are the first form of this assertion that actually tests rule 7.
     const r = run(['optimize', asset('Fox'), '--out', out, '--parity', '0', '--backend', forge.backend, '--frames', '5', '--json']);
-    // Status first: --parity 0 makes a single moved pixel exit 1, so this is itself a parity gate. Passing stderr
-    // as the message keeps a crashed CLI from surfacing as "Unexpected end of JSON input" with its output lost.
+    // Status first. This became a real parity gate only in fix round 3 (Ruling R108): until then the CLI compared
+    // the rounded percentage, so `--parity 0` exited 0 while 1-4 pixels moved, and the round-2 comment here — and
+    // that commit's message — claimed a gate the tool did not yet have. `parityOf` now judges a threshold of 0 on
+    // the raw counts, so exit 0 does mean no pixel moved; the per-view assertions below no longer stand alone.
+    // Passing stderr as the message also keeps a crashed CLI from surfacing as "Unexpected end of JSON input".
     expect(r.status, r.stderr).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc).toMatchObject({ schemaVersion: 1, tool: 'threeforge', command: 'optimize', input: { preset: 'safe', parity: 0 } });
-    // Ruling R100 moved `weld` to `balanced`; `--weld` still adds it back (test/unit/pipeline.test.ts pins that).
-    expect(doc.steps.map((s: { name: string }) => s.name)).toEqual(['dedup', 'palette', 'resample', 'prune']);
+    expect(doc).toMatchObject({ schemaVersion: 2, tool: 'threeforge', command: 'optimize', input: { preset: 'safe', parity: 0 } });
+    // R100 moved `weld` to `balanced` and R105 moved `resample` after it, so `safe` is the three steps that are
+    // both pixel-exact and never cost bytes. `--weld` / `--resample` add them back (pinned in pipeline.test.ts).
+    expect(doc.steps.map((s: { name: string }) => s.name)).toEqual(['dedup', 'palette', 'prune']);
     expect(statSync(out).size).toBe(doc.output.bytes);
-    // `safe` does not shrink THIS asset any more, and the test says so rather than asserting a saving that is not
-    // there: measured 162,852 -> 164,416 bytes, a 1 % increase. Nearly all of the Fox is animation, and `safe` now
-    // resamples at tolerance 0 (Ruling R104), so it keeps every keyframe that is not an exact duplicate; the old
-    // 1e-4 default reached 152,864 by dropping keyframes that moved the pose. Correctness before bytes: a preset
-    // promising pixel identity may not trade it for 6 %. Assets that are not animation-dominated still shrink --
-    // the Buggy is -27 % below -- and `balanced` keeps the lossy default for callers who want it.
-    expect(doc.output.bytes).toBeLessThan(doc.stats.before.bytes * 1.05);
+    // A two-sided band around the measured figure, not a one-sided bound that anything from a total shrink to a
+    // 5 % growth would satisfy. Measured: 162,852 -> 164,252 bytes, +0.86 %. None of safe's three steps costs bytes
+    // on this asset (the R105 sweep measures each against a re-serialized baseline); the growth is glTF-Transform
+    // rewriting the container, which lands the Fox at exactly the same 164,252 with no steps at all. Assets that
+    // are not tiny and animation-heavy go the other way -- the Buggy is -27.4 % below.
+    const sizeRatio = doc.output.bytes / doc.stats.before.bytes;
+    expect(sizeRatio, `safe took the Fox to ${doc.output.bytes} bytes (${(sizeRatio * 100).toFixed(2)} % of the input)`).toBeGreaterThan(0.98);
+    expect(sizeRatio, `safe took the Fox to ${doc.output.bytes} bytes (${(sizeRatio * 100).toFixed(2)} % of the input)`).toBeLessThan(1.02);
     expect(doc.stats.after.vertices).toBe(doc.stats.before.vertices);
     expect(doc.stats.after).toMatchObject({ skins: 1, animations: 3 });
     expect(doc.requires).toEqual([]);
