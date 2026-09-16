@@ -123,3 +123,46 @@ describe('inspect and the frame snapshot schemaVersion', () => {
     await expect(measureViaHook(pageOn(window), 2, 2000)).rejects.toThrow(/upgrade threeforge in the app \(exposeToAgents\)/);
   });
 });
+
+/**
+ * Independent review L3. `assertHookVersion` and the in-page guard above both check the *hook's* advertised version;
+ * the snapshot `frameAsync()` returns was passed through untouched, so a target that advertises 3 and hands back a
+ * differently-shaped frame produced a document violating the CLI's own published `SNAPSHOT_SCHEMA`
+ * (`{ schemaVersion: { const: 3 } }`) with nothing to notice.
+ */
+describe('the returned frame carries its own schemaVersion', () => {
+  /** A hook that advertises 3 and returns a frame claiming something else (or nothing). */
+  function mismatched(frameVersion: unknown): FakeWindow {
+    const { window } = app();
+    const hook = window.__threeforge as unknown as { frameAsync(): Promise<Record<string, unknown>> };
+    const real = hook.frameAsync.bind(hook);
+    hook.frameAsync = async () => {
+      const frame = await real();
+      if (frameVersion === undefined) delete frame.schemaVersion;
+      else frame.schemaVersion = frameVersion;
+      return frame;
+    };
+    return window;
+  }
+
+  it.each([
+    ['an older frame', 2],
+    ['a newer frame', 4],
+    ['a frame with no version at all', undefined],
+    ['a version that is not a number', '3'],
+  ])('refuses %s with the same upgrade message (exit 4)', async (_what, version) => {
+    const window = mismatched(version);
+    expect(window.__threeforge!.schemaVersion, 'the hook still advertises 3; only the frame disagrees').toBe(3);
+    const error = await measureViaHook(pageOn(window), 2, 2000).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PageError);
+    expect((error as Error).message).toMatch(/schemaVersion/);
+    expect((error as Error).message).toContain('reads schemaVersion 3');
+    expect((error as Error).message).toContain('upgrade threeforge in the app (exposeToAgents)');
+  });
+
+  it('accepts the frame a current hook returns', async () => {
+    const { window } = app();
+    const measurement = await measureViaHook(pageOn(window), 2, 2000);
+    expect(measurement.snapshot.schemaVersion).toBe(3);
+  });
+});

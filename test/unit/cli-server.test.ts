@@ -3,7 +3,8 @@ import { request } from 'node:http';
 import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { serveStatic, type StaticRoot } from '../../src/cli/server.js';
 
 /**
@@ -23,6 +24,78 @@ function rawGet(url: string, path: string): Promise<{ status: number; body: stri
     req.end();
   });
 }
+
+/**
+ * Independent review L2. `serveStatic` registered no `'error'` handler on `listen`, so an `EMFILE` or `EACCES` — the
+ * first reachable in a long-lived MCP session that opens one server per `analyze` — was an uncaught exception that
+ * took the process down and bypassed `Resources.run`'s teardown entirely, instead of the exit-3 `EnvironmentError`
+ * the rest of the CLI is careful to give. `createServer` is mocked because port 0 on 127.0.0.1 does not fail on
+ * demand; the point is the handler, not the errno.
+ */
+describe('a listen failure is an EnvironmentError, not an uncaught exception', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'forge-listen-'));
+  let live: EventEmitter | null = null;
+
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** A server double: `listen` either fails the way Node reports a failed bind (asynchronously, through `'error'`) or succeeds. */
+  function serverDouble(failure: { code: string; message: string } | null) {
+    const server = new EventEmitter() as EventEmitter & { listen(port: number, host: string, ok: () => void): void; address(): { port: number } | null; close(done: () => void): void };
+    server.listen = (_port: number, _host: string, ok: () => void) =>
+      void setImmediate(() => (failure ? server.emit('error', Object.assign(new Error(failure.message), { code: failure.code })) : ok()));
+    server.address = () => (failure ? null : { port: 4321 });
+    server.close = (done: () => void) => done();
+    return server;
+  }
+
+  /**
+   * `vi.resetModules()` hands the dynamically imported `server.js` a *fresh* `errors.js`, so its `EnvironmentError`
+   * is a different class object from this file's static import: `instanceof` against the outer one is always false.
+   * The exit code is resolved inside the same module graph, which is the behavioural claim anyway — exit 3.
+   */
+  async function serveWith(failure: { code: string; message: string } | null): Promise<{ value: unknown; environment: boolean; exitCode: number }> {
+    vi.resetModules();
+    vi.doMock('node:http', async () => ({
+      ...(await vi.importActual<typeof import('node:http')>('node:http')),
+      createServer: () => {
+        live = serverDouble(failure);
+        return live;
+      },
+    }));
+    try {
+      const { serveStatic: mocked } = await import('../../src/cli/server.js');
+      const { EnvironmentError: Fresh, exitCodeFor } = await import('../../src/cli/errors.js');
+      const value = await mocked([{ prefix: '/', dir }]).then((server) => server, (error: unknown) => error);
+      return { value, environment: value instanceof Fresh, exitCode: value instanceof Error ? exitCodeFor(value) : 0 };
+    } finally {
+      vi.doUnmock('node:http');
+      vi.resetModules();
+    }
+  }
+
+  it.each([
+    ['EMFILE', 'listen EMFILE: too many open files'],
+    ['EACCES', 'listen EACCES: permission denied 127.0.0.1'],
+  ])('rejects on %s rather than letting the process die', async (code, message) => {
+    const { value, environment, exitCode } = await serveWith({ code, message });
+    expect(value).toBeInstanceOf(Error);
+    expect(environment, `got ${(value as Error).constructor.name}`).toBe(true);
+    expect(exitCode).toBe(3);
+    expect((value as Error).message).toContain(code);
+    expect((value as Error).message).toContain('127.0.0.1');
+  });
+
+  it('keeps a handler attached after it is listening, so a later error cannot crash the process either', async () => {
+    const { value: server } = await serveWith(null);
+    expect(server).not.toBeInstanceOf(Error);
+    expect((server as { url: string }).url).toBe('http://127.0.0.1:4321');
+    // An EventEmitter that emits `'error'` with no listener throws it; this one has one, so the emit just returns false-ish.
+    expect(() => live!.emit('error', Object.assign(new Error('a socket died'), { code: 'ECONNRESET' }))).not.toThrow();
+    await (server as { close(): Promise<void> }).close();
+  });
+});
 
 describe('serveStatic hardening', () => {
   const parent = mkdtempSync(join(tmpdir(), 'forge-server-'));

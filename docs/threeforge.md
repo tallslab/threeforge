@@ -1193,7 +1193,10 @@ swaps change data, not draw calls.
     `schemaVersion: 3` (threeforge 0.9.0 or later): any other version exits 4 at once, before anything is measured,
     with a message naming both versions and the fix, e.g. `window.__threeforge has unsupported schemaVersion 2:
     this threeforge CLI reads schemaVersion 3; upgrade threeforge in the app (exposeToAgents)`. `analyze`'s own
-    measurement (`measureViaHook`) rejects an unsupported hook version the same way.
+    measurement (`measureViaHook`) rejects an unsupported hook version the same way, and also checks the
+    `schemaVersion` of the frame the hook actually *returned*: a target that advertises 3 and hands back a
+    differently-shaped frame exits 4 with the same upgrade message, rather than yielding a document that violates the
+    CLI's own published `SNAPSHOT_SCHEMA`.
   - `optimize <file.glb|.gltf> [--out out.glb] [--preset safe|balanced|aggressive] [--no-<step>|--<step>]
     [--simplify [ratio]] [--simplify-error e] [--compress none|meshopt] [--textures [webp|avif|none]]
     [--texture-size N] [--texture-quality Q] [--no-verify] [--parity pct] [--views N] [--budget N] [--backend …]
@@ -1213,8 +1216,9 @@ swaps change data, not draw calls.
     boolean flag never takes one (`analyze --json scene.glb` parses), and a negatable one also accepts
     `--no-<flag>`. `--simplify` and `--textures` take a value only after `=` or when the next argument is a valid
     value (a number, a format), so `optimize --simplify scene.glb` keeps the file. `--` ends the flags.
-  - `--timeout ms` bounds each page step (the load, every evaluate, the whole N-frame measurement, `compile()`;
-    default 60000, a step over it exits 4). `--headed` shows the browser. `--simplify-error e` is the simplify error
+  - `--timeout ms` bounds every page step: the load, every evaluate, the whole N-frame measurement, `compile()`,
+    every screenshot (given the bound in Playwright as well, so the operation is cancelled rather than abandoned) and
+    `browser.newPage()` (default 60000; a step over it exits 4). `--headed` shows the browser. `--simplify-error e` is the simplify error
     limit as a fraction of the mesh radius (default 0.001). `--texture-quality Q` is the encoder quality (default 85).
     `--textures none` and `--compress none` leave those steps out.
   - Usage errors (exit 2, nothing on stdout; the message and the usage text on stderr): an unknown flag (the nearest

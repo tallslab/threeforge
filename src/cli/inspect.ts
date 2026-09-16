@@ -1,6 +1,6 @@
 import { VERSION } from '../version.js';
 import { launchBrowser } from './browser.js';
-import { Resources, type CliDeps } from './lifecycle.js';
+import { Resources, withTimeout, type CliDeps } from './lifecycle.js';
 import { assertHookVersion, compileViaHook, evaluateWithin, measureViaHook, waitFor } from './measure.js';
 import type { AgentDocument, CliCompileReport, InspectInput } from './types.js';
 import { formatPageErrors } from './untrusted.js';
@@ -14,7 +14,8 @@ export async function inspectApp(input: InspectInput, log: (line: string) => voi
   return resources.run(async () => {
     const browser = await (deps.launch ?? launchBrowser)(input.backend, input.headed);
     resources.add('the browser', () => browser.close());
-    const page = await browser.newPage();
+    // Bounded like every other page step: an unbounded `newPage()` is a wait `--timeout` cannot shorten (M2).
+    const page = await withTimeout('opening a browser page', input.timeout, () => browser.newPage());
     const pageErrors: string[] = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
     log(`opening ${input.url} on ${input.backend}`);

@@ -11,6 +11,7 @@ import { armExitWatchdog, Resources, withTimeout } from '../../src/cli/lifecycle
 import { PageError as MeasurePageError } from '../../src/cli/measure.js';
 import { serveStatic, type StaticRoot } from '../../src/cli/server.js';
 import type { AnalyzeInput, InspectInput } from '../../src/cli/types.js';
+import { emptyFrame } from '../../src/ledger/snapshot.js';
 import { glbBytes } from './helpers/gltf-files.js';
 
 const settle = <T>(promise: Promise<T>): Promise<T | unknown> => promise.then((value) => value, (error: unknown) => error);
@@ -324,5 +325,76 @@ describe('analyze and inspect release what they opened', () => {
     expect(error).toBeInstanceOf(PageError);
     expect((error as Error).message).toMatch(/timed out after 100 ms/);
     expect(browserClosed).toBe(1);
+  });
+});
+
+/**
+ * Independent review M2. `--timeout` bounds every `page.evaluate`, but two waits escaped it: `page.screenshot` fell
+ * back to Playwright's own 30 s page default (about 130 un-governed waits at `--views 64`), and `browser.newPage()`
+ * had no bound at all. A user who asks for 2 s should not wait longer than that in a step they cannot shorten.
+ */
+describe('every wait is governed by --timeout', () => {
+  /** A page that answers everything except the one call named, which never settles. */
+  function pageStuckIn(what: 'screenshot' | 'nothing', options: Array<Record<string, unknown> | undefined> = []): PlaywrightPage {
+    const page = {
+      goto: async () => null,
+      waitForFunction: async () => true,
+      evaluate: async (expression: unknown) => (String(expression).includes('__threeforgeCli') ? { ready: true, asset: { meshes: 1, materials: 1, vertices: 3, triangles: 1, animations: 0, skinned: 0, morph: 0, loadMs: 1 } } : { snapshot: emptyFrame({ three: '186', backend: 'webgl2', multiDraw: true, tier: 'desktop', gpu: 'x', dpr: 1, viewport: [800, 600] }), renderMs: 1, ledgerMs: 0, frameMs: 16 }),
+      route: async () => {},
+      screenshot: (opts?: Record<string, unknown>) => {
+        options.push(opts);
+        return what === 'screenshot' ? new Promise<Buffer>(() => {}) : Promise.resolve(Buffer.alloc(0));
+      },
+      on: () => page,
+      close: async () => {},
+    };
+    return page as unknown as PlaywrightPage;
+  }
+
+  const withAsset = async (body: (file: string, dir: string) => Promise<void>): Promise<void> => {
+    const dir = mkdtempSync(join(tmpdir(), 'forge-timeout-'));
+    try {
+      const file = join(dir, 'a.glb');
+      writeFileSync(file, glbBytes({ asset: { version: '2.0' } }));
+      await body(file, dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it('analyze gives up on a screenshot that never settles, at --timeout rather than Playwright\'s 30 s', async () => {
+    await withAsset(async (file, dir) => {
+      const launch = async (): Promise<BrowserHandle> => ({ newPage: async () => pageStuckIn('screenshot'), close: async () => {} });
+      const started = Date.now();
+      const error = await settle(analyzeAssetWithShots({ ...analyzeInput(file), timeout: 300, views: 1 }, undefined, true, { launch, appDir: dir }));
+      expect(error).toBeInstanceOf(PageError);
+      expect((error as Error).message).toMatch(/timed out after 300 ms/);
+      expect((error as Error).message).toMatch(/screenshot/i);
+      expect(Date.now() - started).toBeLessThan(10_000);
+    });
+  });
+
+  it('passes the same bound to Playwright, so the operation itself is cancelled and not merely abandoned', async () => {
+    await withAsset(async (file, dir) => {
+      const options: Array<Record<string, unknown> | undefined> = [];
+      const launch = async (): Promise<BrowserHandle> => ({ newPage: async () => pageStuckIn('nothing', options), close: async () => {} });
+      await analyzeAssetWithShots({ ...analyzeInput(file), timeout: 4321, views: 2 }, undefined, true, { launch, appDir: dir });
+      expect(options.length).toBe(3); // the default framing plus two orbit views
+      for (const opts of options) expect(opts).toMatchObject({ type: 'png', timeout: 4321 });
+    });
+  });
+
+  it('analyze and inspect give up on a browser.newPage() that never settles', async () => {
+    const stuckBrowser = async (): Promise<BrowserHandle> => ({ newPage: () => new Promise<PlaywrightPage>(() => {}), close: async () => {} });
+    await withAsset(async (file, dir) => {
+      const started = Date.now();
+      const error = await settle(analyzeAssetWithShots({ ...analyzeInput(file), timeout: 250 }, undefined, false, { launch: stuckBrowser, appDir: dir }));
+      expect(error).toBeInstanceOf(PageError);
+      expect((error as Error).message).toMatch(/timed out after 250 ms/);
+      expect(Date.now() - started).toBeLessThan(10_000);
+    });
+    const inspectError = await settle(inspectApp({ url: 'http://127.0.0.1:9/', backend: 'webgl2', tier: 'auto', budget: null, frames: 1, compile: false, timeout: 250, headed: false }, undefined, { launch: stuckBrowser }));
+    expect(inspectError).toBeInstanceOf(PageError);
+    expect((inspectError as Error).message).toMatch(/timed out after 250 ms/);
   });
 });

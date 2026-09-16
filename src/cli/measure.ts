@@ -66,6 +66,31 @@ const UNSUPPORTED_PREFIX = 'window.__threeforge has unsupported schemaVersion ';
 const UNSUPPORTED_SUFFIX = `: this threeforge CLI reads schemaVersion ${HOOK_SCHEMA_VERSION}; upgrade threeforge in the app (exposeToAgents)`;
 const unsupported = (version: string): string => `${UNSUPPORTED_PREFIX}${version}${UNSUPPORTED_SUFFIX}`;
 
+/**
+ * The same message for a *frame* whose own `schemaVersion` is not the one this CLI reads. The hook's advertised
+ * version is checked separately (`assertHookVersion`, and the in-page guard in `measureViaHook`), but a target that
+ * advertises 3 and hands back a differently-shaped frame would otherwise produce a document that violates the CLI's
+ * own published `SNAPSHOT_SCHEMA` (`schema.ts`, `{ const: 3 }`) with nothing to notice (independent review L3).
+ */
+const unsupportedFrame = (version: string): string => `window.__threeforge returned a frame with unsupported schemaVersion ${version}${UNSUPPORTED_SUFFIX}`;
+
+/**
+ * `page.screenshot`, bounded by `timeout` ms twice over: the bound is handed to Playwright so the operation itself is
+ * cancelled rather than merely abandoned, and `withTimeout` covers a call that never settles at all. Without it the
+ * shot fell back to Playwright's 30 s page default, which `--timeout` could not shorten — about 130 un-governed waits
+ * at `--views 64` (independent review M2). A Playwright rejection carries driver text, so it is cleaned and re-thrown
+ * as a `PageError` exactly as `evaluateWithin` does.
+ */
+export function screenshotWithin(page: PlaywrightPage, what: string, timeout: number): Promise<Buffer> {
+  return withTimeout(what, timeout, async () => {
+    try {
+      return await page.screenshot({ type: 'png', timeout });
+    } catch (error) {
+      throw new PageError(`${what}: ${cleanText(error instanceof Error ? error.message : String(error))}`);
+    }
+  });
+}
+
 /** Fails with a PageError unless the page's hook publishes the snapshot version this CLI reads. */
 export async function assertHookVersion(page: PlaywrightPage, timeout: number): Promise<void> {
   const version = await evaluateWithin<unknown>(page, 'reading window.__threeforge.schemaVersion', timeout, `window.__threeforge.schemaVersion`);
@@ -101,6 +126,9 @@ export async function measureViaHook(page: PlaywrightPage, frames: number, timeo
     })()`,
   );
   if ('error' in result) throw new PageError(result.error);
+  // The hook said 3; this is the frame it actually returned (L3).
+  const frameVersion = (result.snapshot as { schemaVersion?: unknown } | null | undefined)?.schemaVersion;
+  if (frameVersion !== HOOK_SCHEMA_VERSION) throw new PageError(unsupportedFrame(JSON.stringify(frameVersion) ?? 'undefined'));
   result.snapshot.js.renderMs = result.renderMs;
   result.snapshot.js.ledgerMs = result.ledgerMs;
   result.snapshot.js.frameMs = result.frameMs;

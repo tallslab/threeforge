@@ -1,6 +1,7 @@
 import { createReadStream, realpathSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, resolve, sep } from 'node:path';
+import { EnvironmentError } from './errors.js';
 
 export interface StaticRoot {
   /** URL prefix, e.g. `/` or `/asset/`. Longest match wins. */
@@ -107,7 +108,22 @@ export async function serveStatic(roots: StaticRoot[]): Promise<{ url: string; c
       else res.destroy();
     }
   });
-  await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
+  // `listen` reports a failure through `'error'`, not by throwing. With no listener that is an uncaught exception
+  // (an `EMFILE` is reachable in a long-lived MCP session, which opens one server per `analyze`), which would take
+  // the process down and bypass `Resources.run`'s teardown entirely. The handler stays attached after the server is
+  // listening, so a later `'error'` cannot crash the process either — per-connection failures are already handled on
+  // the streams above, and there is nothing useful left to do with one here.
+  let listening = false;
+  await new Promise<void>((ok, fail) => {
+    server.on('error', (error: NodeJS.ErrnoException) => {
+      if (listening) return;
+      fail(new EnvironmentError(`the static server could not listen on 127.0.0.1 (${error.code ?? 'error'}: ${error.message}); close other programs or raise the open-file limit`));
+    });
+    server.listen(0, '127.0.0.1', () => {
+      listening = true;
+      ok();
+    });
+  });
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : 0;
   return { url: `http://127.0.0.1:${port}`, close: () => new Promise((ok) => server.close(() => ok())) };

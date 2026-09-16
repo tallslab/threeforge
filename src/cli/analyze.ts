@@ -8,8 +8,8 @@ import { DEFAULT_PARITY } from './args.js';
 import { launchBrowser, type PlaywrightPage, type PlaywrightRoute } from './browser.js';
 import { PageError, UsageError } from './errors.js';
 import { assertConfinedUris, readGltfJson } from './gltf-uris.js';
-import { Resources, type CliDeps } from './lifecycle.js';
-import { compileViaHook, evaluateWithin, measureViaHook, waitFor } from './measure.js';
+import { Resources, withTimeout, type CliDeps } from './lifecycle.js';
+import { compileViaHook, evaluateWithin, measureViaHook, screenshotWithin, waitFor } from './measure.js';
 import { serveStatic } from './server.js';
 import type { AgentDocument, AnalyzeInput, AssetFacts, CliCompileReport, Parity } from './types.js';
 import { formatPageErrors } from './untrusted.js';
@@ -91,7 +91,7 @@ async function captureViews(page: PlaywrightPage, views: number, timeout: number
   for (let i = -1; i < views; i++) {
     const view = i < 0 ? 'default' : `orbit-${i}`;
     await evaluateWithin(page, `rendering the ${view} view`, timeout, `(async () => { window.__threeforgeCli.setView(${i}, ${views}); for (let k = 0; k < 2; k++) await window.__threeforge.frameAsync(); })()`);
-    shots.push({ view, png: await page.screenshot({ type: 'png' }) });
+    shots.push({ view, png: await screenshotWithin(page, `taking the ${view} screenshot`, timeout) });
   }
   if (views > 0) await evaluateWithin(page, 'restoring the default view', timeout, `(async () => { window.__threeforgeCli.setView(-1, ${views}); await window.__threeforge.frameAsync(); })()`);
   return shots;
@@ -176,7 +176,8 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
     resources.add('the static server', () => server.close());
     const browser = await (deps.launch ?? launchBrowser)(input.backend, input.headed);
     resources.add('the browser', () => browser.close());
-    const page = await browser.newPage();
+    // Bounded like every other page step: an unbounded `newPage()` is a wait `--timeout` cannot shorten (M2).
+    const page = await withTimeout('opening a browser page', input.timeout, () => browser.newPage());
     const blocked = routeGuard(server.url);
     await page.route('**/*', blocked.handler);
     const pageErrors: string[] = [];
