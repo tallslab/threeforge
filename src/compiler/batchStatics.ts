@@ -370,6 +370,12 @@ export { isBuiltInMaterial };
  *   matrix and normals through the normal matrix, which the baked geometry already carries, except a `displacementMap`:
  *   `setupPosition` displaces along the local normal in local units (NodeMaterial.js:788), so a scaled module's
  *   displacement changes size once baked. A batch displaces before its own transform, and keeps it.
+ *   Two built-in reads of mesh-local space are not in this list because the bake does not cause their change: `alphaHash`
+ *   hashes `positionLocal` (NodeMaterial.js:893) and an object-space normal map goes through the draw's model normal
+ *   matrix (NormalMapNode.js:120-122), and both change the same once batched or instanced (`batch()` and `instance()`
+ *   move `positionLocal`; neither gives the map each module's matrix). Measured on rotated boxes: `alphaHash` 3.66 % and
+ *   an object-space normal map 6.19 % of the frame, baked, batched or instanced alike, so leaving the bake would not
+ *   restore a pixel. The ledger's `batch-local-space` hint names such draws.
  * Only then does `vertexColors: false` prove the `color` attribute unread (`unbakeableAttribute`'s `builtInReads`).
  */
 function bakeProvesReads(material: Material): boolean {

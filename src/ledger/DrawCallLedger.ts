@@ -1,4 +1,4 @@
-import { REVISION, type Camera, type Light, type Material, type Object3D, type Scene } from 'three';
+import { ObjectSpaceNormalMap, REVISION, type Camera, type Light, type Material, type Object3D, type Scene } from 'three';
 import { MaterialRegistry, type MaterialHashes } from '../registry/MaterialRegistry.js';
 import { expectedGpuDraws, sideFactor, writeInstanceCounts, type BackendInfo } from './expectedDraws.js';
 import { flagsInto, isVsmBlur, kindOf, reasonOf, type Reason } from './reasons.js';
@@ -10,6 +10,7 @@ import { estimateMemory, type AllowedRenderTarget } from './memory.js';
 import { disposeOverdraw, measureOverdraw, overdrawTargetOf, type OverdrawRenderer, type OverdrawResult } from './overdraw.js';
 import { formatCostRows, formatHints } from '../overlay/index.js';
 import { FORGE_TAG_KEY } from '../tags.js';
+import { hasNodeSlot } from '../compiler/sprites.js';
 import { lightInfoOf, type LightInfo } from './sections.js';
 import { shadowPassIds } from './shadowPasses.js';
 import { MaterialUses } from './materialUses.js';
@@ -369,7 +370,7 @@ export class DrawCallLedger {
     let objects = 0;
     let auto = 0;
     let hidden = 0;
-    const ctx: Required<Omit<HintContext, 'items' | 'objects' | 'unsupportedObjects'>> = { staticAutoUpdated: [], pointShadowLights: [], transmissive: [] };
+    const ctx: Required<Omit<HintContext, 'items' | 'objects' | 'unsupportedObjects'>> = { staticAutoUpdated: [], pointShadowLights: [], transmissive: [], localSpaceDraws: [] };
     const paths = this.names.forRoot(scene);
     // three renders no shadow map with shadow maps off (ShadowNode builds none), so no point light's six faces.
     const shadowMapsOn = this.renderer?.shadowMap?.enabled !== false;
@@ -392,6 +393,8 @@ export class DrawCallLedger {
           break;
         }
       }
+      const reader = compiledLocalSpaceReader(o);
+      if (reader && worldVisible(o, scene)) ctx.localSpaceDraws.push({ object: this.names.of(o, scene, paths), material: reader.name || reader.type });
     });
     this.hintContext = ctx;
     // The scene object itself is not part of the count.
@@ -890,6 +893,30 @@ function frameBufferTargetsOf(renderer: LedgerRenderer | null): AllowedRenderTar
     targets.push(value as AllowedRenderTarget);
   }
   return targets;
+}
+
+/**
+ * The material of a draw `World.compile()` made, when it reads mesh-local space: a node in any slot (`hasNodeSlot`, the
+ * test `spriteRule`'s `sprite-node-material` uses), `alphaHash`, or a `normalMap` with `normalMapType:
+ * ObjectSpaceNormalMap`; else null. World's draws: a `forge:batch:` BatchedMesh, the base level of a `forge:instanced:`
+ * group (its LOD levels share the group's material) and a baked mesh (`userData.forge.kind` `bake`, as `reasonOf` reads
+ * it). three r186 gives a batched or instanced draw `positionLocal` multiplied by its instance matrix (`Batch.js:148`,
+ * `Instance.js:206-207`), which World writes in the scene's space, and a baked mesh's positions are written there too;
+ * `positionLocal` is a varying (`Position.js:45`), a node may read it in either stage, and `alphaHash` hashes it
+ * (`NodeMaterial.js:893`). An object-space normal map's normals go through the draw's `modelNormalMatrix`
+ * (`NormalMapNode.js:120-122`, `Normal.js:183-197`), the batch's or baked mesh's, not each mesh's: a rotated module
+ * shades as if unrotated (measured: 6.19 % of a frame, the same batched, instanced and baked). A tangent-space map
+ * follows the batched normal and tangent, and changes nothing. The `batch-local-space` hint names these draws.
+ * `userData` is guarded as in `reasonOf`: app code and loaders may null it.
+ */
+function compiledLocalSpaceReader(object: Object3D): Material | null {
+  const o = object as Object3D & { isBatchedMesh?: boolean; isInstancedMesh?: boolean; material?: Material | Material[] };
+  const forge = o.userData?.forge as { kind?: string; lodLevel?: number } | null | undefined;
+  const compiled = (o.isBatchedMesh === true && o.name.startsWith('forge:batch:')) || (o.isInstancedMesh === true && o.name.startsWith('forge:instanced:') && (forge?.lodLevel ?? 0) === 0) || forge?.kind === 'bake';
+  const material = o.material;
+  if (!compiled || !material || Array.isArray(material)) return null;
+  const m = material as Material & { alphaHash?: boolean; normalMap?: unknown; normalMapType?: number };
+  return hasNodeSlot(material) || m.alphaHash === true || (!!m.normalMap && m.normalMapType === ObjectSpaceNormalMap) ? material : null;
 }
 
 /** Whether `object` and every ancestor up to and including `root` is visible: what three's render lists test. */

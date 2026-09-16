@@ -34,6 +34,13 @@ export interface HintContext {
    * to `byReason` submissions.
    */
   unsupportedObjects?: number;
+  /**
+   * The draws `World.compile()` made (a `forge:batch:` BatchedMesh, a `forge:instanced:` group, a baked mesh) that three
+   * renders with a material reading mesh-local space — a node in any slot, `alphaHash`, or an object-space normal map —
+   * each with that material's name (the ledger's rescan fills it), which the `batch-local-space` hint names: the draw's
+   * display name and the material's name, or its type when unnamed.
+   */
+  localSpaceDraws?: Array<{ object: string; material: string }>;
 }
 
 /** Distinct main-pass objects per reason, for the draw-call hints (`HintContext.objects`). */
@@ -130,6 +137,29 @@ export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): H
         ? `1 threeforge transparent batch shares the main pass with other transparent draws: three sorts a BatchedMesh by its own centre, not per instance, so draw order across them is approximate`
         : `${n} threeforge transparent batches share the main pass with other transparent draws: three sorts each BatchedMesh by its own centre, not per instance, so draw order across them is approximate`;
     push('overdraw', 'info', 'transparent-batch-order', `${message} — use transparent: 'keep' if exact per-object order matters here`, names.slice(0, 5));
+  }
+  // three r186 gives a batched or instanced draw `positionLocal` multiplied by its instance matrix (Batch.js:148,
+  // Instance.js:206-207), in the scene's space for World's batches, and a baked mesh's positions are written there too; a
+  // node may read it and `alphaHash` hashes it (NodeMaterial.js:893). An object-space normal map goes through the draw's
+  // model normal matrix (NormalMapNode.js:120-122), the batch's, not each mesh's. One hint for every such draw, like
+  // `transmission`; the materials go last, so a long name is what the message cap cuts.
+  const localDraws = ctx.localSpaceDraws ?? [];
+  if (localDraws.length > 0) {
+    const n = localDraws.length;
+    const materials: string[] = [];
+    for (let k = 0; k < n; k++) {
+      const material = localDraws[k]!.material;
+      if (!materials.includes(material)) materials.push(material);
+    }
+    const listed = `${materials.slice(0, 3).join(', ')}${materials.length > 3 ? ` +${materials.length - 3} more` : ''}`;
+    const subject = n === 1 ? '1 threeforge batched, instanced or baked draw uses' : `${n} threeforge batched, instanced or baked draws use`;
+    push(
+      'drawCalls',
+      'info',
+      'batch-local-space',
+      `${subject} a node in a material slot, alphaHash or an object-space normal map, which read mesh-local space, now the scene's: shading can change — tag those meshes dynamic to keep them individual (materials: ${listed})`,
+      localDraws.slice(0, 5).map((d) => d.object),
+    );
   }
   return hints;
 }

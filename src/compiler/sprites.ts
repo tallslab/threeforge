@@ -84,8 +84,11 @@ function isCustomSpriteMaterial(material: Material): boolean {
  * `depthNode`, `receivedShadowPositionNode`, `castShadowPositionNode`, `receivedShadowNode`, `castShadowNode`,
  * `outputNode`, `mrtNode`, `fragmentNode`, `vertexNode`, `contextNode`); `SpriteNodeMaterial` adds `rotationNode` and
  * `scaleNode` (`SpriteNodeMaterial.js` ~63-86). Every own property ending in `Node` is read, so a subclass's slots count.
+ * It cannot see into a node, so a constant counts too (a fresh `MeshSSSNodeMaterial` sets five `thickness*Node` slots to
+ * `float()` constants in its constructor). `spriteRule` (`sprite-node-material`) and the ledger's `batch-local-space`
+ * hint share this test.
  */
-function hasNodeSlot(material: Material): boolean {
+export function hasNodeSlot(material: Material): boolean {
   if ((material as { isNodeMaterial?: boolean }).isNodeMaterial !== true) return false;
   for (const key of Object.keys(material)) {
     if (!key.endsWith('Node')) continue;

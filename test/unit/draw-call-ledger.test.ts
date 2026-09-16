@@ -5,6 +5,7 @@ import {
   Bone,
   BoxGeometry,
   BufferGeometry,
+  DataTexture,
   DirectionalLight,
   DoubleSide,
   Float32BufferAttribute,
@@ -17,6 +18,7 @@ import {
   MeshBasicMaterial,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
+  ObjectSpaceNormalMap,
   PerspectiveCamera,
   PlaneGeometry,
   Points,
@@ -28,14 +30,19 @@ import {
   SkinnedMesh,
   Sprite,
   SpriteMaterial,
+  TangentSpaceNormalMap,
   Vector2,
   VSMShadowMap,
   WebGLCoordinateSystem,
   WebGPUCoordinateSystem,
   type CoordinateSystem,
   type Material,
+  type NormalMapTypes,
+  type Texture,
 } from 'three';
-import { World } from '../../src/compiler/World.js';
+import { color, mix, positionLocal } from 'three/tsl';
+import { MeshStandardNodeMaterial } from 'three/webgpu';
+import { World, type WorldOptions } from '../../src/compiler/World.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import type { SubmissionRecord } from '../../src/ledger/snapshot.js';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
@@ -1152,5 +1159,143 @@ describe('DrawCallLedger hints count objects, not submissions', () => {
     expect(hint(ledger, 'sprites-unbatched')?.message).toBe('8 sprites drawn one by one: World batches sprites that share a material (sprites: \'batch\')');
     ledger.rescan();
     expect(hint(ledger, 'sprites-unbatched')?.message).toBe('8 sprites drawn one by one: World batches sprites that share a material (sprites: \'batch\')');
+  });
+});
+
+/**
+ * `batch-local-space` (Ruling R164): three r186 gives a batched or instanced draw `positionLocal` multiplied by its
+ * instance matrix (Batch.js:148, Instance.js:206-207), and a baked mesh's positions are written in scene space, so a node
+ * reading `positionLocal` and `alphaHash` (which hashes it, NodeMaterial.js:893) may draw differently than the individual
+ * meshes. The ledger names World's compiled draws whose material has a node in a slot (`hasNodeSlot`, the test
+ * `spriteRule`'s `sprite-node-material` uses) or `alphaHash`, and nothing else.
+ */
+describe('DrawCallLedger batch-local-space hint', () => {
+  const CODE = 'batch-local-space';
+  const hint = (ledger: DrawCallLedger) => ledger.frame().hints.find((h) => h.code === CODE);
+  const gradient = (): Material => Object.assign(new MeshStandardNodeMaterial(), { name: 'gradient', colorNode: mix(color(0x2040ff), color(0xff8020), positionLocal.y.add(0.5)) });
+  const hashed = (): Material => new MeshStandardMaterial({ name: 'hashed', alphaHash: true, opacity: 0.5 });
+  const engraved = (normalMapType: NormalMapTypes = ObjectSpaceNormalMap, normalMap: Texture | null = new DataTexture(new Uint8Array([128, 128, 255, 255]), 1, 1)): Material => new MeshStandardMaterial({ name: 'engraved', normalMap, normalMapType });
+
+  /**
+   * `count` transformed boxes sharing `material` (or the material `material(registry)` returns, given the ledger's registry,
+   * which World uses too), tagged static (or dynamic), compiled by World, then one frame rendered (the first frame rescans).
+   */
+  function compiled(source: Material | ((registry: MaterialRegistry) => Material), options: { count?: number; dynamic?: boolean; world?: WorldOptions; geometry?: BufferGeometry } = {}) {
+    const { renderer, registry, ledger, scene, camera } = attached();
+    const material = typeof source === 'function' ? source(registry) : source;
+    for (let i = 0; i < (options.count ?? 4); i++) {
+      const mesh = new Mesh(options.geometry ?? box, material);
+      mesh.name = `box-${i}`;
+      mesh.position.set(i * 1.5 - 2, 0, 0);
+      mesh.rotation.set(0.3, i * 0.2, 0.4);
+      mesh.scale.set(1, 1.6, 0.8);
+      scene.add(options.dynamic ? tag.dynamic(mesh) : tag.static(mesh));
+    }
+    scene.updateMatrixWorld(true);
+    const world = new World(scene, { registry, ledger, ...options.world });
+    const report = world.compile();
+    renderer.render(scene, camera);
+    return { renderer, ledger, scene, camera, world, report };
+  }
+
+  it('fires for a batch whose material has a node in a slot, naming the batch and the material', () => {
+    const { ledger, report } = compiled(gradient());
+    expect(report.after).toEqual(expect.objectContaining({ batches: 1, instanced: 0, baked: 0 }));
+    expect(hint(ledger)).toEqual({
+      category: 'drawCalls',
+      severity: 'info',
+      code: CODE,
+      message: "1 threeforge batched, instanced or baked draw uses a node in a material slot, alphaHash or an object-space normal map, which read mesh-local space, now the scene's: shading can change — tag those meshes dynamic to keep them individual (materials: gradient)",
+      objects: [report.groups[0]!.name],
+    });
+    expect(report.groups[0]!.name.startsWith('forge:batch:')).toBe(true);
+  });
+
+  it('fires for a batch whose material has alphaHash', () => {
+    const { ledger, report } = compiled(hashed());
+    expect(report.after).toEqual(expect.objectContaining({ batches: 1, instanced: 0, baked: 0 }));
+    expect(hint(ledger)).toMatchObject({ severity: 'info', objects: [report.groups[0]!.name] });
+    expect(hint(ledger)?.message.endsWith('(materials: hashed)')).toBe(true);
+  });
+
+  it('fires for a batch whose material has an object-space normal map, not for a tangent-space one or the map type without a map', () => {
+    const { ledger, report } = compiled(engraved());
+    expect(report.after.batches).toBe(1);
+    expect(hint(ledger)).toMatchObject({ severity: 'info', objects: [report.groups[0]!.name] });
+    expect(hint(ledger)?.message.endsWith('(materials: engraved)')).toBe(true);
+    for (const [label, material] of [['a tangent-space normal map', engraved(TangentSpaceNormalMap)], ['ObjectSpaceNormalMap without a normalMap', engraved(ObjectSpaceNormalMap, null)]] as Array<[string, Material]>) {
+      const silent = compiled(material);
+      expect(silent.report.after.batches, label).toBe(1);
+      expect(hint(silent.ledger), label).toBeUndefined();
+    }
+  });
+
+  it('fires for instanced groups and a baked group of such materials, one name per group', () => {
+    // A level attached by hand (what prepareLods stores): the group draws as two InstancedMeshes sharing its material.
+    const leveled = new BoxGeometry(1, 1, 1);
+    leveled.userData.forgeLods = [new BoxGeometry(1, 1, 1)];
+    const node = compiled(gradient(), { geometry: leveled, world: { instanceThreshold: 4, lod: { distances: [30] } } });
+    expect(node.report.after).toEqual(expect.objectContaining({ batches: 0, instanced: 2, baked: 0 }));
+    expect(node.world.instancedMeshes.map((m) => m.material)).toEqual([node.world.instancedMeshes[0]!.material, node.world.instancedMeshes[0]!.material]);
+    expect(hint(node.ledger)?.objects).toEqual([node.report.groups[0]!.name]);
+    expect(hint(node.ledger)?.message.startsWith('1 threeforge batched, instanced or baked draw uses')).toBe(true);
+    expect(node.report.groups[0]!.name.startsWith('forge:instanced:')).toBe(true);
+    const hash = compiled(hashed(), { world: { instanceThreshold: 4 } });
+    expect(hash.report.after).toEqual(expect.objectContaining({ batches: 0, instanced: 1, baked: 0 }));
+    expect(hint(hash.ledger)?.objects).toEqual([hash.report.groups[0]!.name]);
+    // The bake writes every module in scene space, so its positions are what batching would hand positionLocal. A node
+    // material never bakes (bakeProvesReads); alphaHash does.
+    const baked = compiled(hashed(), { world: { bake: true } });
+    expect(baked.report.after).toEqual(expect.objectContaining({ batches: 0, instanced: 0, baked: 1 }));
+    expect(hint(baked.ledger)?.objects).toEqual([baked.report.groups[0]!.name]);
+    // An object-space normal map bakes too, and three transforms its normals by the baked mesh's (the scene's) matrix.
+    for (const world of [{ instanceThreshold: 4 }, { bake: true }] as WorldOptions[]) {
+      const normals = compiled(engraved(), { world });
+      expect(normals.report.after.batches + normals.report.after.instanced + normals.report.after.baked).toBe(1);
+      expect(normals.report.after.batches, JSON.stringify(world)).toBe(0);
+      expect(hint(normals.ledger)?.objects, JSON.stringify(world)).toEqual([normals.report.groups[0]!.name]);
+    }
+  });
+
+  it('stays silent for batches of a plain registered standard material and of a node material with every slot empty', () => {
+    const plain = (registry: MaterialRegistry): Material => registry.register(new MeshStandardMaterial({ color: 0x808080 }));
+    for (const [label, material] of [['registered MeshStandardMaterial', plain], ['MeshStandardNodeMaterial without nodes', new MeshStandardNodeMaterial()]] as Array<[string, Material | typeof plain]>) {
+      const { ledger, report } = compiled(material);
+      expect(report.after.batches, label).toBe(1);
+      expect(hint(ledger), label).toBeUndefined();
+      ledger.rescan();
+      expect(hint(ledger), label).toBeUndefined();
+    }
+  });
+
+  it('stays silent for dynamic meshes carrying such materials, which World leaves individual (it names them once batch-sync batches them)', () => {
+    for (const [label, material] of [['node slot', gradient()], ['alphaHash', hashed()], ['object-space normal map', engraved()]] as Array<[string, Material]>) {
+      const separate = compiled(material, { dynamic: true });
+      expect(separate.report.after, label).toEqual(expect.objectContaining({ batches: 0, instanced: 0, baked: 0 }));
+      expect(separate.ledger.frame().byReason.dynamic?.submissions, label).toBe(4);
+      expect(hint(separate.ledger), label).toBeUndefined();
+      const synced = compiled(material, { dynamic: true, world: { dynamics: 'batch-sync' } });
+      expect(synced.report.after.batches, label).toBe(1);
+      expect(hint(synced.ledger)?.objects, label).toEqual([synced.report.groups[0]!.name]);
+    }
+  });
+
+  it('names only what three renders and what World compiled: no hint for a hidden batch, after decompile(), or for an app-built BatchedMesh', () => {
+    const { ledger, world, scene, renderer, camera } = compiled(gradient());
+    expect(hint(ledger)).toBeDefined();
+    world.batchedMeshes[0]!.visible = false;
+    ledger.rescan();
+    expect(hint(ledger)).toBeUndefined();
+    world.batchedMeshes[0]!.visible = true;
+    ledger.rescan();
+    expect(hint(ledger)).toBeDefined();
+    world.decompile();
+    renderer.render(scene, camera);
+    ledger.rescan();
+    expect(hint(ledger)).toBeUndefined();
+    // An app's own BatchedMesh is not threeforge's to explain.
+    scene.add(tag.static(batchedOf(2, gradient(), box)));
+    ledger.rescan();
+    expect(hint(ledger)).toBeUndefined();
   });
 });

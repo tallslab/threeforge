@@ -375,4 +375,41 @@ describe('hintsFor', () => {
       expect(hint?.objects).toEqual(items.slice(0, 5).map((i) => i.name));
     });
   });
+
+  // The ledger gathers `localSpaceDraws` on its rescan (draw-call-ledger.test.ts covers which draws it names); these
+  // pin the wording, the counts and the caps.
+  describe('batch-local-space', () => {
+    const tail = "a node in a material slot, alphaHash or an object-space normal map, which read mesh-local space, now the scene's: shading can change — tag those meshes dynamic to keep them individual";
+
+    it('names one compiled draw and its material in the singular', () => {
+      const hints = hintsFor(emptyFrame(env), budgetsFor('desktop'), { localSpaceDraws: [{ object: 'forge:batch:aa11:0', material: 'gradient' }] });
+      expect(hints.find((h) => h.code === 'batch-local-space')).toEqual({
+        category: 'drawCalls',
+        severity: 'info',
+        code: 'batch-local-space',
+        message: `1 threeforge batched, instanced or baked draw uses ${tail} (materials: gradient)`,
+        objects: ['forge:batch:aa11:0'],
+      });
+    });
+
+    it('counts every draw, lists each material once and at most three, and caps objects at 5 names', () => {
+      const materials = ['grass', 'grass', 'leaves', 'glass', 'water', 'water', 'fog'];
+      const localSpaceDraws = materials.map((material, i) => ({ object: `forge:batch:aa${i}:0`, material }));
+      const hint = hintsFor(emptyFrame(env), budgetsFor('desktop'), { localSpaceDraws }).find((h) => h.code === 'batch-local-space');
+      expect(hint?.message).toBe(`7 threeforge batched, instanced or baked draws use ${tail} (materials: grass, leaves, glass +2 more)`);
+      expect(hint?.objects).toEqual(localSpaceDraws.slice(0, 5).map((d) => d.object));
+    });
+
+    it('keeps a long material name within the message cap', () => {
+      const hint = hintsFor(emptyFrame(env), budgetsFor('desktop'), { localSpaceDraws: [{ object: 'O'.repeat(500), material: 'M'.repeat(10_000) }] }).find((h) => h.code === 'batch-local-space');
+      expect(hint?.message.length).toBeLessThanOrEqual(300);
+      expect(hint?.message.startsWith(`1 threeforge batched, instanced or baked draw uses ${tail} (materials: MMM`)).toBe(true);
+      expect(hint?.objects[0]!.length).toBeLessThanOrEqual(120);
+    });
+
+    it('does not fire without such draws', () => {
+      expect(hintsFor(emptyFrame(env), budgetsFor('desktop'), { localSpaceDraws: [] }).some((h) => h.code === 'batch-local-space')).toBe(false);
+      expect(hintsFor(emptyFrame(env), budgetsFor('desktop')).some((h) => h.code === 'batch-local-space')).toBe(false);
+    });
+  });
 });

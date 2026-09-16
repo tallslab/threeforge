@@ -146,7 +146,7 @@ describe('explain', () => {
       { name: 'forge:batch:aa11:0', pass: 'main', reason: 'batched' as const, transparent: true },
       { name: 'forge:batch:bb22:0', pass: 'main', reason: 'batched' as const, transparent: true },
     ];
-    const codes = hintsFor(f, budgetsFor('phone-low'), { staticAutoUpdated: ['a'], pointShadowLights: ['l'], transmissive: ['g'], items }).map((h) => h.code);
+    const codes = hintsFor(f, budgetsFor('phone-low'), { staticAutoUpdated: ['a'], pointShadowLights: ['l'], transmissive: ['g'], items, localSpaceDraws: [{ object: 'forge:batch:cc33:0', material: 'gradient' }] }).map((h) => h.code);
     for (const code of codes) expect(explain(code), code).not.toBeNull();
     expect(explain('nope')).toBeNull();
     expect(Object.keys(REMEDIES).sort()).toEqual([...new Set(codes)].sort());
