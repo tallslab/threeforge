@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writ
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { EXCLUDED_PATHS, EXEMPT_COMMITS, RENDERING_PATHS, budgetDeclaration, checkCommits, main, touchesRendering } from '../../scripts/commit-rules.mjs';
+import { EXCLUDED_PATHS, EXEMPT_COMMITS, RENDERING_PATHS, ZERO_SHA, budgetDeclaration, checkCommits, gitQueries, main, pushRange, touchesRendering } from '../../scripts/commit-rules.mjs';
 
 const script = resolve('scripts/commit-rules.mjs');
 const made: string[] = [];
@@ -63,6 +63,78 @@ function mainIn(dir: string, range: string, exempt?: Record<string, { date: stri
     err.mockRestore();
   }
 }
+
+/**
+ * The range a push is judged over. CI cannot use `github.event.before..github.event.after` unconditionally: the ref's
+ * first push sends forty zeros, and a force push leaves a `before` that is not an ancestor of `after` (and, after the
+ * old commits are dropped, may not be in the clone at all). Those cases were skipped with a message that said the push
+ * had created the ref, which for a force push is simply untrue — so the rule went unenforced and said so wrongly.
+ */
+describe('pushRange', () => {
+  const git = (over: Partial<{ has: (sha: string) => boolean; isAncestor: (a: string, b: string) => boolean; mergeBase: (a: string, b: string) => string }> = {}) => ({
+    has: () => true,
+    isAncestor: () => true,
+    mergeBase: () => 'base0000',
+    ...over,
+  });
+
+  it('judges before..after when the pushed commits descend from what was there', () => {
+    expect(pushRange({ before: 'aaa1111', after: 'bbb2222' }, git())).toEqual({ range: 'aaa1111..bbb2222', reason: null });
+  });
+
+  it('falls back to the merge-base on a force push, and says that is what happened', () => {
+    const result = pushRange({ before: 'aaa1111', after: 'bbb2222' }, git({ isAncestor: () => false }));
+    expect(result.range).toBe('base0000..bbb2222');
+    expect(result.reason).toContain('not an ancestor');
+    expect(result.reason).not.toContain('created the ref');
+  });
+
+  it('says the old commits are gone when `before` is not in the clone, which is not the same as creating the ref', () => {
+    const result = pushRange({ before: 'aaa1111', after: 'bbb2222' }, git({ has: () => false }));
+    expect(result.range).toBe('base0000..bbb2222');
+    expect(result.reason).toContain('not in this clone');
+    expect(result.reason).not.toContain('created the ref');
+  });
+
+  it('falls back to the merge-base when the push created the ref, and says so', () => {
+    const result = pushRange({ before: ZERO_SHA, after: 'bbb2222' }, git());
+    expect(result.range).toBe('base0000..bbb2222');
+    expect(result.reason).toContain('created the ref');
+  });
+
+  it('skips only when there is no base at all, naming which of the three cases it was', () => {
+    for (const [label, over] of [
+      ['created', { mergeBase: () => '' }],
+      ['force push', { isAncestor: () => false, mergeBase: () => '' }],
+    ] as const) {
+      const before = label === 'created' ? ZERO_SHA : 'aaa1111';
+      const result = pushRange({ before, after: 'bbb2222' }, git(over));
+      expect(result.range, label).toBeNull();
+      expect(result.reason, label).toContain('skipped');
+      expect(result.reason, label).toContain(label === 'created' ? 'created the ref' : 'not an ancestor');
+    }
+    // The merge-base being the pushed commit itself (seeding main) is no range either.
+    expect(pushRange({ before: ZERO_SHA, after: 'bbb2222' }, git({ mergeBase: () => 'bbb2222' })).range).toBeNull();
+  });
+
+  it('resolves both paths against a real repository, force push included', () => {
+    const r = repo();
+    const first = r.commit('first', ['README.md']);
+    const second = r.commit('second', ['README.md']);
+    r.git('branch', '-f', 'origin/main', second); // stands in for the remote-tracking ref CI passes
+    const queries = gitQueries(r.dir);
+    expect(pushRange({ before: first, after: second, defaultRef: 'origin/main' }, queries)).toEqual({ range: `${first}..${second}`, reason: null });
+
+    // Rewrite history: reset to the first commit and commit something else, as a force push would.
+    r.git('reset', '-q', '--hard', first);
+    const rewritten = r.commit('rewritten', ['README.md']);
+    const forced = pushRange({ before: second, after: rewritten, defaultRef: 'origin/main' }, queries);
+    expect(forced.range, 'the discarded commit is not an ancestor, so the range is the merge-base').toBe(`${first}..${rewritten}`);
+    expect(forced.reason).toContain('not an ancestor');
+    // And the fallback range is one a run can actually read.
+    expect(mainIn(r.dir, forced.range!).status).toBe(0);
+  });
+});
 
 describe('touchesRendering', () => {
   it('flags the frame-path modules and the scenes the budget measures, and nothing else', () => {

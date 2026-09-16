@@ -31,10 +31,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # the base..head range has to resolve; the default shallow merge-ref checkout has neither end
-      # A push carries github.event.before, except when the push created the ref, where it is forty zeros (a branch's
-      # first push, and every tag push). The fallback is the merge-base with main; when even that is missing or is the
-      # pushed commit itself — the seeding push of main, which has no earlier base in the remote — the range is
-      # skipped with the reason printed, rather than silently passing or checking the whole history of the repository.
+      # A push's range is `pushRange` in scripts/commit-rules.mjs, unit-tested there rather than written in shell:
+      # before..after when the push fast-forwarded, else the merge-base with main (the push created the ref, or
+      # force-pushed over commits that are no longer an ancestor — and may no longer be in the clone). Only a missing
+      # merge-base, or one that is the pushed commit itself (the seeding push of main), leaves no range to judge; the
+      # reason is printed either way, and says which of the three cases it was.
       - name: Check the commits this push or pull request adds
         env:
           EVENT: ${{ github.event_name }}
@@ -47,18 +48,7 @@ jobs:
           if [ "$EVENT" = "pull_request" ]; then
             exec node scripts/commit-rules.mjs "$PR_BASE..$PR_HEAD"
           fi
-          HEAD_SHA="$PUSH_AFTER"
-          BASE_SHA="$PUSH_BEFORE"
-          if [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
-            BASE_SHA="$(git merge-base origin/main "$HEAD_SHA" 2>/dev/null || true)"
-            if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "$HEAD_SHA" ]; then
-              echo "commit-rules: skipped. This push created the ref (before=$PUSH_BEFORE) and there is no earlier"
-              echo "base to compare $HEAD_SHA against, so there is no range of added commits to judge."
-              exit 0
-            fi
-            echo "commit-rules: push created the ref; falling back to the merge-base with main ($BASE_SHA)."
-          fi
-          node scripts/commit-rules.mjs "$BASE_SHA..$HEAD_SHA"
+          exec node scripts/commit-rules.mjs --push "$PUSH_BEFORE" "$PUSH_AFTER"
 
   unit:
     name: Typecheck, units, build

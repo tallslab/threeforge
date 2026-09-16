@@ -2,6 +2,7 @@
  * CONTRIBUTING.md rule 4 as a check a machine can run: a commit that touches rendering carries the budget it measured.
  *
  * Usage: node scripts/commit-rules.mjs <base>..<head>     (CI passes the pull request's base and head SHAs)
+ *        node scripts/commit-rules.mjs --push <before> <after>   (CI passes a push event's two SHAs; see `pushRange`)
  *
  * A commit whose files all lie outside `RENDERING_PATHS` is never asked for anything. One that touches a rendering
  * path must carry, on a line of the body (not the subject), either `Budget: <n>` — the `pnpm budget` reading — or
@@ -165,10 +166,72 @@ export function readCommits(range, cwd = process.cwd()) {
   });
 }
 
-export function main(argv, cwd = process.cwd(), exempt = EXEMPT_COMMITS) {
-  const range = argv[0];
+/** What a push event sends as `before` when it created the ref (a branch's first push, and every tag push). */
+export const ZERO_SHA = '0'.repeat(40);
+
+/**
+ * The range of commits a push adds, and the reason for it, or `{ range: null }` when there is no range to judge.
+ *
+ * `github.event.before..after` is only the right range when the push fast-forwarded. Two other cases reach CI, and
+ * both used to be reported as "this push created the ref", which for a force push is untrue and left the rule looking
+ * inapplicable rather than unenforced:
+ * - the push created the ref (`before` is forty zeros): a branch's first push, and every tag push;
+ * - `before` is not an ancestor of `after`: a force push or a rewritten history. After the old commits are dropped it
+ *   may not be in the clone at all, which `has` reports separately so the message can say which it was.
+ *
+ * Both fall back to `merge-base(defaultRef, after)..after` — the commits this push adds on top of the shared history —
+ * and only a missing merge-base, or one that is the pushed commit itself (seeding the default branch), has no range.
+ *
+ * `git` is the three queries this needs (`gitQueries`), injected so both paths are unit-testable without a remote.
+ */
+export function pushRange({ before, after, defaultRef = 'origin/main' }, git) {
+  const created = before === ZERO_SHA;
+  const missing = !created && !git.has(before);
+  const forced = !created && !missing && !git.isAncestor(before, after);
+  if (!created && !missing && !forced) return { range: `${before}..${after}`, reason: null };
+  const why = created
+    ? `this push created the ref (before=${before})`
+    : missing
+      ? `${before} is not in this clone: a force push whose replaced commits were dropped, so it is not an ancestor of ${after}`
+      : `${before} is not an ancestor of ${after}: a force push or a rewritten history`;
+  const base = git.mergeBase(defaultRef, after);
+  if (!base || base === after) {
+    return { range: null, reason: `commit-rules: skipped. ${why}, and ${defaultRef} gives no earlier base to compare ${after} against, so there is no range of added commits to judge.` };
+  }
+  return { range: `${base}..${after}`, reason: `commit-rules: ${why}. Judging ${base}..${after} instead: the commits this push adds on top of the merge-base with ${defaultRef}.` };
+}
+
+/** `pushRange`'s three queries against a real repository. Each answers rather than throwing, as `git` exit codes do. */
+export function gitQueries(cwd = process.cwd()) {
+  const ok = (...args) => {
+    try {
+      return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    } catch {
+      return null;
+    }
+  };
+  return {
+    has: (sha) => ok('cat-file', '-e', `${sha}^{commit}`) !== null,
+    isAncestor: (a, b) => ok('merge-base', '--is-ancestor', a, b) !== null,
+    mergeBase: (a, b) => ok('merge-base', a, b) ?? '',
+  };
+}
+
+export function main(argv, cwd = process.cwd(), exempt = EXEMPT_COMMITS, git = null) {
+  let range = argv[0];
+  if (range === '--push') {
+    const [, before, after] = argv;
+    if (!before || !after) {
+      console.error('usage: node scripts/commit-rules.mjs --push <before> <after>');
+      return 2;
+    }
+    const resolved = pushRange({ before, after }, git ?? gitQueries(cwd));
+    if (resolved.reason) console.log(resolved.reason);
+    if (resolved.range === null) return 0;
+    range = resolved.range;
+  }
   if (!range) {
-    console.error('usage: node scripts/commit-rules.mjs <base>..<head>');
+    console.error('usage: node scripts/commit-rules.mjs <base>..<head>   |   --push <before> <after>');
     return 2;
   }
   const commits = readCommits(range, cwd);
