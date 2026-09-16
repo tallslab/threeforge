@@ -281,6 +281,47 @@ test('optimize leaves the Fox pixel-identical at --parity 0: zero changed pixels
   }
 });
 
+/**
+ * Ruling R112: `--resample` under `safe` is the one lossless path with no end-to-end cover.
+ *
+ * R105 moved `resample` out of `safe`, and `--resample` adds it back — where it runs at `tolerance: 0` (R104),
+ * because glTF-Transform's default is a lossy `1e-4` that drops keyframes merely *near* the value interpolated from
+ * their neighbours. That tolerance is the entire difference between lossless and not, and until now it was pinned
+ * only in `test/unit/pipeline.test.ts`, which tests `planSteps` — a pure function that decides the number. Nothing
+ * checked that the shipped CLI carries it through to `fns.resample()`, and `fns.resample()` called with no options
+ * silently takes 1e-4 back. That regression would shift the Fox's posed silhouette by 1-5 pixels of 921,600 — under
+ * `diffPct`'s three-decimal rounding on WebGL2, so even a percentage-based parity check would have missed it. The
+ * raw changed-pixel count on both backends is the guard.
+ */
+test('optimize --preset safe --resample keeps the Fox pixel-identical: the flag runs resample losslessly', { tag: '@corpus' }, async ({ forge }) => {
+  test.setTimeout(600_000);
+  const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
+  try {
+    const out = join(dir, 'fox.glb');
+    const r = run(['optimize', asset('Fox'), '--out', out, '--resample', '--parity', '0', '--backend', forge.backend, '--frames', '5', '--json']);
+    expect(r.status, r.stderr).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.input).toMatchObject({ preset: 'safe', parity: 0, steps: { resample: true } });
+    // Added back in pipeline order, and it really ran: a step reported `applied: false` would make the parity below
+    // vacuous, since a step that does nothing changes no pixel.
+    expect(doc.steps.map((s: { name: string }) => s.name)).toEqual(['dedup', 'palette', 'resample', 'prune']);
+    expect(doc.steps.find((s: { name: string }) => s.name === 'resample')).toMatchObject({ applied: true, note: null });
+    const views = doc.verify.parity.views as Array<{ view: string; diffPct: number; changedPixels: number }>;
+    expect(views.map((v) => v.view)).toEqual(['default', 'orbit-0', 'orbit-1']);
+    expect(doc.verify.parity.threshold).toBe(0);
+    test.info().annotations.push({ type: 'parity', description: `[${forge.backend}] safe+resample Fox: ${views.map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct} %)`).join(', ')}` });
+    for (const v of views) {
+      expect(v.changedPixels, `${v.view}: --preset safe --resample changed pixels`).toBe(0);
+      expect(v.diffPct, `${v.view}: --preset safe --resample changed pixels`).toBe(0);
+    }
+    expect(doc.verify.parity.pass).toBe(true);
+    expect(doc.verdict.pass).toBe(true);
+    expect(r.stderr).toContain('PASS');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('optimize collapses the Buggy to one material and still compiles to one submission', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
@@ -353,6 +394,48 @@ test('optimize --preset balanced quantizes and re-encodes the Fox, changing pixe
     expect(Math.max(...views.map((v) => v.changedPixels)), 'balanced changed no pixel at all: did the lossy steps run?').toBeGreaterThan(0);
     expect(doc.verify.parity.pass).toBe(true);
     expect(doc.verdict.pass).toBe(true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * Ruling R113: `--parity 0` has to fail the *process*, not only the decision.
+ *
+ * `test/unit/cli-core.test.ts` drives the whole chain — `parityOf` → `verdictOf` → `exitCodeOf` — on a one-pixel
+ * difference, but in process. That proves the decision and nothing about the wiring. `src/cli/index.ts` is what turns
+ * a verdict into `process.exitCode`, and a change there (an `optimize` case that returns 0, a lost `exitCodeOf` call,
+ * a watchdog that exits before the code is read) leaves every unit test green while the shipped binary reports
+ * success on a run that moved pixels. Agents branch on the exit code, so that is the failure that matters, and until
+ * now the only evidence for it was a one-off manual run.
+ *
+ * `balanced` is the fixture because it is measurably lossy — weld, quantize and the WebP re-encode move 21-141 pixels
+ * per view across the two backends — so `--parity 0` must reject it, on both. The `safe` tests above are the
+ * complement: the same binary, the same flag, exit 0.
+ */
+test('optimize exits 1 when --parity 0 is not met, from the built binary and not only the decision path', { tag: '@corpus' }, async ({ forge }) => {
+  test.setTimeout(600_000);
+  const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
+  try {
+    const r = run(['optimize', asset('Fox'), '--out', join(dir, 'fox.glb'), '--preset', 'balanced', '--parity', '0', '--backend', forge.backend, '--frames', '5', '--json']);
+    // The assertion the ruling is about: the status of the process, read first so a crash does not surface as
+    // "Unexpected end of JSON input".
+    expect(r.status, `exit status of a run that moved pixels at --parity 0\n${r.stderr}`).toBe(1);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.input).toMatchObject({ preset: 'balanced', parity: 0 });
+    const views = doc.verify.parity.views as Array<{ view: string; diffPct: number; changedPixels: number }>;
+    const worst = Math.max(...views.map((v) => v.changedPixels));
+    test.info().annotations.push({ type: 'parity', description: `[${forge.backend}] balanced Fox at --parity 0: exit ${r.status}, ${views.map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct} %)`).join(', ')}` });
+    // And it failed for the right reason: pixels really moved. Without this the test would also pass if `balanced`
+    // had quietly degraded to `safe` and the non-zero exit came from something else entirely.
+    expect(worst, 'balanced changed no pixel at all: did the lossy steps run?').toBeGreaterThan(0);
+    expect(doc.verify.parity).toMatchObject({ threshold: 0, pass: false });
+    expect(doc.verdict.pass).toBe(false);
+    expect(doc.verdict.reasons.join(' | '), 'the verdict names parity as the cause').toMatch(/pixel parity .* > 0%/);
+    // The changed-pixel count reaches the terminal too, not only the percentage, which at this size rounds to 0.000
+    // on WebGL2 and would read as "no difference" to anyone reading the summary.
+    expect(r.stderr).toContain('FAIL');
+    expect(r.stderr).toMatch(new RegExp(`${worst} changed pixels in the worst view`));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
