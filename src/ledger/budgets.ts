@@ -59,8 +59,10 @@ const LOW_END = /\badreno[^0-9]*(?:[1-5]\d\d|6[0-3]\d)\b|\bmali-g[1-5]\d\b|\bmal
  * Apple A-series. VideoCore is deliberately not repeated here: every VideoCore string LOW_END recognises
  * already matches unconditionally there, so a VideoCore branch here could never fire.
  *
- * This is the weakest signal `detectTier` uses — these families also ship in laptops (Snapdragon X) — so
- * it decides last, after `DESKTOP_GPU`, `DESKTOP_DRIVER` and an explicit `mobile === false`.
+ * This is a weak signal — these families also ship in laptops (Snapdragon X) — so it decides after
+ * `DESKTOP_GPU` and `DESKTOP_DRIVER`. It still outranks an explicit `mobile === false`, because Chrome reports
+ * an Android tablet as not mobile: with no desktop graphics API named beside the GPU, the family name is the
+ * better guess.
  */
 const MOBILE_GPU = /\badreno\b|\bmali\b|\bpowervr\b|\bxclipse\b|\bqualcomm\b|\bapple a\d/i;
 
@@ -72,7 +74,10 @@ const DESKTOP_GPU = /\bnvidia\b|\bgeforce\b|\bradeon\b|\bamd\b|\bintel\b|\biris\
  * naming Windows. Decisive against `MOBILE_GPU`, because Windows-on-ARM laptops (Snapdragon X and 8cx)
  * carry Adreno GPUs and report both brands through ANGLE, e.g.
  * `ANGLE (Qualcomm, Adreno (TM) X1-85 (0x00043050), D3D11)`. Android's ANGLE strings name OpenGL ES or
- * Vulkan instead, so they never match here.
+ * Vulkan instead, so they never match here — which is the whole of what separates that laptop from an Android
+ * tablet, since Chrome calls both of them not mobile. A Windows-on-ARM browser that reported a bare
+ * `Qualcomm Adreno X1-85` with no API named would read `phone-mid`; every Windows browser goes through ANGLE,
+ * so the string carries `D3D11`.
  */
 const DESKTOP_DRIVER = /\bd3d(?:9|11|12)?\b|\bdirect3d\d*\b|\bwindows\b/i;
 
@@ -90,11 +95,14 @@ const DESKTOP_DRIVER = /\bd3d(?:9|11|12)?\b|\bdirect3d\d*\b|\bwindows\b/i;
  *   3. `DESKTOP_GPU` matches -> `desktop`, whatever `touch`/`mobile` say.
  *   4. `DESKTOP_DRIVER` matches (an ANGLE Direct3D or Windows renderer string) -> `desktop`. A
  *      Windows-on-ARM laptop reports a mobile GPU family (Adreno, Qualcomm) and is not mobile.
- *   5. `mobile`, when defined (set by `tierInputFromNavigator` from `userAgentData.mobile` or a user agent
+ *   5. `MOBILE_GPU` matches -> `phone-mid`, or `phone-low` when `deviceMemory <= 2` (Ruling R57). Before the
+ *      `mobile` step, because Chrome reports an Android **tablet** as `userAgentData.mobile: false`: taking
+ *      that as "desktop" gave a Mali tablet desktop budgets. What tells the tablet from the Windows-on-ARM
+ *      laptop is the graphics API in the renderer string, which steps 3-4 have already had their say on, so a
+ *      mobile GPU family reaching this step has no desktop API named beside it.
+ *   6. `mobile`, when defined (set by `tierInputFromNavigator` from `userAgentData.mobile` or a user agent
  *      sniff): `true` -> `phone-mid` (or `phone-low` under `deviceMemory <= 2`, Ruling R57); `false` ->
- *      `desktop`. The browser's own "this is not a mobile device" outranks step 6's GPU family name.
- *   6. `MOBILE_GPU` matches -> `phone-mid`, or `phone-low` when `deviceMemory <= 2` (Ruling R57). Reached
- *      only when no `mobile` signal was available at all.
+ *      `desktop`. For a GPU string none of steps 1-5 recognised, the browser's own answer is the best signal.
  *   7. Otherwise the old touch-only rule: no `touch` -> `desktop`; `touch` and `deviceMemory <= 2` ->
  *      `phone-low`; `touch` otherwise -> `phone-mid`.
  */
@@ -105,8 +113,8 @@ export function detectTier({ gpu = '', deviceMemory, touch = false, mobile }: Ti
   if (/apple/i.test(gpu) && touch) return phone();
   if (DESKTOP_GPU.test(gpu)) return 'desktop';
   if (DESKTOP_DRIVER.test(gpu)) return 'desktop';
-  if (mobile !== undefined) return mobile ? phone() : 'desktop';
   if (MOBILE_GPU.test(gpu)) return phone();
+  if (mobile !== undefined) return mobile ? phone() : 'desktop';
   if (!touch) return 'desktop';
   return phone();
 }

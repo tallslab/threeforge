@@ -420,20 +420,24 @@ it), in order:
 4. The renderer string names an ANGLE Direct3D backend or Windows (`D3D11`, `Direct3D11`, `Windows`) → `desktop`.
    Windows-on-ARM laptops (Snapdragon X, 8cx) carry Adreno GPUs and report both brands through ANGLE, e.g.
    `ANGLE (Qualcomm, Adreno (TM) X1-85 (0x00043050), D3D11)`; Android's ANGLE strings name OpenGL ES or Vulkan.
-5. `mobile` is defined: `true` → `phone-mid` (or `phone-low` under `deviceMemory <= 2`); `false` → `desktop`. The
-   browser's own "this is not a mobile device" outranks step 6's GPU family name.
-6. A mobile/tablet GPU matches (higher-end Adreno/Mali, PowerVR, Xclipse, Qualcomm, Apple A-series) → `phone-mid`,
-   or `phone-low` when `deviceMemory <= 2`. Reached only when no `mobile` signal was available at all.
+5. A mobile/tablet GPU matches (higher-end Adreno/Mali, PowerVR, Xclipse, Qualcomm, Apple A-series) → `phone-mid`,
+   or `phone-low` when `deviceMemory <= 2`. Before the `mobile` step, because Chrome reports an Android **tablet** as
+   `userAgentData.mobile: false`: reading that as "desktop" gives a Mali tablet desktop budgets and silences its
+   budget hints. What separates that tablet from the Windows-on-ARM laptop is the graphics API in the renderer string,
+   and steps 3–4 have already had their say on it, so a mobile GPU family reaching this step has no desktop API named
+   beside it.
+6. `mobile` is defined: `true` → `phone-mid` (or `phone-low` under `deviceMemory <= 2`); `false` → `desktop`. For a
+   GPU string none of steps 1–5 recognised, the browser's own answer is the best signal there is.
 7. Otherwise the old touch-only rule: no `touch` → `desktop`; `touch` and `deviceMemory <= 2` → `phone-low`;
    `touch` otherwise → `phone-mid`.
 
 `tierInputFromNavigator(gpu, nav)` builds the `TierInput` that feeds `detectTier` from a GPU name and `navigator`
 (passed explicitly so it is unit-testable with fake navigators) — `test/app/main.ts`, `cli-app/main.ts` and
 `bench-app/runner.ts` all call it the same way. `touch` is the real touch capability
-(`navigator.maxTouchPoints > 0`) and nothing else. `mobile` (step 5) is resolved separately, in priority order:
+(`navigator.maxTouchPoints > 0`) and nothing else. `mobile` (step 6) is resolved separately, in priority order:
 `navigator.userAgentData.mobile` (Chromium, most reliable — correctly `false` for a touch-capable desktop even
 though `touch` is `true`), then a `"Mobi"` sniff of `navigator.userAgent` (non-Chromium browsers), else left
-`undefined` when neither is available, so `detectTier` falls back to the GPU name and `touch` (steps 6-7). Every field it reads
+`undefined` when neither is available, so `detectTier` falls back to `touch` alone (step 7). Every field it reads
 (`userAgentData`, `deviceMemory`, `maxTouchPoints`) is optional and guarded.
 
 Budgets per tier (`BUDGETS`, `budgetsFor(tier, overrides)`):

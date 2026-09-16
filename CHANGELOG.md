@@ -85,7 +85,7 @@ entries of [All changes](#all-changes), which also lists every fix that needs no
 | reported | The `batch-local-space` hint is `severity: 'warn'` (it was `info`), it also names a compiled draw whose material is a class that is not one of three's own or carries an own function, and its message lists "custom material code" among the causes. | A tool keyed on `severity === 'info'` stops seeing it, and one keyed on `warn` starts; scenes batching subclassed or hooked materials gain the hint. `verdictOf` is unaffected — it fails on `error` alone, so no run's pass/fail changes. | Re-pin the severity and the message. |
 | reported | Names in `byReason[reason].top` and in a hint's `objects` are capped at 120 characters, and a hint's `message` at 300. | Longer names and messages are truncated. | Match on names shorter than the cap. |
 | reported | `detectTier` is GPU-first: a recognised desktop or mobile GPU decides the tier before touch; non-SGX PowerVR is `phone-mid`; for an unrecognised GPU, `userAgentData.mobile` or a `"Mobi"` user agent decides before touch points; every GPU regex is word-bounded. New `TierInput.mobile` and `tierInputFromNavigator(gpu, nav)`. | A touch-capable desktop GPU gets `desktop` budgets and hints instead of a phone tier's; a non-SGX PowerVR gets `phone-mid`'s. | Build the input with `tierInputFromNavigator`, and re-pin tier expectations. |
-| reported | In that order, a mobile GPU family name now decides **last** of the GPU tests: an `"Apple"` name with `touch`, a desktop GPU, an ANGLE Direct3D/Windows renderer string and an explicit `mobile === false` all outrank it. | A Windows-on-ARM laptop (Snapdragon X: Adreno and Qualcomm through ANGLE) gets `desktop` budgets instead of `phone-mid`'s, so `over-budget-submissions` (severity `error`) no longer fails `threeforge inspect` on it; an M-series iPad with a touchscreen gets `phone-mid` instead of `desktop`. The low-end regex still decides first. | Re-pin tier expectations for those two device classes. |
+| reported | In that order, a mobile GPU family name now decides last of the **GPU** tests — an `"Apple"` name with `touch`, a desktop GPU and an ANGLE Direct3D/Windows renderer string outrank it — but still ahead of an explicit `mobile === false`. | A Windows-on-ARM laptop (Snapdragon X: Adreno and Qualcomm through ANGLE, so the string names `D3D11`) gets `desktop` budgets instead of `phone-mid`'s, so `over-budget-submissions` (severity `error`) no longer fails `threeforge inspect` on it; an M-series iPad with a touchscreen gets `phone-mid` instead of `desktop`. An Android tablet, which Chrome also reports as `mobile: false`, keeps `phone-mid`. The low-end regex still decides first. | Re-pin tier expectations for those two device classes. |
 | reported | The ledger's own cost at 10k submissions fell from 1.84 to 0.30 µs per submission and from 11.4 MB to 17 KB allocated per frame (`node scripts/ledger-overhead.mjs`, no arguments, flat scene, two runs on one machine: 17,140 and 17,263 bytes), a per-frame constant that no longer grows with the submission count; no snapshot number changes. | Frames with a ledger attached spend less time and allocate less. | Nothing. |
 
 #### Lighting and scheduler
@@ -325,14 +325,15 @@ Documented in `docs/threeforge.md` (section 14 lists them), not fixed in 0.9.0:
   to see, which is the same class the bake's `bakeProvesReads` gate and `spriteRule`'s `sprite-custom-material` already
   refuse. Scenes batching such materials gain the hint.
 - `detectTier`'s order puts the mobile-GPU family name last of the GPU tests, because those families also ship in
-  laptops: an `"Apple"` name with `touch` (step 2), a desktop GPU (step 3), an ANGLE Direct3D or Windows renderer
-  string (step 4, new `DESKTOP_DRIVER`) and an explicit `mobile === false` (step 5) each now outrank it.
-  Reclassifications: a Windows-on-ARM laptop (Snapdragon X or 8cx — Adreno and Qualcomm through ANGLE, e.g.
-  `ANGLE (Qualcomm, Adreno (TM) X1-85 (0x00043050), D3D11)`) moves from `phone-mid` to `desktop`, so the
-  `over-budget-submissions` hint (severity `error`) no longer fails a `threeforge inspect` run on a machine inside
-  its real budget; an M-series iPad with a touchscreen moves from `desktop` to `phone-mid` (`phone-low` under 2 GB).
-  An Android phone (a mobile GPU with `mobile: true`, or with no `mobile` signal at all) and the low-end regex are
-  unchanged.
+  laptops: an `"Apple"` name with `touch` (step 2), a desktop GPU (step 3) and an ANGLE Direct3D or Windows renderer
+  string (step 4, new `DESKTOP_DRIVER`) each now outrank it. It still decides ahead of an explicit `mobile === false`
+  (step 6), because Chrome reports an Android tablet as not mobile; the graphics API in the renderer string is what
+  separates that tablet from the laptop. Reclassifications: a Windows-on-ARM laptop (Snapdragon X or 8cx — Adreno and
+  Qualcomm through ANGLE, e.g. `ANGLE (Qualcomm, Adreno (TM) X1-85 (0x00043050), D3D11)`) moves from `phone-mid` to
+  `desktop`, so the `over-budget-submissions` hint (severity `error`) no longer fails a `threeforge inspect` run on a
+  machine inside its real budget; an M-series iPad with a touchscreen moves from `desktop` to `phone-mid` (`phone-low`
+  under 2 GB). An Android phone or tablet (a mobile GPU whose string names OpenGL ES or Vulkan, whatever `mobile`
+  says) and the low-end regex are unchanged.
   New `tierInputFromNavigator(gpu, nav)` builds the shared `TierInput` from `navigator` (`touch` is the real
   touch capability; a new `TierInput.mobile` field carries the `userAgentData`/UA-string signal) and is exported
   from the package; `test/app/main.ts`, `cli-app/main.ts` and `bench-app/runner.ts` all use it now instead of

@@ -20,9 +20,11 @@ describe('tiers', () => {
 
   // GPU-first decision order (audit Task 36, fix round 1 / Ruling R56; reordered for H3): the low-end
   // regex, then "Apple" with touch, then the desktop-GPU list, then a Direct3D/Windows driver string, then
-  // step 5 (the `mobile` field, set by tierInputFromNavigator from userAgentData.mobile or a UA sniff)
-  // when it is defined, then the mobile-GPU list, and only then step 7, the old touch-only rule. The
-  // mobile-GPU list is last of the GPU tests because those families also ship in Windows-on-ARM laptops.
+  // the mobile-GPU list, then step 6 (the `mobile` field, set by tierInputFromNavigator from
+  // userAgentData.mobile or a UA sniff) when it is defined, and only then step 7, the old touch-only rule.
+  // The mobile-GPU list is last of the GPU tests because those families also ship in Windows-on-ARM laptops,
+  // but it still outranks `mobile === false`, because Chrome reports an Android tablet as not mobile: the
+  // graphics API in the renderer string (steps 3-4) is what tells that laptop from that tablet.
   // Steps 2, 5, 6 and 7 apply the R57 low-memory downgrade: deviceMemory <= 2 returns phone-low.
   const table: Array<[string, TierInput, Tier]> = [
     // 1. low-end regex (sgx added)
@@ -31,7 +33,7 @@ describe('tiers', () => {
     ['Adreno 610 + touch -> phone-low (unchanged)', { gpu: 'Adreno (TM) 610', touch: true }, 'phone-low'],
     ['Mali-G52 + touch -> phone-low (unchanged)', { gpu: 'Mali-G52', touch: true }, 'phone-low'],
     ['Mali-T880 + touch -> phone-low (old Midgard architecture, whole mali-t family)', { gpu: 'Mali-T880', touch: true }, 'phone-low'],
-    // 6. mobile GPU list: decides when no `mobile` signal contradicts it, downgraded to phone-low under 2GB (R57)
+    // 5. mobile GPU list: decides unless a desktop GPU or a desktop graphics API was named, downgraded to phone-low under 2GB (R57)
     ['Adreno 650 (above low-end range), no touch reported -> phone-mid', { gpu: 'Adreno (TM) 650' }, 'phone-mid'],
     ['Adreno 650 + <=2GB -> phone-low (R57 low-memory downgrade)', { gpu: 'Adreno (TM) 650', deviceMemory: 2 }, 'phone-low'],
     ['Mali-G78 (above low-end range) + touch -> phone-mid', { gpu: 'Mali-G78', touch: true }, 'phone-mid'],
@@ -43,7 +45,7 @@ describe('tiers', () => {
     ['apple a15 lowercase + touch -> phone-mid (case-insensitive)', { gpu: 'apple a15 gpu', touch: true }, 'phone-mid'],
     // 3. desktop GPU list: decisive whatever touch/mobile say (but an Apple name with touch decides first)
     ['RTX 3060 + touch -> desktop (the audited bug: a touch laptop is not a phone)', { gpu: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)', touch: true }, 'desktop'],
-    ['RTX 3060 + touch + mobile:true -> desktop (step 3 wins over step 5)', { gpu: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)', touch: true, mobile: true }, 'desktop'],
+    ['RTX 3060 + touch + mobile:true -> desktop (step 3 wins over step 6)', { gpu: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)', touch: true, mobile: true }, 'desktop'],
     ['Radeon + touch -> desktop', { gpu: 'AMD Radeon RX 6800', touch: true }, 'desktop'],
     ['Intel Iris Xe + touch -> desktop', { gpu: 'Intel(R) Iris(R) Xe Graphics', touch: true }, 'desktop'],
     ['Intel Arc + touch -> desktop', { gpu: 'Intel(R) Arc(TM) A770', touch: true }, 'desktop'],
@@ -58,10 +60,10 @@ describe('tiers', () => {
     ['bare "Apple" + touch + <=2GB -> phone-low (R57 low-memory downgrade)', { gpu: 'Apple', touch: true, deviceMemory: 2 }, 'phone-low'],
     ['bare "Apple", no touch -> desktop (a Mac)', { gpu: 'Apple' }, 'desktop'],
     ['"Apple GPU", no touch -> desktop (an Intel or M-series Mac on Safari)', { gpu: 'Apple GPU' }, 'desktop'],
-    // 5. the `mobile` field (set by tierInputFromNavigator) decides before step 6, for an unrecognised GPU
-    ['unknown GPU, mobile:true -> phone-mid (step 5 decides)', { gpu: 'Unknown Renderer', mobile: true }, 'phone-mid'],
+    // 6. the `mobile` field (set by tierInputFromNavigator) decides before step 7, for an unrecognised GPU
+    ['unknown GPU, mobile:true -> phone-mid (step 6 decides)', { gpu: 'Unknown Renderer', mobile: true }, 'phone-mid'],
     ['unknown GPU, mobile:true, <=2GB -> phone-low (R57 low-memory downgrade)', { gpu: 'Unknown Renderer', mobile: true, deviceMemory: 2 }, 'phone-low'],
-    ['unknown GPU, mobile:false + touch:true -> desktop (step 5 wins over step 6)', { gpu: 'Unknown Renderer', mobile: false, touch: true }, 'desktop'],
+    ['unknown GPU, mobile:false + touch:true -> desktop (step 6 wins over step 7)', { gpu: 'Unknown Renderer', mobile: false, touch: true }, 'desktop'],
     // 7. unrecognised/empty GPU, mobile undefined: the old touch-only rule
     ['unknown GPU + touch, plenty of memory, mobile undefined -> phone-mid', { gpu: 'Unknown Renderer', touch: true, deviceMemory: 8 }, 'phone-mid'],
     ['unknown GPU + touch, <=2GB, mobile undefined -> phone-low', { gpu: 'Unknown Renderer', touch: true, deviceMemory: 2 }, 'phone-low'],
@@ -70,7 +72,7 @@ describe('tiers', () => {
     // H3 (independent review): a mobile GPU-family *name* is weaker evidence than the browser's own
     // "this is not a mobile device", than a recognised desktop GPU, and than a Direct3D/Windows driver
     // string. Windows-on-ARM laptops (Snapdragon X) carry Adreno GPUs and report both brands through ANGLE.
-    ['Snapdragon X laptop (Adreno + Qualcomm) + touch + mobile:false -> desktop (mobile:false beats the mobile GPU name)', { gpu: 'ANGLE (Qualcomm, Adreno (TM) X1-85 (0x00043050), D3D11)', touch: true, mobile: false, deviceMemory: 16 }, 'desktop'],
+    ['Snapdragon X laptop (Adreno + Qualcomm) + touch + mobile:false -> desktop (the D3D11 in the string beats the mobile GPU name)', { gpu: 'ANGLE (Qualcomm, Adreno (TM) X1-85 (0x00043050), D3D11)', touch: true, mobile: false, deviceMemory: 16 }, 'desktop'],
     ['Snapdragon X laptop, no mobile signal at all -> desktop (a D3D11 driver string is never mobile)', { gpu: 'ANGLE (Qualcomm, Adreno (TM) X1-85 (0x00043050), D3D11)', touch: true }, 'desktop'],
     ['Snapdragon 8cx laptop (Adreno 690, Direct3D11 spelled out) -> desktop', { gpu: 'ANGLE (Qualcomm, Adreno (TM) 690 Direct3D11 vs_5_0 ps_5_0, D3D11)', touch: true }, 'desktop'],
     ['Android phone (Adreno 740, OpenGL ES) + touch + mobile:true -> phone-mid (a real phone is unaffected)', { gpu: 'ANGLE (Qualcomm, Adreno (TM) 740, OpenGL ES 3.2)', touch: true, mobile: true, deviceMemory: 8 }, 'phone-mid'],
@@ -79,6 +81,13 @@ describe('tiers', () => {
     ['M2 iPad Pro + touch -> phone-mid (an M-series with a touchscreen is an iPad, not a Mac)', { gpu: 'Apple M2', touch: true }, 'phone-mid'],
     ['M2 iPad Pro + touch + mobile:false (iPadOS Safari sends a desktop UA) -> phone-mid', { gpu: 'Apple M2', touch: true, mobile: false }, 'phone-mid'],
     ['M2 iPad Pro + touch + <=2GB -> phone-low (R57 low-memory downgrade still applies)', { gpu: 'Apple M2', touch: true, deviceMemory: 2 }, 'phone-low'],
+    // The graphics API in the renderer string is what separates a Windows-on-ARM laptop from an Android tablet: both
+    // carry a mobile GPU family and both report `userAgentData.mobile: false` (Chrome calls a tablet not-mobile), but
+    // only the laptop's string names Direct3D. Without a desktop API named, the GPU family name decides.
+    ['Chrome Android tablet (Mali, OpenGL ES) + touch + mobile:false -> phone-mid (a tablet is not a desktop)', { gpu: 'ANGLE (ARM, Mali-G710, OpenGL ES 3.2)', touch: true, mobile: false, deviceMemory: 8 }, 'phone-mid'],
+    ['Chrome Android tablet (Adreno, Vulkan) + touch + mobile:false -> phone-mid', { gpu: 'ANGLE (Qualcomm, Adreno (TM) 740, Vulkan 1.3.0)', touch: true, mobile: false, deviceMemory: 8 }, 'phone-mid'],
+    ['bare Mali-G710 + mobile:false, no API named -> phone-mid (the GPU family decides when nothing contradicts it)', { gpu: 'Mali-G710', touch: true, mobile: false }, 'phone-mid'],
+    ['Snapdragon X (Adreno, Direct3D11) + mobile:false, no touch -> desktop (a desktop API is named)', { gpu: 'ANGLE (Qualcomm, Adreno (TM) X1-85 (0x00043050), D3D11)', mobile: false, deviceMemory: 16 }, 'desktop'],
   ];
 
   it.each(table)('%s', (_name, input, expected) => {
@@ -107,7 +116,7 @@ describe('tiers', () => {
       expect(detectTier(firefoxInput)).toBe('desktop'); // and the GPU-first order would have won anyway
     });
 
-    it('sets `mobile` from userAgentData.mobile over maxTouchPoints when the GPU is unrecognised (step 5)', () => {
+    it('sets `mobile` from userAgentData.mobile over maxTouchPoints when the GPU is unrecognised (step 6)', () => {
       const desktopWithTouch = tierInputFromNavigator('Unknown Renderer', { maxTouchPoints: 10, userAgentData: { mobile: false } });
       expect(desktopWithTouch.touch).toBe(true); // real touch capability, untouched by userAgentData
       expect(desktopWithTouch.mobile).toBe(false);
@@ -119,7 +128,7 @@ describe('tiers', () => {
       expect(detectTier(phoneNoTouchPoints)).toBe('phone-mid');
     });
 
-    it('falls back to a "Mobi" sniff of the user agent string for `mobile` when userAgentData is unavailable (non-Chromium, step 5)', () => {
+    it('falls back to a "Mobi" sniff of the user agent string for `mobile` when userAgentData is unavailable (non-Chromium, step 6)', () => {
       const mobileSafari = tierInputFromNavigator('Apple GPU', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobi/15E148' });
       expect(mobileSafari.mobile).toBe(true);
 
@@ -127,11 +136,11 @@ describe('tiers', () => {
       expect(desktopSafari.mobile).toBe(false);
     });
 
-    it('leaves `mobile` undefined, and `touch` the old maxTouchPoints rule, when neither userAgentData nor the user agent string are available (step 6)', () => {
+    it('leaves `mobile` undefined, and `touch` the old maxTouchPoints rule, when neither userAgentData nor the user agent string are available (step 7)', () => {
       const touchOnly = tierInputFromNavigator('Unknown Renderer', { maxTouchPoints: 1 });
       expect(touchOnly.mobile).toBeUndefined();
       expect(touchOnly.touch).toBe(true);
-      expect(detectTier(touchOnly)).toBe('phone-mid'); // step 6, mobile undefined
+      expect(detectTier(touchOnly)).toBe('phone-mid'); // step 7, mobile undefined
 
       const noTouch = tierInputFromNavigator('Unknown Renderer', { maxTouchPoints: 0 });
       expect(noTouch.mobile).toBeUndefined();
