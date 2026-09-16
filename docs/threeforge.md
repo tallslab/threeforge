@@ -827,7 +827,8 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
   only when the sun moved `everyDegrees` (default 0.5) since the last one, through `shadow.needsUpdate` with
   `autoUpdate` off. The dome's vertex colours are rewritten only when the zenith or horizon colour differs from the
   one they were last written from, so stepping the hour within an unchanging palette costs no vertex walk and no
-  re-upload. `refreshShadow()`, `dispose()`. The day/night benchmark renders the map every second frame.
+  re-upload; `refreshDome()` drops that cache, for a caller that rewrote the dome's colours or geometry itself.
+  `refreshShadow()`, `dispose()`. The day/night benchmark renders the map every second frame.
 - **`ShadowBudget`** (`src/lighting/ShadowBudget.ts`): `apply(scene)` switches shadows off on the `off` tiers,
   drops point-light shadows off phones, then halves the largest map until the texel sum fits the tier's
   `shadowTexels` budget (floor `minMapSize`); three resizes the targets on the next shadow render. `release()`
@@ -878,8 +879,8 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
   disposes the geometries and textures no resident chunk shares, including a BatchedMesh's matrix, indirect and
   colour textures (never `BatchedMesh.dispose()`, which nulls them); load re-adds them and three re-uploads. `assign`,
   `userData.forgeStream = false`, `stats()`, `onChange`, `dispose()` (every chunk resident again, then the chunks and
-  the object index released, so a disposed Streamer holds none of the World's objects and `stats()` reports none).
-  `ledger.attachStreamer(streamer)`.
+  the object index released, so a disposed Streamer holds none of the World's objects, `stats()` reports none and a
+  later `update()` does nothing). `ledger.attachStreamer(streamer)`.
 - **Ledger**: `memory.unreferenced`, `memory.chunks`, `memory.measured`; budget `geometryBytes` (256 / 96 / 48 MB); hints
   `geometry-bytes` and `unreferenced-resources` (eight or more). Authoring notes: `docs/memory.md`.
 - **Bench**: zen's ground is 64 tiles with a 512² texture each (85 MB) under fog to 600 m; the optimized variant

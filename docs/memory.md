@@ -85,7 +85,9 @@ no resident chunk shares (a BatchedMesh's matrix textures too, without `BatchedM
 destroy them); materials stay, the registry owns them. Loading adds the objects back and three re-uploads on the
 next render: expect one frame of upload work per chunk that comes back. The CPU copies stay in the JS heap; nothing
 is re-fetched. `stats()` gives `{ chunks, resident, loads, unloads }`, `onChange` the events, `dispose()` makes
-everything resident again. `ledger.attachStreamer(streamer)` fills `memory.chunks`.
+everything resident again and then releases the chunks and the object index, so a disposed Streamer holds none of the
+World's objects, `stats()` reports `chunks: 0, resident: 0` and a later `update()` does nothing.
+`ledger.attachStreamer(streamer)` fills `memory.chunks`.
 
 ## Reading the section
 

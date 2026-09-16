@@ -67,7 +67,7 @@ export class DayNight {
   private readonly everyDegrees: number;
   private readonly previous: { fog: Scene['fog']; background: Scene['background']; fogColor: Color | null };
   private readonly heights: Float32Array | null;
-  /** The zenith and horizon the dome's vertex colours were last written from; NaN until the first write, so it always happens. */
+  /** The zenith and horizon the dome's vertex colours were last written from; NaN until the first write (and after `refreshDome()`), so it always happens. */
   private readonly lastZenith = new Color(Number.NaN, Number.NaN, Number.NaN);
   private readonly lastHorizon = new Color(Number.NaN, Number.NaN, Number.NaN);
   private lastShadowAngle = Number.NaN;
@@ -204,6 +204,16 @@ export class DayNight {
   refreshShadow(): void {
     this.sun.shadow.needsUpdate = true;
     this.lastShadowAngle = this.angle;
+  }
+
+  /**
+   * Drops the dome's colour cache, so the next `setTime()` writes its vertex colours again whatever the palette.
+   * `dome` is public: call this after writing to its colour attribute or swapping its geometry yourself, or the
+   * cache would leave what you wrote in place for an unchanged sky.
+   */
+  refreshDome(): void {
+    this.lastZenith.setRGB(Number.NaN, Number.NaN, Number.NaN);
+    this.lastHorizon.setRGB(Number.NaN, Number.NaN, Number.NaN);
   }
 
   /** Removes what the instance added and restores the scene's fog and background. */

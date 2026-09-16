@@ -100,6 +100,20 @@ describe('DayNight', () => {
     expect(domeColors(real.dome!)).not.toEqual(domeColors(dn.dome!));
   });
 
+  it('refreshDome() drops the colour cache, so the next setTime rewrites a dome the caller overwrote', () => {
+    const flat = { dayZenith: 0x336699, nightZenith: 0x336699, dayHorizon: 0x99bbdd, nightHorizon: 0x99bbdd };
+    const dn = new DayNight(new Scene(), { shadow: false, colors: flat });
+    const attribute = dn.dome!.geometry.getAttribute('color') as BufferAttribute;
+    const written = domeColors(dn.dome!);
+    // `dome` is public: a caller rewrites its colours (or swaps the geometry) behind the cache's back.
+    (attribute.array as Float32Array).fill(0);
+    dn.setTime(9);
+    expect(domeColors(dn.dome!), 'cached: an equal palette leaves the overwritten dome alone').toEqual(written.map(() => 0));
+    dn.refreshDome();
+    dn.setTime(9);
+    expect(domeColors(dn.dome!), 'after refreshDome the next setTime writes it back').toEqual(written);
+  });
+
   it('dispose removes what it added and restores fog and background', () => {
     const { scene, dn } = setup();
     dn.setTime(12);
