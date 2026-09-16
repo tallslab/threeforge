@@ -155,9 +155,9 @@ export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): H
     const subject = n === 1 ? '1 threeforge batched, instanced or baked draw uses' : `${n} threeforge batched, instanced or baked draws use`;
     push(
       'drawCalls',
-      'info',
+      'warn',
       'batch-local-space',
-      `${subject} a node in a material slot, alphaHash or an object-space normal map, which read mesh-local space, now the scene's: shading can change — tag those meshes dynamic to keep them individual (materials: ${listed})`,
+      `${subject} a node in a material slot, custom material code, alphaHash or an object-space normal map, which read mesh-local space, now the scene's: shading can change — tag those meshes dynamic to keep them individual (materials: ${listed})`,
       localDraws.slice(0, 5).map((d) => d.object),
     );
   }

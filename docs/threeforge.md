@@ -655,7 +655,7 @@ Measured on four translated, rotated and scaled boxes (a scratch probe, both bac
 the same within 0.001 % whether batched, instanced or, where the bake takes the group, baked): a `positionLocal` colour
 gradient 7.21 % (a node material, so `bake` batches it), `alphaHash` 3.66 %, an object-space normal map 6.19 %; a
 tangent-space normal map and a plain `MeshStandardMaterial` 0 %. The
-`batch-local-space` hint (info) names every world-visible batch, instanced group and baked mesh World made whose
+`batch-local-space` hint (warn) names every world-visible batch, instanced group and baked mesh World made whose
 material has a node in any slot (the test `spriteRule`'s `sprite-node-material` uses), code the hint cannot read (a
 class that is not one of three's own, or an own function — `spriteRule`'s `sprite-custom-material` test, and what
 `bakeProvesReads` refuses for the same reason: a subclass overriding `setupPosition` reads `positionLocal` with no
@@ -1506,9 +1506,9 @@ Each is documented where the mechanism is, and none has a fix in this release.
   mesh's) normal matrix, not each module's (`NormalMapNode.js:120-122`), so a rotated module is lit as if unrotated.
   Measured with `bake` off: a `positionLocal` colour gradient on transformed boxes 3.32 % of the frame on both backends,
   an `alphaHash` pair 1.81 % (webgl2) and 1.82 % (webgpu); on four rotated boxes an object-space normal map 6.19 %
-  (webgl2 6.1896 %, webgpu 6.1927 %), identical batched, instanced and baked. The `batch-local-space` hint (info) names
-  the batches, instanced groups and baked meshes whose material has a node in any slot, `alphaHash` or an object-space
-  normal map. Tag such meshes `dynamic` (without `dynamics: 'batch-sync'`) to keep them individual.
+  (webgl2 6.1896 %, webgpu 6.1927 %), identical batched, instanced and baked. The `batch-local-space` hint (warn) names
+  the batches, instanced groups and baked meshes whose material has a node in any slot, custom material code (a class
+  that is not one of three's own, or an own function), `alphaHash` or an object-space normal map. Tag such meshes `dynamic` (without `dynamics: 'batch-sync'`) to keep them individual.
 - **The bake's seam and buried-face removals leave a hole when the camera's near plane cuts into a module**
   (section 8, "Near-plane limitation").
 - **`memory.unreferenced` has residual blind spots** (section 4, "Limits of the memory section"): resources three

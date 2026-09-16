@@ -1204,9 +1204,9 @@ describe('DrawCallLedger batch-local-space hint', () => {
     expect(report.after).toEqual(expect.objectContaining({ batches: 1, instanced: 0, baked: 0 }));
     expect(hint(ledger)).toEqual({
       category: 'drawCalls',
-      severity: 'info',
+      severity: 'warn',
       code: CODE,
-      message: "1 threeforge batched, instanced or baked draw uses a node in a material slot, alphaHash or an object-space normal map, which read mesh-local space, now the scene's: shading can change — tag those meshes dynamic to keep them individual (materials: gradient)",
+      message: "1 threeforge batched, instanced or baked draw uses a node in a material slot, custom material code, alphaHash or an object-space normal map, which read mesh-local space, now the scene's: shading can change — tag those meshes dynamic to keep them individual (materials: gradient)",
       objects: [report.groups[0]!.name],
     });
     expect(report.groups[0]!.name.startsWith('forge:batch:')).toBe(true);
@@ -1215,14 +1215,14 @@ describe('DrawCallLedger batch-local-space hint', () => {
   it('fires for a batch whose material has alphaHash', () => {
     const { ledger, report } = compiled(hashed());
     expect(report.after).toEqual(expect.objectContaining({ batches: 1, instanced: 0, baked: 0 }));
-    expect(hint(ledger)).toMatchObject({ severity: 'info', objects: [report.groups[0]!.name] });
+    expect(hint(ledger)).toMatchObject({ severity: 'warn', objects: [report.groups[0]!.name] });
     expect(hint(ledger)?.message.endsWith('(materials: hashed)')).toBe(true);
   });
 
   it('fires for a batch whose material has an object-space normal map, not for a tangent-space one or the map type without a map', () => {
     const { ledger, report } = compiled(engraved());
     expect(report.after.batches).toBe(1);
-    expect(hint(ledger)).toMatchObject({ severity: 'info', objects: [report.groups[0]!.name] });
+    expect(hint(ledger)).toMatchObject({ severity: 'warn', objects: [report.groups[0]!.name] });
     expect(hint(ledger)?.message.endsWith('(materials: engraved)')).toBe(true);
     for (const [label, material] of [['a tangent-space normal map', engraved(TangentSpaceNormalMap)], ['ObjectSpaceNormalMap without a normalMap', engraved(ObjectSpaceNormalMap, null)]] as Array<[string, Material]>) {
       const silent = compiled(material);

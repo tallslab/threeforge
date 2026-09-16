@@ -413,13 +413,13 @@ describe('hintsFor', () => {
   // The ledger gathers `localSpaceDraws` on its rescan (draw-call-ledger.test.ts covers which draws it names); these
   // pin the wording, the counts and the caps.
   describe('batch-local-space', () => {
-    const tail = "a node in a material slot, alphaHash or an object-space normal map, which read mesh-local space, now the scene's: shading can change — tag those meshes dynamic to keep them individual";
+    const tail = "a node in a material slot, custom material code, alphaHash or an object-space normal map, which read mesh-local space, now the scene's: shading can change — tag those meshes dynamic to keep them individual";
 
     it('names one compiled draw and its material in the singular', () => {
       const hints = hintsFor(emptyFrame(env), budgetsFor('desktop'), { localSpaceDraws: [{ object: 'forge:batch:aa11:0', material: 'gradient' }] });
       expect(hints.find((h) => h.code === 'batch-local-space')).toEqual({
         category: 'drawCalls',
-        severity: 'info',
+        severity: 'warn',
         code: 'batch-local-space',
         message: `1 threeforge batched, instanced or baked draw uses ${tail} (materials: gradient)`,
         objects: ['forge:batch:aa11:0'],
