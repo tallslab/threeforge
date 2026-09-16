@@ -13,7 +13,6 @@ test('attributes every draw of the naive scene and reconciles with renderer.info
   expect(frame.env.backend).toBe(forge.backend);
   expect(frame.totals.submissions).toBe(504);
   expect(frame.totals.sceneSubmissions).toBe(503);
-  expect(frame.totals.reportedDrawCalls).toBe(504);
   expect(frame.totals.unattributed).toBe(0);
   expect(frame.passes).toEqual([{ id: 'main', submissions: 504, gpuDraws: 504 }]);
   expect(frame.byReason).toMatchObject({

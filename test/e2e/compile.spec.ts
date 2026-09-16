@@ -52,6 +52,10 @@ interface DrawSet {
   byPass: Record<string, { submissions: number; instancesDrawn: number; expectedGpuDraws: number }>;
   /** Sorted names of the submissions the compiler did not fold into a batch, which survive compilation as themselves. */
   named: string[];
+  /** Whether this frame's context folds a batch into one multi-draw call. A capability, not a backend name. */
+  multiDraw: boolean;
+  /** Reported draw calls this frame's model did not predict. Asserted at 0 per draw set, not only on the first frame. */
+  unattributed: number;
 }
 
 /**
@@ -77,6 +81,8 @@ async function drawSetAt(forge: ForgePage, view: View): Promise<DrawSet> {
     }
     return {
       triangles: frame.totals.triangles,
+      multiDraw: frame.env.multiDraw,
+      unattributed: frame.totals.unattributed,
       byPass,
       named: scene
         .filter((i) => i.reason !== 'batched')
@@ -150,27 +156,35 @@ test('world.compile() takes the naive scene from 503 to 28 submissions with iden
   // anomaly could only be found by reading a report. It cannot be compared naive-against-compiled — batching is
   // *supposed* to change it — but each side has a per-backend law it must obey, and this scene is simple enough to
   // state it: one pass (`main`), nothing nested, so no batch has slots an enclosing pass zeroed.
-  //   webgl2: WEBGL_multi_draw collapses a batch to one call, so every submission costs exactly one draw
+  //   with WEBGL_multi_draw: a batch collapses to one call, so every submission costs exactly one draw
   //           (naive 500 -> 500, compiled 28 -> 28).
-  //   webgpu: the backend issues one call per multi-draw slot, so a pass costs one draw per drawn instance
-  //           (naive 500 -> 500, compiled 28 submissions -> 500).
+  //   without it (WebGPU, and any WebGL2 context lacking the extension): one call per multi-draw slot, so a pass
+  //           costs one draw per drawn instance (naive 500 -> 500, compiled 28 submissions -> 500).
+  // The law keys on `frame.env.multiDraw`, the capability the ledger predicts from, not on the Playwright project
+  // name: a webgl2 context without `WEBGL_multi_draw` (a Linux runner, which is what CI uses for webgl2) obeys the
+  // second law, and selecting by backend name would fail there blaming a threeforge property for an environment
+  // condition.
   //
-  // What this adds over `unattributed`, which is already asserted at 0 above: that assertion ties the ledger's cost
-  // *model* to the number the backend actually reported, so a model-only regression fails there (breaking the webgl2
-  // folding rule in `expectedDraws.ts` alone lands as `unattributed: -475`, not here). It says nothing about what the
-  // backend is doing. These two lines do: that WebGL2 really is folding each batch into a single call, and that WebGPU
-  // really is issuing one per drawn instance. If the platform stopped offering WEBGL_multi_draw, or three stopped
-  // using it, the compiled frame would cost 500 calls instead of 28, the ledger would report that faithfully,
-  // `unattributed` would stay 0 — and submissions, instances drawn, triangles and every pixel would be unchanged, so
-  // nothing else in this spec would notice a scene that got 18x more expensive to draw.
+  // What this adds over `unattributed`, asserted at 0 for each of these two draw sets just below: that assertion ties
+  // the ledger's cost *model* to the number the backend actually reported, so a model-only regression fails there
+  // (breaking the webgl2 folding rule in `expectedDraws.ts` alone lands as `unattributed: -475`, not here). It says
+  // nothing about what the backend is doing. These two lines do: that a multi-draw context really is folding each
+  // batch into one call, and that a non-multi-draw one really is issuing one per drawn instance. If the platform
+  // stopped offering WEBGL_multi_draw, or three stopped using it, the compiled frame would cost 500 calls instead of
+  // 28, the ledger would report that faithfully, `unattributed` would stay 0 — and submissions, instances drawn,
+  // triangles and every pixel would be unchanged, so nothing else in this spec would notice a scene that got 18x
+  // more expensive to draw.
   for (const [label, set] of [
     ['naive', naiveDraw],
     ['compiled', compiledDraw],
   ] as const) {
+    // The law above is stated per draw set, so the reconciliation it leans on is asserted per draw set too: the
+    // `unattributed` at 0 earlier in this test is the default-camera frame, not either of these oblique ones.
+    expect(set.unattributed, `oblique, ${label}: unattributed draws`).toBe(0);
     for (const [pass, bucket] of Object.entries(set.byPass)) {
-      const expected = forge.backend === 'webgl2' ? bucket.submissions : bucket.instancesDrawn;
-      const law = forge.backend === 'webgl2' ? 'one draw per submission (multi-draw)' : 'one draw per drawn instance';
-      expect(bucket.expectedGpuDraws, `oblique, ${label}, pass ${pass}: ${forge.backend} costs ${law}`).toBe(expected);
+      const expected = set.multiDraw ? bucket.submissions : bucket.instancesDrawn;
+      const law = set.multiDraw ? 'one draw per submission (multi-draw)' : 'one draw per drawn instance';
+      expect(bucket.expectedGpuDraws, `oblique, ${label}, pass ${pass}: multiDraw=${set.multiDraw} costs ${law}`).toBe(expected);
     }
   }
   // And everything the compiler left as its own draw was drawn naively too, so nothing left the set under another name.

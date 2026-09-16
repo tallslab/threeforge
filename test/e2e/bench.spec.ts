@@ -58,6 +58,10 @@ for (const id of SCENE_IDS) {
       // `src/ledger/overdraw.ts` then moves a gated bench metric that has nothing to do with the scene. That capture
       // point was held only by a comment in each of the two callers, so moving it back below the measurement left
       // every test green. `out.frame` is the post-measurement, post-rescan frame: the recorded value must never be it.
+      // This `<=` was sampled on zen and village only. It is expected to hold for the other six because
+      // `measureOverdraw()` only ever *adds* count-material stages to `info.memory.programs`, and three frees a stage
+      // only once its `usedTimes` reaches 0, so a post-measurement frame can never report fewer programs than the
+      // pre-measurement capture, whatever the scene draws.
       expect(out.programs, 'programs must be read before measureOverdraw()').toBeLessThanOrEqual(out.frame.totals.programs);
       // And on a scene where the count materials measurably add stages, strictly below it — which is the assertion
       // that actually fails when the capture moves. Measured on webgl2: zen naive 6 -> 10 programs across the
