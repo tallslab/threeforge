@@ -35,7 +35,7 @@ export { DayNight, type DayNightColors, type DayNightOptions, type DayNightShado
 export { ShadowBudget, type ShadowBudgetOptions, type ShadowBudgetReport, type ShadowLightReport } from './lighting/ShadowBudget.js';
 export { RenderScheduler, type RenderSchedulerOptions, type SchedulerMixer, type SchedulerRenderer } from './scheduler/RenderScheduler.js';
 export { freezableObjects, type FreezeInput } from './compiler/freeze.js';
-export { buildSpriteBatch, type SpriteBatch, type SpriteBatchOptions } from './compiler/spriteBatch.js';
+export { buildSpriteBatch, type SpriteBatch, type SpriteBatchDisposeOptions, type SpriteBatchOptions } from './compiler/spriteBatch.js';
 export { ParticleBudget, type ParticleBudgetOptions, type ParticleBudgetReport, type ParticleSystemReport } from './overdraw/ParticleBudget.js';
 export { ResolutionScaler, type ResolutionScalerOptions, type ScalerRenderer } from './overdraw/ResolutionScaler.js';
 export { bakeGeometries, type BakeEntry, type BakeOptions, type BakeReport, type BakeResult, type BuriedOptions } from './compiler/bake.js';
