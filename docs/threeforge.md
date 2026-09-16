@@ -1221,7 +1221,13 @@ swaps change data, not draw calls.
     URI unchanged, so without that check `GLTFLoader` fetched it from the page instead of through the static server,
     and an untrusted asset could make headless Chromium issue requests from this machine's network. The page is also
     held to the served origin by a catch-all Playwright route that aborts every other request and names up to five of
-    them on the progress line, so a URI the JSON scan cannot see cannot escape either.
+    them on the progress line, so a URI the JSON scan cannot see cannot escape either. Playwright routes network
+    schemes only, so the `blob:` worker a decoder creates and a `data:` buffer inside the glTF are unaffected; that was
+    checked from the **built** CLI on `test/assets/files/Duck-Draco/Duck.gltf` (whose Draco decoder runs in a worker
+    made from a `blob:` URL) and on a hand-made `.gltf` with a `data:` buffer — both exit 0, load their geometry and
+    print no blocked-request line. The KTX2 transcoder worker takes the same path, but the local corpus holds no KTX2
+    asset, so that one is inferred from the Draco result rather than measured; and no committed test would notice if a
+    future Playwright began routing `data:` or `blob:`.
   - `inspect <url> [--backend webgl2|webgpu] [--budget N] [--frames N] [--no-compile] [--timeout ms] [--headed]
     [--json]`: drives the agent's own dev server through the hook, compiling through it unless `--no-compile`
     (`--compile` is accepted and is the default); same document without asset facts and parity. There is no
@@ -1557,7 +1563,10 @@ Each is documented where the mechanism is, and none has a fix in this release.
   deserves the corpus sweep next, it is this one. `--no-palette` drops it from any preset.
 - **A shadow pass's `#k` suffix is positional** (independent review L7, section 3, "Passes"): `shadowPassIds` numbers
   lights that share a name in scene order, so `shadow:DirectionalLight#1` and `#2` can swap between frames when the
-  scene order changes. The counts stay right; the labels move. Name shadow-casting lights distinctly to pin them.
+  scene order changes. The counts stay right; the labels move. Name shadow-casting lights distinctly to pin them. The
+  `#k` on a `nested:` or `scene:` id is positional in the same way and for the same reason — it is handed out in the
+  order the frame enters those passes — so two render targets or two scenes sharing a name can swap ids when the order
+  of the renders changes.
 - **Two lights sharing one `shadow.camera` object collapse into one pass** (independent review L7): the ledger keys
   shadow passes by camera identity (`Map<Camera, ShadowPass>`), which is what makes a nested pass attributable at all,
   so an app that assigns one light's `shadow.camera` onto another loses the second light's pass and its texels from
