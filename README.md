@@ -43,7 +43,10 @@ exit codes an agent can branch on.
 ### Optimize assets at build time
 
 `threeforge optimize scene.glb` rewrites the file with [glTF-Transform](https://gltf-transform.dev) and writes
-`scene.forge.glb`. Three presets: `safe` (default; dedup, palette, prune: never changes a pixel, and no step in it costs bytes),
+`scene.forge.glb`. Three presets: `safe` (default; dedup, palette, prune: measured at 0 changed pixels, no channel
+moving by more than 24 of 255, on the Fox and the Buggy on both backends; `palette` merges five or more untextured
+materials that differ into 8-bit palette textures and adds a UV attribute to every primitive it merges, so it can make a
+file bigger),
 `balanced` (adds weld, resample, quantize and WebP textures at 2048 px), `aggressive` (adds simplify to 50 % and 1024 px textures).
 Any step can be added or removed (`--quantize`, `--no-palette`, `--simplify 0.3`, `--compress meshopt`, `--textures avif`,
 `--instance`, `--join`). The command then renders the original and the result through the same harness, compares
@@ -58,14 +61,20 @@ pixels view by view, compiles both with threeforge, and reports:
 }
 ```
 
-The verdict fails when pixels moved past `--parity`, when a clip, skin or morph target was lost, when the
-optimized file fails `--budget`, or when either render raised a page error. Texture compression needs `npm i -D sharp`; reading a Draco input needs
+The verdict fails when the two files' uncompiled renders differ by more than `--parity`, when compiling the
+optimized file changes more than 0.5 % of its pixels (whatever `--parity` says), when a clip, skin or morph target was
+lost, when the optimized file fails `--budget`, or when either render raised a page error. Texture compression needs `npm i -D sharp`; reading a Draco input needs
 `npm i -D draco3dgltf`. The output never uses Draco.
 
 Draw-call numbers so far: the naive test scene (500 props, 40 material recipes, a new material per prop) goes from
-**503 to 28** scene submissions with pixel-identical output (**18** with `dynamics: 'batch-sync'`); the 20k-instance
-field scene goes from 3892 submissions to **3 instanced draws** with BVH culling; the public glTF corpus compiles
-pixel-identical on both backends ([docs/assets-report.md](docs/assets-report.md)). `pnpm budget` fails CI above 30.
+**503 to 28** scene submissions (**18** with `dynamics: 'batch-sync'`), with under 0.05 % of pixels changed per view
+at a per-channel tolerance of 4 (the e2e records 224 / 226 changed pixels of 480,000 at its oblique view on webgl2 /
+webgpu, from draw-order ties); the 20k-instance field scene goes from 3892 submissions to **3 instanced draws** with BVH culling. The public
+glTF corpus report ([webgl2](docs/assets-report.md), [webgpu](docs/assets-report-webgpu.md)), generated from 0.9.0
+code at commit `a485e57` (run `fix-audit-0.9.0-corpus-20260916`), passes 104 of 104 models on each backend: every
+model compiles with 0 unattributed draws, restores its naive count on decompile, and changes under 0.5 % of the
+pixels of its one view at a per-channel tolerance of 24. Every row's `diff` reads 0, a percentage rounded to two
+decimals: under 0.005 % changed, not zero. `pnpm budget` fails CI above 30.
 
 ```ts
 import { DrawCallLedger, MaterialRegistry, World, prepareLods, tag } from 'threeforge';
@@ -123,7 +132,8 @@ baking: [docs/lighting.md](docs/lighting.md).
 meshopt wired (`npx threeforge decoders public/_decoders` copies the decoder files). `new ResourceTracker().track(root)`
 and `release(root)` dispose what nothing else holds, and the ledger's `memory.unreferenced` names what was removed
 without `dispose()`. `new Streamer({ world, camera })` keeps only the chunks within the camera's far plane resident
-and frees the rest: the zen benchmark drops from 85 MB to 43 MB of textures with the frame unchanged:
+and frees the rest: the zen benchmark drops from 85 MB to 43 MB of textures, and its streaming e2e holds the start
+frame to under 0.5 % of pixels changed against naive at a per-channel tolerance of 24:
 [docs/memory.md](docs/memory.md).
 
 ## Crowds: animated instances
@@ -137,7 +147,7 @@ draws the characters as one instanced draw per part, each with its own clip, tim
 ## Per-frame JS: freezing and render-on-change
 
 `compile()` also freezes what never moves: unbatched statics and all-static ancestors stop recomposing their
-matrices every frame (the village: 310 → 33). Move a frozen prop with `world.markDirty(prop)` and its batch follows.
+matrices every frame (the village: 310 → 34). Move a frozen prop with `world.markDirty(prop)` and its batch follows.
 `new RenderScheduler({ renderer, scene, camera, ledger, world }).start()` renders only when something changed
 (camera, watched objects, running mixers, `invalidate()`); ten idle ticks cost three nothing, and `js.skipped`
 in the snapshot says how many.
@@ -145,7 +155,7 @@ in the snapshot says how many.
 ## Overdraw: sprites, particles, resolution
 
 Sprites that share a material become one instanced billboard draw at `compile()` (the lake's 2 000 raindrops:
-3 548 → 7 submissions, 0.3 % of pixels changed). `new ParticleBudget({ tier }).apply(scene)` caps points and sprite
+3 548 → 7 submissions; its e2e holds the change to under 0.5 % of pixels at a per-channel tolerance of 24). `new ParticleBudget({ tier }).apply(scene)` caps points and sprite
 batches so the frame draws at most the tier's particle budget. `new ResolutionScaler(renderer, { tier, ledger })`
 with `update(frameMs)` each frame steps the drawing buffer down while the median frame time misses the budget.
 What to do with effects so this stays cheap: [docs/vfx.md](docs/vfx.md).
@@ -156,8 +166,10 @@ What to do with effects so this stays cheap: [docs/vfx.md](docs/vfx.md).
 `BatchedMesh`: seams between touching modules (coplanar faces with the same outline and opposite winding, between
 different closed, manifold, outward, opaque, front-side modules that cast no shadow; any other such pair is kept and
 counted) and
-duplicated faces are removed, and vertices are welded only where position, normal, uv and colour agree, so
-shading never changes. Originals stay editable: hiding a module (`world.setVisible`) rebakes its group,
+duplicated faces (exact copies that draw the same, with nothing else in their plane over them; other copies are kept
+and counted) are removed, and vertices are welded only where position, normal, uv and colour agree. A group whose
+geometry carries an attribute the bake does not carry (a four-component vertex colour the material reads, or a custom
+attribute) is batched instead of baked. Originals stay editable: hiding a module (`world.setVisible`) rebakes its group,
 `resolve()` maps a hit face back to its module, `decompile()` restores everything.
 
 A wrong deletion is visible and a missed one is invisible, so the defaults are conservative and everything is
@@ -169,11 +181,17 @@ inspectable:
   removed, and only the back side of an opaque front-side or double-sided face blocks a ray (a face pressed against
   a neighbouring solid's front face is buried only when that solid's far side is within `distance`).
 - `mesh.userData.forgeBake = false` passes a module through untouched.
-- The compile report's `bake` block counts seams, coincident faces kept (`keptCoincidentFaces`), duplicates, buried
-  faces and welded vertices per run, and
+- The compile report's `bake` block counts seams, coincident faces kept (`keptCoincidentFaces`), duplicates and
+  duplicates kept (`keptDuplicateFaces`), buried faces, welded vertices and meshes left to batching
+  (`unbakeableEntries`) per run, and
   `world.bakeDebug()` returns the removed faces as red meshes you can add to the scene to look at them.
-- `npx threeforge analyze scene.glb --bake --views 6` bakes, then compares screenshots from the default framing
-  plus six orbit views; the verdict fails if any view changed. Agents should run this before trusting a bake.
+- `npx threeforge analyze scene.glb --bake --views 6 --parity 0` bakes, then compares screenshots from the default
+  framing plus six orbit views, and the verdict fails unless every view has 0 changed pixels (no channel moving by
+  more than 24 of 255). Without `--parity 0` the default threshold is 0.5 %: a view with up to 0.5 % of its pixels
+  changed passes. Agents should run it with `--parity 0` before trusting a bake.
+- Known limitation: seam and buried-face removal assume the camera stays outside the modules. A camera whose near
+  plane cuts into one (a first-person camera pressed against a wall) sees through the clipped front face to where a
+  removed contact face was, and so sees a hole the naive scene does not have.
 
 ## Benchmark suite
 

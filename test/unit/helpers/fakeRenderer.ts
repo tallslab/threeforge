@@ -20,6 +20,19 @@
  * quad, like three's output pass (a QuadMesh: one fullscreen triangle), whatever the root's type and whatever the
  * scene's override material; a render into a target (a reflection, an overdraw count pass, a shadow map) draws none.
  * Not modelled: frustum culling, sorting, matrix updates (call `scene.updateMatrixWorld()`), pipeline readiness.
+ *
+ * Known gaps from three r186 that no current test relies on (final review area 1, L1). A test that depends on one of
+ * these cases must model it first, or it inherits a behaviour three does not have:
+ * - `material.visible`: `projectItem` pushes an item whatever its material's `visible`; three's `_projectObject` pushes
+ *   only visible materials, so a mesh with an invisible material counts as drawn here.
+ * - Array materials: three walks `geometry.groups` for any Mesh, Line or Points with an array material and pushes nothing
+ *   when there are no groups; the fake uses groups for meshes only and draws `materials[0]` for an array without groups.
+ * - `LineLoop`: three logs an error and skips it; the fake draws it as a line.
+ * - `shadowTrigger: 'first-receiver'` fires for any `receiveShadow` object; three builds a ShadowNode only for a lit node
+ *   material (`NodeMaterial.lights`), so a receiver with an unlit custom node material triggers the map one draw early.
+ * - Nested renders during a canvas render: three sets the renderer's target to the frame-buffer target while it renders
+ *   the canvas, so a nested render with no explicit target is not an output render; the fake keeps `renderTarget` null
+ *   there, so `getRenderTarget()` differs mid-frame and such a nested render draws an extra "Output Color Transform" quad.
  */
 import {
   BackSide,

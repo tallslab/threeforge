@@ -48,11 +48,15 @@ release. `collectResources(root)` returns the sets; `unreferencedResources(rende
 the geometries and textures the renderer holds that nothing in the scene reaches.
 
 The ledger reports that count as `memory.unreferenced` and warns with `unreferenced-resources` at eight or more.
-The count is renderer counts minus reachable resources minus what three allocates for itself (one geometry, two
-frame-buffer textures, two textures per shadow map three has built and two more per non-point VSM map, the overdraw
+The count is renderer counts minus reachable resources minus what three allocates for itself (one geometry, the
+frame-buffer targets' textures, two textures per shadow map three has built and two more per non-point VSM map, the overdraw
 count target once the ledger has measured overdraw, and three's 16 × 16 `DFG_LUT` lookup texture, which three creates
 once a Standard or Physical material is lit and the ledger counts through `renderer.info` while attached; measured on
-both backends). A LUT three created before `ledger.attach()` is not seen and reads as one unreferenced texture; a
+both backends). It also allows what three r186 holds for its own node features, identified from its source: the
+plane geometries and textures of PMREMNode's own `PMREMGenerator` (an equirect or cube `environment`, `background` or
+`envMap`), the background sphere, one morph texture per morphed geometry, the textures of a render target a render
+drew into until that target is disposed (post-processing and bloom targets, CubeMapNode's cube, a mirror), and the
+frame-buffer targets three actually holds. A LUT three created before `ledger.attach()` is not seen and reads as one unreferenced texture; a
 shadow map built but not rendered yet is allowed textures three has not created yet, so the count reads low until it
 renders. Reachable includes material
 textures, a BatchedMesh's matrix, indirect and colour textures, a skeleton's bone texture, the scene background and
@@ -67,7 +71,17 @@ has been on screen. It is recounted with the graph statistics (at most every 60 
 three's `DFGLUT.js` keeps its lookup texture in a module variable it does not export. It *is* reachable through
 private internals (`DFGLUT.shaderNode.jsFunc`), but the ledger matches `info.createTexture` / `destroyTexture`
 against three's own name for it instead, because relying on those internals is fragile across revisions. Each limit
-below is bounded, and none of them is a leak:
+below is bounded:
+
+- Resources three created before `ledger.attach()` are not seen: PMREM planes and textures and a target drawn once
+  (CubeMapNode's cube) read as unreferenced. Attach the ledger before the first render.
+- A render target drawn once and then abandoned without `dispose()` is allowed like a live one, so that leak is missed;
+  an app's own undisposed `PMREMGenerator` is indistinguishable from PMREMNode's and is allowed too.
+- Transmission's and refraction's viewport textures (`ViewportTextureNode`, `ViewportSharedTextureNode`,
+  `ViewportDepthTextureNode`) and XR targets are not allowed, so they still count as unreferenced and can raise a
+  false `unreferenced-resources`.
+- Frame-buffer targets are read from three's private `renderer._frameBufferTargets` (pinned by a canary unit test); a
+  renderer without it gets a fixed allowance of a colour and a depth texture.
 
 - An app `DataTexture` named exactly `DFG_LUT`, uploaded while the ledger is attached, is counted as three's and
   hides at most one texture.
@@ -97,8 +111,8 @@ direct child of the scene and was not compiled (terrain tiles, singletons), plac
 `streamer.assign(object, cell)` overrides, `userData.forgeStream = false` opts out. Cells are keyed by x and z.
 
 A chunk is resident while the distance from the camera to its box is at most `radius` (default `camera.far`,
-so with a fog that reaches the far plane nothing visible ever pops: the streamed frame is pixel-identical to the
-unstreamed one), and unloads past `radius + margin × chunkSize` (hysteresis, default one cell; the first update
+so with a fog that reaches the far plane nothing visible ever pops: `test/e2e/streaming.spec.ts` holds the streamed
+start frame to under 0.5 % of pixels changed against the unstreamed one, at a per-channel tolerance of 24), and unloads past `radius + margin × chunkSize` (hysteresis, default one cell; the first update
 places strictly). Unloading removes the chunk's objects from the scene and disposes the geometries and textures
 no resident chunk shares (a BatchedMesh's matrix textures too, without `BatchedMesh.dispose()`, which would
 destroy them); materials stay, the registry owns them. Loading adds the objects back and three re-uploads on the
@@ -119,4 +133,5 @@ World's objects, `stats()` reports `chunks: 0, resident: 0` and a later `update(
 
 The zen benchmark (`pnpm bench`, scene `zen`): 50 000 objects on 64 ground tiles with a 512² texture each
 (85 MB of textures with mipmaps), fog to 600 m. The optimized variant compiles in 250 m chunks and streams them:
-32 of 64 chunks resident at the start camera, textures 85 MB → 43 MB, and the frame is identical to naive.
+32 of 64 chunks resident at the start camera, textures 85 MB → 43 MB. The streaming e2e (5,000 objects) holds the
+start frame to under 0.5 % of pixels changed against naive at a per-channel tolerance of 24.

@@ -19,9 +19,14 @@ three things:
 3. **Explains** what to fix: per-tier budgets turn into hints with a remedy each, readable by a person on the
    overlay or by an AI agent through JSON, a CLI and an MCP server.
 
-Everything is proven on a fixed benchmark suite of eight scenes and on a corpus of public glTF assets
-(`docs/assets-report.md`, regenerated at release), on both backends,
-with a regression gate that fails the build on a 10 % regression.
+Everything is measured on a fixed benchmark suite of eight scenes, on both backends, with a regression gate that
+fails the build on a 10 % regression, and on a corpus of public glTF assets (`docs/assets-report.md`,
+`docs/assets-report-webgpu.md`). The corpus report is regenerated deliberately, from a clean tree (`docs/release.md`,
+step 3); the current one was generated from 0.9.0 code at commit `a485e57`, run `fix-audit-0.9.0-corpus-20260916`, and
+passes 104 of 104 models on each backend: 0 unattributed draws, decompile restoring the naive count, and under 0.5 %
+of the pixels of one view changed at a per-channel tolerance of 24. Its `diff` column is that percentage rounded to
+two decimals, so the 0 every row reads means under 0.005 %, not zero changed pixels. Pixel claims below state the
+bound their test enforces.
 
 Principles: three.js renders; a wrong deletion is visible and a missed one is invisible (so every removal is
 conservative, counted and reversible); measurements are real, never estimated where a measurement is possible;
@@ -262,10 +267,25 @@ items?:    per-submission records with ledger.frame({ items: true })
   ledger counts through `renderer.info.createTexture` and `destroyTexture` while attached. three's `DFGLUT.js` keeps
   that texture in a module variable it does not export; it *is* reachable through private internals
   (`DFGLUT.shaderNode.jsFunc`), but matching `createTexture`/`destroyTexture` against three's own name for it is
-  chosen over reaching into internals that are fragile across revisions. Reachable includes BatchedMesh and skeleton
-  textures and `material.userData.forgeTextures`. Recounted with the graph statistics; `measureMemory()` recounts
-  now. **memory.chunks** is the attached Streamer's residency, read live.
-- **Limits of the memory section.** Each is bounded, and none is a leak:
+  chosen over reaching into internals that are fragile across revisions. The allowance also covers resources three
+  r186 holds for itself, identified from its source while the ledger is attached: the LOD plane geometries and the
+  `isPMREMTexture` render-target textures of PMREMNode's own `PMREMGenerator` (an equirect or cube `environment`,
+  `background` or `envMap`), the background sphere, one morph texture per morphed geometry, the textures of a render
+  target a render drew into, by identity until that target's `dispose` (post-processing `pass()` and bloom targets,
+  CubeMapNode's cube, a mirror), and the frame-buffer targets `renderer._frameBufferTargets` holds (a private field,
+  pinned by a canary test; a renderer without it keeps the fixed colour and depth allowance). Reachable includes
+  BatchedMesh and skeleton textures and `material.userData.forgeTextures`. Recounted with the graph statistics;
+  `measureMemory()` recounts now. **memory.chunks** is the attached Streamer's residency, read live.
+- **Limits of the memory section.** Each is bounded:
+  - **Resources three created before `ledger.attach()`** are not seen: PMREM planes and textures and a target drawn
+    once (CubeMapNode's cube) read as unreferenced until they are recreated. The background sphere, per-frame passes
+    and frame-buffer targets are seen again every frame. Attach the ledger before the first render.
+  - **A render target drawn once and then abandoned without `dispose()`** is allowed like a live one, so that leak is
+    missed (a missed hint, never a false one). An app's own `PMREMGenerator` left undisposed looks exactly like
+    PMREMNode's and is allowed too.
+  - **Transmission and XR** are not handled: `ViewportTextureNode`, `ViewportSharedTextureNode` and
+    `ViewportDepthTextureNode` framebuffer textures (transmission, refraction) and XR targets still count as
+    unreferenced, and can raise a false `unreferenced-resources`.
   - A LUT three created before `ledger.attach()` is not seen and reads as one unreferenced texture. An app
     `DataTexture` named exactly `DFG_LUT` and uploaded while the ledger is attached is counted as three's, hiding at
     most one texture.
@@ -282,7 +302,13 @@ items?:    per-submission records with ledger.frame({ items: true })
     `memory.unreferenced.textures`. **Array shadow maps** also under-report `memory.renderTargets.bytes` by their
     layer count, for the map and its VSM blur targets alike (`src/ledger/memory.ts` sizes both from width and height
     alone). No scene in the repo uses an array shadow map.
-- **hints** are recomputed every frame from the snapshot and the budgets of the environment's tier.
+- **hints** are recomputed every frame from the snapshot and the budgets of the environment's tier. The `untagged`,
+  `unique-materials`, `static-unbatched` and `sprites-unbatched` hints count distinct objects the main pass drew
+  (`HintContext.objects`, a `MainPassObjects`), not submissions across every pass, in their messages and against
+  their thresholds: a shadow map or a reflection drawing the same object again does not add to them, and a reason
+  whose objects were drawn only outside the main pass (casters out of view) raises no hint that frame. `byReason`
+  still counts submissions in every pass. The `point-light-shadow` and `transmission` hints name only lights and
+  meshes three renders (world-visible; no point light while `renderer.shadowMap.enabled` is false).
 - **programHash / variantHash** (the `programs` keys, and each item's hashes) come from the material registry
   (section 5). A hash for a material with instance code, a class that is not one of three's own, or identity-keyed
   data (a function or class instance in a user-added property) is stable within a run only: identity numbers follow
@@ -295,7 +321,14 @@ Other methods: `ledger.report()` (text), `ledger.budget({ maxSubmissions })` →
 
 The ledger's per-submission path runs inside the renderer's calls, so its cost is part of `js.renderMs`; filing the frame
 once `render()` has finished (the snapshot, the hints and the periodic rescan) is `js.ledgerMs`. In a steady scene the
-per-submission path allocates nothing, and none of the following changes a number in the snapshot:
+per-submission path allocates nothing that grows with the submission count: the measured bytes per frame (table below)
+stay at 15-30 KB from 2k to 25k submissions, a per-frame constant. None of the following changes a number in the
+snapshot:
+
+- **Flags rewritten in place.** A pooled record's `flags` array is overwritten element by element (`flagsInto` writes
+  an element only where it differs and sets `length` only when it changes). Emptying it with `length = 0` and pushing
+  again, as an earlier 0.9.0 build did, let V8 release and reallocate the backing store of every flagged record every
+  frame: about 40 bytes per submission, 0.40 MB per frame at 10k.
 
 - **Pooled records.** Two record buffers alternate: the frame in progress writes one while the last completed frame's
   items stay intact in the other, so a read between frames or inside one (a hook) sees whole frames. `frame({ items: true })` returns copies, valid however long they are held.
@@ -329,17 +362,20 @@ through a minimal renderer, bare and with a ledger attached. µs per submission 
 bare round. It is a report, not a gate: compare runs on one machine. The table reports the **default invocation**,
 `node scripts/ledger-overhead.mjs` with no arguments, which measures 2k, 10k and 20k in one process; the same build
 prints a different figure for a single size given on its own, so quote the invocation together with the number.
-Measured on 2026-09-16 on a 10-core Apple M1 Max with node v22.23.1, the flat scene over two runs (timings move
-between runs, bytes do not):
+Measured on 2026-09-16 at commit `5bf1fdf` on a 10-core Apple M1 Max with node v22.23.1, the flat scene over two
+back-to-back runs (a range where the runs differ; bytes move by under 1 KB between runs):
 
-| submissions | µs / submission | MB / frame | rescan ms | 0.8.0: µs / submission | 0.8.0: MB / frame |
+| submissions | µs / submission | KB / frame | rescan ms | 0.8.0: µs / submission | 0.8.0: MB / frame |
 |---|---|---|---|---|---|
-| 2k | 0.24–0.25 | 0.10 | 0.5 | 0.83 | 2.3 |
-| 10k | 0.31–0.32 | 0.40 | 1.6–1.8 | 1.84 | 11.4 |
-| 20k | 0.34–0.43 | 0.79 | 4.8–5.9 | 3.07 | 23.1 |
+| 2k | 0.22 | 23.0–23.3 | 0.5–0.6 | 0.83 | 2.3 |
+| 10k | 0.30 | 17.1–17.3 | 1.7–2.0 | 1.84 | 11.4 |
+| 20k | 0.35 | 27.3–27.4 | 4.9–5.6 | 3.07 | 23.1 |
 
-The `0.8.0` columns are the audit numbers recorded before the hot-path work, on the machine of the day: they show the
-scale of that change rather than a same-run comparison.
+The same runs measured the nested scene at 15.5–18.0 KB per frame and the shadow scene at 19.0–29.4 KB. Before the
+flags were rewritten in place, the flat scene allocated 0.10, 0.40 and 0.79 MB per frame at 2k, 10k and 20k. The
+`0.8.0` columns are the audit numbers recorded before the hot-path work, on the machine of the day: they show the
+scale of that change rather than a same-run comparison. (`scripts/ledger-overhead.mjs` prints a different 0.8.0
+figure in its footer, 3.8 µs and 8.7 MB at 10k: two 0.8.0 baselines exist, and neither is a same-machine comparison.)
 
 The unit guards in `test/unit/ledger-hot-path.test.ts` count registry reads (at most one per material per frame),
 traversals (at most one on a frame without a rescan) and `children.indexOf` calls (none), and check that µs per
@@ -680,7 +716,17 @@ a threeforge transparent batch shares the main pass with another transparent sub
     - **What follows.** `isOccluded()` answers for a render at least two renders back, with no upper bound. A render
       whose list counts no query publishes nothing.
   - **Only the outermost render decides.** The proxy hooks act only in the outermost render of the scene
-    (`PassTracker` depth 1). A shadow map, a reflection or a portal that draws a proxy never shows or hides a target.
+    (`PassTracker` depth 1). A shadow map, a reflection or a portal that draws a proxy never decides a target's
+    visibility from its own query.
+    - **Known limitation of 0.9.0: a hidden target is hidden from every pass.** The decision is written to
+      `target.visible` (`World.ts`, the proxy's after-render hook), and three r186's `_projectObject` returns at
+      `object.visible === false` in every render, a shadow map's `renderer.render(scene, shadow.camera)` and a
+      reflection's included. So once a proxy reads occluded (two or more renders late), its batch also casts no
+      shadow and shows in no mirror or portal: a building behind a wall loses the shadow it throws across the visible
+      street, and the shadow pops back when the proxy is unoccluded. `test/e2e/occlusion.spec.ts` has no
+      shadow-casting light or reflection, so nothing guards this. Until a fix hides targets only for the outermost
+      render, do not combine `occlusion: true` with shadow casters or reflections whose occluded batches must still
+      appear.
     - **Rendered without its own hooks.** The scene can be drawn without its hooks, as a child of another root passed
       to `render()` (depth 0). Its proxies then issue no query and show their targets. Their `occlusionTest` comes
       back in a microtask, once that `render()` call has returned.
@@ -799,7 +845,8 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
   last `updateMatrix()`. A container freezes only when it also holds at least one such static leaf: an empty
   container, an anchor `Object3D` with no children, and a light's `target` (added straight to the scene, as
   `DayNight` does for the sun) are never frozen, since nothing would ever move their matrix again. `decompile()`
-  restores the flags. The village drops from 310 to 34 recomposed matrices per frame with identical pixels.
+  restores the flags. The village drops from 310 to 34 recomposed matrices per frame (bench baselines); its freeze e2e holds the
+  compiled frame to under 0.5 % of pixels changed at a per-channel tolerance of 24.
 - **`world.markDirty(object)`** moves a frozen static on demand: recomposes every local matrix under `object`,
   recomputes the world matrices, pushes each batched original in the subtree into its batch in the scene's space
   (`BatchedMesh` matrix and BVH leaf, `InstancedMesh` through its culling handle, a baked group by rebaking once;
@@ -840,7 +887,11 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
     that does not expose them (a test double, or a future three version that renames them). `isRunning()` does
     not consult `weight`, so an active, enabled, unpaused action with `weight === 0` still counts as running —
     the scheduler deliberately errs toward rendering here, since a `fadeIn()` starts its target action at weight
-    0 and a skipped tick would miss the start of the fade.
+    0 and a skipped tick would miss the start of the fade. An enabled action with a weight interpolant (a
+    `fadeIn()` or `fadeOut()` in progress: three's private `_weightInterpolant`, pinned by its own canary test in the
+    same file) counts as animating too, paused or not: `_updateWeight` evaluates the fade for a paused action, so a finished clip
+    held by `clampWhenFinished` and then faded out blends back over the fade. `tick()` asks before and after
+    `mixer.update()`, so the tick whose update ends a clip or a fade renders that last step.
   - **Matrices:** `cameraChanged()` and `watchedChanged()` (and `watch()`, for the initial baseline) call
     `object.updateWorldMatrix(true, false)` before reading `matrixWorld`: three does not recompute it just
     because a property changed, only a render pass or an explicit update call does, so moving `camera.position`
@@ -926,7 +977,8 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
 - **Ledger**: `memory.unreferenced`, `memory.chunks`, `memory.measured`; budget `geometryBytes` (256 / 96 / 48 MB); hints
   `geometry-bytes` and `unreferenced-resources` (eight or more). Authoring notes: `docs/memory.md`.
 - **Bench**: zen's ground is 64 tiles with a 512² texture each (85 MB) under fog to 600 m; the optimized variant
-  streams them: 32 of 64 chunks resident at the start camera, pixel-identical to naive.
+  streams them: 32 of 64 chunks resident at the start camera. `test/e2e/streaming.spec.ts` (5,000 objects) holds the
+  start frame to under 0.5 % of pixels changed against naive at a per-channel tolerance of 24.
 
 ## 8. Bake: one mesh per finished group
 
@@ -987,8 +1039,14 @@ is carried and compared by the weld):
    ceiling, a pair inside one module, a back-side, double-sided, translucent or shadow-casting pair, a face against a
    flat slab, an open box, an inside-out box, a shell joined to another part by a shared edge, an island whose triangles
    overlap. Islands with an edge used three or more times are not paired at all, and partial overlaps stay too.
-3. **Duplicates**: the exact same triangle twice (same points, same winding: a module placed twice) keeps one, and only
-   between modules whose faces may be removed (opaque, front-side, casting no shadow). Two islands on the same side of a
+3. **Duplicates** (`removeDuplicateFaces`, default on): copies of one triangle (the same three points, in any entry,
+   excluded ones included) are gathered, and a same-winding set loses its later copies only when all three hold:
+   every copy is in an entry whose faces may be removed (opaque, front-side, casting no shadow, not
+   `forgeBake = false`); every copy draws the same as the first (each corner's normal and tangent direction within
+   `normalAngle`, tangent `w` identical, uvs within 1e-5, gathered colour with the instance tint within
+   `colorTolerance`); and no other triangle lies in their plane over them (a copy triangulated differently, a
+   double- or back-side face). three draws the later of two copies at equal depth, so a copy that draws differently
+   decides the pixel and stays. Kept copies are counted in `keptDuplicateFaces`. Two islands on the same side of a
    plane never share an outline (shared outline edges fuse them into one island), and a region covered twice with
    different triangulations fuses into one island with no outline at all: it is skipped and stays doubled, an
    invisible cost.
@@ -1004,6 +1062,19 @@ is carried and compared by the weld):
    default 0.5°), tangent `w` (exact), uv (exact) and colour (`colorTolerance`, default 1/255) agree, so shading
    never changes.
 
+**Groups the bake leaves to batching**: `World` batches, rather than bakes, a group where any geometry carries an
+attribute the bake does not carry faithfully (`unbakeableAttribute(geometry, vertexColors)` in `src/compiler/bake.ts`,
+not exported from the package entry point): a four-component `color` the material reads (the bake writes three
+components, and three multiplies the alpha into the diffuse colour, so a glTF `BLEND` material with an RGBA `COLOR_0`
+would render more opaque), or any attribute outside `position`, `normal`, `tangent`, `uv` to `uv3` and `color` (a
+custom attribute a node material reads). `BakeSummary.unbakeableEntries` counts those meshes.
+
+**Near-plane limitation (known in 0.9.0).** Seam and buried-face removal judge what a camera outside the modules can
+see. A camera whose near plane cuts into a module (a first-person camera pressed against a wall, near 0.1) clips that
+module's front face; naive, it then sees the neighbouring module's contact face, which faces into the clipped module
+and is drawn; baked, that face is gone and the neighbour's other faces point away and are culled, so the view goes
+through both modules. Keep such cameras out of the solids, or exclude the modules with `forgeBake = false`.
+
 **Direct `bakeGeometries` callers**: `bakeEntriesOf` (and so `World`) sets every entry flag from the material. An
 entry without `opaque` counts as not opaque, so it gets no seam and no buried-face removal (a missed deletion is
 invisible, a wrong one is visible); an entry without `vertexColors` keeps multiplying its geometry's colour attribute
@@ -1013,18 +1084,22 @@ faces.
 
 Control and inspection: `mesh.userData.forgeBake = false` passes a module through untouched; the compile report's
 `bake` block counts seams, coincident faces the seam guard kept and the bake left in place (`keptCoincidentFaces`),
-duplicates, buried faces,
-welded vertices and excluded entries (the CLI prints the kept count next to the seams); `world.bakeDebug()`
+duplicates, duplicates kept (`keptDuplicateFaces`), buried faces, welded vertices, excluded entries and meshes left
+to batching (`unbakeableEntries`) (the CLI prints the kept counts next to the seams and duplicates); `world.bakeDebug()`
 returns a copy of the removed faces as red unlit meshes, a snapshot the caller owns and disposes (a later rebake or
 `decompile()` never touches it); hiding a module rebakes its group; `decompile()` restores. Instanced
 groups and batch-synced dynamics are never baked. The CLI's `analyze --bake --views N` bakes and checks pixel parity
-from N+1 camera angles. Verified: the village bake is pixel-identical; a 6×3 modular wall loses exactly its 27
+from N+1 camera angles: the verdict passes a view with up to `--parity` percent of its pixels changed (default 0.5),
+and `--parity 0` fails it unless every view has `changedPixels: 0` (no channel moving by more than 24). Verified in
+`test/e2e/bake.spec.ts` on both backends, each view held to under 0.05 % of pixels changed at a per-channel tolerance
+of 4: the village bake; a 6×3 modular wall loses exactly its 27
 seams, also under a mirrored scene; back-to-back sign cards and a floor lying on a ceiling keep both faces, seen from
 both sides; touching back-side rooms keep their shared wall, seen from inside and from outside; touching toon boxes
 that cast shadows keep their seam, lit along it with shadows on; a mirrored, normal-mapped mesh baked by
-`bakeGeometries` keeps its tangents and its pixels; a block 5 cm
-inside a solid goes only with `removeBuried`; the 2CylinderEngine assembly stays identical over four views on both
-backends.
+`bakeGeometries` keeps its tangents; a block 5 cm inside a solid goes only with `removeBuried`; two crates in one
+place differing only by colour keep the one three draws on top; RGBA vertex colours and a custom attribute stay out
+of the bake. In `test/e2e/cli.spec.ts`, the 2CylinderEngine assembly passes `analyze --bake --views 3` at the default
+0.5 % over four views.
 
 ## 9. Character assembler
 
@@ -1048,12 +1123,16 @@ swaps change data, not draw calls.
   AGENTS.md). Every command's positionals and flags are declared once in `COMMAND_SPECS` (`src/cli/args.ts`); the
   parser, the usage text printed after a usage error, and the AGENTS.md command and flag tables come from it.
   - `analyze <file.glb|.gltf> [--backend webgl2|webgpu] [--tier auto|desktop|phone-mid|phone-low] [--budget N]
-    [--frames N] [--no-compile] [--timeout ms] [--headed] [--bake] [--bake-buried] [--views N] [--json]`: serves the
-    shipped harness page and the asset's folder from a built-in static server on 127.0.0.1, launches headless Chromium
-    through Playwright (headless shell for WebGL2, full Chromium with WebGPU flags otherwise), loads the asset with
-    Draco/KTX2/meshopt support, measures N frames (default 30), overdraw and memory, screenshots the default framing
-    plus the orbit views, compiles, measures and screenshots again, computes pixel parity per view, and prints one
-    JSON document.
+    [--frames N] [--no-compile] [--timeout ms] [--headed] [--bake] [--bake-buried] [--views N] [--parity pct] [--json]`:
+    serves the shipped harness page and the asset's folder from a built-in static server on 127.0.0.1, launches
+    headless Chromium through Playwright (headless shell for WebGL2, full Chromium with WebGPU flags otherwise), loads
+    the asset with Draco/KTX2/meshopt support, measures N frames (default 30), overdraw and memory, screenshots the
+    default framing plus the orbit views, compiles, measures and screenshots again, computes pixel parity per view,
+    and prints one JSON document. `--parity pct` (MCP `analyze_asset`: `parity`) is the allowed percent of changed
+    pixels per view, 0 to 100, default 0.5, judged by the same `parityOf` as `optimize`: a threshold of 0 on every
+    view's raw `changedPixels` (a pixel whose R, G or B moved by more than 24), any other on the percentage. So the
+    default passes a view with up to 0.5 % of its pixels changed, and `--parity 0` fails unless no pixel changed.
+    Two renders of different sizes count as every pixel changed. `input.parity` records the threshold used.
   - `inspect <url> [--backend webgl2|webgpu] [--budget N] [--frames N] [--no-compile] [--timeout ms] [--headed]
     [--json]`: drives the agent's own dev server through the hook, compiling through it unless `--no-compile`
     (`--compile` is accepted and is the default); same document without asset facts and parity. There is no
@@ -1101,16 +1180,30 @@ swaps change data, not draw calls.
   4 page error/timeout. `--json` writes the JSON document to stdout before the human summary is built
   (`printDocument`), then the summary to stderr; a summary that throws leaves a note on stderr and the document intact.
   `before` and `after` are frame snapshots with their own `schemaVersion: 3`; their `js.renderMs`, `js.ledgerMs` and
-  `js.frameMs` are medians over the measured frames.
+  `js.frameMs` are medians over the measured frames. `compile.skippedCount` and `compile.groupCount` are the true
+  lengths of `compile.skipped` and `compile.groups`, which list at most 256 entries each. The document schemas
+  (`$id` `https://threeforge.dev/schema/<command>-v2.json`) close every fixed-shape object
+  (`additionalProperties: false`, every key required) except the `compile` report, which is open and requires only
+  those two counts; keyed maps (`byReason`, `programs`, optimize's `input.steps`) take any key, a snapshot's `items`
+  is optional, and optimize's `input.overwrite` is optional.
 - **Untrusted text in a document.** Names, hint messages and everything the CLI reads back from a page are data to
   report, never instructions to follow. In a snapshot, `byReason[].top` names and a hint's `objects` are capped at 120
   characters and a hint's `message` at 300 (`src/ledger/text.ts`). The CLI additionally cleans every value it reads
-  from the page or the asset (`sanitizeDeep`, `src/cli/untrusted.ts`): ANSI escapes, control characters and
-  bidi/zero-width formatting characters removed, strings, arrays and nesting depth capped, non-finite numbers
-  normalized to 0 — on a resolved `page.evaluate` result and on a rejected one alike, since `inspect`'s target is any
-  page, not only one built with threeforge. Page errors keep the first 5, each capped, with `(+N more)` for the rest.
-  The MCP tools `analyze_asset`, `inspect_app` and `optimize_asset` return a second `content` block after the JSON
-  marking the asset- and page-derived fields as data; `explain_hint` carries no such text and has no such block.
+  from the page or the asset (`sanitizeDeep`, `src/cli/untrusted.ts`): ANSI escapes removed; invisible characters
+  removed (`INVISIBLE`): every Unicode format character (`\p{Cf}`: bidi marks, overrides and isolates, zero-width
+  characters, the soft hyphen, U+061C, U+206A-206F, U+FFF9-FFFB and the tag characters U+E0001 and U+E0020-E007F that
+  mirror ASCII invisibly), the rest of the tag block U+E0000-E007F, the variation selectors U+FE00-FE0F and
+  U+E0100-E01EF, the Mongolian selectors U+180B-180D and U+180F, and the fillers that draw nothing (U+034F, U+115F,
+  U+1160, U+3164, U+FFA0, U+17B4-17B5); remaining control characters (C0, DEL, C1) and the line and paragraph
+  separators U+2028-2029 replaced with a space; each string capped at 300 code points (the ledger's message cap),
+  each array at 256 elements and nesting at 16 levels; non-finite numbers normalized to 0 — on a resolved
+  `page.evaluate` result and on a rejected one alike, since `inspect`'s target is any page, not only one built with
+  threeforge. An array of strings cut at the cap ends in a `(+N more)` marker; any other array is cut silently, which
+  is why `compile` carries `skippedCount` and `groupCount`. Page errors keep the first 5, each capped, with
+  `(+N more)` for the rest. The MCP tools `analyze_asset`, `inspect_app` and `optimize_asset` return a second
+  `content` block after the JSON marking the asset- and page-derived fields as data (`DATA_NOTE`), and an error
+  result from them carries a second block too (`ERROR_NOTE`), since an error can quote the asset or the page;
+  `explain_hint` carries no such text and has no such block.
 - **Programmatic**: `import { analyzeAsset, inspectApp, optimizeAsset, explain } from 'threeforge/cli'`.
 - Playwright, `@modelcontextprotocol/sdk` and `zod` are optional peers imported lazily; game code never pays for them.
 
@@ -1136,10 +1229,17 @@ swaps change data, not draw calls.
   assets against a re-serialized baseline the median asset is 0.000 % while Xbot grows 1.248 % and the Fox 0.100 %.
   It pays for itself in the lossy presets, where the 1e-4 default applies — Soldier −18.9 %, BrainStem −14.9 %,
   VirtualCity −9.5 %. `--weld` and `--resample` add either back to any preset, and `--resample` under `safe` runs
-  at tolerance 0. So `safe` is the steps that are pixel-exact **and** never cost bytes themselves — which is a claim
-  about the steps, not a promise about output size: glTF-Transform re-serializes the container whatever runs, and on
-  the Fox that alone is +0.86 % (the Buggy, −27.4 %). Every percentage above is measured against that re-serialized
-  baseline, so it isolates the step from the container.
+  at tolerance 0. Every percentage above is measured against a re-serialized baseline, so it isolates the step from
+  the container: glTF-Transform re-serializes the container whatever runs, and on the Fox that alone is +0.86 % (the
+  Buggy, −27.4 %).
+- **What `palette` does, and what was not measured.** Unlike weld and resample, `palette` was never swept over the
+  corpus on its own. It considers only untextured materials and does nothing unless 5 or more of them differ
+  (`transform.ts` passes `min: 5`, glTF-Transform's default) and a factor has 5 or more distinct values. When it runs
+  (glTF-Transform's `palette`), it writes base colour (converted to sRGB), emissive, metallic and roughness factors
+  into 8-bit palette PNGs (`value × 255`), sampled nearest-filtered, and gives every primitive it merges a new
+  `TEXCOORD_n` accessor of two floats per vertex (8 bytes per vertex). So it can make a file bigger (a large mesh under
+  a handful of flat materials gains more UV bytes than it saves in material JSON), and a factor quantized to 1/255 can shift shading
+  by less than the 24-level tolerance the parity checks use. `--no-palette` removes it.
 - **What `safe` is measured at**: **0 changed pixels in every view, on both backends**, for the Fox and the Buggy.
   Precisely: no pixel's R, G or B differs by **more than 24** between the two renders (`comparePixels`,
   `src/cli/analyze.ts`). Alpha is never compared, and a uniform shift of 24 or less on every pixel would still read
@@ -1147,7 +1247,8 @@ swaps change data, not draw calls.
   `changedPixels` count per view rather than the percent, because `diffPct` is rounded to three decimals and at
   1280x720 that absorbs up to 4 changed pixels of 921,600; the percent-based assertion could not have caught a
   handful of moved pixels, and did not. `--parity 0` is judged the same way (Ruling R108), so the shipped tool
-  means zero when it says zero. `--<step>` / `--no-<step>` override a preset; `--simplify`,
+  means zero when it says zero, for the comparison `--parity` governs (see Report and Verdict). On the Buggy,
+  `safe` takes 148 materials to one; the Fox has one material, so `palette` does nothing there. `--<step>` / `--no-<step>` override a preset; `--simplify`,
   `--textures`, `--compress meshopt` enable their step with the given value. `--instance`, `--join` and
   `--compress meshopt` are never in a preset: the first two change the node graph game code may address by name,
   the third needs `loader.setMeshoptDecoder`. A preset's texture step without `sharp` installed is skipped with a
@@ -1167,15 +1268,21 @@ swaps change data, not draw calls.
   before and after and the time, `requires[]` (each extension of the output with the loader piece it needs and the
   line of code, `code: null` when `GLTFLoader` handles it alone), and `verify` when on (default): the original and
   the optimized file go through `analyze` with the same framing, frames and views; `verify.parity` compares the two
-  naive renders view by view, each view carrying the rounded `diffPct` and the exact `changedPixels` behind it
-  (the percent is rounded to three decimals, which at 1280x720 hides up to 4 changed pixels, so only
-  `changedPixels: 0` means no pixel moved), `verify.original` / `verify.optimized` are the full analyze documents, `verify.delta`
-  is after minus before for bytes, materials, vertices, triangles, naive and compiled scene submissions, load time
-  and estimated GPU memory.
-- **Verdict**: fails on parity over `--parity` (default 0.5 %), a lost animation, skin or morph target (checked in
-  the glTF document and, when verified, in what the harness loaded), `--budget` exceeded by the optimized file's
-  compiled submissions, an error-severity hint on the optimized file, or a page error in either verified render. Deltas are never judged: a
-  palette texture can grow a file that then draws in one call.
+  naive renders (each file as loaded, before compiling) view by view at `--parity`, each view carrying the rounded
+  `diffPct` and the exact `changedPixels` behind it (the percent is rounded to three decimals, which at 1280x720 hides
+  up to 4 changed pixels, so only `changedPixels: 0` means no pixel moved), `verify.original` / `verify.optimized` are
+  the full analyze documents, each with its own compile parity (`verify.original.parity`, `verify.optimized.parity`)
+  judged at analyze's default 0.5 % whatever `--parity` is (`verifyPair`, `src/cli/optimize.ts`), `verify.delta` is
+  after minus before for bytes, materials, vertices, triangles, naive and compiled scene submissions, load time and
+  estimated GPU memory.
+- **Verdict**: fails on `verify.parity` over `--parity` (default 0.5 %), on the optimized file's own compile parity
+  over 0.5 % (`verify.optimized.parity`, when compiling), a lost animation, skin or morph target (checked in the glTF
+  document and, when verified, in what the harness loaded), `--budget` exceeded by the optimized file's compiled
+  submissions, an error-severity hint on the optimized file, or a page error in either verified render. The
+  original's compile parity is reported and never judged. So `--parity 0` guarantees zero changed pixels between the
+  two files as loaded, not after compiling: a compile of the optimized file that moves up to 0.5 % of its pixels
+  still passes, visible only in `verify.optimized.parity.views[].changedPixels`. Deltas are never judged: a palette
+  texture can grow a file that then draws in one call.
 - **Limits**: no atlasing across materials that differ by textures (the biome case still needs one batch per
   texture set), no KTX2 encoding (needs `toktx`), no `MSFT_lod` chains, no Draco output.
 
@@ -1242,8 +1349,23 @@ gated.
   scene ≤ 30 submissions), `pnpm assets` / `pnpm assets:kits` (public glTF corpus and Kenney kits, gitignored),
   `pnpm assets:report` (every downloaded asset compiled with pixel parity on each backend), `pnpm bench`,
   `pnpm build` (library via tsc plus the CLI harness page via Vite), `pnpm typecheck`.
-- CI (`.github/workflows/ci.yml`): unit job, bench job per backend (assets cached, build, e2e, bench gate), publish
-  job on `v*` tags with `npm publish --provenance` (needs the `NPM_TOKEN` secret; see `docs/release.md`).
+- CI, four workflows in `.github/workflows` (prepared locally; none has run, since the repository has no remote yet).
+  `docs/release.md` ("What CI covers, and what it does not") has the measured test counts.
+  - `ci.yml`, on pull requests, pushes to `main` and `v*` tags: `commit-rules` (pull requests only:
+    `scripts/commit-rules.mjs` requires a `Budget:` line on every commit touching a rendering path); `unit`
+    (`pnpm typecheck`, `pnpm test`, `pnpm build`); `e2e` per backend, `--grep-invert "@corpus|@bench"`, downloading
+    nothing, with `FORGE_REQUIRE_WEBGPU=1` on `webgpu` so a runner without an adapter fails instead of skipping;
+    `bench` per backend, the only pull-request job that downloads (the kits), running the gate in
+    `scripts/bench-run.mjs` without a build or e2e; `publish` on `v*` tags, after `unit`, `e2e` and `bench`, refusing a
+    tag that differs from `package.json` and running `npm publish --provenance` (needs the `NPM_TOKEN` secret).
+  - **The `webgpu` e2e leg checks no pixels.** Its adapter is SwiftShader, whose canvas capture drops the device, so
+    `test/e2e/fixtures.ts` turns `pixelChecks` off: screenshot-gated tests skip whole and the rest skip their
+    screenshot steps. WebGPU pixel parity is proven only by a local run on a native adapter (`docs/release.md`, step 2).
+  - `assets.yml`, weekly and on dispatch: every non-`@bench` test on both backends with the kits and the corpus
+    downloaded strictly (`FORGE_FETCH_STRICT=1`), `FORGE_RUN_ID` pinned per job; it uploads `docs/assets-report*` as an
+    artifact and never commits.
+  - `pages.yml` deploys the device bench page (`dist/bench-app`) on pushes to `main`; `bench-results.yml` ingests a
+    submitted device result only after a collaborator with `write` or `admin` permission applies `bench-accepted`.
 - Repository rules for agents working in the repo: `CONTRIBUTING.md`.
 
 ## 13. What we learned about three r186 (and how threeforge works around it)
@@ -1275,8 +1397,8 @@ gated.
   `needsRefresh()` says the render object is new this frame; a second render object of the same object (a
   reflection pass) gets a shared refresh without attribute uploads. Attributes written in a hook for a nested
   pass are therefore what the main pass draws: sprite batches fill their instance attributes once per frame, for
-  the main camera, and nested passes reuse that list (the lake's raindrops stayed at 0.3 % pixel difference only
-  after this).
+  the main camera, and nested passes reuse that list (the lake's raindrops stayed within the sprite e2e's bound,
+  under 0.5 % of pixels changed at a per-channel tolerance of 24, only after this).
 
 ## 14. Limits and roadmap
 
@@ -1289,6 +1411,26 @@ the Streamer keeps CPU copies and re-uploads, it does not fetch chunk data on de
 `threeforge optimize` shipped in 0.3.0 (section 10) and the device bench page with GitHub-native results is in
 section 11. Specs live in `docs/superpowers/specs`, plans in
 `docs/superpowers/plans`.
+
+### Known limitations of 0.9.0
+
+Each is documented where the mechanism is, and none has a fix in this release.
+
+- **Occlusion hides a batch from shadow maps and reflections too** (section 7, "Occlusion"): with
+  `occlusion: true`, a target its proxy reads as occluded is `visible = false`, which three honours in every render,
+  so its shadow and its reflection vanish with it.
+- **A `World.compile()` that throws part-way leaves what it had done.** If it throws after batching or hiding
+  originals, the batches stay in the scene and the originals stay hidden, while `compiled` stays false, so
+  neither `decompile()` nor `dispose()` undoes any of it. Only the pass tracker's scene hooks are removed on that path. Rebuild the
+  scene (or reload) rather than retrying `compile()` on it.
+- **The bake's seam and buried-face removals leave a hole when the camera's near plane cuts into a module**
+  (section 8, "Near-plane limitation").
+- **`memory.unreferenced` has residual blind spots** (section 4, "Limits of the memory section"): resources three
+  created before `ledger.attach()` count as unreferenced, a render target drawn once and abandoned without
+  `dispose()` is allowed as live, and transmission's and XR's viewport textures still count as unreferenced.
+- **WebGPU pixel parity is not checked in CI** (section 12): only a local run on a native adapter checks it.
+- **`optimize --parity 0` is zero only between the two files as loaded** (section 10, "Verdict"): each file's own
+  compile check stays at 0.5 %.
 
 ## 15. Glossary
 

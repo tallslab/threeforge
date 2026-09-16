@@ -25,7 +25,8 @@ flags) into one instanced billboard draw whose instances follow the originals ev
 `SpriteMaterial` instance rather than one per sprite; a sprite with a non-default `center`, a `renderOrder`,
 other layers or its own `onBeforeRender` stays a single draw (the compile report names the rule). Keep
 `sprites: 'batch'` on; `spriteThreshold` (default 4) decides when a material is worth a batch. The 2 000
-raindrops of the lake benchmark go from 3 548 submissions to 7 with 0.3 % of pixels changed.
+raindrops of the lake benchmark go from 3 548 submissions to 7; the sprite e2e holds the change to under 0.5 % of
+pixels at a per-channel tolerance of 24.
 
 ## Points: additive, depth-write off, capped
 
