@@ -165,6 +165,11 @@ test('optimize_asset with overwrite: true replaces both the out file and a pre-e
   const dir = dirname(fox());
   const target = join(dir, 'mcp-resource-overwrite.gltf');
   const clashing = join(dir, 'mcp-resource-overwrite.bin');
+  // A crashed earlier run can leave this test's own .gltf and .bin behind. Those would be in the snapshot below, so the
+  // sweep would treat them as pre-existing and keep them, and this run would then fail on the leftover .gltf ("exists")
+  // instead of on what it is testing. Remove the two by name first, and again at the end, alongside the sweep.
+  rmSync(target, { force: true });
+  rmSync(clashing, { force: true });
   // The run also writes the Fox's texture beside the .gltf (named after its slot: baseColor.png). Remove every file
   // this test adds to the asset folder: a leftover baseColor.png makes the resource-clash test above name the PNG.
   const before = new Set(readdirSync(dir));
@@ -178,6 +183,9 @@ test('optimize_asset with overwrite: true replaces both the out file and a pre-e
   } finally {
     await close();
     for (const name of readdirSync(dir)) if (!before.has(name)) rmSync(join(dir, name), { recursive: true, force: true });
+    // By name as well: the sweep keeps whatever was already in the snapshot, which is exactly the leftover case above.
+    rmSync(target, { force: true });
+    rmSync(clashing, { force: true });
   }
 });
 
