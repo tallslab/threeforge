@@ -16,7 +16,19 @@ export type BackendName = 'webgl2' | 'webgpu';
 export interface RenderOnceResult {
   backend: BackendName;
   multiDraw: boolean;
+  /**
+   * The backend's own count for that render. Kept for report lines and for the spike measurement; CONTRIBUTING.md rule 5
+   * says not to assert on it, because it is backend-dependent (N per BatchedMesh on WebGPU, 1 with multi-draw on
+   * WebGL2) and so says nothing portable about what the scene cost. The ledger totals below are what specs assert.
+   */
   drawCalls: number;
+  /** `ledger.frame().totals` for that render: the scene's own submissions, the renderer's included and excluded. */
+  sceneSubmissions: number;
+  submissions: number;
+  /** `byReason['renderer-internal'].submissions`: three's output colour-transform quad and anything like it. */
+  rendererInternal: number;
+  /** `reportedDrawCalls - gpuDraws`. Non-zero means the ledger did not account for everything the backend issued. */
+  unattributed: number;
 }
 
 export interface SpikeRun {
@@ -470,7 +482,16 @@ try {
     // Delta inside one synchronous render() call: immune to info.autoReset running on three's own rAF.
     const before = renderer.info.render.drawCalls;
     renderer.render(scene, camera);
-    return { backend, multiDraw, drawCalls: renderer.info.render.drawCalls - before };
+    const snapshot = ledger.frame();
+    return {
+      backend,
+      multiDraw,
+      drawCalls: renderer.info.render.drawCalls - before,
+      sceneSubmissions: snapshot.totals.sceneSubmissions,
+      submissions: snapshot.totals.submissions,
+      rendererInternal: snapshot.byReason['renderer-internal']?.submissions ?? 0,
+      unattributed: snapshot.totals.unattributed,
+    };
   }
 
   const frustum = new Frustum();
