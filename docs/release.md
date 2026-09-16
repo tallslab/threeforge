@@ -27,10 +27,13 @@ the commits it adds.
    with `pnpm build:lib && node scripts/agents-md.mjs`, update `CHANGELOG.md`.
 2. `pnpm typecheck && pnpm test && pnpm build && pnpm e2e --grep-invert "assets\.spec\.ts" && pnpm bench` on a
    machine with a GPU (a native WebGPU adapter: this is the only run that checks WebGPU pixels in the e2e specs, and
-   step 3's corpus run the only one that checks them on the corpus models, see below), with the
-   kits and the corpus downloaded. `assets.spec.ts` is left out on purpose: it rewrites the tracked
+   it already checks some on corpus models: `warmup.spec.ts` holds `polyhaven-fir_sapling_medium` and
+   `CommercialRefrigerator` under 0.05 % changed pixels at tolerance 4, and `cli.spec.ts` holds `optimize` on the Fox
+   and the Buggy at `--parity 0`; what step 3's `assets.spec.ts` run adds is a compile-parity check of every model in
+   the asset index on each backend, see below), with the kits and the corpus downloaded. `assets.spec.ts` is left out on purpose: it rewrites the tracked
    `docs/assets-report*` files, and run here, with step 1's edits uncommitted, it would stamp every row with the
-   previous commit and `-dirty`. (At `e567797` that selection is 155 of the 259 tests per project.)
+   previous commit and `-dirty`. (At the head of `fix/audit-0.9.0`, where no spec has changed since `20bace1`, that selection is 156 of the 260 tests
+   per project, 312 of 520 across both.)
 3. Refresh the corpus report as a deliberate step of its own, when the release should cite a report measured on its
    own code (0.9.0's was: commit `a485e57`, run `fix-audit-0.9.0-corpus-20260916`):
    1. Commit step 1's edits first. `git status --short` must print nothing, or every row is stamped `-dirty`.
@@ -72,10 +75,10 @@ job would never fire.
   Deterministic cost metrics are gated; timing is recorded only, since the runner is SwiftShader, not a GPU.
 
 **A green pull-request run is not full coverage, and should not be read as one.** The `@corpus` tag takes every
-test that needs downloaded content out of the `e2e` job. Measured at `e567797` with
-`pnpm exec playwright test --list --project=<backend>` (and `--grep-invert "@corpus|@bench"`, the `e2e` job's
-selection): the suite is 259 tests in 36 files **per project** (518 across the two backends), of which `e2e` runs
-**95 per project** (190 across both) in 28 files; 148 per project are `@corpus` and 16 are `@bench`. Not covered there:
+test that needs downloaded content out of the `e2e` job. Measured at the head of
+`fix/audit-0.9.0` (no spec has changed since `20bace1`) with `pnpm exec playwright test --list --project=<backend>` (and `--grep-invert "@corpus|@bench"`, the `e2e` job's
+selection): the suite is 260 tests in 36 files **per project** (520 across the two backends), of which `e2e` runs
+**96 per project** (192 across both) in 28 files; 148 per project are `@corpus` and 16 are `@bench`. Not covered there:
 
 - 15 of `cli.spec.ts`'s 20 tests and 10 of `mcp.spec.ts`'s 13 — most of the CLI and MCP agent surface on real models;
 - `ParticleBudget` entirely (`particles.spec.ts` contributes no tests to the run) and the boss-fight half of
@@ -84,16 +87,16 @@ selection): the suite is 259 tests in 36 files **per project** (518 across the t
 
 **The `e2e` job on `webgpu` checks no pixels at all.** A Linux runner's WebGPU adapter is SwiftShader, and capturing
 its canvas in headless Chromium drops the device, so `test/e2e/fixtures.ts` turns `pixelChecks` off for `webgpu` on
-any adapter but a native one and says so in an annotation on every such test. There, 23 `test.skip(!forge.pixelChecks)`
+any adapter but a native one and says so in an annotation on every such test. There, 25 `test.skip(!forge.pixelChecks)`
 declarations skip their whole test (in `bake`, `compile`, `crowd`, `freeze`, `hidden-group`, `scene-space`,
 `sprites`, `streaming`, `vat` and `warmup`), and `compile`, `character`, `occlusion` and `nested-passes` run their
 counts but skip their screenshots. `nested-passes.spec.ts` also skips a test, with the loss message, once the adapter
 reports the device lost; on macOS SwiftShader that happens after the first step, so all ten skip there, and how long a
 Linux runner keeps the device is unknown until CI first runs. The `bench` job's `webgpu` gate is SwiftShader too and
 gates counts, not pixels. **WebGPU pixel parity is therefore proven only by a local run on a native adapter**, where
-`FORGE_WEBGPU` defaults to `native` off Linux: step 2 of the release for the e2e specs, and step 3's `assets.spec.ts`
-run on `--project=webgpu` for the corpus (one view per model, under 0.5 % of pixels changed at a per-channel
-tolerance of 24). A green `webgpu` job proves counts only.
+`FORGE_WEBGPU` defaults to `native` off Linux: step 2 of the release for the e2e specs (the `@corpus` ones among them
+compare pixels on a few corpus models), and step 3's `assets.spec.ts` run on `--project=webgpu` for every model of the
+corpus (one view per model, under 0.5 % of pixels changed at a per-channel tolerance of 24). A green `webgpu` job proves counts only.
 
 Those are covered by **`.github/workflows/assets.yml`**: weekly (Mondays 04:17 UTC) and on manual dispatch, the
 full corpus on both backends. It fails when any asset misbehaves **and when any asset failed to download**: the
@@ -110,8 +113,8 @@ then fails the models that are missing by name.
 
 `FORGE_BENCH_APP_OPTIONAL=1` lets `scripts/bench-app-assets.mjs` warn instead of exiting 1 when the Kenney kits
 are absent. Only Playwright's port-5180 `webServer` sets it: that command's exit status fails the *whole*
-Playwright run rather than one spec, so without it a kit-less machine loses all 95 tests per project that are
-neither `@corpus` nor `@bench` (190 across both backends, measured at `e567797`).
+Playwright run rather than one spec, so without it a kit-less machine loses all 96 tests per project that are
+neither `@corpus` nor `@bench` (192 across both backends, measured at the head of `fix/audit-0.9.0`).
 `pnpm build:bench-app` and `pnpm bench:app` never set it, so a published page still fails hard without the kits.
 
 ## Device bench page and results (one-time repository settings)
