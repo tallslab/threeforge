@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PNG } from 'pngjs';
-import { pixelDiffPct } from '../../src/cli/analyze.js';
+import { comparePixels, pixelDiffPct } from '../../src/cli/analyze.js';
 import { pixelDiff } from '../e2e/pixels.js';
 
 /** Encodes a flat RGBA pixel grid (row-major, 4 bytes per pixel) as a PNG buffer. */
@@ -150,12 +150,12 @@ describe('pixelDiffPct (the CLI parity tolerance)', () => {
   });
 
   /**
-   * Both call sites round the percent to three decimals — `Number(pixelDiffPct(a, b).toFixed(3))` in
-   * `src/cli/analyze.ts` ~109 and `src/cli/optimize.ts` ~174 — so a view reported as 0 is not proof that no pixel
-   * moved. At the CLI harness's 1280x720 canvas (921,600 pixels) the rounding absorbs anything below 0.0005 %,
-   * which is 4.608 pixels. Together with the threshold above, an asserted `diffPct === 0` means "at most 4 pixels
-   * of 921,600 moved by more than 24 on a channel" — the strongest claim `--parity 0` can make, and weaker than
-   * bitwise equality. A raw changed-pixel count per view would need no tolerance at all; it is not built yet.
+   * Both call sites round the percent to three decimals — `Number(comparePixels(a, b).diffPct.toFixed(3))` in
+   * `src/cli/analyze.ts` and `src/cli/optimize.ts` — so a view reported as 0 is not proof that no pixel moved. At
+   * the CLI harness's 1280x720 canvas (921,600 pixels) the rounding absorbs anything below 0.0005 %, which is
+   * 4.608 pixels, so an asserted `diffPct === 0` only means "at most 4 pixels moved by more than 24 on a channel".
+   * That is why each view also carries `changedPixels` (Ruling R104): the exact count, which this pins alongside
+   * the rounding it exists to defeat. `--parity 0` plus `changedPixels === 0` is the pair that proves parity.
    */
   it('rounds to three decimals at the call sites, so 4 changed pixels of 921,600 still report 0', () => {
     // The CLI's own canvas size: cli-app/main.ts renders at 800x600 with pixelRatio 1, Playwright shoots 1280x720.
@@ -171,6 +171,27 @@ describe('pixelDiffPct (the CLI parity tolerance)', () => {
     expect(reported(4)).toBe(0); // ...and the reported figure is still 0
     expect(reported(5)).toBe(0.001);
     expect(4 / (1280 * 720)).toBeLessThan(0.000005); // 0.0005 % as a ratio: the rounding boundary
+    // What the reported figure cannot say, the count says exactly: this is the assertion the safe e2e now makes.
+    expect(comparePixels(blank, canvas(4)).changedPixels).toBe(4);
+    expect(comparePixels(blank, canvas(0)).changedPixels).toBe(0);
+  });
+
+  it('reports the exact changed-pixel count, the pixels compared, and an unrounded percent', () => {
+    const a = png(4, 1, [
+      [0, 0, 0],
+      [0, 0, 0],
+      [0, 0, 0],
+      [0, 0, 0],
+    ]);
+    const b = png(4, 1, [
+      [25, 0, 0], // counts
+      [24, 0, 0], // exactly at the threshold: does not
+      [0, 25, 0], // any channel counts
+      [0, 0, 0],
+    ]);
+    expect(comparePixels(a, b)).toEqual({ changedPixels: 2, comparedPixels: 4, diffPct: 50 });
+    // Mismatched sizes compare the overlap, and `comparedPixels` says how many that was.
+    expect(comparePixels(a, png(1, 1, [[0, 0, 0]]))).toEqual({ changedPixels: 0, comparedPixels: 1, diffPct: 0 });
   });
 
   it('compares the pixels both images have instead of short-circuiting on mismatched dimensions', () => {

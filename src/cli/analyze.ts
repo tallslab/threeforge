@@ -22,7 +22,24 @@ function cliAppDir(): string {
   return dir;
 }
 
-export function pixelDiffPct(a: Buffer, b: Buffer): number {
+/** What a view comparison found: the exact count as well as the percent the report rounds. */
+export interface PixelComparison {
+  /** Pixels where any of R, G, B differs by more than 24. Exact, so `0` means "no pixel moved", with no rounding. */
+  changedPixels: number;
+  /** Pixels compared: the smaller of the two images. */
+  comparedPixels: number;
+  /** `changedPixels` as a percent of `comparedPixels`, unrounded. */
+  diffPct: number;
+}
+
+/**
+ * Compares two PNGs pixel by pixel, counting a pixel as changed when any of R, G, B differs by more than 24.
+ *
+ * The count is reported beside the percent because the percent alone cannot express parity: callers round it to
+ * three decimals, and at the harness's 1280x720 canvas that absorbs up to 4 changed pixels of 921,600. A `diffPct`
+ * of 0 therefore means "at most 4 pixels moved", while `changedPixels === 0` means none did.
+ */
+export function comparePixels(a: Buffer, b: Buffer): PixelComparison {
   const pa = pngjs.PNG.sync.read(a);
   const pb = pngjs.PNG.sync.read(b);
   const n = Math.min(pa.width * pa.height, pb.width * pb.height);
@@ -32,7 +49,11 @@ export function pixelDiffPct(a: Buffer, b: Buffer): number {
     const d = Math.max(Math.abs(pa.data[o]! - pb.data[o]!), Math.abs(pa.data[o + 1]! - pb.data[o + 1]!), Math.abs(pa.data[o + 2]! - pb.data[o + 2]!));
     if (d > 24) differing++;
   }
-  return (100 * differing) / Math.max(1, n);
+  return { changedPixels: differing, comparedPixels: n, diffPct: (100 * differing) / Math.max(1, n) };
+}
+
+export function pixelDiffPct(a: Buffer, b: Buffer): number {
+  return comparePixels(a, b).diffPct;
 }
 
 /** Screenshots of the default framing plus `views` orbit views (the page's `setView`), then back to the default. */
@@ -106,7 +127,10 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
       await evaluateWithin(page, 'rendering 3 frames after compile', input.timeout, `(async () => { for (let i = 0; i < 3; i++) await window.__threeforge.frameAsync(); })()`);
       after = (await measureViaHook(page, input.frames, input.timeout)).snapshot;
       const shotsAfter = await captureViews(page, input.views, input.timeout);
-      const views = shotsBefore.map((shot, i) => ({ view: shot.view, diffPct: Number(pixelDiffPct(shot.png, shotsAfter[i]!.png).toFixed(3)) }));
+      const views = shotsBefore.map((shot, i) => {
+        const diff = comparePixels(shot.png, shotsAfter[i]!.png);
+        return { view: shot.view, diffPct: Number(diff.diffPct.toFixed(3)), changedPixels: diff.changedPixels };
+      });
       const worst = Math.max(...views.map((v) => v.diffPct));
       parity = { diffPct: worst, threshold: PARITY_THRESHOLD, pass: worst <= PARITY_THRESHOLD, views };
       if (!parity.pass) log(`pixel parity lost: ${views.filter((v) => v.diffPct > PARITY_THRESHOLD).map((v) => `${v.view} ${v.diffPct}%`).join(', ')}`);

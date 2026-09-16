@@ -60,7 +60,7 @@ export const SNAPSHOT_SCHEMA = {
 const runInput = (first: Record<string, Schema>): Schema => obj({ ...first, backend: { enum: ['webgl2', 'webgpu'] }, tier: { enum: ['auto', 'desktop', 'phone-mid', 'phone-low'] }, budget: nullable(number), frames: integer, compile: boolean, timeout: number, headed: boolean });
 const verdict = obj({ pass: boolean, budget: nullable(obj({ maxSubmissions: number, actual: integer, pass: boolean })), errors: arr(string), reasons: arr(string) });
 const asset = obj({ meshes: integer, materials: integer, vertices: integer, triangles: integer, animations: integer, skinned: integer, morph: integer, loadMs: number });
-const parity = obj({ diffPct: number, threshold: number, pass: boolean, views: arr(obj({ view: string, diffPct: number })) });
+const parity = obj({ diffPct: number, threshold: number, pass: boolean, views: arr(obj({ view: string, diffPct: number, changedPixels: integer })) });
 const compileReport: Schema = {
   type: 'object',
   description:

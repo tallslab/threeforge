@@ -51,7 +51,7 @@ function analyzeFixture(): AgentDocument {
     before,
     after,
     compile: null,
-    parity: { diffPct: 0.02, threshold: 0.5, pass: true, views: [{ view: 'default', diffPct: 0.02 }] },
+    parity: { diffPct: 0.02, threshold: 0.5, pass: true, views: [{ view: 'default', diffPct: 0.02, changedPixels: 184 }] },
     hints: after.hints,
     verdict: verdictOf(after, before, 100, null),
     timings: { totalMs: 120 },
@@ -97,7 +97,7 @@ function optimizeFixture(): OptimizeDocument {
     requires: [],
     verify: {
       backend: 'webgl2',
-      parity: { diffPct: 0.01, threshold: 0.5, pass: true, views: [{ view: 'default', diffPct: 0.01 }] },
+      parity: { diffPct: 0.01, threshold: 0.5, pass: true, views: [{ view: 'default', diffPct: 0.01, changedPixels: 92 }] },
       original,
       optimized,
       delta: { bytes: -1024, materials: 0, vertices: 0, triangles: 0, sceneSubmissions: { naive: 4, compiled: 4 }, loadMs: 0, memoryBytes: 0 },

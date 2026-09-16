@@ -138,7 +138,7 @@ describe('summarize', () => {
     after.totals.sceneSubmissions = 30;
     after.hints = [{ category: 'lighting', severity: 'warn', code: 'shadow-texels', message: 'too many', objects: [] }];
     const input: AnalyzeInput = { file: 'a.glb', backend: 'webgl2', tier: 'auto', budget: 100, frames: 30, compile: true, bake: 'off', views: 0, timeout: 60000, headed: false };
-    const doc: AgentDocument = { schemaVersion: 1, tool: 'threeforge', version: '0.2.0', command: 'analyze', input, env, asset: null, before, after, compile: null, parity: { diffPct: 0.01, threshold: 0.5, pass: true, views: [{ view: 'default', diffPct: 0.01 }] }, hints: after.hints, verdict: verdictOf(after, before, 100, null), timings: { totalMs: 10 } };
+    const doc: AgentDocument = { schemaVersion: 1, tool: 'threeforge', version: '0.2.0', command: 'analyze', input, env, asset: null, before, after, compile: null, parity: { diffPct: 0.01, threshold: 0.5, pass: true, views: [{ view: 'default', diffPct: 0.01, changedPixels: 92 }] }, hints: after.hints, verdict: verdictOf(after, before, 100, null), timings: { totalMs: 10 } };
     const text = summarize(doc);
     expect(text).toContain('PASS');
     expect(text).toContain('500 → 30 submissions');

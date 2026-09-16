@@ -42,7 +42,12 @@ export function summarize(doc: AgentDocument): string {
   if (doc.asset) lines.push(`asset: ${doc.asset.meshes} meshes · ${doc.asset.materials} materials · ${doc.asset.triangles} tris · ${doc.asset.skinned} skinned · ${doc.asset.animations} clips · loaded in ${doc.asset.loadMs.toFixed(0)} ms`);
   if (doc.after) lines.push(`${doc.before.totals.sceneSubmissions} → ${doc.after.totals.sceneSubmissions} submissions after compile${doc.compile ? ` (${doc.compile.after.batches} batches, ${doc.compile.after.instanced} instanced, ${doc.compile.skipped.length} skipped)` : ''}`);
   else lines.push(`${doc.before.totals.sceneSubmissions} submissions`);
-  if (doc.parity) lines.push(`parity ${doc.parity.diffPct.toFixed(2)}% pixels changed over ${doc.parity.views.length} view${doc.parity.views.length === 1 ? '' : 's'} (threshold ${doc.parity.threshold}%)`);
+  // The exact worst-view count rides beside the percent: the percent is rounded to three decimals, so it reads 0.00
+  // for a view that really did move a few pixels.
+  if (doc.parity)
+    lines.push(
+      `parity ${doc.parity.diffPct.toFixed(2)}% pixels changed over ${doc.parity.views.length} view${doc.parity.views.length === 1 ? '' : 's'} (threshold ${doc.parity.threshold}%) · ${doc.parity.views.reduce((most, v) => Math.max(most, v.changedPixels), 0)} changed pixels in the worst view`,
+    );
   if (doc.compile?.bake) lines.push(`bake: ${doc.compile.bake.groups} groups · ${doc.compile.bake.inputTriangles} → ${doc.compile.bake.triangles} tris · seams ${doc.compile.bake.contactFaces} · kept coincident ${doc.compile.bake.keptCoincidentFaces ?? 0} · duplicates ${doc.compile.bake.duplicateFaces} · buried ${doc.compile.bake.buriedFaces} · welded ${doc.compile.bake.weldedVertices}`);
   lines.push(...formatCostRows(frame));
   lines.push(...formatHints(frame));
@@ -67,7 +72,9 @@ export function summarizeOptimize(doc: OptimizeDocument): string {
     const v = doc.verify;
     const naive = `${v.original.before.totals.sceneSubmissions} → ${v.optimized.before.totals.sceneSubmissions}`;
     const compiled = v.original.after && v.optimized.after ? `, compiled ${v.original.after.totals.sceneSubmissions} → ${v.optimized.after.totals.sceneSubmissions}` : '';
-    lines.push(`verify (${v.backend}): parity ${v.parity.diffPct.toFixed(2)} % over ${v.parity.views.length} view${v.parity.views.length === 1 ? '' : 's'} (threshold ${v.parity.threshold} %) · submissions naive ${naive}${compiled} · load ${v.original.asset?.loadMs.toFixed(0)} → ${v.optimized.asset?.loadMs.toFixed(0)} ms`);
+    lines.push(
+      `verify (${v.backend}): parity ${v.parity.diffPct.toFixed(2)} % over ${v.parity.views.length} view${v.parity.views.length === 1 ? '' : 's'} (threshold ${v.parity.threshold} %) · ${v.parity.views.reduce((most, view) => Math.max(most, view.changedPixels), 0)} changed pixels in the worst view · submissions naive ${naive}${compiled} · load ${v.original.asset?.loadMs.toFixed(0)} → ${v.optimized.asset?.loadMs.toFixed(0)} ms`,
+    );
     if (v.optimized.parity) lines.push(`optimized file compiled with parity ${v.optimized.parity.diffPct.toFixed(2)} %`);
   } else lines.push('not verified (--no-verify)');
   lines.push(`${doc.timings.totalMs} ms total (${doc.timings.transformMs} ms transform, ${doc.timings.verifyMs} ms verify)`);

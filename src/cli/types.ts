@@ -48,8 +48,12 @@ export interface Parity {
   diffPct: number;
   threshold: number;
   pass: boolean;
-  /** Per view: `default` plus `orbit-<i>` for each extra view. */
-  views: Array<{ view: string; diffPct: number }>;
+  /**
+   * Per view: `default` plus `orbit-<i>` for each extra view. `diffPct` is rounded to three decimals, which at the
+   * harness's 1280x720 canvas absorbs up to 4 changed pixels of 921,600, so `changedPixels` carries the exact count:
+   * only `changedPixels === 0` means no pixel moved.
+   */
+  views: Array<{ view: string; diffPct: number; changedPixels: number }>;
 }
 
 export interface Verdict {

@@ -52,7 +52,7 @@ pixels view by view, compiles both with threeforge, and reports:
 {
   "steps": [{ "name": "dedup", "applied": true, "before": { "materials": 148, "meshes": 109 }, "after": { "materials": 10, "meshes": 63 } }],
   "requires": [{ "extension": "EXT_meshopt_compression", "needs": "MeshoptDecoder", "code": "loader.setMeshoptDecoder(MeshoptDecoder);" }],
-  "verify": { "parity": { "diffPct": 0, "threshold": 0.5, "pass": true }, "delta": { "bytes": -2103500, "materials": -147, "sceneSubmissions": { "naive": -173, "compiled": 0 } } },
+  "verify": { "parity": { "diffPct": 0, "threshold": 0.5, "pass": true, "views": [{ "view": "default", "diffPct": 0, "changedPixels": 0 }] }, "delta": { "bytes": -2103500, "materials": -147, "sceneSubmissions": { "naive": -173, "compiled": 0 } } },
   "verdict": { "pass": true }
 }
 ```

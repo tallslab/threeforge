@@ -2,7 +2,7 @@ import type { Document, NodeIO } from '@gltf-transform/core';
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { VERSION } from '../version.js';
-import { analyzeAssetWithShots, pixelDiffPct } from './analyze.js';
+import { analyzeAssetWithShots, comparePixels } from './analyze.js';
 import { EnvironmentError, UsageError } from './errors.js';
 import { assertConfinedUri, assertConfinedUris, readGltfJson, resourcePathsOf, type ResourcePath } from './gltf-uris.js';
 import type { CliDeps } from './lifecycle.js';
@@ -172,7 +172,10 @@ async function verifyPair(original: string, optimized: string, input: OptimizeIn
   const a = await analyzeAssetWithShots({ ...base, file: original }, log, true, deps);
   log(`verifying on ${input.backend}: optimized`);
   const b = await analyzeAssetWithShots({ ...base, file: optimized }, log, true, deps);
-  const views = a.shots.map((shot, i) => ({ view: shot.view, diffPct: Number(pixelDiffPct(shot.png, b.shots[i]!.png).toFixed(3)) }));
+  const views = a.shots.map((shot, i) => {
+    const diff = comparePixels(shot.png, b.shots[i]!.png);
+    return { view: shot.view, diffPct: Number(diff.diffPct.toFixed(3)), changedPixels: diff.changedPixels };
+  });
   const worst = views.length ? Math.max(...views.map((v) => v.diffPct)) : 0;
   const parity: Parity = { diffPct: worst, threshold: input.parity, pass: worst <= input.parity, views };
   if (!parity.pass) log(`pixel parity lost between the files: ${views.filter((v) => v.diffPct > input.parity).map((v) => `${v.view} ${v.diffPct}%`).join(', ')}`);
