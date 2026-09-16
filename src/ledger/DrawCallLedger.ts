@@ -11,6 +11,7 @@ import { disposeOverdraw, measureOverdraw, overdrawTargetOf, type OverdrawRender
 import { formatCostRows, formatHints } from '../overlay/index.js';
 import { FORGE_TAG_KEY } from '../tags.js';
 import { lightInfoOf, type LightInfo } from './sections.js';
+import { shadowPassIds } from './shadowPasses.js';
 import { buildFrame, emptyFrame, emptySections, type BudgetResult, type FrameEnv, type FrameSnapshot, type JsSnapshot, type MemorySnapshot, type SubmissionRecord, type Tier } from './snapshot.js';
 
 /** The slice of three's common Renderer the ledger patches and reads. Structural so tests can fake it. */
@@ -607,24 +608,12 @@ export class DrawCallLedger {
     });
     if (casting === null) return;
     const lights: WalkedLight[] = casting;
-    // `shadow:<name>` (the type when unnamed) for a name no other shadow-casting light of the scene has, `shadow:<name>#k`
-    // (k from 1, in scene order) for a shared one. An id another scene took this frame moves on to the next free k.
-    const shared = new Map<string, number>();
-    for (const light of lights) {
-      const key = light.name || light.type;
-      shared.set(key, (shared.get(key) ?? 0) + 1);
-    }
-    const numbered = new Map<string, number>();
-    for (const light of lights) {
-      const key = light.name || light.type;
-      const base = `shadow:${key}`;
-      const duplicate = shared.get(key)! > 1;
-      let k = duplicate ? (numbered.get(key) ?? 0) + 1 : 1;
-      let id = duplicate ? `${base}#${k}` : base;
-      while (state.shadowIds.has(id)) id = `${base}#${++k}`;
-      numbered.set(key, k);
-      state.shadowIds.add(id);
-      state.shadowCameras.set(light.shadow!.camera!, { light, id });
+    // The naming rules are `shadowPassIds` (shadowPasses.ts), which also files the ids it hands out in `shadowIds`.
+    // Only the frame state stays here: which ids the frame has taken, and the camera each pass renders with.
+    const ids = shadowPassIds(lights, state.shadowIds);
+    for (let i = 0; i < lights.length; i++) {
+      const light = lights[i]!;
+      state.shadowCameras.set(light.shadow!.camera!, { light, id: ids[i]! });
     }
   }
 
