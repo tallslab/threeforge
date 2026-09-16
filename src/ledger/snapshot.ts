@@ -275,7 +275,10 @@ export function buildFrame({ env, items, reportedDrawCalls, triangles, programs,
   let lastPass: string | null = null;
   let lastProgram: string | null = null;
 
-  for (const item of items) {
+  // An index loop: see the note in `skinningOf` (src/ledger/sections.ts). Same array, walked once per frame, on the
+  // same optimisation boundary; `for…of` here costs a 40-byte iterator result per submission when V8 stops eliding it.
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]!;
     gpuDraws += item.expectedGpuDraws;
     drawCommands += item.kind === 'batched' ? item.instancesDrawn : item.expectedGpuDraws;
     if (item.reason !== 'renderer-internal') {

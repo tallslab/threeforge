@@ -35,7 +35,14 @@ export function skinningOf(items: SubmissionRecord[]): SkinningSnapshot {
   let morphTargets = 0;
   let vatInstances = 0;
   let vatVertices = 0;
-  for (const item of items) {
+  // An index loop, deliberately, not `for…of`. The ledger builds a snapshot in `exit()` on *every* frame, not only
+  // when `frame()` is called, so this walks every submission of every frame. V8 elides the array iterator here only
+  // some of the time; when it stops, each step allocates a 40-byte iterator result — 0.4 MB per frame at 10k
+  // submissions, which is how a 50% allocation regression (0.80 -> 1.20 MB) reached a release. `lightingOf` below and
+  // `buildFrame` in snapshot.ts walk the same array and are written the same way for the same reason. Measure with
+  // `scripts/ledger-overhead.mjs` before converting any of them back.
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]!;
     if (item.pass !== 'main') continue;
     if (item.reason === 'vat-instanced') {
       vatInstances += item.instancesDrawn;
@@ -96,7 +103,10 @@ export function lightingOf(lights: LightInfo[], items: SubmissionRecord[], shado
   }
   const passes = new Set<string>();
   let shadowSubmissions = 0;
-  for (const item of items) {
+  // An index loop: see the note in `skinningOf` above. This is the walk that actually regressed — shrinking it
+  // stopped V8 eliding the iterator, and the frame started allocating one iterator result per submission.
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]!;
     if (item.reason === 'renderer-internal' || !item.pass.startsWith('shadow:')) continue;
     passes.add(item.pass);
     shadowSubmissions++;

@@ -14,6 +14,7 @@
  * `ListRenderer` stands in for three where a test must count the ledger's own traversals: it walks the scene with a
  * plain loop instead of `Object3D.traverse`.
  */
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import {
   BoxGeometry,
@@ -511,6 +512,30 @@ describe('DrawCallLedger cost per submission', () => {
     const readings = `2k ${smalls.map((v) => (v * 1000).toFixed(3)).join('/')} µs -> 20k ${larges.map((v) => (v * 1000).toFixed(3)).join('/')} µs; best ${(small * 1000).toFixed(3)} -> ${(large * 1000).toFixed(3)} = ${(large / small).toFixed(2)}x`;
     expect(large / small, readings).toBeLessThan(3);
   }, 180_000);
+});
+
+/**
+ * A structural guard, in the spirit of R97: it counts a property of the source rather than timing anything, so it
+ * cannot be flaky.
+ *
+ * The ledger builds a snapshot in `exit()` on every frame, so `skinningOf`, `lightingOf` and `buildFrame` each walk
+ * every submission record of every frame. V8 elides the array iterator of a `for…of` over that array only some of the
+ * time; when a nearby edit tips it over, each step allocates a 40-byte iterator result. That is not hypothetical:
+ * `e568614` *shrank* `lightingOf`'s loop and took the flat 10k scene from 0.80 to 1.20 MB per frame — a 50 %
+ * allocation regression that shipped and was documented as the new normal, because nothing counts allocations here
+ * and `scripts/ledger-overhead.mjs` is a report, not a gate.
+ *
+ * Measuring bytes from a unit test would be flaky (GC timing, and other tests share the process), so this asserts the
+ * shape the fix depends on instead: those walks are index loops, and no `for…of` over the record array creeps back.
+ */
+describe('DrawCallLedger per-frame allocations', () => {
+  it('walks the submission records with index loops, never for…of', () => {
+    for (const file of ['src/ledger/sections.ts', 'src/ledger/snapshot.ts']) {
+      const source = readFileSync(file, 'utf8');
+      expect(source, `${file}: a for…of over the records allocates one iterator result per submission per frame`).not.toMatch(/for \(const \w+ of items\)/);
+      expect(source, `${file}: the record walk should be an index loop (see scripts/ledger-overhead.mjs)`).toMatch(/for \(let i = 0; i < items\.length; i\+\+\)/);
+    }
+  });
 });
 
 describe('reasonOf', () => {
