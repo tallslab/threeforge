@@ -14,7 +14,7 @@ const env = { three: '186', backend: 'webgl2' as const, multiDraw: true, tier: '
 
 describe('parseArgs', () => {
   it('parses analyze with defaults and flags', () => {
-    expect(parseArgs(['analyze', 'a.glb'])).toEqual({ name: 'analyze', json: false, input: { file: 'a.glb', backend: 'webgl2', tier: 'auto', budget: null, frames: 30, compile: true, bake: 'off', views: 0, timeout: 60000, headed: false } });
+    expect(parseArgs(['analyze', 'a.glb'])).toEqual({ name: 'analyze', json: false, input: { file: 'a.glb', backend: 'webgl2', tier: 'auto', budget: null, frames: 30, compile: true, bake: 'off', views: 0, parity: 0.5, timeout: 60000, headed: false } });
     expect(parseArgs(['analyze', 'a.glb', '--bake', '--views', '4'])).toMatchObject({ input: { bake: 'on', views: 4 } });
     expect(parseArgs(['analyze', 'a.glb', '--bake-buried'])).toMatchObject({ input: { bake: 'buried' } });
     expect(parseArgs(['analyze', 'a.glb', '--backend', 'webgpu', '--tier', 'phone-mid', '--budget', '150', '--frames', '10', '--no-compile', '--json', '--timeout', '5000', '--headed'])).toMatchObject({
@@ -45,6 +45,24 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['frobnicate'])).toThrow(/unknown command/);
     expect(() => parseArgs(['analyze', 'a.glb', '--frames', 'x'])).toThrow(/frames/);
     expect(() => parseArgs(['schema', 'nope'])).toThrow(/schema/);
+  });
+
+  /**
+   * Ruling R149 (final review area 5, H1): `analyze` judged compile parity at a hard-coded 0.5 % and had no way to
+   * demand zero. `--parity` now works exactly as `optimize`'s: default 0.5, a number from 0 to 100, 0 judged on raw
+   * changed-pixel counts (`parityOf`).
+   */
+  it('parses --parity exactly as optimize does: default 0.5, 0 kept as 0, the same bounds', () => {
+    for (const command of ['analyze', 'optimize'] as const) {
+      expect(parseArgs([command, 'a.glb']), command).toMatchObject({ input: { parity: 0.5 } });
+      expect(parseArgs([command, 'a.glb', '--parity', '0']), command).toMatchObject({ input: { parity: 0 } });
+      expect(parseArgs([command, 'a.glb', '--parity', '2.5']), command).toMatchObject({ input: { parity: 2.5 } });
+      for (const bad of ['101', '-1', 'x']) expect(() => parseArgs([command, 'a.glb', '--parity', bad]), `${command} ${bad}`).toThrow(/--parity/);
+    }
+    const flag = (command: 'analyze' | 'optimize') => COMMAND_SPECS[command].flags.find((f) => f.name === 'parity')!;
+    expect(flag('analyze')).toMatchObject({ kind: 'value', value: 'pct', numeric: true });
+    expect(flag('analyze').description).toMatch(/default 0\.5/);
+    expect(flag('analyze').description).toContain('A threshold of 0 means zero: it is judged on the raw changed-pixel count of every view, not the rounded percent.');
   });
 });
 
@@ -394,6 +412,9 @@ describe('RANGES and validateInput', () => {
     expect(() => validateInput('optimize', { ...optimize, budget: 10, verify: false })).toThrow(/budget.*verify/);
     expect(() => validateInput('optimize', { ...optimize, simplify: 0 })).toThrow(/simplify/);
     expect(() => validateInput('optimize', { ...optimize, parity: 101 })).toThrow(/parity/);
+    expect(() => validateInput('analyze', { ...analyze, parity: 101 })).toThrow(/^parity/);
+    expect(() => validateInput('analyze', { ...analyze, parity: Number.NaN })).toThrow(/^parity/);
+    expect(validateInput('analyze', { ...analyze, parity: 0 }).parity).toBe(0);
     expect(() => validateInput('optimize', { ...optimize, steps: { bogus: true } as never })).toThrow(/bogus/);
   });
 });

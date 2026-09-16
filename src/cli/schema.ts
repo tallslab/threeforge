@@ -92,7 +92,7 @@ const compileReport: Schema = {
   additionalProperties: true,
 };
 
-const analyzeInput = obj({ file: string, backend: { enum: ['webgl2', 'webgpu'] }, tier: { enum: ['auto', 'desktop', 'phone-mid', 'phone-low'] }, budget: nullable(number), frames: integer, compile: boolean, bake: { enum: ['off', 'on', 'buried'] }, views: integer, timeout: number, headed: boolean });
+const analyzeInput = obj({ file: string, backend: { enum: ['webgl2', 'webgpu'] }, tier: { enum: ['auto', 'desktop', 'phone-mid', 'phone-low'] }, budget: nullable(number), frames: integer, compile: boolean, bake: { enum: ['off', 'on', 'buried'] }, views: integer, parity: number, timeout: number, headed: boolean });
 
 /**
  * The analyze/inspect document body: no `$schema`/`$id`/`title`/`$defs` of its own, so `document()` can wrap it as a

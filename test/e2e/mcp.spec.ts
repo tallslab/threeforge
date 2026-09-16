@@ -58,6 +58,15 @@ test('inspect_app takes no tier input; analyze_asset and optimize_asset still do
     expect(propsOf('inspect_app')).not.toContain('tier');
     expect(propsOf('analyze_asset')).toContain('tier');
     expect(propsOf('optimize_asset')).toContain('tier');
+    // R149: analyze_asset takes parity exactly as optimize_asset does.
+    const parityOf = (name: string) => (tools.tools.find((t) => t.name === name)!.inputSchema as { properties: Record<string, { type?: string; default?: unknown }> }).properties.parity;
+    expect(parityOf('analyze_asset')).toMatchObject({ type: 'number', default: 0.5 });
+    expect(parityOf('analyze_asset')).toMatchObject({ type: parityOf('optimize_asset')!.type, default: parityOf('optimize_asset')!.default });
+    const outOfRange = await client.callTool({ name: 'analyze_asset', arguments: { file: 'x.glb', parity: 101 } });
+    expect(outOfRange.isError).toBe(true);
+    const body = JSON.parse((outOfRange.content as Array<{ text: string }>)[0]!.text);
+    expect(body.code).toBe(2);
+    expect(body.error).toMatch(/^parity must be a number from 0 to 100/);
   } finally {
     await close();
   }

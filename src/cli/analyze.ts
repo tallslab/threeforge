@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import pngjs from 'pngjs';
 import type { BakeSummary } from '../compiler/World.js';
 import { VERSION } from '../version.js';
+import { DEFAULT_PARITY } from './args.js';
 import { launchBrowser, type PlaywrightPage } from './browser.js';
 import { PageError, UsageError } from './errors.js';
 import { Resources, type CliDeps } from './lifecycle.js';
@@ -12,8 +13,6 @@ import { serveStatic } from './server.js';
 import type { AgentDocument, AnalyzeInput, AssetFacts, CliCompileReport, Parity } from './types.js';
 import { formatPageErrors } from './untrusted.js';
 import { verdictOf } from './verdict.js';
-
-const PARITY_THRESHOLD = 0.5;
 
 /** The shipped harness page lives next to this module's directory: dist/cli/analyze.js -> dist/cli-app. */
 function cliAppDir(): string {
@@ -119,6 +118,8 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
   const started = Date.now();
   const file = resolve(input.file);
   if (!existsSync(file) || !statSync(file).isFile()) throw new UsageError(`file not found: ${input.file}`);
+  // `--parity` (Ruling R149), judged exactly as `optimize` judges its own: through `parityOf` and `failingViews`.
+  const threshold = input.parity ?? DEFAULT_PARITY;
   const resources = new Resources();
   resources.armAbort(deps.signal);
   return resources.run(async () => {
@@ -154,8 +155,8 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
         const diff = comparePixels(shot.png, shotsAfter[i]!.png);
         return { view: shot.view, diffPct: Number(diff.diffPct.toFixed(3)), changedPixels: diff.changedPixels };
       });
-      parity = parityOf(views, PARITY_THRESHOLD);
-      if (!parity.pass) log(`pixel parity lost: ${failingViews(views, PARITY_THRESHOLD).map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct}%)`).join(', ')}`);
+      parity = parityOf(views, threshold);
+      if (!parity.pass) log(`pixel parity lost: ${failingViews(views, threshold).map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct}%)`).join(', ')}`);
     }
     if (pageErrors.length) log(`page errors: ${formatPageErrors(pageErrors)}`);
     const hints = (after ?? before.snapshot).hints;
@@ -165,7 +166,7 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
       tool: 'threeforge',
       version: VERSION,
       command: 'analyze',
-      input,
+      input: { ...input, parity: threshold },
       env: before.snapshot.env,
       asset,
       before: before.snapshot,

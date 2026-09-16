@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import pngjs from 'pngjs';
 import { describe, expect, it } from 'vitest';
 import { analyzeAssetWithShots } from '../../src/cli/analyze.js';
 import { parseArgs } from '../../src/cli/args.js';
@@ -51,6 +52,73 @@ describe('page errors fail the analyze verdict', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * Ruling R149: `analyze --parity` judges compile parity through the same `parityOf` as `optimize`. The page's two
+ * screenshots (before and after compile) differ in exactly one pixel of 400: 0.25 %.
+ */
+describe('analyze --parity judges the compile parity like optimize', () => {
+  const png = (changed: boolean): Buffer => {
+    const image = new pngjs.PNG({ width: 20, height: 20 });
+    image.data.fill(255);
+    if (changed) image.data[0] = 0;
+    return pngjs.PNG.sync.write(image);
+  };
+  function comparingPage(shots: Buffer[]): PlaywrightPage {
+    let shot = 0;
+    const report = { after: { batches: 0, instanced: 0, baked: 0, spriteBatches: 0, frozen: 0, meshes: 0 }, skipped: [], groups: [], bake: null };
+    const page = {
+      goto: async () => null,
+      waitForFunction: async () => true,
+      evaluate: async (expression: unknown) => {
+        const text = String(expression);
+        if (text.includes('setView') || text.includes('rendering')) return undefined;
+        if (text.includes('.compile()')) return { ...report, skippedCount: 0, groupCount: 0 };
+        if (text.includes('const hook = window.__threeforge')) return { snapshot: emptyFrame(env), renderMs: 1, ledgerMs: 0, frameMs: 16 };
+        if (text.includes('__threeforgeCli')) return { ready: true, asset };
+        return undefined;
+      },
+      screenshot: async () => shots[shot++]!,
+      on: () => page,
+      close: async () => {},
+    };
+    return page as unknown as PlaywrightPage;
+  }
+  async function analyzeWith(args: string[], shots: Buffer[]): Promise<AgentDocument> {
+    const dir = mkdtempSync(join(tmpdir(), 'forge-analyze-parity-'));
+    try {
+      const file = join(dir, 'a.glb');
+      writeFileSync(file, 'glb');
+      const command = parseArgs(['analyze', file, ...args]);
+      if (command.name !== 'analyze') throw new Error(`parsed as ${command.name}`);
+      const launch = async (): Promise<BrowserHandle> => ({ newPage: async () => comparingPage(shots), close: async () => {} });
+      return (await analyzeAssetWithShots(command.input, undefined, false, { launch, appDir: dir })).doc;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  const onePixel = [png(false), png(true)];
+
+  it('passes one changed pixel at the default 0.5 %, and records the threshold it used', async () => {
+    const doc = await analyzeWith([], onePixel);
+    expect(doc.input).toMatchObject({ parity: 0.5 });
+    expect(doc.parity).toMatchObject({ threshold: 0.5, pass: true, diffPct: 0.25, views: [{ view: 'default', diffPct: 0.25, changedPixels: 1 }] });
+    expect(doc.verdict.pass).toBe(true);
+  });
+
+  it('fails one changed pixel at --parity 0, judged on the raw count, with the same verdict reason as optimize', async () => {
+    const doc = await analyzeWith(['--parity', '0'], onePixel);
+    expect(doc.parity).toMatchObject({ threshold: 0, pass: false });
+    expect(doc.verdict.pass).toBe(false);
+    expect(doc.verdict.reasons).toContain('pixel parity 0.25% > 0% (1 changed pixel in the worst view)');
+    expect(await analyzeWith(['--parity', '0'], [png(false), png(false)])).toMatchObject({ parity: { threshold: 0, pass: true }, verdict: { pass: true } });
+  });
+
+  it('compares a non-zero --parity as a percentage', async () => {
+    expect((await analyzeWith(['--parity', '0.1'], onePixel)).parity).toMatchObject({ threshold: 0.1, pass: false });
+    expect((await analyzeWith(['--parity', '0.25'], onePixel)).parity).toMatchObject({ threshold: 0.25, pass: true });
   });
 });
 

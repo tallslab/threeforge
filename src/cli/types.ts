@@ -17,6 +17,12 @@ export interface AnalyzeInput {
   bake: BakeChoice;
   /** Extra orbit views for pixel parity on top of the default framing (0 = default framing only). */
   views: number;
+  /**
+   * Allowed percent of changed pixels between the render before and after compiling, as `OptimizeInput.parity`: 0 is
+   * judged on the raw changed-pixel count of every view (`parityOf`). Optional for callers written before it existed:
+   * absent means `DEFAULT_PARITY` (0.5), and the document's `input` always records the threshold used.
+   */
+  parity?: number;
   timeout: number;
   headed: boolean;
 }

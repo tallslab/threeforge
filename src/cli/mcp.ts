@@ -1,7 +1,7 @@
 import { realpathSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve as resolvePath } from 'node:path';
 import { analyzeAsset } from './analyze.js';
-import { validateInput } from './args.js';
+import { DEFAULT_PARITY, validateInput } from './args.js';
 import { EnvironmentError, exitCodeFor, UsageError } from './errors.js';
 import { entryExists } from './gltf-uris.js';
 import { explain, REMEDIES } from './explain.js';
@@ -205,12 +205,13 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
         ...runShape,
         bake: z.string().default('off').describe('Bake finished groups into one mesh each: off, on or buried (default off); buried also removes faces solid geometry sits right in front of'),
         views: z.number().default(0).describe('Extra orbit views for pixel parity (an integer from 0 to 64, default 0)'),
+        parity: z.number().default(DEFAULT_PARITY).describe(`Allowed percent of changed pixels between the render before and after compiling, from 0 to 100 (default ${DEFAULT_PARITY}); 0 means no pixel may change, judged on the raw changed-pixel count of every view`),
       },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async (args: Record<string, unknown>) => {
       try {
-        const input: AnalyzeInput = { file: String(args.file), backend: args.backend as AnalyzeInput['backend'], tier: args.tier as AnalyzeInput['tier'], budget: typeof args.budget === 'number' ? args.budget : null, frames: Number(args.frames ?? 30), compile: args.compile !== false, bake: (args.bake as AnalyzeInput['bake']) ?? 'off', views: Number(args.views ?? 0), timeout: Number(args.timeout ?? 60000), headed: false };
+        const input: AnalyzeInput = { file: String(args.file), backend: args.backend as AnalyzeInput['backend'], tier: args.tier as AnalyzeInput['tier'], budget: typeof args.budget === 'number' ? args.budget : null, frames: Number(args.frames ?? 30), compile: args.compile !== false, bake: (args.bake as AnalyzeInput['bake']) ?? 'off', views: Number(args.views ?? 0), parity: typeof args.parity === 'number' ? args.parity : DEFAULT_PARITY, timeout: Number(args.timeout ?? 60000), headed: false };
         validateInput('analyze', input, { names: 'fields' });
         return ok(await analyzeAsset(input, undefined, runDeps), DATA_NOTE);
       } catch (error) {
@@ -251,7 +252,7 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
         textures: z.string().optional().describe('Texture format: webp, avif or none (needs sharp); overrides the preset'),
         textureSize: z.number().optional().describe('Longest texture side in pixels'),
         verify: z.boolean().default(true).describe('Render both files and compare pixels; false runs without a browser'),
-        parity: z.number().default(0.5).describe('Allowed percent of changed pixels between the original and the optimized render'),
+        parity: z.number().default(DEFAULT_PARITY).describe(`Allowed percent of changed pixels between the original and the optimized render, from 0 to 100 (default ${DEFAULT_PARITY}); 0 means no pixel may change, judged on the raw changed-pixel count of every view`),
         views: z.number().default(2).describe('Extra orbit views for the comparison (an integer from 0 to 64, default 2)'),
         tier: tier.describe('Device tier for budgets and hints: auto, desktop, phone-mid or phone-low (default auto; auto detects from the machine)'),
         ...runShape,
@@ -275,7 +276,7 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
           textureSize: typeof args.textureSize === 'number' ? args.textureSize : null,
           textureQuality: 85,
           verify: args.verify !== false,
-          parity: typeof args.parity === 'number' ? args.parity : 0.5,
+          parity: typeof args.parity === 'number' ? args.parity : DEFAULT_PARITY,
           views: Number(args.views ?? 2),
           backend: args.backend as OptimizeInput['backend'],
           tier: args.tier as OptimizeInput['tier'],

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { VERSION } from '../version.js';
 import { analyzeAssetWithShots, comparePixels, failingViews, parityOf } from './analyze.js';
+import { DEFAULT_PARITY } from './args.js';
 import { EnvironmentError, UsageError } from './errors.js';
 import { assertConfinedUri, assertConfinedUris, entryExists, readGltfJson, resourcePathsOf, type ResourcePath } from './gltf-uris.js';
 import type { CliDeps } from './lifecycle.js';
@@ -182,7 +183,8 @@ function writeExclusive(path: string, data: string | Uint8Array, flag: 'w' | 'wx
  * renders and skew `delta.loadMs`.
  */
 async function verifyPair(original: string, optimized: string, input: OptimizeInput, log: (line: string) => void, deps: CliDeps): Promise<{ verify: OptimizeVerify; pageErrors: VerifyPageErrors }> {
-  const base: Omit<AnalyzeInput, 'file'> = { backend: input.backend, tier: input.tier, budget: null, frames: input.frames, compile: input.compile, bake: 'off', views: input.views, timeout: input.timeout, headed: input.headed };
+  // Each file's own compile parity keeps the analyze default: `input.parity` is the threshold between the two files.
+  const base: Omit<AnalyzeInput, 'file'> = { backend: input.backend, tier: input.tier, budget: null, frames: input.frames, compile: input.compile, bake: 'off', views: input.views, parity: DEFAULT_PARITY, timeout: input.timeout, headed: input.headed };
   log(`verifying on ${input.backend}: original`);
   const a = await analyzeAssetWithShots({ ...base, file: original }, log, true, deps);
   log(`verifying on ${input.backend}: optimized`);

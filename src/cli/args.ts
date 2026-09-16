@@ -47,6 +47,16 @@ export type RangeField = 'budget' | 'frames' | 'timeout' | 'views' | 'parity' | 
  * `--texture-size`). `timeout` stops at 2^31 - 1 ms because a longer Node timer fires immediately; `views` stops at
  * 64 because each view renders and screenshots twice and nothing bounds their total time.
  */
+/**
+ * The default `--parity` of `analyze` and `optimize` (and of the MCP `analyze_asset` and `optimize_asset`): the percent
+ * of pixels allowed to change. Both commands judge it through `parityOf` (`src/cli/analyze.ts`): a threshold of 0 on
+ * the raw changed-pixel count of every view, any other on the percentage (Rulings R108, R149).
+ */
+export const DEFAULT_PARITY = 0.5;
+
+/** `--parity`'s sentence on what 0 means, shared word for word by every command that takes the flag. */
+const PARITY_ZERO = 'A threshold of 0 means zero: it is judged on the raw changed-pixel count of every view, not the rounded percent.';
+
 export const RANGES: Readonly<Record<RangeField, NumberRange>> = {
   budget: { min: 0, integer: true },
   frames: { min: 1, integer: true },
@@ -143,6 +153,7 @@ export const COMMAND_SPECS: Readonly<Record<CommandName, CommandSpec>> = {
       { name: 'bake', kind: 'boolean', description: 'Bake each finished static group into one mesh (seams and duplicated faces removed, vertices welded); check with `--views`.' },
       { name: 'bake-buried', kind: 'boolean', description: 'Like `--bake`, and also remove faces with solid geometry within 0.1 units in front of them.' },
       { name: 'views', kind: 'value', value: 'N', numeric: true, description: 'Extra orbit views for pixel parity on top of the default framing (an integer from 0 to 64, default 0).' },
+      { name: 'parity', kind: 'value', value: 'pct', numeric: true, description: `Allowed percent of changed pixels between the render before and after compiling (and baking), from 0 to 100 (default ${DEFAULT_PARITY}). ${PARITY_ZERO}` },
       JSON_FLAG,
     ],
     summary: 'render an asset headlessly, measure, compile, measure again, compare pixels, judge',
@@ -170,7 +181,7 @@ export const COMMAND_SPECS: Readonly<Record<CommandName, CommandSpec>> = {
       { name: 'texture-size', kind: 'value', value: 'N', numeric: true, description: "Longest texture side in pixels (an integer from 1 to 16384; default: the preset's size, no resize outside presets)." },
       { name: 'texture-quality', kind: 'value', value: 'Q', numeric: true, description: 'Texture encoder quality (an integer from 1 to 100, default 85).' },
       { name: 'verify', kind: 'boolean', negatable: true, defaultOn: true, description: 'Render the original and the optimized file and compare pixels. On by default; `--no-verify` runs without a browser (and cannot take `--budget`).' },
-      { name: 'parity', kind: 'value', value: 'pct', numeric: true, description: 'Allowed percent of changed pixels between the original and the optimized render, from 0 to 100 (default 0.5). A threshold of 0 means zero: it is judged on the raw changed-pixel count of every view, not the rounded percent.' },
+      { name: 'parity', kind: 'value', value: 'pct', numeric: true, description: `Allowed percent of changed pixels between the original and the optimized render, from 0 to 100 (default ${DEFAULT_PARITY}). ${PARITY_ZERO}` },
       { name: 'views', kind: 'value', value: 'N', numeric: true, description: 'Extra orbit views for the comparison (an integer from 0 to 64, default 2).' },
       { ...BUDGET, description: "Fail the verdict (exit 1) when the optimized file compiles to more than N scene submissions (an integer ≥ 0); needs verification, so not with `--no-verify`." },
       ...RUN_FLAGS.filter((flag) => flag !== BUDGET),
@@ -451,7 +462,7 @@ export function parseArgs(argv: string[]): Command {
     case 'analyze': {
       const [file] = positionalsOf(spec, scanned) as [string];
       const bake: BakeChoice = values.get('bake-buried') === true ? 'buried' : values.get('bake') === true ? 'on' : 'off';
-      const input: AnalyzeInput = { file, ...runInput(spec, values), bake, views: numberFlag(spec, values, 'views', 0) };
+      const input: AnalyzeInput = { file, ...runInput(spec, values), bake, views: numberFlag(spec, values, 'views', 0), parity: numberFlag(spec, values, 'parity', DEFAULT_PARITY) };
       return { name: 'analyze', json, input: validateInput('analyze', input, FLAG_NAMES) };
     }
     case 'inspect': {
@@ -481,7 +492,7 @@ export function parseArgs(argv: string[]): Command {
         textureSize: values.has('texture-size') ? numberFlag(spec, values, 'texture-size', 0) : null,
         textureQuality: numberFlag(spec, values, 'texture-quality', 85),
         verify: values.get('verify') !== false,
-        parity: numberFlag(spec, values, 'parity', 0.5),
+        parity: numberFlag(spec, values, 'parity', DEFAULT_PARITY),
         views: numberFlag(spec, values, 'views', 2),
         ...runInput(spec, values),
       };
@@ -568,6 +579,8 @@ export function validateInput(command: RunCommandName, input: AnalyzeInput | Ins
   if (command === 'analyze') {
     oneOf('bake', BAKES);
     inRange('views');
+    // Optional on `AnalyzeInput` (a programmatic caller written before `--parity` gets the default); the CLI and MCP always set it.
+    if (record.parity !== undefined) inRange('parity');
   }
   if (command === 'optimize') {
     if (record.out !== null && (typeof record.out !== 'string' || record.out === '')) fail('out', 'a non-empty path or null');

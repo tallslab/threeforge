@@ -50,8 +50,29 @@ test('analyze renders a sample asset, compiles it and prints the document', { ta
   expect(doc.after.totals.unattributed).toBe(0);
   expect(doc.before.overdraw.measured).toBe(true);
   expect(doc.parity.pass).toBe(true);
+  // R149: the default stays 0.5, and the document records it.
+  expect(doc.input.parity).toBe(0.5);
+  expect(doc.parity.threshold).toBe(0.5);
   expect(doc.verdict.pass).toBe(true);
   expect(r.stderr).toContain('PASS');
+});
+
+test('analyze --parity 0 judges compile parity on the raw changed-pixel count, from the built binary (R149)', { tag: '@corpus' }, async ({ forge }) => {
+  test.setTimeout(600_000);
+  const r = run(['analyze', sample(), '--backend', forge.backend, '--frames', '3', '--views', '1', '--parity', '0', '--json']);
+  const doc = JSON.parse(r.stdout);
+  expect(doc.input.parity).toBe(0);
+  const views = doc.parity.views as Array<{ view: string; diffPct: number; changedPixels: number }>;
+  expect(views.map((v) => v.view)).toEqual(['default', 'orbit-0']);
+  const identical = views.every((v) => v.changedPixels === 0);
+  test.info().annotations.push({ type: 'parity', description: `[${forge.backend}] Fox analyze --parity 0: exit ${r.status}, ${views.map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct} %)`).join(', ')}` });
+  // Whatever the compile did to this asset, the verdict is exactly "no pixel moved", and the exit code follows it.
+  expect(doc.parity).toMatchObject({ threshold: 0, pass: identical });
+  expect(doc.verdict.pass).toBe(identical);
+  expect(r.status, r.stderr).toBe(identical ? 0 : 1);
+  const bad = run(['analyze', sample(), '--parity', '101']);
+  expect(bad.status).toBe(2);
+  expect(bad.stderr).toContain('--parity must be a number from 0 to 100');
 });
 
 test('analyze reports no false unreferenced-resources hint for the Fox (harness environment disposal)', { tag: '@corpus' }, async ({ forge }) => {

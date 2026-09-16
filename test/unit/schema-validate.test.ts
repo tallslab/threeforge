@@ -45,7 +45,7 @@ function analyzeFixture(): AgentDocument {
   const before = realFrame();
   const after = emptyFrame(env);
   after.totals.sceneSubmissions = 4;
-  const input: AnalyzeInput = { file: 'fixture.glb', backend: 'webgl2', tier: 'auto', budget: 100, frames: 5, compile: true, bake: 'on', views: 1, timeout: 60_000, headed: false };
+  const input: AnalyzeInput = { file: 'fixture.glb', backend: 'webgl2', tier: 'auto', budget: 100, frames: 5, compile: true, bake: 'on', views: 1, parity: 0.5, timeout: 60_000, headed: false };
   return {
     schemaVersion: 2,
     tool: 'threeforge',
@@ -184,6 +184,14 @@ describe('schema-validate: every exported schema compiles standalone in ajv and 
     doc.compile = { skipped: [{ name: 'a', rule: 'singleton' }], groups: [], skippedCount: 1, groupCount: 0 };
     expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
     delete doc.compile.skippedCount;
+    expect(validate(doc)).toBe(false);
+  });
+
+  it('ANALYZE_SCHEMA requires the parity threshold in the input (R149: analyze --parity)', () => {
+    const validate = compile(ANALYZE_SCHEMA);
+    const doc = analyzeFixture() as unknown as { input: Record<string, unknown> };
+    expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
+    delete doc.input.parity;
     expect(validate(doc)).toBe(false);
   });
 
