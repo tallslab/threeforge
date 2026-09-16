@@ -1,6 +1,6 @@
 # threeforge for AI agents
 
-threeforge 0.8.0 is a frame-budget compiler and diagnostics layer for three.js games (r186, WebGPU with a
+threeforge 0.9.0 is a frame-budget compiler and diagnostics layer for three.js games (r186, WebGPU with a
 WebGL2 fallback). This file is what `npx threeforge` prints. Everything below is scriptable from a terminal:
 `analyze`, `inspect`, `optimize` and `explain` print JSON with `--json`, `schema` prints JSON either way, and
 `mcp`, `decoders` and `help` take no `--json`.
@@ -101,7 +101,7 @@ other bundlers need their own.
 
 ```json
 {
-  "schemaVersion": 2, "tool": "threeforge", "version": "0.8.0", "command": "analyze",
+  "schemaVersion": 2, "tool": "threeforge", "version": "0.9.0", "command": "analyze",
   "input": { "file": "scene.glb", "backend": "webgpu", "tier": "phone-mid", "budget": null, "frames": 30, "compile": true },
   "env": { "three": "186", "backend": "webgpu", "gpu": "apple metal-3", "tier": "phone-mid" },
   "asset": { "meshes": 12, "materials": 5, "vertices": 40210, "triangles": 38000, "animations": 1, "skinned": 1, "morph": 0, "loadMs": 120 },
