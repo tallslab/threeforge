@@ -2,14 +2,14 @@ import { existsSync, statSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pngjs from 'pngjs';
-import type { BakeSummary, CompileReport } from '../compiler/World.js';
+import type { BakeSummary } from '../compiler/World.js';
 import { VERSION } from '../version.js';
 import { launchBrowser, type PlaywrightPage } from './browser.js';
 import { PageError, UsageError } from './errors.js';
 import { Resources, type CliDeps } from './lifecycle.js';
-import { evaluateWithin, measureViaHook, waitFor } from './measure.js';
+import { compileViaHook, evaluateWithin, measureViaHook, waitFor } from './measure.js';
 import { serveStatic } from './server.js';
-import type { AgentDocument, AnalyzeInput, AssetFacts, Parity } from './types.js';
+import type { AgentDocument, AnalyzeInput, AssetFacts, CliCompileReport, Parity } from './types.js';
 import { formatPageErrors } from './untrusted.js';
 import { verdictOf } from './verdict.js';
 
@@ -141,11 +141,11 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
     const before = await measureViaHook(page, input.frames, input.timeout);
     const shotsBefore = input.compile || wantShots ? await captureViews(page, input.views, input.timeout) : [];
     let after: AgentDocument['after'] = null;
-    let compile: CompileReport | null = null;
+    let compile: CliCompileReport | null = null;
     let parity: Parity | null = null;
     if (input.compile) {
-      compile = await evaluateWithin<CompileReport>(page, 'compiling', input.timeout, `window.__threeforge.compile()`);
-      log(`compiled: ${compile.after.batches} batches, ${compile.after.instanced} instanced, ${compile.after.baked} baked, ${compile.skipped.length} skipped; measuring again`);
+      compile = await compileViaHook(page, input.timeout);
+      log(`compiled: ${compile.after.batches} batches, ${compile.after.instanced} instanced, ${compile.after.baked} baked, ${compile.skippedCount} skipped; measuring again`);
       if (compile.bake) log(bakeProgressLine(compile.bake));
       await evaluateWithin(page, 'rendering 3 frames after compile', input.timeout, `(async () => { for (let i = 0; i < 3; i++) await window.__threeforge.frameAsync(); })()`);
       after = (await measureViaHook(page, input.frames, input.timeout)).snapshot;

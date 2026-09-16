@@ -1,4 +1,5 @@
 import type { FrameSnapshot } from '../ledger/snapshot.js';
+import type { CliCompileReport } from './types.js';
 import type { PlaywrightPage } from './browser.js';
 import { PageError } from './errors.js';
 import { withTimeout } from './lifecycle.js';
@@ -27,6 +28,26 @@ export function evaluateWithin<R>(page: PlaywrightPage, what: string, timeout: n
     }
     return sanitizeDeep(result) as R;
   });
+}
+
+/**
+ * `window.__threeforge.compile()`, with the true lengths of `skipped` and `groups` counted in the page, before
+ * `evaluateWithin` caps every array at 256 entries (final review F3: a 300-object report reached the document as 256
+ * and the summary printed "256 skipped"). The lists stay capped, bounding what a page can put in a document; the
+ * counts say how many there really were.
+ */
+export function compileViaHook(page: PlaywrightPage, timeout: number): Promise<CliCompileReport> {
+  return evaluateWithin<CliCompileReport>(
+    page,
+    'compiling',
+    timeout,
+    `(async () => {
+      const report = await window.__threeforge.compile();
+      if (report === null || typeof report !== 'object') return report;
+      const lengthOf = (list) => (Array.isArray(list) ? list.length : 0);
+      return { ...report, skippedCount: lengthOf(report.skipped), groupCount: lengthOf(report.groups) };
+    })()`,
+  );
 }
 
 export interface Measurement {

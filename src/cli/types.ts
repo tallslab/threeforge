@@ -65,6 +65,14 @@ export interface Verdict {
   reasons: string[];
 }
 
+/**
+ * The compile report as the CLI reads it from the page. `skipped` and `groups` hold at most 256 entries: every array a
+ * page hands back is capped (`sanitizeDeep`, `src/cli/untrusted.ts`), and an object array cannot carry a "(+N more)"
+ * marker without breaking its type. `skippedCount` and `groupCount` are the true lengths, counted in the page before
+ * the cap (`compileViaHook`, `src/cli/measure.ts`).
+ */
+export type CliCompileReport = CompileReport & { skippedCount: number; groupCount: number };
+
 /** The one document `analyze` and `inspect` print (and the MCP tools return). */
 export interface AgentDocument {
   schemaVersion: 2;
@@ -76,7 +84,7 @@ export interface AgentDocument {
   asset: AssetFacts | null;
   before: FrameSnapshot;
   after: FrameSnapshot | null;
-  compile: CompileReport | null;
+  compile: CliCompileReport | null;
   parity: Parity | null;
   hints: Hint[];
   verdict: Verdict;

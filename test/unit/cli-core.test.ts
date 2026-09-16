@@ -184,6 +184,15 @@ describe('summarize', () => {
     return { schemaVersion: 2, tool: 'threeforge', version: '0.2.0', command: 'analyze', input, env, asset: null, before, after, compile, parity: null, hints: [], verdict: verdictOf(after, before, null, null), timings: { totalMs: 10 } };
   };
 
+  it('prints the true skipped count, not the length of the capped skipped list (final review F3)', () => {
+    const doc = bakeDoc({ groups: 0, inputTriangles: 0, triangles: 0, contactFaces: 0, keptCoincidentFaces: 0, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 0, excludedEntries: 0 });
+    const compile = doc.compile as unknown as { skipped: unknown[]; skippedCount: number };
+    compile.skipped = Array.from({ length: 256 }, (_, i) => ({ name: `mesh-${i}`, rule: 'singleton' }));
+    compile.skippedCount = 300;
+    expect(summarize(doc)).toContain('300 skipped');
+    expect(summarize(doc)).not.toContain('256 skipped');
+  });
+
   it('prints the bake line with the coincident faces the seam guard kept', () => {
     const doc = bakeDoc({ groups: 1, inputTriangles: 48, triangles: 36, contactFaces: 12, keptCoincidentFaces: 4, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 10, excludedEntries: 0 });
     expect(summarize(doc)).toContain('bake: 1 groups · 48 → 36 tris · seams 12 · kept coincident 4 · duplicates 0 · buried 0 · welded 10');

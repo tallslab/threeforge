@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PlaywrightPage } from '../../src/cli/browser.js';
 import { PageError } from '../../src/cli/errors.js';
-import { evaluateWithin, waitFor } from '../../src/cli/measure.js';
+import { compileViaHook, evaluateWithin, waitFor } from '../../src/cli/measure.js';
 
 /** A page whose evaluate answers once with a fixed value, like the harness state reads in analyze.ts/inspect.ts. */
 function fakePage(result: unknown): PlaywrightPage {
@@ -73,5 +73,38 @@ describe('waitFor cleans an error surfaced from a rejected waitForFunction', () 
     expect(message).not.toContain('\x1b');
     expect(message.length).toBeLessThan(2100);
     expect(message).toContain('the harness page did not become ready');
+  });
+});
+
+/**
+ * Final review area 3, F3: `sanitizeDeep` cuts an object array at 256 entries with no marker (a string marker would
+ * break a typed array), so a compile report with 300 skipped objects reached the document as 256 and the summary
+ * printed "256 skipped". The cap stays (it bounds what a hostile page can put in a document); the true lengths are
+ * measured in the page, before the cap, and reported as `skippedCount` and `groupCount`.
+ */
+describe('compileViaHook reports the true skipped and group counts beyond the array cap', () => {
+  function hookPage(report: unknown): PlaywrightPage {
+    const window = { __threeforge: { compile: () => report } };
+    return { evaluate: async (expression: string) => new Function('window', `return (${expression});`)(window) } as unknown as PlaywrightPage;
+  }
+  const reportWith = (n: number) => ({
+    after: { batches: 1, instanced: 0, baked: 0, spriteBatches: 0, frozen: 0, meshes: 0 },
+    groups: Array.from({ length: n }, (_, i) => ({ name: `group-${i}`, kind: 'batched' })),
+    skipped: Array.from({ length: n }, (_, i) => ({ name: `mesh-${i}`, rule: 'singleton' })),
+  });
+
+  it('keeps at most 256 entries in skipped and groups, and counts all 300 of each', async () => {
+    const report = await compileViaHook(hookPage(reportWith(300)), 5000);
+    expect(report.skipped).toHaveLength(256);
+    expect(report.groups).toHaveLength(256);
+    expect(report.skippedCount).toBe(300);
+    expect(report.groupCount).toBe(300);
+  });
+
+  it('counts equal the lengths under the cap', async () => {
+    const report = await compileViaHook(hookPage(reportWith(3)), 5000);
+    expect(report.skipped).toHaveLength(3);
+    expect(report.skippedCount).toBe(3);
+    expect(report.groupCount).toBe(3);
   });
 });

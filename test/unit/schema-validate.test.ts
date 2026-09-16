@@ -178,6 +178,15 @@ describe('schema-validate: every exported schema compiles standalone in ajv and 
     expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
   });
 
+  it('ANALYZE_SCHEMA requires the true skippedCount and groupCount beside a compile report (final review F3)', () => {
+    const validate = compile(ANALYZE_SCHEMA);
+    const doc = analyzeFixture() as unknown as { compile: Record<string, unknown> | null };
+    doc.compile = { skipped: [{ name: 'a', rule: 'singleton' }], groups: [], skippedCount: 1, groupCount: 0 };
+    expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
+    delete doc.compile.skippedCount;
+    expect(validate(doc)).toBe(false);
+  });
+
   it('rejects a document whose frame snapshot carries the wrong schemaVersion, proving the embedded $defs are actually checked', () => {
     const validate = compile(ANALYZE_SCHEMA);
     const doc = analyzeFixture() as unknown as { before: { schemaVersion: number } };

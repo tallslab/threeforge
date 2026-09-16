@@ -40,7 +40,7 @@ export function summarize(doc: AgentDocument): string {
     `${doc.verdict.pass ? 'PASS' : 'FAIL'}${doc.verdict.reasons.length ? ': ' + doc.verdict.reasons.join('; ') : ''}`,
   ];
   if (doc.asset) lines.push(`asset: ${doc.asset.meshes} meshes · ${doc.asset.materials} materials · ${doc.asset.triangles} tris · ${doc.asset.skinned} skinned · ${doc.asset.animations} clips · loaded in ${doc.asset.loadMs.toFixed(0)} ms`);
-  if (doc.after) lines.push(`${doc.before.totals.sceneSubmissions} → ${doc.after.totals.sceneSubmissions} submissions after compile${doc.compile ? ` (${doc.compile.after.batches} batches, ${doc.compile.after.instanced} instanced, ${doc.compile.skipped.length} skipped)` : ''}`);
+  if (doc.after) lines.push(`${doc.before.totals.sceneSubmissions} → ${doc.after.totals.sceneSubmissions} submissions after compile${doc.compile ? ` (${doc.compile.after.batches} batches, ${doc.compile.after.instanced} instanced, ${doc.compile.skippedCount ?? doc.compile.skipped.length} skipped)` : ''}`);
   else lines.push(`${doc.before.totals.sceneSubmissions} submissions`);
   // The exact worst-view count rides beside the percent: the percent is rounded to three decimals, so it reads 0.00
   // for a view that really did move a few pixels.
