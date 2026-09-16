@@ -149,6 +149,30 @@ describe('pixelDiffPct (the CLI parity tolerance)', () => {
     expect(pixelDiffPct(a, b)).toBeCloseTo(100 * pixelDiff(a, b), 10);
   });
 
+  /**
+   * Both call sites round the percent to three decimals — `Number(pixelDiffPct(a, b).toFixed(3))` in
+   * `src/cli/analyze.ts` ~109 and `src/cli/optimize.ts` ~174 — so a view reported as 0 is not proof that no pixel
+   * moved. At the CLI harness's 1280x720 canvas (921,600 pixels) the rounding absorbs anything below 0.0005 %,
+   * which is 4.608 pixels. Together with the threshold above, an asserted `diffPct === 0` means "at most 4 pixels
+   * of 921,600 moved by more than 24 on a channel" — the strongest claim `--parity 0` can make, and weaker than
+   * bitwise equality. A raw changed-pixel count per view would need no tolerance at all; it is not built yet.
+   */
+  it('rounds to three decimals at the call sites, so 4 changed pixels of 921,600 still report 0', () => {
+    // The CLI's own canvas size: cli-app/main.ts renders at 800x600 with pixelRatio 1, Playwright shoots 1280x720.
+    const canvas = (changed: number): Buffer => {
+      const p = new PNG({ width: 1280, height: 720 });
+      for (let i = 0; i < 1280 * 720; i++) p.data[i * 4 + 3] = 255;
+      for (let i = 0; i < changed; i++) p.data[i * 4] = 25; // one channel past the threshold of 24
+      return PNG.sync.write(p);
+    };
+    const blank = canvas(0);
+    const reported = (changed: number): number => Number(pixelDiffPct(blank, canvas(changed)).toFixed(3)); // exactly what the call sites do
+    expect(pixelDiffPct(blank, canvas(4))).toBeGreaterThan(0); // 4 pixels really did change
+    expect(reported(4)).toBe(0); // ...and the reported figure is still 0
+    expect(reported(5)).toBe(0.001);
+    expect(4 / (1280 * 720)).toBeLessThan(0.000005); // 0.0005 % as a ratio: the rounding boundary
+  });
+
   it('compares the pixels both images have instead of short-circuiting on mismatched dimensions', () => {
     // Unlike the e2e helper's `requireSameSize`, the CLI's copy compares min(n) pixels: a resized canvas is
     // reported from the overlap, not as a 100 % difference.

@@ -225,16 +225,22 @@ test('optimize keeps the Fox pixel-identical at --parity 0, keeps its skin and c
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
     const out = join(dir, 'fox.glb');
-    // --parity 0, and every view asserted at exactly 0: `safe` is documented as never changing a pixel (CONTRIBUTING.md
-    // rule 7), so the 0.5 % default this test used to accept proved nothing about that claim. The document is on
-    // stdout even when the verdict fails, so it is parsed before the verdict is judged.
+    // --parity 0 with every view asserted at exactly 0: `safe` is documented as never changing a pixel (CONTRIBUTING.md
+    // rule 7), and the 0.5 % default this test used to accept proved nothing about that claim.
     const r = run(['optimize', asset('Fox'), '--out', out, '--parity', '0', '--backend', forge.backend, '--frames', '5', '--json']);
+    // Not `expect(r.status).toBe(0)` yet — a lost parity exits 1 while still printing the document, and the fixme
+    // below is the only thing that may swallow that. Checking stdout first keeps a crashed CLI from surfacing as
+    // "Unexpected end of JSON input" with its stderr discarded.
+    expect(r.stdout, r.stderr).not.toBe('');
     const doc = JSON.parse(r.stdout);
     expect(doc).toMatchObject({ schemaVersion: 1, tool: 'threeforge', command: 'optimize', input: { preset: 'safe', parity: 0 } });
-    expect(doc.steps.map((s: { name: string }) => s.name)).toEqual(['dedup', 'palette', 'weld', 'resample', 'prune']);
+    // Ruling R100 moved `weld` to `balanced`; `--weld` still adds it back (test/unit/pipeline.test.ts pins that).
+    expect(doc.steps.map((s: { name: string }) => s.name)).toEqual(['dedup', 'palette', 'resample', 'prune']);
     expect(statSync(out).size).toBe(doc.output.bytes);
-    expect(doc.output.bytes).toBeLessThan(doc.stats.before.bytes * 0.7);
-    expect(doc.stats.after.vertices).toBeLessThan(doc.stats.before.vertices);
+    // Measured: 162,852 -> 152,864 bytes. Without weld the Fox keeps its 1728 non-indexed vertices, so `safe`'s
+    // saving here is the ~6 % that dedup, palette, resample and prune find; weld was 84 % of the old total.
+    expect(doc.output.bytes).toBeLessThan(doc.stats.before.bytes * 0.97);
+    expect(doc.stats.after.vertices).toBe(doc.stats.before.vertices);
     expect(doc.stats.after).toMatchObject({ skins: 1, animations: 3 });
     expect(doc.requires).toEqual([]);
     expect(doc.verify.optimized.asset).toMatchObject({ skinned: doc.verify.original.asset.skinned, animations: doc.verify.original.asset.animations });
@@ -244,17 +250,21 @@ test('optimize keeps the Fox pixel-identical at --parity 0, keeps its skin and c
     expect(views.map((v) => v.view)).toEqual(['default', 'orbit-0', 'orbit-1']);
     expect(doc.verify.parity.threshold).toBe(0);
     test.info().annotations.push({ type: 'parity', description: `[${forge.backend}] safe Fox: ${views.map((v) => `${v.view} ${v.diffPct} %`).join(', ')}` });
-    // FINDING (Task 42, see .superpowers/sdd/make-a-plan-to-dreamy-breeze/task-42-report.md): on webgpu the safe
-    // preset is NOT pixel-identical on the Fox. Measured, identically on three runs: default 0.007 %, orbit-0
-    // 0.011 %, orbit-1 0.014 % (65/97/123 pixels of 1280x720); webgl2 is exactly 0 in every view. Bisected to the
-    // `weld` step alone (0 through dedup and palette, 0.013 as soon as weld runs; resample adds 0.001 on orbit-1).
-    // weld is lossless here — the drawn triangle stream is value- and order-identical, only the layout changes from
-    // 1728 non-indexed vertices to 434 indexed ones — and the Fox has no NORMAL attribute, so GLTFLoader gives it a
-    // flat-shaded material (GLTFLoader.js:3500, :3559) whose normal comes from screen-space derivatives; every
-    // differing pixel is interior (0 of 285 touch the background), so this is shading at interior triangle edges,
-    // not a moved silhouette. Marked fixme rather than given a tolerance: the fix (change the step, or correct the
-    // pixel-identical claim in the docs to the measured figure) is the controller's call, not this test's.
-    test.fixme(forge.backend === 'webgpu', 'safe moves 0.007-0.014 % of pixels on the Fox on webgpu (weld); awaiting the step-or-docs decision');
+    // FINDING, fix round 1 (see .superpowers/sdd/make-a-plan-to-dreamy-breeze/task-42-report.md). With weld moved
+    // out of `safe`, the Fox still measures 0.001 % on orbit-1 on webgpu. The remaining mover is `resample`, alone:
+    // dedup, palette and prune each measure 0 in every view, `--no-resample` measures 0 in every view, and
+    // resample-only reproduces 0/0/0.001. Established mechanism, from source rather than inference:
+    // glTF-Transform's RESAMPLE_DEFAULTS is `tolerance: 1e-4`, not 0 (@gltf-transform/functions ~5047), and
+    // src/cli/transform.ts ~153 calls `fns.resample()` with no options, so keyframes within 1e-4 of the
+    // interpolated value are dropped; the harness poses the Fox at a fixed `mixer.setTime(0.7)`, so the pose — and
+    // with it the silhouette — shifts by a few pixels. The differing pixels are mostly background-to-fur
+    // transitions with deltas up to 223, which is geometry moving, not shading.
+    // This is NOT a webgpu-only effect: the raw counts past the threshold are 1/2/3 pixels of 921,600 on webgl2 and
+    // 3/2/5 on webgpu. webgl2 reports 0 because `diffPct` is rounded to three decimals, which absorbs up to 4
+    // pixels — so the webgl2 rows below assert "at most 4 pixels moved", not bit-exactness.
+    // Fixing it is one argument (`resample({ tolerance: 0 })`) or one preset move, but that is a ruling to make,
+    // not a tolerance for this test to choose, so the webgpu case stays marked rather than loosened.
+    test.fixme(forge.backend === 'webgpu', 'safe still moves 0.001 % on orbit-1 on webgpu: resample defaults to tolerance 1e-4; awaiting the ruling');
     for (const v of views) expect(v.diffPct, `${v.view}: --preset safe changed pixels`).toBe(0);
     expect(doc.verify.parity.pass).toBe(true);
     expect(r.status, r.stderr).toBe(0);
@@ -270,7 +280,10 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
     // --parity 0: the same pixel-identical claim as the Fox above, on the asset whose 148 materials the palette step
-    // collapses to one. Every view must be exactly 0, not merely inside the 0.5 % default.
+    // collapses to one. Every view must be exactly 0, not merely inside the 0.5 % default. This asset corroborates
+    // nothing about weld, which is a measured no-op on it (245,673 vertices in and out, all 148 primitives already
+    // indexed) and no longer in `safe` anyway; what it covers is palette, dedup, resample and prune on a
+    // many-material asset, where the safe preset does measure 0 on both backends.
     const r = run(['optimize', asset('Buggy'), '--out', join(dir, 'buggy.glb'), '--parity', '0', '--backend', forge.backend, '--frames', '3', '--views', '1', '--json']);
     expect(r.status, r.stderr).toBe(0);
     const doc = JSON.parse(r.stdout);
@@ -292,13 +305,14 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
 });
 
 /**
- * The tolerance is measured, not guessed. `optimize --preset balanced --parity 100` on the Fox, twice per backend,
- * reported exactly the same figures both times: webgl2 default 0.008 %, orbit-0 0.005 %, orbit-1 0.002 %; webgpu
- * default 0.014 %, orbit-0 0.014 %, orbit-1 0.015 %. So the worst view measured is 0.015 % and 0.05 % leaves ~3.3x
- * headroom. It covers three lossy sources together: `quantize` (positions, UVs and weights to integers),
- * `textures` (the base colour map re-encoded as WebP at quality 85), and — on webgpu only — the 0.014 % the safe
- * steps already move there (see the Fox safe test above). It is deliberately far below the CLI's own 0.5 % default:
- * balanced is lossy, but only just, and a step that starts moving a tenth of a percent should fail this.
+ * The tolerance is measured, not guessed. `optimize --preset balanced --parity 100` on the Fox, three times per
+ * backend (twice before Ruling R100 and again after it, which does not change what `balanced` runs), reported the
+ * same figures every time: webgl2 default 0.008 %, orbit-0 0.005 %, orbit-1 0.002 %; webgpu default 0.014 %,
+ * orbit-0 0.014 %, orbit-1 0.015 %. So the worst view measured is 0.015 % and 0.05 % leaves ~3.3x headroom.
+ * It covers three lossy sources together: `weld` (which R100 moved here out of `safe`, and which is most of the
+ * webgpu figure — 0.013 % of the 0.015 % on its own), `quantize` (positions, UVs and weights to integers) and
+ * `textures` (the base colour map re-encoded as WebP at quality 85). It is deliberately far below the CLI's own
+ * 0.5 % default: balanced is lossy, but only just, and a step that starts moving a tenth of a percent should fail.
  */
 const BALANCED_PARITY = 0.05;
 
