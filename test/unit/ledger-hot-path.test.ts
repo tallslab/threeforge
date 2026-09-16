@@ -14,7 +14,7 @@
  * `ListRenderer` stands in for three where a test must count the ledger's own traversals: it walks the scene with a
  * plain loop instead of `Object3D.traverse`.
  */
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import {
   BoxGeometry,
@@ -526,14 +526,42 @@ describe('DrawCallLedger cost per submission', () => {
  * and `scripts/ledger-overhead.mjs` is a report, not a gate.
  *
  * Measuring bytes from a unit test would be flaky (GC timing, and other tests share the process), so this asserts the
- * shape the fix depends on instead: those walks are index loops, and no `for…of` over the record array creeps back.
+ * shape the fix depends on instead.
+ *
+ * Its first version named two files and missed two more walks of the same array (`DrawCallLedger.exit()` and
+ * `hintsFor`, which `exit()` calls every frame with that array), so it passed while its claim was false. This version
+ * scans every file under `src/ledger/` for an iterator-protocol walk rather than trusting a list, and then checks each
+ * walk site that exists is an index loop. It matches the names the record array actually goes by (`items`,
+ * `ctx.items`, `this.lastItems`, `state.buffer.items`) with flexible whitespace; it cannot see the array under a name
+ * that is not on that list, so renaming it means adding the new name here. `Array.prototype.map`/`forEach` are not
+ * flagged: they index internally and allocate no iterator result.
  */
+const RECORD_ARRAY = String.raw`(?:ctx\.items|this\.lastItems|state\.buffer\.items|items)\b`;
+const ITERATOR_WALK = new RegExp(String.raw`for\s*\(\s*(?:const|let|var)\s+[\w$]+\s+of\s+` + RECORD_ARRAY + String.raw`|\[\s*\.\.\.\s*` + RECORD_ARRAY);
+const INDEX_WALK = /for\s*\(\s*let\s+([\w$]+)\s*=\s*0\s*;\s*\1\s*<\s*items\.length\s*;\s*\1\s*\+\+\s*\)/g;
+/** The walk sites that exist, and how many index loops over the record array each file must hold. */
+const RECORD_WALK_SITES: Record<string, number> = {
+  'src/ledger/sections.ts': 2, // skinningOf, lightingOf
+  'src/ledger/snapshot.ts': 1, // buildFrame
+  'src/ledger/DrawCallLedger.ts': 1, // exit()
+  'src/ledger/hints.ts': 1, // hintsFor, called from exit() every frame
+};
+
 describe('DrawCallLedger per-frame allocations', () => {
-  it('walks the submission records with index loops, never for…of', () => {
-    for (const file of ['src/ledger/sections.ts', 'src/ledger/snapshot.ts']) {
-      const source = readFileSync(file, 'utf8');
-      expect(source, `${file}: a for…of over the records allocates one iterator result per submission per frame`).not.toMatch(/for \(const \w+ of items\)/);
-      expect(source, `${file}: the record walk should be an index loop (see scripts/ledger-overhead.mjs)`).toMatch(/for \(let i = 0; i < items\.length; i\+\+\)/);
+  it('walks the per-frame submission records with no iterator protocol anywhere under src/ledger/', () => {
+    const files = (readdirSync('src/ledger', { recursive: true }) as string[]).filter((f) => f.endsWith('.ts')).map((f) => `src/ledger/${f}`);
+    expect(files.length, 'the scan found the ledger sources').toBeGreaterThan(0);
+    for (const file of files) {
+      const hit = readFileSync(file, 'utf8').match(ITERATOR_WALK);
+      // soft: name every offending file in one run instead of stopping at the first.
+      expect.soft(hit?.[0], `${file}: an iterator-protocol walk of the records allocates one iterator result per submission per frame`).toBeUndefined();
+    }
+  });
+
+  it('keeps every known walk of the records an index loop', () => {
+    for (const [file, sites] of Object.entries(RECORD_WALK_SITES)) {
+      const loops = readFileSync(file, 'utf8').match(INDEX_WALK)?.length ?? 0;
+      expect.soft(loops, `${file}: index loops over the record array (see scripts/ledger-overhead.mjs)`).toBeGreaterThanOrEqual(sites);
     }
   });
 });

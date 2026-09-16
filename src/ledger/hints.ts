@@ -82,7 +82,13 @@ export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): H
   // One pass over the frame's items, copying only the names of threeforge's transparent batches.
   let mainTransparent = 0;
   const names: string[] = [];
-  for (const i of ctx.items ?? []) {
+  // An index loop, deliberately, not `for…of`: `DrawCallLedger.exit()` calls this every frame with every submission of
+  // the frame. As a `for…of` this walk was itself paying a 40-byte iterator result per submission — measured: converting
+  // it took the flat 10k scene from 0.80 to 0.40 MB per frame. See `skinningOf` in src/ledger/sections.ts;
+  // test/unit/ledger-hot-path.test.ts guards every such walk.
+  const items = ctx.items ?? [];
+  for (let k = 0; k < items.length; k++) {
+    const i = items[k]!;
     if (i.pass !== 'main' || !i.transparent) continue;
     mainTransparent++;
     if (i.reason === 'batched' && i.name.startsWith('forge:batch:')) names.push(i.name);

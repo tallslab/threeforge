@@ -532,7 +532,11 @@ export class DrawCallLedger {
     // One pass over the frame's items, before anything reads their reasons (the rescan's hints included).
     let transparentSubmissions = 0;
     let particles = 0;
-    for (const i of items) {
+    // An index loop, deliberately, not `for…of`: this walks every submission of every frame, on the same V8
+    // iterator-elision boundary a sibling walk fell off (a 40-byte iterator result per submission: 0.80 -> 1.20 MB per
+    // frame at 10k). See `skinningOf` in sections.ts; test/unit/ledger-hot-path.test.ts guards every such walk.
+    for (let k = 0; k < items.length; k++) {
+      const i = items[k]!;
       // Drawn alone is `unique-material` only while no other object of the main pass draws the material; every pass's
       // record of the object follows, since its index names the same mark.
       if (i.reason === 'unique-material' && this.uses.shared(i.material)) i.reason = 'static-unbatched';
