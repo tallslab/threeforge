@@ -116,6 +116,25 @@ describe('analyze --parity judges the compile parity like optimize', () => {
     expect(await analyzeWith(['--parity', '0'], [png(false), png(false)])).toMatchObject({ parity: { threshold: 0, pass: true }, verdict: { pass: true } });
   });
 
+  /**
+   * Final re-review A, L3(a): one changed pixel of 400 is 0.25 %, which a comparison of the rounded percentage also
+   * rejects at 0, so the case above cannot tell raw-count semantics from the R108 defect. At the harness's 1280x720
+   * canvas one pixel is 0.000109 %: `diffPct` rounds to 0 (three decimals, and `0.00` in the reason), so only a check
+   * on `changedPixels` fails it.
+   */
+  it('fails one changed pixel of 921,600 at --parity 0, although its rounded percentage is 0', async () => {
+    const large = (changed: boolean): Buffer => {
+      const image = new pngjs.PNG({ width: 1280, height: 720 });
+      image.data.fill(255);
+      if (changed) image.data[4 * (1280 * 360 + 640)] = 0;
+      return pngjs.PNG.sync.write(image);
+    };
+    const doc = await analyzeWith(['--parity', '0'], [large(false), large(true)]);
+    expect(doc.parity).toMatchObject({ threshold: 0, diffPct: 0, pass: false, views: [{ view: 'default', diffPct: 0, changedPixels: 1 }] });
+    expect(doc.verdict.pass).toBe(false);
+    expect(doc.verdict.reasons).toContain('pixel parity 0.00% > 0% (1 changed pixel in the worst view)');
+  });
+
   it('compares a non-zero --parity as a percentage', async () => {
     expect((await analyzeWith(['--parity', '0.1'], onePixel)).parity).toMatchObject({ threshold: 0.1, pass: false });
     expect((await analyzeWith(['--parity', '0.25'], onePixel)).parity).toMatchObject({ threshold: 0.25, pass: true });

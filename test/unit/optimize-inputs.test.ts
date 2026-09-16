@@ -4,7 +4,7 @@ import { existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import pngjs from 'pngjs';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseArgs } from '../../src/cli/args.js';
 import { UsageError } from '../../src/cli/errors.js';
 import { optimizeAsset } from '../../src/cli/optimize.js';
@@ -269,6 +269,58 @@ describe("optimize --out overwrite (protects resource files, not just the input'
       expect(error, name).toBeInstanceOf(UsageError);
       expect(error.message, name).toMatch(/exists/);
       expect(existsSync(target), name).toBe(false);
+    }
+  });
+
+  /**
+   * Final re-review A, L3(c): the case above passes if either guard is reverted alone, because each refuses a dangling
+   * link at `out` on its own. These two pin each guard without the other.
+   *
+   * The `lstat` check (`assertNotClobbering` through `entryExists`) refuses a dangling link at a .glb `out` before the
+   * output is even serialized. With `existsSync` (which follows the link and reads it as free) only the write's `wx`
+   * would refuse it, after `io.writeBinary` has run. (A dangling link at a .gltf *resource* target cannot show this:
+   * `assertConfinedUris` refuses it first, as a symlink that cannot be resolved.)
+   */
+  it('with overwrite: false, a dangling symlink at a .glb out is refused by the check before anything is serialized (the lstat check)', async () => {
+    const file = await inputGlb();
+    const out = join(dir, 'dangling-check.glb');
+    const target = join(root, 'outside-dangling-check.glb');
+    symlinkSync(target, out);
+    const spy = vi.spyOn(NodeIO.prototype, 'writeBinary');
+    try {
+      const error = await rejection(optimizeAsset({ ...inputFor(file, '--out', out), overwrite: false }));
+      expect(error).toBeInstanceOf(UsageError);
+      expect(error.message).toMatch(/exists/);
+      expect(spy).not.toHaveBeenCalled();
+      expect(existsSync(target)).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  /**
+   * The `wx` open flag is what refuses a link that appears *after* the check: `writeOutput` awaits
+   * `io.writeBinary(doc)` between `assertNotClobbering(out)` and the write, so the link is planted inside that await.
+   * With a plain `w` the write would follow it and create the file outside.
+   */
+  it('with overwrite: false, a symlink planted at a .glb out between the check and the write is refused, not followed (the wx flag)', async () => {
+    const file = await inputGlb();
+    const out = join(dir, 'raced.glb');
+    const target = join(root, 'outside-raced.glb');
+    const writeBinary = NodeIO.prototype.writeBinary;
+    const spy = vi.spyOn(NodeIO.prototype, 'writeBinary').mockImplementation(async function (this: NodeIO, doc: Document) {
+      const bytes = await writeBinary.call(this, doc);
+      symlinkSync(target, out);
+      return bytes;
+    });
+    try {
+      const error = await rejection(optimizeAsset({ ...inputFor(file, '--out', out), overwrite: false }));
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(error).toBeInstanceOf(UsageError);
+      expect(error.message).toMatch(/exists/);
+      expect(existsSync(target)).toBe(false);
+    } finally {
+      spy.mockRestore();
     }
   });
 
