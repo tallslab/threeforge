@@ -161,7 +161,7 @@ export const COMMAND_SPECS: Readonly<Record<CommandName, CommandSpec>> = {
     positionals: [{ name: 'file', usage: '<file.glb|.gltf>', required: true }],
     flags: [
       { name: 'out', kind: 'value', value: 'out.glb', description: 'Output path ending in `.glb` or `.gltf` (default `<name>.forge.glb` next to the input; never the input file, not even through a link).' },
-      { name: 'preset', kind: 'value', value: 'safe|balanced|aggressive', choices: PRESETS, description: 'Step preset (default `safe`: dedup, palette, weld, resample, prune; never changes a pixel).' },
+      { name: 'preset', kind: 'value', value: 'safe|balanced|aggressive', choices: PRESETS, description: 'Step preset (default `safe`: dedup, palette, resample, prune; never changes a pixel).' },
       ...STEP_FLAGS,
       { name: 'simplify', kind: 'optional-value', negatable: true, numeric: true, value: 'ratio', description: 'Add the simplify step with this ratio of vertices to keep, in (0, 1] (bare: 0.5); `--no-simplify` removes it from a preset.' },
       { name: 'simplify-error', kind: 'value', value: 'e', numeric: true, description: 'Simplify error limit as a fraction of the mesh radius, from 0 to 1 (default 0.001).' },

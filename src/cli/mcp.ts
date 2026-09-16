@@ -216,7 +216,7 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
     'optimize_asset',
     {
       title: 'Optimize a glTF asset at build time',
-      description: 'Rewrite a .glb/.gltf with glTF-Transform (safe preset: dedup, palette, weld, resample, prune; balanced adds quantize and WebP textures; aggressive adds simplify), write <name>.forge.glb, render the original and the result through the same harness and compare pixels, compile both with threeforge, and return per-step counts, load-time requirements and a verdict.',
+      description: 'Rewrite a .glb/.gltf with glTF-Transform (safe preset: dedup, palette, resample, prune; balanced adds weld, quantize and WebP textures; aggressive adds simplify), write <name>.forge.glb, render the original and the result through the same harness and compare pixels, compile both with threeforge, and return per-step counts, load-time requirements and a verdict.',
       inputSchema: {
         file: z.string().describe('Path to a .glb or .gltf file'),
         out: z.string().optional().describe("Output path; must end in .glb or .gltf and sit inside the input's directory or the working directory (default <name>.forge.glb next to the input)"),

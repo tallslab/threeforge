@@ -8,7 +8,7 @@ const names = (input: Partial<OptimizeInput>) => planSteps({ ...base, ...input }
 describe('planSteps', () => {
   it('lists the presets in pipeline order', () => {
     expect(PRESETS).toEqual(['safe', 'balanced', 'aggressive']);
-    expect(names({})).toEqual(['dedup', 'palette', 'weld', 'resample', 'prune']);
+    expect(names({})).toEqual(['dedup', 'palette', 'resample', 'prune']);
     expect(names({ preset: 'balanced' })).toEqual(['dedup', 'palette', 'weld', 'resample', 'prune', 'textures', 'quantize']);
     expect(names({ preset: 'aggressive' })).toEqual(['dedup', 'palette', 'weld', 'simplify', 'resample', 'prune', 'textures', 'quantize']);
   });
@@ -24,13 +24,27 @@ describe('planSteps', () => {
   });
 
   it('applies overrides: --no-<step>, --<step>, join implies flatten, meshopt replaces quantize, textures none', () => {
-    expect(names({ steps: { palette: false, resample: false } })).toEqual(['dedup', 'weld', 'prune']);
-    expect(names({ steps: { quantize: true, instance: true } })).toEqual(['dedup', 'instance', 'palette', 'weld', 'resample', 'prune', 'quantize']);
-    expect(names({ steps: { join: true } })).toEqual(['dedup', 'palette', 'flatten', 'join', 'weld', 'resample', 'prune']);
+    expect(names({ steps: { palette: false, resample: false } })).toEqual(['dedup', 'prune']);
+    expect(names({ steps: { quantize: true, instance: true } })).toEqual(['dedup', 'instance', 'palette', 'resample', 'prune', 'quantize']);
+    expect(names({ steps: { join: true } })).toEqual(['dedup', 'palette', 'flatten', 'join', 'resample', 'prune']);
     expect(names({ preset: 'balanced', compress: 'meshopt' })).toEqual(['dedup', 'palette', 'weld', 'resample', 'prune', 'textures', 'meshopt']);
     expect(names({ preset: 'balanced', textures: 'none' })).toEqual(['dedup', 'palette', 'weld', 'resample', 'prune', 'quantize']);
     expect(names({ preset: 'aggressive', steps: { simplify: false } })).not.toContain('simplify');
     expect(planSteps({ ...base, compress: 'meshopt' }).find((s) => s.name === 'meshopt')!.options).toEqual({ level: 'medium' });
     expect(STEP_NAMES).toHaveLength(12);
+  });
+
+  /**
+   * Ruling R100: `weld` is a lossy-preset step, not a `safe` one. It changes no drawn value, but welding the Fox's
+   * non-indexed primitive into an indexed one moves pixels on WebGPU (see `test/e2e/cli.spec.ts`), so `safe` keeps
+   * only steps measured at 0 in every view on both backends. Pinned here so a future preset edit cannot quietly put
+   * it back: `safe` is the one preset without it, and `--weld` is still the way to ask for it anywhere.
+   */
+  it('keeps weld out of safe and in the lossy presets, with --weld able to add it back in pipeline order', () => {
+    expect(names({})).not.toContain('weld');
+    expect(names({ preset: 'balanced' })).toContain('weld');
+    expect(names({ preset: 'aggressive' })).toContain('weld');
+    expect(names({ steps: { weld: true } })).toEqual(['dedup', 'palette', 'weld', 'resample', 'prune']);
+    expect(names({ preset: 'balanced', steps: { weld: false } })).toEqual(['dedup', 'palette', 'resample', 'prune', 'textures', 'quantize']);
   });
 });

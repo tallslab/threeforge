@@ -42,8 +42,8 @@ can branch on.
 ### Optimize assets at build time
 
 `threeforge optimize scene.glb` rewrites the file with [glTF-Transform](https://gltf-transform.dev) and writes
-`scene.forge.glb`. Three presets: `safe` (default; dedup, palette, weld, resample, prune: never changes a pixel),
-`balanced` (adds quantize and WebP textures at 2048 px), `aggressive` (adds simplify to 50 % and 1024 px textures).
+`scene.forge.glb`. Three presets: `safe` (default; dedup, palette, resample, prune: never changes a pixel),
+`balanced` (adds weld, quantize and WebP textures at 2048 px), `aggressive` (adds simplify to 50 % and 1024 px textures).
 Any step can be added or removed (`--quantize`, `--no-palette`, `--simplify 0.3`, `--compress meshopt`, `--textures avif`,
 `--instance`, `--join`). The command then renders the original and the result through the same harness, compares
 pixels view by view, compiles both with threeforge, and reports:

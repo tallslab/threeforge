@@ -1079,9 +1079,20 @@ swaps change data, not draw calls.
   (meshoptimizer, ratio and error), `resample` (redundant animation keyframes), `prune` (unused properties),
   `textures` (sharp: WebP or AVIF, longest side, quality), `quantize` (`KHR_mesh_quantization`), `meshopt`
   (`EXT_meshopt_compression`, replaces quantize because it quantizes itself).
-- **Presets**: `safe` = dedup, palette, weld, resample, prune (nothing an eye can see changes; the Fox and the
-  Buggy e2e assert 0 % pixel difference). `balanced` = safe + quantize + textures webp 2048 px. `aggressive` =
-  balanced + simplify 0.5 + textures 1024 px. `--<step>` / `--no-<step>` override a preset; `--simplify`,
+- **Presets**: `safe` = dedup, palette, resample, prune. `balanced` = safe + weld + quantize + textures webp
+  2048 px; being lossy, its Fox e2e states a measured tolerance of 0.05 %, about 3x the worst view measured.
+  `aggressive` = balanced + simplify 0.5 + textures 1024 px. `weld` merges only bitwise-identical vertices and
+  changes no drawn value, but it left `safe` (Ruling R100) because welding the Fox's primitive moves up to 0.014 %
+  of pixels on WebGPU; measured the same way, weld also moves pixels on PotOfCoals (0.004 %) and VirtualCity
+  (0.011 %), which are indexed and carry normals, so the effect is not tied to either property. `--weld` adds it
+  back to any preset.
+- **What `safe` is measured at**: the Buggy is 0 % in every view on both backends. The Fox is 0 % in every view on
+  WebGL2 and 0.001 % on one view on WebGPU, from `resample` alone — glTF-Transform's `resample` defaults to
+  `tolerance: 1e-4`, not 0, so it drops keyframes within that distance of the interpolated value and the posed
+  silhouette shifts by a few pixels. Raw counts past the comparison threshold are 1-3 pixels of 921,600 on WebGL2
+  and 3-5 on WebGPU; the reported figure rounds to three decimals, so only WebGPU's crosses to 0.001. Restoring
+  bit-exactness needs `resample({ tolerance: 0 })` or moving the step to `balanced`; until then `--no-resample`
+  gives a `safe` run that measures 0 in every view on both backends. `--<step>` / `--no-<step>` override a preset; `--simplify`,
   `--textures`, `--compress meshopt` enable their step with the given value. `--instance`, `--join` and
   `--compress meshopt` are never in a preset: the first two change the node graph game code may address by name,
   the third needs `loader.setMeshoptDecoder`. A preset's texture step without `sharp` installed is skipped with a

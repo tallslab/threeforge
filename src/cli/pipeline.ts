@@ -16,8 +16,17 @@ export interface Step {
   options: StepOptions;
 }
 
+/**
+ * `weld` is deliberately not in `safe` (Ruling R100). It merges only bitwise-identical vertices, so it changes no
+ * drawn value — the drawn triangle stream stays order- and value-identical — but welding the Fox's primitive (the
+ * corpus's only non-indexed one) into an indexed primitive reproducibly moves up to 0.014 % of its pixels on WebGPU
+ * while WebGL2 stays at exactly 0. The mechanism is not established, so `safe` keeps only the steps measured at 0 in
+ * every view on both backends, and `weld` rides with the lossy steps in `balanced` and `aggressive`. `--weld` still
+ * adds it back to any preset. Measured cost of the move over 66 readable corpus assets: weld merges vertices on 11
+ * and shrinks the file by more than 0.5 % on 9, median 0.00 %.
+ */
 const PRESET_STEPS: Record<Preset, StepName[]> = {
-  safe: ['dedup', 'palette', 'weld', 'resample', 'prune'],
+  safe: ['dedup', 'palette', 'resample', 'prune'],
   balanced: ['dedup', 'palette', 'weld', 'resample', 'prune', 'textures', 'quantize'],
   aggressive: ['dedup', 'palette', 'weld', 'simplify', 'resample', 'prune', 'textures', 'quantize'],
 };
