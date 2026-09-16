@@ -47,7 +47,10 @@ test('the lake: 2000 raindrop sprites become one submission per pass, pixels sta
   expect(restored).toBe(naive.sprites);
 });
 
-test('the bossfight: health bars and hit markers become two batches among the effects', async ({ forge }) => {
+// @corpus: the health bars and hit markers are attached only to `fighter-*` / `blocky-*` objects, and those come
+// from the Kenney kits through buildArena. Without the kits the arena is empty, so `naiveSprites >= 16` and
+// `spriteBatches === 2` below fail on a kit-less runner.
+test('the bossfight: health bars and hit markers become two batches among the effects', { tag: '@corpus' }, async ({ forge }) => {
   await forge.open('bossfight', { variant: 'naive' });
   await settle(forge.page);
   const r = await forge.page.evaluate(async () => {

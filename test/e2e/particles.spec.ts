@@ -1,7 +1,14 @@
 import { expect, test } from './fixtures.js';
 
-/** ParticleBudget on the boss fight, forced to the low phone tier: fewer particles drawn, every draw still attributed. */
-test('ParticleBudget caps the boss fight particles on phone-low and clears the hint', async ({ forge }) => {
+/**
+ * ParticleBudget on the boss fight, forced to the low phone tier: fewer particles drawn, every draw still attributed.
+ *
+ * @corpus even though the particles themselves are procedural (`Points` over generated geometry, whose kit textures
+ * are optional). The boss fight reaches buildArena, so without the Kenney kits the arena has no fighters, no blocky
+ * characters and no props — and this test would very likely still pass, reporting green while measuring a scene it
+ * is not named for. False coverage that looks green is worse than coverage deferred to the full-corpus run.
+ */
+test('ParticleBudget caps the boss fight particles on phone-low and clears the hint', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(300_000);
   const read = async () =>
     forge.page.evaluate(async () => {

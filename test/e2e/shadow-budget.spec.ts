@@ -1,6 +1,11 @@
 import { expect, test } from './fixtures.js';
 
-test('ShadowBudget on phone-low fits the boss fight shadows into 262k texels and drops the point-light shadow', async ({ forge }) => {
+/**
+ * @corpus for the same reason as particles.spec.ts: the arena's spot and point lights are added unconditionally, so
+ * on a kit-less runner this would pass green against an empty arena — a boss-fight shadow budget measured with no
+ * fighters to cast the shadows. The second test below uses the procedural naive scene and stays in CI.
+ */
+test('ShadowBudget on phone-low fits the boss fight shadows into 262k texels and drops the point-light shadow', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(300_000);
   await forge.open('bossfight', { variant: 'naive', tier: 'phone-low', shadowBudget: '1' });
   const r = await forge.page.evaluate(async () => {

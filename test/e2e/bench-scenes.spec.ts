@@ -11,7 +11,11 @@ const scenes: Array<{ id: string; naiveMin: number; optimizedMax: number; counts
   // Skinned meshes are not batched until SP4 (VAT): the optimized crowd only bounds the count.
   // Loads the eight Kenney mini-character GLBs (test/app/scenes/crowd.ts throws without the kit), so: @corpus.
   { id: 'crowd', naiveMin: 200, optimizedMax: 420, counts: { characters: 200 }, tag: '@corpus' },
-  { id: 'bossfight', naiveMin: 2000, optimizedMax: 480, counts: { effects: 30, fighters: 12 }, timeout: 240_000 },
+  // Delegates to buildArena (test/app/arena.ts), which fetches /kits-index.json and loads the Kenney mini-character,
+  // blocky-character, arena and blaster GLBs. A missing kit does not throw: `if (!proto) continue` leaves
+  // counts.fighters and counts.blocky at 0 and attaches no sprites, so the counts and naiveMin below would fail
+  // rather than skip on a kit-less runner. Found by following the delegation, not by grepping this scene: @corpus.
+  { id: 'bossfight', naiveMin: 2000, optimizedMax: 480, counts: { effects: 30, fighters: 12 }, timeout: 240_000, tag: '@corpus' },
   // Sprites are not batched until SP3 and the water reflection renders them twice: the lake's optimized bound is loose on purpose.
   // The water loads waternormals.jpg from the downloaded content (test/app/scenes/lake.ts), so: @corpus.
   { id: 'lake', naiveMin: 1900, optimizedMax: 4200, counts: { rain: 2000 }, tag: '@corpus' },
