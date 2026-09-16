@@ -35,10 +35,12 @@ describe('planSteps', () => {
   });
 
   /**
-   * Ruling R100: `weld` is a lossy-preset step, not a `safe` one. It changes no drawn value, but welding the Fox's
-   * non-indexed primitive into an indexed one moves pixels on WebGPU (see `test/e2e/cli.spec.ts`), so `safe` keeps
-   * only steps measured at 0 in every view on both backends. Pinned here so a future preset edit cannot quietly put
-   * it back: `safe` is the one preset without it, and `--weld` is still the way to ask for it anywhere.
+   * Ruling R100: `weld` is a lossy-preset step, not a `safe` one. It changes no drawn value, yet it moves pixels on
+   * WebGPU — on the Fox, and also on PotOfCoals and VirtualCity, which are fully indexed and carry normals — so the
+   * preset that promises pixel identity must not run it (see `test/e2e/cli.spec.ts`). That does not by itself make
+   * `safe` bit-exact: `resample` still takes glTF-Transform's default 1e-4 keyframe tolerance, which shifts a few
+   * silhouette pixels on both backends. Pinned here so a future preset edit cannot quietly put weld back: `safe` is
+   * the one preset without it, and `--weld` is still the way to ask for it anywhere.
    */
   it('keeps weld out of safe and in the lossy presets, with --weld able to add it back in pipeline order', () => {
     expect(names({})).not.toContain('weld');

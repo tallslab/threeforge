@@ -18,12 +18,21 @@ export interface Step {
 
 /**
  * `weld` is deliberately not in `safe` (Ruling R100). It merges only bitwise-identical vertices, so it changes no
- * drawn value — the drawn triangle stream stays order- and value-identical — but welding the Fox's primitive (the
- * corpus's only non-indexed one) into an indexed primitive reproducibly moves up to 0.014 % of its pixels on WebGPU
- * while WebGL2 stays at exactly 0. The mechanism is not established, so `safe` keeps only the steps measured at 0 in
- * every view on both backends, and `weld` rides with the lossy steps in `balanced` and `aggressive`. `--weld` still
- * adds it back to any preset. Measured cost of the move over 66 readable corpus assets: weld merges vertices on 11
- * and shrinks the file by more than 0.5 % on 9, median 0.00 %.
+ * drawn value — the drawn triangle stream stays order- and value-identical — yet welding the Fox reproducibly moves
+ * up to 0.014 % of its pixels on WebGPU, where the same run reports 0 on WebGL2. Measured the same way, weld also
+ * moves pixels on PotOfCoals (0.004 %) and VirtualCity (0.011 %), both fully indexed and carrying normals, so the
+ * effect follows the asset rather than either structural property and the mechanism is not established. A step that
+ * can move a pixel does not belong in the preset that promises none, so weld rides with the lossy steps in
+ * `balanced` and `aggressive`; `--weld` adds it back to any preset.
+ *
+ * `safe` is not bit-exact yet either, and this move does not make it so: `resample` takes glTF-Transform's default
+ * `tolerance: 1e-4` (see `applySteps` in transform.ts), which drops keyframes within that distance and shifts the
+ * Fox's posed silhouette by 1-5 pixels of 921,600 on *both* backends — under the reported figure's three-decimal
+ * rounding on WebGL2, 0.001 % on one WebGPU view. `resample({ tolerance: 0 })` or a second preset move would close
+ * it; see `test/e2e/cli.spec.ts` and the task-42 report.
+ *
+ * Measured cost of this move over 66 readable corpus assets: weld merges vertices on 11 and shrinks the file by
+ * more than 0.5 % on 9, median 0.00 %.
  */
 const PRESET_STEPS: Record<Preset, StepName[]> = {
   safe: ['dedup', 'palette', 'resample', 'prune'],
