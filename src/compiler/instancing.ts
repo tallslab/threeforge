@@ -373,7 +373,7 @@ export function createCulledInstancedMesh(
   /** The shadow cameras the caster pool covers this frame (a point light's one camera covers its six faces). */
   const shadowCameras: Camera[] = [];
   /** The nested key: the lights the caster pool was built from, and 16 numbers per light after the group's matrix. */
-  const shadowLights: Light[] = [];
+  const poolLights: Light[] = [];
   let casterKey = new Float64Array(16);
   let nextKey = new Float64Array(16);
   const nextLights: Light[] = [];
@@ -458,8 +458,8 @@ export function createCulledInstancedMesh(
         }
         nextLights[used++] = light;
       }
-      let same = !castersDirty && used === shadowLights.length && casterKey.length >= 16 * (used + 1);
-      for (let i = 0; same && i < used; i++) same = nextLights[i] === shadowLights[i];
+      let same = !castersDirty && used === poolLights.length && casterKey.length >= 16 * (used + 1);
+      for (let i = 0; same && i < used; i++) same = nextLights[i] === poolLights[i];
       for (let e = 0; same && e < 16 * (used + 1); e++) same = nextKey[e] === casterKey[e];
       if (!same) {
         if (casterMark >= 0xfffffffe) {
@@ -474,16 +474,16 @@ export function createCulledInstancedMesh(
           queryBit = bitFor(i);
           if (light.isPointLight) addCube(group, nextKey[offset]!, nextKey[offset + 1]!, nextKey[offset + 2]!, nextKey[offset + 3]!);
           else addFrustum(group, light.shadow!.camera);
-          shadowLights[i] = light;
+          poolLights[i] = light;
         }
-        shadowLights.length = used;
+        poolLights.length = used;
         const key = casterKey;
         casterKey = nextKey;
         nextKey = key;
         castersDirty = false;
       }
       shadowCameras.length = 0;
-      for (let i = 0; i < used; i++) shadowCameras.push((shadowLights[i] as ShadowLight).shadow!.camera);
+      for (let i = 0; i < used; i++) shadowCameras.push((poolLights[i] as ShadowLight).shadow!.camera);
     }
     // Identity, not equality: two lights sharing one `LightShadow.camera` object would give the second the first's
     // bit and lose its own casters. three's own API never shares a shadow camera (`Light.copy` clones the shadow), so
