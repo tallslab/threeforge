@@ -38,6 +38,12 @@ export interface ReportRow {
   commit?: string;
   /** The run that measured it (`runIdOf`), equal for every row of one `playwright test` invocation. */
   run?: string;
+  /**
+   * The `FORGE_ASSETS_MATERIALS` the harness was given, when the run set one. Such a run measures a different
+   * material configuration and never publishes the Markdown, but its numbers still merge into the JSON, so the row
+   * has to say so. Absent on a normal run. (Distinct from `materials`, which is the asset's material count.)
+   */
+  materialsOverride?: string;
 }
 
 /** What one run stamps on every row it writes. */
@@ -61,12 +67,17 @@ export function shortCommit(commit: string): string {
 
 /**
  * The id every row of one `playwright test` invocation carries. It must survive a worker restart, so it is derived
- * from the runner process (the worker's parent) and the commit, never from the worker's own pid or clock: measured
- * on Playwright 1.63.0, a worker's pid changes across a restart and its `ppid` does not. `FORGE_RUN_ID` pins it.
+ * from the runner process (the worker's parent), the commit and the UTC day, never from the worker's own pid or
+ * clock: measured on Playwright 1.63.0, a worker's pid changes across a restart and its `ppid` does not.
+ *
+ * `day` is in the id because a pid alone can repeat: an OS that recycles the runner pid at the same commit would
+ * otherwise let a later partial run inherit an earlier full run's rows and republish the table. A run that crosses
+ * midnight UTC splits into two ids, which blocks the Markdown instead of publishing a mixed table — the safe
+ * direction. `FORGE_RUN_ID` pins the id outright, which is what CI should set (see Task 47).
  */
-export function runIdOf(env: { FORGE_RUN_ID?: string | undefined }, ppid: number, commit: string): string {
+export function runIdOf(env: { FORGE_RUN_ID?: string | undefined }, ppid: number, commit: string, day: string): string {
   const pinned = (env.FORGE_RUN_ID ?? '').trim();
-  return pinned === '' ? hash8(`${ppid}|${commit}`) : pinned;
+  return pinned === '' ? hash8(`${ppid}|${commit}|${day}`) : pinned;
 }
 
 /** The row with this run's commit and id on it. Returns a copy; the caller's row is untouched. */
@@ -95,6 +106,56 @@ function isRow(value: unknown): value is ReportRow {
 export function missingFromRun(rows: ReportRow[], expected: string[], run: string): string[] {
   const measured = new Set(rows.filter((r) => r.run === run).map((r) => r.name));
   return expected.filter((name) => !measured.has(name));
+}
+
+/** Where a backend's report files live, without the extension. */
+export function reportFor(backend: string): string {
+  return backend === 'webgl2' ? 'docs/assets-report' : `docs/assets-report-${backend}`;
+}
+
+/** Everything the Markdown gate decides on. */
+export interface GateInput {
+  backend: string;
+  /** The rows currently on disk for that backend. */
+  rows: ReportRow[];
+  /** Every asset a full run measures, whatever this run attempted. */
+  expected: string[];
+  /** This run's id. */
+  run: string;
+  env: { FORGE_ASSETS_MATERIALS?: string | undefined };
+}
+
+/**
+ * Why this run must not rewrite the tracked Markdown, or `null` when it may. This decision used to sit inside
+ * `assets.spec.ts`, which nothing imports and nobody may run here, so it had no test: dropping it left every unit
+ * test green while a partial run republished the tracked table. It lives here so it is covered.
+ */
+export function markdownBlock(input: GateInput): string | null {
+  // Nothing downloaded: "every expected asset was measured" would be vacuously true and would republish the
+  // tracked table from rows this run never measured.
+  if (input.expected.length === 0) return 'no assets in the index, so this run measured nothing to publish';
+  // A materials override measures a different configuration; its numbers must not become the published table.
+  const materials = (input.env.FORGE_ASSETS_MATERIALS ?? '').trim();
+  if (materials !== '') return `run under FORGE_ASSETS_MATERIALS=${materials}, which measures a different configuration`;
+  const missing = missingFromRun(input.rows, input.expected, input.run);
+  if (missing.length === 0) return null;
+  const head = missing.slice(0, 4).join(', ');
+  const rest = missing.length > 4 ? `, +${missing.length - 4} more` : '';
+  return `run ${input.run} measured ${input.expected.length - missing.length}/${input.expected.length} assets (missing ${head}${rest})`;
+}
+
+/** The Markdown path this run may write, or `null` when it must leave the tracked file alone. */
+export function markdownTarget(input: GateInput): string | null {
+  return markdownBlock(input) === null ? `${reportFor(input.backend)}.md` : null;
+}
+
+/**
+ * The rows a published table shows: the assets the index still lists, in the order given. An asset dropped from the
+ * index leaves the table instead of lingering under an old run's stamp and making the header read "different runs".
+ */
+export function rowsForReport(rows: ReportRow[], expected: string[]): ReportRow[] {
+  const keep = new Set(expected);
+  return rows.filter((r) => keep.has(r.name));
 }
 
 const TABLE_HEAD =
@@ -132,7 +193,7 @@ let cached: RunStamp | undefined;
 export function currentStamp(): RunStamp {
   if (cached === undefined) {
     const commit = commitStamp(headSha(), workingTreeDirty());
-    cached = { commit, run: runIdOf(process.env, process.ppid, commit) };
+    cached = { commit, run: runIdOf(process.env, process.ppid, commit, new Date().toISOString().slice(0, 10)) };
   }
   return cached;
 }

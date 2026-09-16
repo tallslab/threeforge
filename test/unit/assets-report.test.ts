@@ -1,8 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { commitStamp, mergeRows, missingFromRun, renderReport, runIdOf, shortCommit, stampRow, type ReportRow } from '../e2e/assets-report.js';
+import {
+  commitStamp,
+  markdownBlock,
+  markdownTarget,
+  mergeRows,
+  missingFromRun,
+  renderReport,
+  reportFor,
+  rowsForReport,
+  runIdOf,
+  shortCommit,
+  stampRow,
+  type GateInput,
+  type ReportRow,
+} from '../e2e/assets-report.js';
 
 const row = (name: string, extra: Partial<ReportRow> = {}): ReportRow => ({ name, tags: 't', meshes: 1, naive: 1, compiled: 1, unattributed: 0, diff: 0, restored: 1, ...extra });
 const stamp = { commit: 'a'.repeat(40), run: 'run1234' };
+/** The UTC date a run started, folded into the run id so a recycled runner pid cannot inherit an older run's rows. */
+const DAY = '2026-09-16';
 
 /**
  * `pnpm assets:report` merges its rows into docs/assets-report[-backend].json one test at a time (Playwright
@@ -51,29 +67,39 @@ describe('shortCommit (what the Markdown header shows)', () => {
  * a restart, its `ppid` (the runner) does not.
  */
 describe('runIdOf', () => {
-  it('is stable across a worker restart: the same runner pid and commit give the same id', () => {
-    expect(runIdOf({}, 4321, stamp.commit)).toBe(runIdOf({}, 4321, stamp.commit));
+  it('is stable across a worker restart: the same runner pid, commit and day give the same id', () => {
+    expect(runIdOf({}, 4321, stamp.commit, DAY)).toBe(runIdOf({}, 4321, stamp.commit, DAY));
   });
 
   it('separates two invocations: a different runner pid gives a different id', () => {
-    expect(runIdOf({}, 4321, stamp.commit)).not.toBe(runIdOf({}, 4322, stamp.commit));
+    expect(runIdOf({}, 4321, stamp.commit, DAY)).not.toBe(runIdOf({}, 4322, stamp.commit, DAY));
   });
 
   it('separates two runs at the same pid but different commits', () => {
-    expect(runIdOf({}, 4321, 'a'.repeat(40))).not.toBe(runIdOf({}, 4321, 'b'.repeat(40)));
+    expect(runIdOf({}, 4321, 'a'.repeat(40), DAY)).not.toBe(runIdOf({}, 4321, 'b'.repeat(40), DAY));
+  });
+
+  /**
+   * The pid alone can repeat: an OS that recycles the runner pid at the same commit would let a later partial run
+   * inherit an earlier full run's rows and republish the table. The day makes that need a recycled pid at the same
+   * commit *on the same date*. A run that crosses midnight UTC splits into two ids, which blocks the Markdown
+   * rather than publishing a mixed table — the safe direction.
+   */
+  it('separates two runs at the same pid and commit on different days', () => {
+    expect(runIdOf({}, 4321, stamp.commit, '2026-09-16')).not.toBe(runIdOf({}, 4321, stamp.commit, '2026-09-17'));
   });
 
   it('is short and file-name safe', () => {
-    expect(runIdOf({}, 4321, stamp.commit)).toMatch(/^[a-z0-9]{8}$/);
+    expect(runIdOf({}, 4321, stamp.commit, DAY)).toMatch(/^[a-z0-9]{8}$/);
   });
 
   it('takes FORGE_RUN_ID verbatim when a caller pins one (CI can group a run by its own id)', () => {
-    expect(runIdOf({ FORGE_RUN_ID: 'ci-9042' }, 4321, stamp.commit)).toBe('ci-9042');
-    expect(runIdOf({ FORGE_RUN_ID: '  ci-9042  ' }, 4321, stamp.commit)).toBe('ci-9042');
+    expect(runIdOf({ FORGE_RUN_ID: 'ci-9042' }, 4321, stamp.commit, DAY)).toBe('ci-9042');
+    expect(runIdOf({ FORGE_RUN_ID: '  ci-9042  ' }, 4321, stamp.commit, DAY)).toBe('ci-9042');
   });
 
   it('ignores an empty FORGE_RUN_ID rather than stamping every row with nothing', () => {
-    expect(runIdOf({ FORGE_RUN_ID: '   ' }, 4321, stamp.commit)).toBe(runIdOf({}, 4321, stamp.commit));
+    expect(runIdOf({ FORGE_RUN_ID: '   ' }, 4321, stamp.commit, DAY)).toBe(runIdOf({}, 4321, stamp.commit, DAY));
   });
 });
 
@@ -207,5 +233,69 @@ describe('renderReport', () => {
     const md = renderReport(clean, 'webgpu');
     expect(md).toContain('# Public asset report (webgpu)');
     expect(md).toContain('on the webgpu backend at commit');
+  });
+});
+
+describe('reportFor', () => {
+  it('names the webgl2 report without a suffix and any other backend with one', () => {
+    expect(reportFor('webgl2')).toBe('docs/assets-report');
+    expect(reportFor('webgpu')).toBe('docs/assets-report-webgpu');
+  });
+});
+
+describe('rowsForReport (an asset dropped from the index leaves the table)', () => {
+  it('keeps only the assets the index still lists, in the order given', () => {
+    expect(rowsForReport([row('Duck'), row('Retired'), row('Fox')], ['Duck', 'Fox']).map((r) => r.name)).toEqual(['Duck', 'Fox']);
+  });
+
+  it('keeps every row when the index dropped nothing', () => {
+    expect(rowsForReport([row('Duck'), row('Fox')], ['Fox', 'Duck']).map((r) => r.name)).toEqual(['Duck', 'Fox']);
+  });
+});
+
+/**
+ * The gate that protects the tracked Markdown. It used to live inside `assets.spec.ts` — a file nothing imports and
+ * nobody here may run — so deleting its `continue` would have left every unit test green while a partial run
+ * republished the tracked table, which is the exact regression this task exists to prevent. These are its tests.
+ */
+describe('markdownTarget / markdownBlock (the gate on the tracked Markdown)', () => {
+  const full = [stampRow(row('Duck'), stamp), stampRow(row('Fox'), stamp)];
+  const input = (over: Partial<GateInput> = {}): GateInput => ({ backend: 'webgl2', rows: full, expected: ['Duck', 'Fox'], run: 'run1234', env: {}, ...over });
+
+  it('opens for a run that measured every expected asset', () => {
+    expect(markdownBlock(input())).toBeNull();
+    expect(markdownTarget(input())).toBe('docs/assets-report.md');
+  });
+
+  it('sends the webgpu table to its own path', () => {
+    expect(markdownTarget(input({ backend: 'webgpu' }))).toBe('docs/assets-report-webgpu.md');
+  });
+
+  it('blocks a subset run and says how far it got and what is missing', () => {
+    const partial = input({ expected: ['Duck', 'Fox', 'Buggy', 'Sponza'] });
+    expect(markdownTarget(partial)).toBeNull();
+    expect(markdownBlock(partial)).toContain('2/4');
+    expect(markdownBlock(partial)).toContain('Buggy');
+  });
+
+  it('blocks a run whose rows an earlier run left behind', () => {
+    const stale = [stampRow(row('Duck'), { commit: 'older', run: 'run0000' }), stampRow(row('Fox'), stamp)];
+    expect(markdownTarget(input({ rows: stale }))).toBeNull();
+  });
+
+  it('blocks a report written before stamping existed', () => {
+    expect(markdownTarget(input({ rows: [row('Duck'), row('Fox')] }))).toBeNull();
+  });
+
+  it('blocks a FORGE_ASSETS_MATERIALS run even when it measured everything', () => {
+    const variant = input({ env: { FORGE_ASSETS_MATERIALS: 'basic' } });
+    expect(markdownTarget(variant)).toBeNull();
+    expect(markdownBlock(variant)).toContain('FORGE_ASSETS_MATERIALS=basic');
+  });
+
+  it('blocks an empty corpus instead of vacuously publishing rows this run never measured', () => {
+    const empty = input({ expected: [] });
+    expect(markdownTarget(empty)).toBeNull();
+    expect(markdownBlock(empty)).toContain('no assets');
   });
 });

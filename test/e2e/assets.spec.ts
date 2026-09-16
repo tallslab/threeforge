@@ -9,7 +9,7 @@
  * asset (see the afterAll below); a partial run's rows still land in the JSON, stamped as its own.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { currentStamp, mergeRows, missingFromRun, renderReport, stampRow, type ReportRow } from './assets-report.js';
+import { currentStamp, markdownBlock, markdownTarget, mergeRows, renderReport, reportFor, rowsForReport, stampRow, type GateInput, type ReportRow } from './assets-report.js';
 import { expect, test } from './fixtures.js';
 import { pixelDiff } from './pixels.js';
 
@@ -30,9 +30,10 @@ const only = process.env.FORGE_ASSETS?.split(',').map((s) => s.trim());
 /** Every asset a full run measures. `assets` is what this run will actually attempt (FORGE_ASSETS narrows it). */
 const candidates = lists.filter((a) => a.entry && /\.(gltf|glb)$/i.test(a.entry) && !a.error && a.kind !== 'kit');
 const assets = candidates.filter((a) => !only || only.includes(a.name));
-const reportFor = (backend: string) => (backend === 'webgl2' ? 'docs/assets-report' : `docs/assets-report-${backend}`);
 /** The same commit and run id in every worker of this invocation, including the ones Playwright restarts. */
 const stamp = currentStamp();
+/** Set when the harness is told to override materials: such a run's numbers are a variant, and every row says so. */
+const materialsOverride = (process.env.FORGE_ASSETS_MATERIALS ?? '').trim();
 
 /** Playwright restarts its worker after a failure, so rows are merged on disk per test rather than kept in memory. */
 function saveRow(row: ReportRow, backend: string): void {
@@ -45,9 +46,9 @@ function saveRow(row: ReportRow, backend: string): void {
 for (const asset of assets) {
   test(`asset ${asset.name}`, { tag: '@corpus' }, async ({ forge }) => {
     test.setTimeout(180_000);
-    const row: ReportRow = { name: asset.name, tags: (asset.tags ?? []).join(' ') };
+    const row: ReportRow = { name: asset.name, tags: (asset.tags ?? []).join(' '), ...(materialsOverride ? { materialsOverride } : {}) };
     try {
-      await forge.open('gltf', { asset: asset.name, ...(process.env.FORGE_ASSETS_MATERIALS ? { materials: process.env.FORGE_ASSETS_MATERIALS } : {}) });
+      await forge.open('gltf', { asset: asset.name, ...(materialsOverride ? { materials: materialsOverride } : {}) });
     } catch (error) {
       row.error = String(error instanceof Error ? error.message : error).split('\n')[0]!.slice(0, 200);
       saveRow(row, forge.backend);
@@ -106,21 +107,18 @@ for (const asset of assets) {
  */
 test.afterAll(() => {
   const expected = candidates.map((a) => a.name);
-  // Nothing downloaded: "every expected asset was measured" would be vacuously true and would republish the
-  // tracked table from rows this run never measured.
-  if (expected.length === 0) return;
   for (const backend of ['webgl2', 'webgpu']) {
     const jsonPath = `${reportFor(backend)}.json`;
     if (!existsSync(jsonPath)) continue;
     const rows = JSON.parse(readFileSync(jsonPath, 'utf8')) as ReportRow[];
-    // A materials override measures a different configuration; its numbers must not become the published table.
-    const variant = process.env.FORGE_ASSETS_MATERIALS ? `FORGE_ASSETS_MATERIALS=${process.env.FORGE_ASSETS_MATERIALS}` : '';
-    const missing = variant ? expected : missingFromRun(rows, expected, stamp.run);
-    if (missing.length > 0) {
-      const why = variant ? `run under ${variant}` : `run ${stamp.run} measured ${expected.length - missing.length}/${expected.length} assets (missing ${missing.slice(0, 4).join(', ')}${missing.length > 4 ? `, +${missing.length - 4} more` : ''})`;
-      console.log(`${reportFor(backend)}.md left unchanged: ${why}`);
+    // The whole decision lives in markdownTarget/markdownBlock so it is unit-tested (test/unit/assets-report.test.ts):
+    // this file is imported by nothing and may not be run here, so a gate written inline here had no test at all.
+    const gate: GateInput = { backend, rows, expected, run: stamp.run, env: process.env };
+    const target = markdownTarget(gate);
+    if (target === null) {
+      console.log(`${reportFor(backend)}.md left unchanged: ${markdownBlock(gate)}`);
       continue;
     }
-    writeFileSync(`${reportFor(backend)}.md`, renderReport(rows, backend));
+    writeFileSync(target, renderReport(rowsForReport(rows, expected), backend));
   }
 });
