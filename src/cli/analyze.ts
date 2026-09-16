@@ -98,11 +98,12 @@ async function captureViews(page: PlaywrightPage, views: number, timeout: number
 
 /**
  * The progress line of a compile that baked: faces each rule removed, coincident faces the seam guard kept, duplicate
- * faces the duplicate rule kept, vertices welded, and meshes batched because the bake would drop an attribute. A report
- * from an older threeforge lacks `keptCoincidentFaces`, `keptDuplicateFaces` or `unbakeableEntries`: each prints 0.
+ * faces the duplicate rule kept, vertices welded, and meshes batched instead of baked (`unbakeableEntries`: a node, an
+ * instance function, a subclass or a `displacementMap` in their material, or an attribute the bake drops). A report from
+ * an older threeforge lacks `keptCoincidentFaces`, `keptDuplicateFaces` or `unbakeableEntries`: each prints 0.
  */
 export function bakeProgressLine(bake: BakeSummary): string {
-  return `bake: ${bake.inputTriangles} -> ${bake.triangles} triangles (${bake.contactFaces} seam, ${bake.duplicateFaces} duplicate, ${bake.buriedFaces} buried faces removed; ${bake.keptCoincidentFaces ?? 0} coincident and ${bake.keptDuplicateFaces ?? 0} duplicate faces kept; ${bake.weldedVertices} vertices welded; ${bake.unbakeableEntries ?? 0} meshes batched for attributes the bake drops)`;
+  return `bake: ${bake.inputTriangles} -> ${bake.triangles} triangles (${bake.contactFaces} seam, ${bake.duplicateFaces} duplicate, ${bake.buriedFaces} buried faces removed; ${bake.keptCoincidentFaces ?? 0} coincident and ${bake.keptDuplicateFaces ?? 0} duplicate faces kept; ${bake.weldedVertices} vertices welded; ${bake.unbakeableEntries ?? 0} meshes batched, not baked: a node, instance function, subclass or displacementMap in their material, or an attribute the bake drops)`;
 }
 
 async function waitReady(page: PlaywrightPage, timeout: number): Promise<AssetFacts> {

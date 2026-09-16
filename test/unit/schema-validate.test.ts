@@ -136,7 +136,8 @@ describe('schema-validate: every exported schema is self-contained', () => {
     expect(description).not.toContain('buried pass kept');
     expect(description).toContain('`keptCoincidentFaces` (coincident faces the seam guard kept)');
     expect(description).toContain('`keptDuplicateFaces`');
-    expect(description).toContain('`unbakeableEntries`');
+    // unbakeableEntries counts every mesh the bake left to batching (BakeSummary.unbakeableEntries): the material gate first.
+    expect(description).toContain('`unbakeableEntries` (meshes batched instead of baked because the bake cannot prove the merged mesh draws what they drew: a node in any slot, an instance function, a subclass or a `displacementMap` in their material, or an attribute the bake does not carry)');
   });
 });
 

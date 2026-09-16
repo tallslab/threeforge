@@ -175,8 +175,9 @@ units in front of them. A wrong deletion is visible and a missed one is invisibl
 `--views 6 --parity 0`. The default `--parity` is 0.5, so without it the verdict passes a view with up to 0.5 % of its
 pixels changed; `--parity 0` fails the verdict unless every view has `changedPixels: 0` (no channel moving by more
 than 24 of 255). Read `parity.views` (`changedPixels` is the exact count behind the rounded `diffPct`) and
-`compile.bake` (seams, coincident faces kept, duplicates and duplicates kept, buried, welded, and meshes left unbaked
-for an attribute the bake does not carry). If a view changed, retry without `--bake-buried`, or exclude modules with
+`compile.bake` (seams, coincident faces kept, duplicates and duplicates kept, buried, welded, and meshes left batched
+because the bake cannot carry their material or an attribute: a node in any slot, an instance function, a subclass, a
+`displacementMap`, or an attribute it drops). If a view changed, retry without `--bake-buried`, or exclude modules with
 `mesh.userData.forgeBake = false` in the app. In code: `new World(scene, { bake: true | { removeBuried, tolerance } })`,
 `world.bakeDebug()` returns the removed faces as meshes to render and screenshot.
 
