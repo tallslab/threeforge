@@ -1,6 +1,6 @@
 import { ObjectSpaceNormalMap, REVISION, type Camera, type Light, type Material, type Object3D, type Scene } from 'three';
 import { MaterialRegistry, type MaterialHashes } from '../registry/MaterialRegistry.js';
-import { expectedGpuDraws, sideFactor, writeInstanceCounts, type BackendInfo } from './expectedDraws.js';
+import { expectedGpuDraws, sideFactor, writeInstanceCounts, type BackendInfo, type DrawGroup } from './expectedDraws.js';
 import { flagsInto, isVsmBlur, kindOf, reasonOf, type Reason } from './reasons.js';
 import { DisplayNames, type PathCache } from './names.js';
 import { budgetsFor, type Budgets } from './budgets.js';
@@ -279,7 +279,7 @@ export class DrawCallLedger {
       // Draw state is read after the call returns: BatchedMesh fills `_multiDrawCount` in its onBeforeRender (a sprite
       // batch its `instanceCount`), and a pass nested inside this draw (the shadow map a receiver triggers) restores the
       // counts it changed as it ends.
-      ledger.file(record, object, sides, hashes, passId === 'backSide');
+      ledger.file(record, object, material, group as DrawGroup | null, sides, hashes, passId === 'backSide');
       return result;
     };
     renderer.render = function (this: LedgerRenderer, scene: Scene, camera: Camera) {
@@ -819,8 +819,8 @@ export class DrawCallLedger {
   }
 
   /** Snapshots the draw state into the record once the renderer returned, then files it as this frame's next item. */
-  private file(record: SubmissionRecord, object: Object3D, sides: number, hashes: MaterialHashes, backSide: boolean): void {
-    record.expectedGpuDraws = expectedGpuDraws(object, sides, this.backendInfo);
+  private file(record: SubmissionRecord, object: Object3D, material: Material, group: DrawGroup | null, sides: number, hashes: MaterialHashes, backSide: boolean): void {
+    record.expectedGpuDraws = expectedGpuDraws(object, sides, this.backendInfo, material, group);
     writeInstanceCounts(object, record);
     const state = this.current;
     if (state === null) return; // detached inside the draw

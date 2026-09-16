@@ -15,12 +15,67 @@ type SourceMaterial = Material & {
 type Counted = Object3D & {
   isBatchedMesh?: boolean;
   isInstancedMesh?: boolean;
+  isPoints?: boolean;
+  isLine?: boolean;
+  isLineSegments?: boolean;
+  isLineLoop?: boolean;
   count?: number;
   instanceCount?: number;
   _multiDrawCount?: number;
   _multiDrawCounts?: ArrayLike<number>;
-  geometry?: { isInstancedBufferGeometry?: boolean; instanceCount?: number };
+  geometry?: {
+    isInstancedBufferGeometry?: boolean;
+    instanceCount?: number;
+    index?: { count: number } | null;
+    attributes?: { position?: { count: number } | null };
+    drawRange?: { start: number; count: number };
+  };
 };
+
+/** A `geometry.groups` entry, as three hands it to `renderObject` — null when the object draws with one material. */
+export interface DrawGroup {
+  start: number;
+  count: number;
+  materialIndex?: number;
+}
+
+/**
+ * Whether three's vertex range for this submission is empty, so `RenderObject.getDrawParameters()` returns null and the
+ * backend draws nothing (`RenderObject.js:640-671`): `count = min(lastVertex, itemCount) - max(firstVertex, 0)`, and
+ * `count < 0 || count === Infinity` draws nothing. Three reachable ways to get there, none of them modelled before
+ * (independent review M4):
+ * - no index and no `position` attribute, so `itemCount` is `Infinity`, under the default `drawRange` of
+ *   `{ start: 0, count: Infinity }` (`BufferGeometry.js:188`) — geometry driven from storage buffers whose author did
+ *   not call `setDrawRange`. A finite `drawRange` on the same geometry does draw;
+ * - a `drawRange` disjoint from the group three is drawing (two groups `(0,18)` and `(18,18)` with
+ *   `setDrawRange(0, 10)`: group 1 gets `firstVertex` 18 and `lastVertex` 10);
+ * - a `drawRange` starting past the last vertex, which the `itemCount` clamp turns negative.
+ *
+ * `rangeFactor` follows three (2 for a wireframe mesh); the item count is scaled by it as an approximation of three's
+ * generated wireframe index, the same approximation the FakeRenderer makes (`test/unit/helpers/fakeRendererRules.ts`).
+ * It can only matter for a wireframe mesh whose range is already disjoint.
+ */
+function drawsNoVertices(o: Counted, material: Material | null, group: DrawGroup | null): boolean {
+  const geometry = o.geometry;
+  const range = geometry?.drawRange;
+  if (geometry === undefined || range === undefined) return false;
+  const line = o.isPoints === true || o.isLineSegments === true || o.isLine === true || o.isLineLoop === true;
+  const rangeFactor = (material as (Material & { wireframe?: boolean }) | null)?.wireframe === true && !line ? 2 : 1;
+  let firstVertex = range.start * rangeFactor;
+  let lastVertex = (range.start + range.count) * rangeFactor;
+  if (group !== null) {
+    firstVertex = Math.max(firstVertex, group.start * rangeFactor);
+    lastVertex = Math.min(lastVertex, (group.start + group.count) * rangeFactor);
+  }
+  const index = geometry.index;
+  const position = geometry.attributes?.position;
+  const items = index !== undefined && index !== null ? index.count : position !== undefined && position !== null ? position.count : undefined;
+  const itemCount = items === undefined ? Infinity : items * rangeFactor;
+  firstVertex = Math.max(firstVertex, 0);
+  lastVertex = Math.min(lastVertex, itemCount);
+  const count = lastVertex - firstVertex;
+  return count < 0 || count === Infinity;
+}
 
 /**
  * Draws one `renderObject` call makes for `material` in `scene`: 2 when the material three draws is transparent,
@@ -53,15 +108,17 @@ export function sideFactor(material: Material, scene: Scene): 1 | 2 {
  * - `RenderObject.getDrawParameters()` returns null, and nothing is drawn, when the instance count is 0: the geometry's
  *   `instanceCount` for an InstancedBufferGeometry (sprite batches, VAT parts), else `object.count` (InstancedMesh; 1 on
  *   Mesh, Sprite and BatchedMesh; undefined, so 1, on Points and Lines).
+ * - It also returns null when the vertex range is empty (`drawsNoVertices`, which needs the `material` and the `group`
+ *   three is drawing with). A BatchedMesh returns before that test in three, so it is skipped for one here too.
  * - A BatchedMesh adds one draw call per multi-draw slot on WebGPU (`WebGPUBackend.draw`) and on WebGL without
  *   WEBGL_multi_draw, one for the whole list with it (`WebGLBufferRenderer.renderMultiDraw`), none for an empty list.
  *   `Info.update` counts a slot whose index count a nested pass zeroed like any other.
  */
-export function expectedGpuDraws(object: Object3D, sides: number, info: BackendInfo): number {
+export function expectedGpuDraws(object: Object3D, sides: number, info: BackendInfo, material: Material | null = null, group: DrawGroup | null = null): number {
   const o = object as Counted;
   const geometry = o.geometry;
   if (geometry?.isInstancedBufferGeometry === true ? geometry.instanceCount === 0 : o.count !== undefined && o.count <= 0) return 0;
-  if (!o.isBatchedMesh) return sides;
+  if (!o.isBatchedMesh) return drawsNoVertices(o, material, group) ? 0 : sides;
   const n = o._multiDrawCount ?? 0;
   return (n === 0 ? 0 : info.backend === 'webgpu' || !info.multiDraw ? n : 1) * sides;
 }

@@ -152,9 +152,13 @@ For each submission the ledger predicts the draw calls three r186's `renderer.in
   as it returns. So a `side` or `transparent` change made inside `object.onBeforeRender`, which three calls at the
   start of `renderObject`, is not seen by the prediction. A double-sided transmissive material is two submissions of
   one draw each: its back-side pass, then its front.
-- A draw range three rejects (`RenderObject.getDrawParameters` returns null when the range count is below 0 or
-  `Infinity`: malformed app geometry, such as a group past the end of its index) still predicts 1 draw and shows as
-  `unattributed`.
+- A vertex range three rejects predicts 0 draws, as three draws none: `RenderObject.getDrawParameters` returns null
+  when the range count is below 0 or `Infinity` (`RenderObject.js:640-671`), which the prediction follows with the
+  submission's own material and group. Three ways to reach it: a geometry with neither an index nor a `position`
+  attribute under the default infinite `drawRange` (vertices from storage buffers, no `setDrawRange`); a `drawRange`
+  disjoint from the group being drawn (groups `(0,18)` and `(18,18)` with `setDrawRange(0, 10)`); and a `drawRange`
+  starting past the last vertex. The wireframe range factor scales the item count as an approximation of three's
+  generated wireframe index, which can only matter for a wireframe mesh whose range is already disjoint.
 
 `reportedDrawCalls` is the change in `renderer.info.render.drawCalls` inside the frame;
 `unattributed = reportedDrawCalls − gpuDraws` and is asserted to be 0 in every test. `drawCommands` counts multi-draw

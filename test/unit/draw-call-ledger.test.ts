@@ -203,6 +203,57 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     expect(frame.totals).toMatchObject({ sceneSubmissions: 1, unattributed: 0 });
   });
 
+  /**
+   * M4 (independent review): three r186 `RenderObject.getDrawParameters()` returns null — and the backend draws
+   * nothing — whenever `count < 0 || count === Infinity` (RenderObject.js:671), not only when the instance count is
+   * zero. `count = min(lastVertex, itemCount) - max(firstVertex, 0)` with `itemCount = Infinity` when the geometry has
+   * neither an index nor a `position` attribute (:653-663). Predicting 1 draw for either drives `totals.unattributed`
+   * negative, which is the audited failure mode from an input the first fix did not model. The FakeRenderer already
+   * follows three's rule (`test/unit/helpers/fakeRendererRules.ts`), so these two scenes are a parity check.
+   */
+  it('expects no GPU draw where three draws nothing: no index and no position under an infinite drawRange, a drawRange disjoint from a group, and a drawRange past the end', () => {
+    const { renderer, ledger, scene, camera } = attached();
+    // (a) A geometry whose vertices come from somewhere else (storage buffers) and whose author forgot setDrawRange:
+    // itemCount is Infinity, drawRange.count is Infinity, so count is Infinity and three draws nothing.
+    const headless = new BufferGeometry();
+    headless.setAttribute('shade', new Float32BufferAttribute([0.1, 0.2, 0.3], 1));
+    const ghost = new Mesh(headless, new MeshStandardMaterial());
+    ghost.name = 'ghost';
+    // The same geometry with a finite drawRange does draw: the null is the infinite range, not the missing position.
+    const ranged = new BufferGeometry();
+    ranged.setAttribute('shade', new Float32BufferAttribute([0.1, 0.2, 0.3], 1));
+    ranged.setDrawRange(0, 3);
+    const spectre = new Mesh(ranged, new MeshStandardMaterial());
+    spectre.name = 'spectre';
+    // (b) The golden scene's panel pattern — two groups over 36 vertices — with a drawRange over the first group only:
+    // group 1 gets firstVertex 18 and lastVertex 10, so count is -8.
+    const panel = new BufferGeometry();
+    panel.setAttribute('position', new Float32BufferAttribute(new Float32Array(36 * 3).map((_, i) => (i % 7) * 0.1), 3));
+    panel.addGroup(0, 18, 0);
+    panel.addGroup(18, 18, 1);
+    panel.setDrawRange(0, 10);
+    const split = new Mesh(panel, [new MeshStandardMaterial({ name: 'front' }), new MeshStandardMaterial({ name: 'back' })]);
+    split.name = 'panel';
+    // (c) A drawRange that starts past the last vertex: firstVertex 100, lastVertex clamped to 36.
+    const beyond = new BufferGeometry();
+    beyond.setAttribute('position', new Float32BufferAttribute(new Float32Array(36 * 3), 3));
+    beyond.setDrawRange(100, 10);
+    const gone = new Mesh(beyond, new MeshStandardMaterial());
+    gone.name = 'gone';
+    scene.add(ghost, spectre, split, gone);
+    renderer.render(scene, camera);
+
+    const frame = ledger.frame({ items: true });
+    const draws = (name: string): number[] => frame.items!.filter((i) => i.name === name).map((i) => i.expectedGpuDraws);
+    expect(draws('ghost'), 'no index, no position, infinite drawRange').toEqual([0]);
+    expect(draws('spectre'), 'no position but a finite drawRange: three draws it').toEqual([1]);
+    expect(draws('panel'), 'the second group lies outside the drawRange').toEqual([1, 0]);
+    expect(draws('gone'), 'the drawRange starts past the last vertex').toEqual([0]);
+    // The parity assertion the review points at: predicting a draw three never makes takes this below zero.
+    expect(frame.totals.unattributed).toBe(0);
+    expect(frame.totals.gpuDraws).toBe(frame.totals.reportedDrawCalls);
+  });
+
   it('expects two GPU draws for double-sided transparent materials', () => {
     const { renderer, ledger, scene, camera } = attached();
     scene.add(tag.static(new Mesh(box, new MeshStandardMaterial({ transparent: true, side: DoubleSide }))));
