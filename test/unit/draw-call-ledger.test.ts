@@ -49,6 +49,7 @@ import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 import { AnimatedInstances } from '../../src/skinning/AnimatedInstances.js';
 import { bakeAnimationTexture } from '../../src/skinning/bakeAnimationTexture.js';
 import { tag } from '../../src/tags.js';
+import { hasNodeSlot } from '../../src/compiler/sprites.js';
 import { FakeRenderer, batchedOf, sceneWithCamera, type FakeDraw } from './helpers/fakeRenderer.js';
 import { buildRig } from './helpers/rig.js';
 
@@ -1255,6 +1256,36 @@ describe('DrawCallLedger batch-local-space hint', () => {
       expect(normals.report.after.batches, JSON.stringify(world)).toBe(0);
       expect(hint(normals.ledger)?.objects, JSON.stringify(world)).toEqual([normals.report.groups[0]!.name]);
     }
+  });
+
+  /**
+   * M1 (independent review): a subclass can read `positionLocal` from an overridden `setup*` without ever assigning a
+   * `*Node` property, so `hasNodeSlot` alone misses it — the same class `bakeProvesReads` (`batchStatics.ts:381`)
+   * already refuses and `spriteRule` already names `sprite-custom-material` before `sprite-node-material`. The
+   * subclass here is what the review describes: `setupPosition` displaces along `positionLocal`, which batching
+   * replaces with the scene-space position.
+   */
+  it('fires for a batch whose material is a subclass or carries an own function, even with no node slot set', () => {
+    class Ripple extends MeshStandardNodeMaterial {
+      setupPosition(builder: unknown): unknown {
+        return positionLocal.add(positionLocal.y.mul(0.1));
+      }
+    }
+    const subclass = Object.assign(new Ripple(), { name: 'ripple' }) as unknown as Material;
+    expect(hasNodeSlot(subclass)).toBe(false); // no *Node own property: the old test saw nothing
+    const sub = compiled(subclass);
+    expect(sub.report.after.batches).toBe(1);
+    expect(hint(sub.ledger)?.objects).toEqual([sub.report.groups[0]!.name]);
+    expect(hint(sub.ledger)?.message.endsWith('(materials: ripple)')).toBe(true);
+
+    // An own function on a built-in instance is the same risk without a subclass: `setup` can read positionLocal.
+    const own = new MeshStandardNodeMaterial();
+    own.name = 'hooked';
+    (own as unknown as { setup: () => unknown }).setup = () => positionLocal;
+    expect(hasNodeSlot(own as unknown as Material)).toBe(false);
+    const hooked = compiled(own as unknown as Material);
+    expect(hooked.report.after.batches).toBe(1);
+    expect(hint(hooked.ledger)?.objects).toEqual([hooked.report.groups[0]!.name]);
   });
 
   it('stays silent for batches of a plain registered standard material and of a node material with every slot empty', () => {

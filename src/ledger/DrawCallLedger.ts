@@ -11,6 +11,8 @@ import { disposeOverdraw, measureOverdraw, overdrawTargetOf, type OverdrawRender
 import { formatCostRows, formatHints } from '../overlay/index.js';
 import { FORGE_TAG_KEY } from '../tags.js';
 import { hasNodeSlot } from '../compiler/sprites.js';
+import { hasOwnFunctions } from '../compiler/batchStatics.js';
+import { isBuiltInMaterial } from '../registry/builtInMaterials.js';
 import { lightInfoOf, type LightInfo } from './sections.js';
 import { shadowPassIds } from './shadowPasses.js';
 import { MaterialUses } from './materialUses.js';
@@ -897,8 +899,12 @@ function frameBufferTargetsOf(renderer: LedgerRenderer | null): AllowedRenderTar
 
 /**
  * The material of a draw `World.compile()` made, when it reads mesh-local space: a node in any slot (`hasNodeSlot`, the
- * test `spriteRule`'s `sprite-node-material` uses), `alphaHash`, or a `normalMap` with `normalMapType:
- * ObjectSpaceNormalMap`; else null. World's draws: a `forge:batch:` BatchedMesh, the base level of a `forge:instanced:`
+ * test `spriteRule`'s `sprite-node-material` uses), code the hint cannot read (a class that is not one of three's own,
+ * or an own function — what `spriteRule` names `sprite-custom-material` before it looks at node slots, and what
+ * `bakeProvesReads` refuses for the same reason), `alphaHash`, or a `normalMap` with `normalMapType:
+ * ObjectSpaceNormalMap`; else null. The code test is the second half of `spriteRule`'s: a subclass overriding
+ * `setupPosition` (or any other `setup*`) reads `positionLocal` with no `*Node` property to see, so `hasNodeSlot`
+ * alone would leave the one documented mitigation for this change silently inapplicable. World's draws: a `forge:batch:` BatchedMesh, the base level of a `forge:instanced:`
  * group (its LOD levels share the group's material) and a baked mesh (`userData.forge.kind` `bake`, as `reasonOf` reads
  * it). three r186 gives a batched or instanced draw `positionLocal` multiplied by its instance matrix (`Batch.js:148`,
  * `Instance.js:206-207`), which World writes in the scene's space, and a baked mesh's positions are written there too;
@@ -916,7 +922,8 @@ function compiledLocalSpaceReader(object: Object3D): Material | null {
   const material = o.material;
   if (!compiled || !material || Array.isArray(material)) return null;
   const m = material as Material & { alphaHash?: boolean; normalMap?: unknown; normalMapType?: number };
-  return hasNodeSlot(material) || m.alphaHash === true || (!!m.normalMap && m.normalMapType === ObjectSpaceNormalMap) ? material : null;
+  const opaqueCode = !isBuiltInMaterial(material) || hasOwnFunctions(material);
+  return hasNodeSlot(material) || opaqueCode || m.alphaHash === true || (!!m.normalMap && m.normalMapType === ObjectSpaceNormalMap) ? material : null;
 }
 
 /** Whether `object` and every ancestor up to and including `root` is visible: what three's render lists test. */

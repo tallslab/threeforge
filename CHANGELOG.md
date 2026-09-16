@@ -299,6 +299,11 @@ Documented in `docs/threeforge.md` (section 14 lists them), not fixed in 0.9.0:
   GPU, a bare `"Apple"` with touch, and this new UA-based signal each still downgrade to `phone-low` under
   `deviceMemory <= 2`, matching the old touch-only rule. Every GPU-name regex is now word-bounded, so an
   unrelated GPU string containing a brand name as a substring (e.g. "Intelligent", "Malibu") cannot false-match.
+- The `batch-local-space` hint also names a compiled draw whose material is a class that is not one of three's own or
+  carries an own function, not only one with a node in a slot, `alphaHash` or an object-space normal map: a subclass
+  overriding `setupPosition` (or any other `setup*`) reads `positionLocal` with no `*Node` property for `hasNodeSlot`
+  to see, which is the same class the bake's `bakeProvesReads` gate and `spriteRule`'s `sprite-custom-material` already
+  refuse. Scenes batching such materials gain the hint.
 - `detectTier`'s order puts the mobile-GPU family name last of the GPU tests, because those families also ship in
   laptops: an `"Apple"` name with `touch` (step 2), a desktop GPU (step 3), an ANGLE Direct3D or Windows renderer
   string (step 4, new `DESKTOP_DRIVER`) and an explicit `mobile === false` (step 5) each now outrank it.

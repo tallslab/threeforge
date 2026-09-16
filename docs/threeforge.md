@@ -314,7 +314,8 @@ items?:    per-submission records with ledger.frame({ items: true })
   meshes three renders (world-visible; no point light while `renderer.shadowMap.enabled` is false). The
   `batch-local-space` hint (`HintContext.localSpaceDraws`, gathered on the rescan) names world-visible draws
   `World.compile()` made (a `forge:batch:` batch, the base level of a `forge:instanced:` group, a baked mesh) whose
-  material has a node in any slot, `alphaHash` or an object-space normal map (section 7).
+  material has a node in any slot, code the hint cannot read (a subclass or an own function), `alphaHash` or an
+  object-space normal map (section 7).
 - **programHash / variantHash** (the `programs` keys, and each item's hashes) come from the material registry
   (section 5). A hash for a material with instance code, a class that is not one of three's own, or identity-keyed
   data (a function or class instance in a user-added property) is stable within a run only: identity numbers follow
@@ -655,10 +656,13 @@ the same within 0.001 % whether batched, instanced or, where the bake takes the 
 gradient 7.21 % (a node material, so `bake` batches it), `alphaHash` 3.66 %, an object-space normal map 6.19 %; a
 tangent-space normal map and a plain `MeshStandardMaterial` 0 %. The
 `batch-local-space` hint (info) names every world-visible batch, instanced group and baked mesh World made whose
-material has a node in any slot (the test `spriteRule`'s `sprite-node-material` uses), `alphaHash: true`, or a
-`normalMap` with `normalMapType: ObjectSpaceNormalMap`, with the material names. It cannot see into a node graph, so it
-also names nodes that never read `positionLocal` (a texture lookup by uv, or `MeshSSSNodeMaterial`'s constant
-`thickness*Node` defaults). Tag the meshes that must keep their own local space `dynamic` (under the default
+material has a node in any slot (the test `spriteRule`'s `sprite-node-material` uses), code the hint cannot read (a
+class that is not one of three's own, or an own function — `spriteRule`'s `sprite-custom-material` test, and what
+`bakeProvesReads` refuses for the same reason: a subclass overriding `setupPosition` reads `positionLocal` with no
+`*Node` property to see), `alphaHash: true`, or a `normalMap` with `normalMapType: ObjectSpaceNormalMap`, with the
+material names. It cannot see into a node graph or into code, so it also names nodes that never read `positionLocal`
+(a texture lookup by uv, or `MeshSSSNodeMaterial`'s constant `thickness*Node` defaults) and subclasses that read
+nothing local. Tag the meshes that must keep their own local space `dynamic` (under the default
 `dynamics: 'separate'`) to leave them individual draws; an object-space normal map re-authored in tangent space batches
 unchanged.
 
