@@ -8,7 +8,7 @@
 // - nested: N unnamed meshes in unnamed groups of 50 under named, static-tagged zones of 500 (`zone-3/Group[4]/Mesh[17]`).
 // - shadow: the flat scene with a shadow-casting sun, whose map renders as a nested pass of every frame drawing the
 //   quarter of the meshes that cast; it covers the per-submission caster marking and the frame's shadow pass ids.
-// Both share 16 registered materials and one geometry. µs per submission is the best of 9 ledger rounds of 5 frames
+// All three share 16 registered materials and one geometry. µs per submission is the best of 9 ledger rounds of 5 frames
 // minus the best of 9 bare rounds (the best of the per-round differences picks the round whose ledger time was lowest
 // and whose bare time was highest, which is biased low and can even read negative); bytes per
 // frame is the heap growth over 10 frames with the young generation sized so no scavenge runs inside the window (the

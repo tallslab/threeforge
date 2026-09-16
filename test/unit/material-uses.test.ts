@@ -111,4 +111,27 @@ describe('MaterialUses', () => {
     expect(uses.use(other, 3, true)).toBe(index);
     expect(uses.shared(index)).toBe(true);
   });
+
+  it('keeps the canonical the frame started with when register() merges a material without moving keysRevision', () => {
+    // register() files a material against an existing canonical but never moves keysRevision — only invalidate() and
+    // forget() do. So within a frame the answer stays the one the frame started with, exactly as the ledger's hash
+    // reads behave (Ruling R6). This is the one place an output could differ from the pre-memo ledger, so it is pinned.
+    const registry = new FakeRegistry();
+    const canonical = material();
+    const other = material();
+    const uses = new MaterialUses(registry);
+    uses.beginFrame();
+    const index = uses.use(canonical, 1, true);
+    const own = uses.use(other, 2, true);
+    expect(own).not.toBe(index);
+
+    registry.merge(other, canonical);
+    uses.use(canonical, 1, true); // moves the single-material fast path off `other`, so the per-frame memo answers
+    expect(uses.use(other, 2, true)).toBe(own);
+
+    // The next frame resolves again and sees the merge.
+    uses.beginFrame();
+    const merged = uses.use(canonical, 1, true);
+    expect(uses.use(other, 2, true)).toBe(merged);
+  });
 });

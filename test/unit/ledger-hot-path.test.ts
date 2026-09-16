@@ -527,21 +527,24 @@ describe('reasonOf', () => {
     expect(reasonOf(mesh, material, null, scene, false, 'excluded:mirrored')).toBe('excluded:mirrored'); // an annotation wins over tags
   });
 
-  it('walks past an ancestor whose userData is null instead of throwing, and still finds a tag above it', () => {
+  it('walks past a null userData on the drawn object and on an ancestor instead of throwing, and still finds a tag above them', () => {
     const material = new MeshStandardMaterial();
     const scene = new Scene();
     const group = new Group();
     const mesh = new Mesh(box, material);
     group.add(mesh);
     scene.add(group);
-    // three fills `userData` on its own constructors, but a loader, a clone of a hand-built object or app code can
-    // leave it null on an ancestor; the walk reads the key off it for every ancestor, so it must tolerate one.
+    // three fills `userData` on its own constructors, but app code and non-three loaders assign null, and
+    // Object3D.copy propagates it to every clone. three renders such a scene without complaint, so both reads
+    // reasonOf makes of it — the ancestor walk's tag, and the drawn object's own `forge` kind — must tolerate it.
     (group as { userData: unknown }).userData = null;
+    (mesh as { userData: unknown }).userData = null;
 
     expect(reasonOf(mesh, material, null, scene, false, undefined)).toBe('untagged');
+    // Tagged on the scene, not the mesh: tagging writes into `userData`, which is exactly what is null here.
     tag.static(scene);
     expect(reasonOf(mesh, material, null, scene, false, undefined)).toBe('unique-material');
-    tag.dynamic(mesh);
+    tag.dynamic(scene);
     expect(reasonOf(mesh, material, null, scene, false, undefined)).toBe('dynamic');
   });
 });

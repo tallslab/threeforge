@@ -110,9 +110,12 @@ export function isVsmBlur(object: Object3D): boolean {
 
 /**
  * One primary reason per submission. A single walk up the ancestors answers both questions that need them: whether
- * `root` is among them and the nearest tag (as `effectiveTag` reads it, which may sit above the root). The tag is read
- * off `userData` here rather than through `tag.of`, so an ancestor whose `userData` is null — three fills it on its own
- * constructors, but a loader or hand-built node need not — is walked past instead of throwing.
+ * `root` is among them and the nearest tag (as `effectiveTag` reads it, which may sit above the root).
+ *
+ * Both reads of `userData` here — the walk's tag, read off it rather than through `tag.of`, and the drawn object's own
+ * `forge` kind — are guarded: three fills `userData` on its own constructors, but app code and non-three loaders
+ * assign null and `Object3D.copy` propagates it to every clone, and three renders such a scene without complaint, so
+ * neither read may throw on the per-submission path.
  */
 export function reasonOf(object: Object3D, material: Material, group: unknown, root: Object3D, unsupported: boolean, annotation: Reason | undefined): Reason {
   const o = object as Flags;
@@ -128,7 +131,7 @@ export function reasonOf(object: Object3D, material: Material, group: unknown, r
   }
   if (!underRoot) return 'renderer-internal';
   if ((root as { isScene?: boolean }).isScene !== true) return isVsmBlur(object) ? 'renderer-internal' : 'fullscreen-pass';
-  const forgeKind = (object.userData.forge as { kind?: string } | undefined)?.kind;
+  const forgeKind = (object.userData?.forge as { kind?: string } | undefined)?.kind;
   if (forgeKind === 'occlusion-proxy') return 'occlusion-proxy';
   if (forgeKind === 'bake') return 'baked';
   if (forgeKind === 'sprites') return 'sprite-batch';
