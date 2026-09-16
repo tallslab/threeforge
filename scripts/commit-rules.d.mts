@@ -20,9 +20,24 @@ export const EXCLUDED_PATHS: Readonly<Record<string, string>>;
 export function touchesRendering(files: readonly string[]): string[];
 /** The budget a commit message declares on a body line, or `null` when absent or malformed. */
 export function budgetDeclaration(message: string): BudgetDeclaration | null;
-/** Every commit that touches rendering without a usable declaration. */
-export function checkCommits(commits: readonly CommitRecord[]): BudgetViolation[];
+/** One entry of the exemption allow-list: when it was decided, and why. */
+export interface CommitExemption {
+  date: string;
+  reason: string;
+}
+/** A commit the allow-list excused, reported so an exemption is never silent. */
+export interface ExemptedCommit extends CommitExemption {
+  sha: string;
+  subject: string;
+  files: string[];
+}
+/** The dated allow-list of full SHAs that are past rule 4 by decision. The only way past it. */
+export const EXEMPT_COMMITS: Readonly<Record<string, CommitExemption>>;
+/** The commits `exempt` excused: would-be violations whose full SHA is a key of it. */
+export function exemptedCommits(commits: readonly CommitRecord[], exempt?: Readonly<Record<string, CommitExemption>>): ExemptedCommit[];
+/** Every commit that touches rendering without a usable declaration and without an exemption. */
+export function checkCommits(commits: readonly CommitRecord[], exempt?: Readonly<Record<string, CommitExemption>>): BudgetViolation[];
 /** Reads `range` out of the repository in `cwd`, merges excluded. */
 export function readCommits(range: string, cwd?: string): CommitRecord[];
 /** Runs the check; returns the process exit code (0 ok, 1 violations, 2 usage). */
-export function main(argv: readonly string[], cwd?: string): number;
+export function main(argv: readonly string[], cwd?: string, exempt?: Readonly<Record<string, CommitExemption>>): number;

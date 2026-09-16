@@ -19,23 +19,46 @@ concurrency:
 
 jobs:
   # CONTRIBUTING.md rule 4 as a check: a commit touching a rendering path carries the budget it measured.
-  # Pull requests only: six commits on fix/audit-0.9.0 fail the rule (three predate it, three were committed after it
-  # without a Budget: line), and history is not rewritten, so that branch must reach main by a direct push.
-  # docs/release.md ("seed main with a push") names them and says how and why.
+  # Runs on pushes as well as pull requests (independent review H2): gating it on pull_request meant a direct push to
+  # main was never checked by rule 4 at all, by anyone, forever — and the release prescribes exactly such a push. The
+  # six commits on fix/audit-0.9.0 that fail the rule are exempted by the dated allow-list in
+  # scripts/commit-rules.mjs (EXEMPT_COMMITS), in code rather than in prose; the run prints each one it excused.
   commit-rules:
     name: Budget line on every rendering commit
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # the base..head range has to resolve; the default shallow merge-ref checkout has neither end
-      - name: Check the commits this pull request adds
+      # A push carries github.event.before, except when the push created the ref, where it is forty zeros (a branch's
+      # first push, and every tag push). The fallback is the merge-base with main; when even that is missing or is the
+      # pushed commit itself — the seeding push of main, which has no earlier base in the remote — the range is
+      # skipped with the reason printed, rather than silently passing or checking the whole history of the repository.
+      - name: Check the commits this push or pull request adds
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-        run: node scripts/commit-rules.mjs "$BASE..$HEAD"
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          set -eu
+          if [ "$EVENT" = "pull_request" ]; then
+            exec node scripts/commit-rules.mjs "$PR_BASE..$PR_HEAD"
+          fi
+          HEAD_SHA="$PUSH_AFTER"
+          BASE_SHA="$PUSH_BEFORE"
+          if [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            BASE_SHA="$(git merge-base origin/main "$HEAD_SHA" 2>/dev/null || true)"
+            if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "$HEAD_SHA" ]; then
+              echo "commit-rules: skipped. This push created the ref (before=$PUSH_BEFORE) and there is no earlier"
+              echo "base to compare $HEAD_SHA against, so there is no range of added commits to judge."
+              exit 0
+            fi
+            echo "commit-rules: push created the ref; falling back to the merge-base with main ($BASE_SHA)."
+          fi
+          node scripts/commit-rules.mjs "$BASE_SHA..$HEAD_SHA"
 
   unit:
     name: Typecheck, units, build

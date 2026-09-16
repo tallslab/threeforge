@@ -12,8 +12,23 @@ them):
   (`src/registry/MaterialRegistry.ts`), `efb7464` (`src/ledger/DrawCallLedger.ts`, `src/ledger/reasons.ts`) and
   `a485e57` (`src/ledger/DrawCallLedger.ts`).
 
-History is not rewritten to fix them. The job runs on pull requests only, so a push is never judged, while a pull
-request carrying those commits would be red on its very first CI run.
+History is not rewritten to fix them, and the exemption is **in code**: `EXEMPT_COMMITS` in
+`scripts/commit-rules.mjs` is a dated allow-list of those six full SHAs, each with its reason, checked by
+`test/unit/commit-rules.test.ts` (exactly six entries, full 40-character SHAs, a date and a reason each). Every run
+prints the ones it excused, so an exemption is visible in the log rather than assumed. There is no environment
+variable, flag or other way past the rule.
+
+The job no longer runs on pull requests only: it runs on pushes too (independent review H2), because gating it on
+`pull_request` meant a direct push to `main` was never judged by rule 4 at all, by anyone, forever — and this
+document prescribes exactly such a push. On a push it uses `github.event.before..github.sha`; when that push created
+the ref (`github.event.before` is forty zeros: a branch's first push, and every tag push) it falls back to the
+merge-base with `main`, and when even that is missing or is the pushed commit itself — the seeding push below, which
+has no earlier base in the remote — it prints why and skips the range instead of silently passing or checking the
+whole history of the repository.
+
+The owner may still prefer to rewrite the six messages before the first push; the branch is unpushed, so nothing
+references those SHAs yet. Doing so means deleting their entries from `EXEMPT_COMMITS` (the unit test's count of six
+moves with them) and re-running `node scripts/commit-rules.mjs fee4a17..fix/audit-0.9.0`.
 
 All six commits are on `fix/audit-0.9.0`, **not** on the local `main` (which is still at 0.8.0, `fee4a17`, an
 ancestor of that branch). So pushing the local `main` first and then opening a pull request for the audit branch is exactly the
@@ -60,12 +75,13 @@ job would never fire.
 
 `.github/workflows/ci.yml` runs on every pull request and every push to `main`:
 
-- **`commit-rules`** (pull requests only; see the seeding note at the top) — `scripts/commit-rules.mjs` over the
-  commits the pull request adds: a commit touching rendering code must carry `Budget: <n>` or
+- **`commit-rules`** (pull requests **and** pushes; see the seeding note at the top) — `scripts/commit-rules.mjs`
+  over the commits the pull request or the push adds: a commit touching rendering code must carry `Budget: <n>` or
   `Budget: n/a <reason>` on a body line. That is CONTRIBUTING.md rule 4, checked rather than remembered. What counts as
   rendering is `RENDERING_PATHS` in that script, and what deliberately does not is `EXCLUDED_PATHS`, each entry with
   its reason; a unit test fails if any top-level entry of `src/` is in neither list. Merge commits are not checked.
-  Run it locally the same way: `node scripts/commit-rules.mjs main..HEAD`.
+  The only way past the rule is `EXEMPT_COMMITS`, a dated allow-list of full SHAs in the same script, and every run
+  prints what it excused. Run it locally the same way: `node scripts/commit-rules.mjs main..HEAD`.
 - **`unit`** — `pnpm typecheck`, `pnpm test`, `pnpm build`.
 - **`e2e`** — both backends, `--grep-invert "@corpus|@bench"`, and **no downloaded content at all**.
 - **`bench`** — both backends, the gate in `scripts/bench-run.mjs`. The only pull-request job that downloads

@@ -7,6 +7,9 @@
  * path must carry, on a line of the body (not the subject), either `Budget: <n>` — the `pnpm budget` reading — or
  * `Budget: n/a <reason>` for a change that cannot move the number (a comment, a type, a test-only edit inside a
  * rendering directory). Exits 1 listing every offending commit, its subject and the files that made it one.
+ *
+ * `EXEMPT_COMMITS` is the one way past it, and it is a fixed, dated allow-list of full SHAs in this file — not an
+ * environment variable, a flag or a prose note. A guard whose bypass is one env var away is not a guard.
  */
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -48,6 +51,44 @@ export const EXCLUDED_PATHS = {
   'src/version.ts': 'the version string, mirrored from package.json',
 };
 
+/**
+ * Commits exempted from rule 4 by an explicit, dated decision, each with the reason. Keyed by **full** SHA: an
+ * abbreviation never matches, so a collision or a typo fails closed.
+ *
+ * Independent review H2. These six are the whole of `fix/audit-0.9.0`'s debt to this rule. Three predate the rule
+ * (added in `109a209`) and three were written after it without a `Budget:` line, in the audit's final fix wave. The
+ * decision not to rewrite their messages is the repository owner's; what changed is that the exemption is in code,
+ * where it is reviewable and where the CI job can run on a push instead of being switched off for one
+ * (`.github/workflows/ci.yml`, `docs/release.md`). Nothing may be added here without the same treatment: a date, a
+ * reason, and a full SHA. An exempt commit is still reported in the summary, so an exemption is never silent.
+ */
+export const EXEMPT_COMMITS = {
+  '4b61bd6573ffa33c84e54ce074d58cb38961a798': {
+    date: '2026-09-16',
+    reason: 'predates the rule (added in 109a209): ledger name and hint-message caps against untrusted asset text',
+  },
+  '451ab9f3c869ebc83be9e562185f6ffc90423bf2': {
+    date: '2026-09-16',
+    reason: 'predates the rule (added in 109a209): audit fix round 1, cleaned page errors and collapsed hints',
+  },
+  'b037656f57dec0a203631151294edc98a74c0ae3': {
+    date: '2026-09-16',
+    reason: 'predates the rule (added in 109a209): capped transparent-batch-order hint objects at five',
+  },
+  '2e9b125bd78684751d46e80dfcab0d1406ad628b': {
+    date: '2026-09-16',
+    reason: 'written after the rule with no Budget: line; registry stats() counting only, measured at 28 afterwards',
+  },
+  'efb7464474e0e2028e4fad254d9bbfc520524ba3': {
+    date: '2026-09-16',
+    reason: 'written after the rule with no Budget: line; ledger record flags rewritten in place, measured at 28 afterwards',
+  },
+  'a485e5752fdf5959d342cfc22a3c1cd09cc34c06': {
+    date: '2026-09-16',
+    reason: 'written after the rule with no Budget: line; a canary around three\'s _frameBufferTargets, measured at 28 afterwards',
+  },
+};
+
 /** The subset of `files` that lies under a rendering path (or is a listed rendering file), in the order given. */
 export function touchesRendering(files) {
   return files.filter((file) => RENDERING_PATHS.some((path) => (path.endsWith('/') ? file.startsWith(path) : file === path)));
@@ -79,16 +120,31 @@ export function budgetDeclaration(message) {
   return null;
 }
 
+/** The commits that owe a declaration and do not have one, before the allow-list is consulted. */
+function undeclared(commits) {
+  return commits.filter((commit) => touchesRendering(commit.files).length > 0 && !budgetDeclaration(commit.message));
+}
+
 /**
- * Every commit that touches rendering without a usable declaration. `commits` are
+ * The commits the allow-list excused: those that would be violations and whose **full** SHA is a key of `exempt`,
+ * each with the list's date and reason. A commit that touches no rendering path, or that declares a budget, is not
+ * here — being on the list is not a way to skip the file scan or the declaration parse for other work.
+ */
+export function exemptedCommits(commits, exempt = EXEMPT_COMMITS) {
+  return undeclared(commits)
+    .filter((commit) => Object.hasOwn(exempt ?? {}, commit.sha))
+    .map((commit) => ({ sha: commit.sha, subject: commit.subject, files: touchesRendering(commit.files), ...exempt[commit.sha] }));
+}
+
+/**
+ * Every commit that touches rendering without a usable declaration and without an entry in `exempt`. `commits` are
  * `{ sha, subject, message, files }`; the result is `{ sha, subject, files, problem }` per offender.
  */
-export function checkCommits(commits) {
+export function checkCommits(commits, exempt = EXEMPT_COMMITS) {
   const violations = [];
-  for (const commit of commits) {
+  for (const commit of undeclared(commits)) {
     const files = touchesRendering(commit.files);
-    if (files.length === 0) continue;
-    if (budgetDeclaration(commit.message)) continue;
+    if (Object.hasOwn(exempt ?? {}, commit.sha)) continue;
     const malformed = declarationLines(commit.message).map((line) => line.trim());
     const problem = malformed.length
       ? `a \`Budget:\` line that does not parse: ${malformed.map((line) => JSON.stringify(line)).join(', ')}. Use \`Budget: <n>\` (the \`pnpm budget\` reading) or \`Budget: n/a <reason>\`, spelled exactly, unindented, in the body.`
@@ -109,14 +165,20 @@ export function readCommits(range, cwd = process.cwd()) {
   });
 }
 
-export function main(argv, cwd = process.cwd()) {
+export function main(argv, cwd = process.cwd(), exempt = EXEMPT_COMMITS) {
   const range = argv[0];
   if (!range) {
     console.error('usage: node scripts/commit-rules.mjs <base>..<head>');
     return 2;
   }
   const commits = readCommits(range, cwd);
-  const violations = checkCommits(commits);
+  const violations = checkCommits(commits, exempt);
+  const exempted = exemptedCommits(commits, exempt);
+  // Printed whether the run passes or fails: an exemption that nobody sees in the log is the prose note this replaced.
+  if (exempted.length > 0) {
+    console.log(`commit rules: ${exempted.length} exempt (dated allow-list in scripts/commit-rules.mjs):`);
+    for (const e of exempted) console.log(`  ${e.sha.slice(0, 7)} ${e.subject}\n    ${e.date}: ${e.reason}`);
+  }
   if (violations.length === 0) {
     console.log(`commit rules: ${commits.length} commits in ${range}, every rendering change declares a budget`);
     return 0;
