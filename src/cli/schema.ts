@@ -130,7 +130,12 @@ export const INSPECT_SCHEMA = document('inspect', runInput({ url: string }), { t
 const counts = obj({ nodes: integer, meshes: integer, primitives: integer, materials: integer, textures: integer, textureBytes: integer, accessors: integer, vertices: integer, triangles: integer });
 const assetStats = obj({ nodes: integer, meshes: integer, primitives: integer, materials: integer, textures: integer, textureBytes: integer, accessors: integer, vertices: integer, triangles: integer, bytes: integer, animations: integer, skins: integer, morphTargets: integer, extensions: arr(string) });
 const stepName = { enum: ['dedup', 'instance', 'palette', 'flatten', 'join', 'weld', 'simplify', 'resample', 'prune', 'textures', 'quantize', 'meshopt'] };
-const optimizeInput = obj({
+/**
+ * `overwrite` is optional (outside `required`): `optimize_asset` always sets it, the CLI never does, and a programmatic
+ * `optimizeAsset` caller may (`OptimizeInput.overwrite`). Every other input field is always present.
+ */
+const optionalInput = (schema: Schema, optional: Record<string, Schema>): Schema => ({ ...schema, properties: { ...(schema.properties as Record<string, Schema>), ...optional } });
+const optimizeInput = optionalInput(obj({
   file: string,
   out: nullable(string),
   preset: { enum: ['safe', 'balanced', 'aggressive'] },
@@ -151,7 +156,7 @@ const optimizeInput = obj({
   compile: boolean,
   timeout: number,
   headed: boolean,
-});
+}), { overwrite: { type: 'boolean', description: 'Allow the output to replace existing files (absent from CLI documents, where the CLI replaces).' } });
 const optimizeProperties: Record<string, Schema> = {
   schemaVersion: { const: 2 },
   tool: { const: 'threeforge' },

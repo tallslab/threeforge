@@ -1,3 +1,4 @@
+import { Ajv2020 } from 'ajv/dist/2020.js';
 import { spawn, execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -229,6 +230,13 @@ test('optimize_asset with overwrite: true replaces both the out file and a pre-e
     expect(result.isError).toBeFalsy();
     expect(existsSync(target)).toBe(true);
     expect(readFileSync(clashing, 'utf8')).not.toBe('stale bytes');
+    // Final review area 3, F2: the result echoes `overwrite`, which the published schema rejected. Validate the real
+    // MCP document against exactly what `threeforge schema optimize` prints, in a fresh ajv with nothing added.
+    const doc = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
+    expect(doc.input.overwrite).toBe(true);
+    const published = JSON.parse(execFileSync('node', [bin, 'schema', 'optimize'], { encoding: 'utf8' }));
+    const validate = new Ajv2020({ strict: true }).compile(published);
+    expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
   } finally {
     await close();
     for (const name of readdirSync(dir)) if (!before.has(name)) rmSync(join(dir, name), { recursive: true, force: true });

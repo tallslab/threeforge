@@ -1,10 +1,16 @@
+import { Document, NodeIO } from '@gltf-transform/core';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BoxGeometry, Mesh, MeshStandardMaterial } from 'three';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { emptyFrame, type FrameEnv, type FrameSnapshot } from '../../src/ledger/snapshot.js';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
+import { parseArgs } from '../../src/cli/args.js';
+import { optimizeAsset } from '../../src/cli/optimize.js';
 import { ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA, SNAPSHOT_SCHEMA } from '../../src/cli/schema.js';
 import type { AgentDocument, AnalyzeInput, AssetStats, Counts, InspectInput, OptimizeDocument, OptimizeInput } from '../../src/cli/types.js';
 import { verdictOf } from '../../src/cli/verdict.js';
@@ -176,6 +182,54 @@ describe('schema-validate: every exported schema compiles standalone in ajv and 
     const validate = compile(ANALYZE_SCHEMA);
     const doc = analyzeFixture() as unknown as { before: { schemaVersion: number } };
     doc.before.schemaVersion = 2;
+    expect(validate(doc)).toBe(false);
+  });
+});
+
+/**
+ * Final review area 3, F2: `optimize_asset` always sets `input.overwrite`, the document echoes its input, and the
+ * schema's `optimizeInput` (additionalProperties: false) had no `overwrite`, so every MCP result failed the published
+ * schema. The fixtures above never set it. These validate real `optimizeAsset` documents (no browser: verify off).
+ */
+describe('schema-validate: real optimize documents', () => {
+  async function realOptimizeDocument(overwrite: boolean | undefined): Promise<OptimizeDocument> {
+    const dir = mkdtempSync(join(tmpdir(), 'forge-schema-optimize-'));
+    try {
+      const doc = new Document();
+      const buffer = doc.createBuffer();
+      const position = doc.createAccessor().setType('VEC3').setArray(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0])).setBuffer(buffer);
+      doc.createScene().addChild(doc.createNode('n').setMesh(doc.createMesh('m').addPrimitive(doc.createPrimitive().setAttribute('POSITION', position))));
+      const file = join(dir, 'triangle.glb');
+      writeFileSync(file, await new NodeIO().writeBinary(doc));
+      const command = parseArgs(['optimize', file, '--no-verify']);
+      if (command.name !== 'optimize') throw new Error(`parsed as ${command.name}`);
+      const input = overwrite === undefined ? command.input : { ...command.input, overwrite };
+      return await optimizeAsset(input);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('OPTIMIZE_SCHEMA validates a document whose input carries overwrite, as every MCP optimize_asset result does', async () => {
+    const validate = compile(OPTIMIZE_SCHEMA);
+    for (const overwrite of [false, true]) {
+      const doc = await realOptimizeDocument(overwrite);
+      expect(doc.input.overwrite).toBe(overwrite);
+      expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
+    }
+  });
+
+  it('OPTIMIZE_SCHEMA still validates a CLI document, whose input has no overwrite', async () => {
+    const validate = compile(OPTIMIZE_SCHEMA);
+    const doc = await realOptimizeDocument(undefined);
+    expect('overwrite' in doc.input).toBe(false);
+    expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
+  });
+
+  it('OPTIMIZE_SCHEMA rejects a non-boolean overwrite, so the new property is actually checked', async () => {
+    const validate = compile(OPTIMIZE_SCHEMA);
+    const doc = (await realOptimizeDocument(false)) as unknown as { input: Record<string, unknown> };
+    doc.input.overwrite = 'yes';
     expect(validate(doc)).toBe(false);
   });
 });
