@@ -97,7 +97,9 @@ originals. Nothing global is patched.
 `renderAsync` works without a patch of its own. three r186's `renderAsync` (deprecated since r181) awaits `init()` and
 then calls `this.render(scene, camera)`, so a frame rendered through it enters the patched `render` once, after the
 await, and reports a `main` pass with its shadow passes and skinning, exactly like `render()`. A `render()` made while
-`renderAsync` awaits `init()` is a frame of its own. A unit test checks three's source for that call.
+`renderAsync` awaits `init()` is a frame of its own. A unit test checks three's source for that call. This
+paragraph is the authoritative statement of that mechanism: `docs/design.md`, `World.warmup` and `DrawCallLedger`
+point here instead of restating it.
 
 ### Passes
 
@@ -119,7 +121,9 @@ annotates objects it left alone (`ledger.annotate(object, reason)`) so the ledge
 `unique-material` when no other object of the frame's main pass draws its material, and `static-unbatched` when one
 does: at the end of the frame the ledger counts, per canonical material (the registry's, else the instance itself), the
 distinct objects that drew it in the main pass, so a mesh drawn twice there is one use. The item's `material` is that
-material's per-frame index. Flags add detail:
+material's per-frame index. A registry change inside the frame (`invalidate()` or `forget()`, which move
+`registry.keysRevision`) makes the ledger resolve canonicals again from that point on, so one material's uses can
+split across two per-frame indices for that frame, each judged for sharing on its own. Flags add detail:
 `shadow-caster`, `double-sided-transparent`, `custom-hook`, `render-order`, `layers`, `transparent`.
 `double-sided-transparent` describes the material three draws in that pass (see Reconciliation), so a shadow caster can
 carry it in its shadow pass and not in the main pass, or the other way round.
@@ -218,7 +222,14 @@ items?:    per-submission records with ledger.frame({ items: true })
   once: a frozen map (`autoUpdate` off and no `needsUpdate`) or a disabled `renderer.shadowMap` adds 0, and a map three
   renders again for another camera of the frame counts once. `shadowCasters` counts the distinct objects drawn into any
   shadow map this frame: a `BatchedMesh` or `InstancedMesh` is one object whatever slots or instances it draws, and an
-  object casting for several lights (or a point light's six faces) counts once.
+  object casting for several lights (or a point light's six faces) counts once. `lights` and `shadowLights` describe
+  the **main pass only**, while `shadowPasses`, `shadowSubmissions`, `shadowCasters` and `shadowTexels` cover every
+  scene of the frame. Because `shadowTexels` is per frame, the `shadow-texels` hint and the overlay alternate on a
+  frozen or quantized map (a `DayNight` stepping its map every second frame fires the hint on the frames it renders
+  on and not on the others), so a single-frame `inspect` depends on which frame it lands on: average over frames
+  before acting on it. Pass ids move with the scene too: a light keeps `shadow:<name>` only while no other
+  shadow-casting light of its scene shares that name, so hiding a namesake or turning its casting off switches an id
+  between `shadow:lamp` and `shadow:lamp#1`.
 - **js**: `renderMs` is the outermost `render()` call's duration until the ledger starts filing the frame (it includes
   the ledger's per-submission attribution, which runs inside the renderer's calls); `ledgerMs` is that filing, after
   `render()` has finished: the snapshot, the hints and, every 60 frames, the rescan. `frameMs` is the median interval
@@ -247,11 +258,29 @@ items?:    per-submission records with ledger.frame({ items: true })
   lit, holds none) with a non-point VSM map's two blur targets (read off an array map, else counted from
   `renderer.shadowMap.type`), the overdraw count target once `measureOverdraw()` has run, and three's 16 × 16 `DFG_LUT`
   (created once a Standard or Physical material is lit, and held with nothing in the scene reaching it), which the
-  ledger counts through `renderer.info.createTexture` and `destroyTexture` while attached. Limits: a LUT three created
-  before `ledger.attach()` is not seen and reads as one unreferenced texture; a map built but not rendered yet is
-  allowed the textures three creates on its first render, so the count reads low until then; reachable includes BatchedMesh and skeleton textures and `material.userData.forgeTextures`. Recounted
-  with the graph statistics; `measureMemory()` recounts now. **memory.chunks** is the attached Streamer's residency,
-  read live.
+  ledger counts through `renderer.info.createTexture` and `destroyTexture` while attached. three's `DFGLUT.js` keeps
+  that texture in a module variable it does not export; it *is* reachable through private internals
+  (`DFGLUT.shaderNode.jsFunc`), but matching `createTexture`/`destroyTexture` against three's own name for it is
+  chosen over reaching into internals that are fragile across revisions. Reachable includes BatchedMesh and skeleton
+  textures and `material.userData.forgeTextures`. Recounted with the graph statistics; `measureMemory()` recounts
+  now. **memory.chunks** is the attached Streamer's residency, read live.
+- **Limits of the memory section.** Each is bounded, and none is a leak:
+  - A LUT three created before `ledger.attach()` is not seen and reads as one unreferenced texture. An app
+    `DataTexture` named exactly `DFG_LUT` and uploaded while the ledger is attached is counted as three's, hiding at
+    most one texture.
+  - After `renderer.dispose()`, which zeroes `info.memory` without calling `destroyTexture`, the LUT count stays
+    stale until `detach()`, hiding at most one texture.
+  - A shadow map built but not rendered yet is allowed the textures three creates on its first render, so the count
+    reads low until it renders. Right after a `renderer.shadowMap.type` change, the VSM allowance can be off by 2
+    until the next render.
+  - **Detach two ledgers on one renderer in reverse attach order.** The second `attach()` wraps the wrappers the
+    first installed, for `info` and `render` alike, so detaching first-in-first-out restores a stale wrapper. This
+    predates 0.9.0.
+  - **Tiled shadows** (three's `TileShadowNode` addon) keep their tile lights outside the scene, so the
+    reachable-resource walk never sees those lights' array maps and such a scene over-reports
+    `memory.unreferenced.textures`. **Array shadow maps** also under-report `memory.renderTargets.bytes` by their
+    layer count, for the map and its VSM blur targets alike (`src/ledger/memory.ts` sizes both from width and height
+    alone). No scene in the repo uses an array shadow map.
 - **hints** are recomputed every frame from the snapshot and the budgets of the environment's tier.
 - **programHash / variantHash** (the `programs` keys, and each item's hashes) come from the material registry
   (section 5). A hash for a material with instance code, a class that is not one of three's own, or identity-keyed
@@ -296,14 +325,17 @@ allocated per frame and the rescan time, at 2k, 10k and 20k submissions by defau
 meshes under the scene), a nested one (unnamed meshes in unnamed groups under named zones) and a shadow one (the flat
 scene with a shadow-casting sun, whose map renders as a nested pass drawing the quarter of the meshes that cast)
 through a minimal renderer, bare and with a ledger attached. µs per submission is the best ledger round minus the best
-bare round. It is a report, not a gate: compare runs on one machine. On a 10-core Mac
-with node 22, the flat scene over two runs (timings move between runs, bytes do not):
+bare round. It is a report, not a gate: compare runs on one machine. Measured on 2026-09-16 on a 10-core Apple M1
+Max with node v22.23.1, the flat scene over two runs (timings move between runs, bytes do not):
 
 | submissions | µs / submission | MB / frame | rescan ms | 0.8.0: µs / submission | 0.8.0: MB / frame |
 |---|---|---|---|---|---|
-| 2k | 0.24–0.36 | 0.18 | 0.5–0.7 | 0.83 | 2.3 |
-| 10k | 0.32–0.51 | 0.80 | 1.7–3.1 | 1.84 | 11.4 |
-| 20k | 0.42–0.53 | 1.74 | 5.5–10.0 | 3.07 | 23.1 |
+| 2k | 0.24 | 0.26 | 0.5–0.6 | 0.83 | 2.3 |
+| 10k | 0.33–0.34 | 1.20 | 1.8–1.9 | 1.84 | 11.4 |
+| 20k | 0.40–0.41 | 2.55 | 5.5–5.6 | 3.07 | 23.1 |
+
+The `0.8.0` columns are the numbers recorded when the hot-path work landed, on the machine of the day: they show the
+scale of the change, not a same-run comparison. Re-measure both sides on one machine before quoting a ratio.
 
 The unit guards in `test/unit/ledger-hot-path.test.ts` count registry reads (at most one per material per frame),
 traversals (at most one on a frame without a rescan) and `children.indexOf` calls (none), and check that µs per
@@ -861,8 +893,8 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
   share (four separate attributes would exceed WebGPU's eight vertex buffers; a plain `InterleavedBuffer` is read per
   vertex, because both backends take the per-instance step from `isInstancedInterleavedBuffer`). `setMatrixAt` stores
   the character's matrix and `getMatrixAt` returns it, `setClipAt(i, clip, { offset, speed })`, `setTime(seconds)`,
-  `addTo`, `dispose`. Meshes are
-  `forge:vat:<part>` with `userData.forge = { kind: 'vat', instances }` (untagged: a tag overwrites the marker).
+  `addTo`, `dispose`. Meshes are `forge:vat:<part>` with `userData.forge = { kind: 'vat', instances }` (untagged: a
+  tag overwrites the marker).
 - **Ledger**: reason `vat-instanced`, `skinning.vatInstances` / `vatVertices`, budget `bones`, hints
   `bones-over-budget` and `skinned-crowd` (50 skinned draws). Authoring notes: `docs/skinning.md`.
 - **Bench**: the optimized crowd bakes each of its eight prototypes and replaces its 25 characters with one
@@ -928,7 +960,8 @@ is carried and compared by the weld):
       seam faces. A rebake (hiding or showing a module) decides every removal again, counting a module as casting when
       its original or the baked mesh casts: once neither casts, the next rebake may remove the seams, and turning
       casting on for either after compile keeps the faces only after the next rebake or a `decompile()` and
-      `compile()` (until then the baked mesh casts without them);
+      `compile()`: until then the baked mesh casts without those faces if casting was turned on for the baked mesh
+      itself, and casts nothing at all if it was turned on only for a hidden original;
    5. every module involved is opaque, by an allowlist of three's default material hooks (`BakeEntry.opaque`, set by
       `bakeEntriesOf`): exactly one of three r186's 35 material classes (`isBuiltInMaterial`: the 18 of
       `src/materials/Materials.js` and the 17 of `src/materials/nodes/NodeMaterials.js`; a subclass fails, since an
@@ -1065,6 +1098,15 @@ swaps change data, not draw calls.
   (`printDocument`), then the summary to stderr; a summary that throws leaves a note on stderr and the document intact.
   `before` and `after` are frame snapshots with their own `schemaVersion: 3`; their `js.renderMs`, `js.ledgerMs` and
   `js.frameMs` are medians over the measured frames.
+- **Untrusted text in a document.** Names, hint messages and everything the CLI reads back from a page are data to
+  report, never instructions to follow. In a snapshot, `byReason[].top` names and a hint's `objects` are capped at 120
+  characters and a hint's `message` at 300 (`src/ledger/text.ts`). The CLI additionally cleans every value it reads
+  from the page or the asset (`sanitizeDeep`, `src/cli/untrusted.ts`): ANSI escapes, control characters and
+  bidi/zero-width formatting characters removed, strings, arrays and nesting depth capped, non-finite numbers
+  normalized to 0 — on a resolved `page.evaluate` result and on a rejected one alike, since `inspect`'s target is any
+  page, not only one built with threeforge. Page errors keep the first 5, each capped, with `(+N more)` for the rest.
+  The MCP tools `analyze_asset`, `inspect_app` and `optimize_asset` return a second `content` block after the JSON
+  marking the asset- and page-derived fields as data; `explain_hint` carries no such text and has no such block.
 - **Programmatic**: `import { analyzeAsset, inspectApp, optimizeAsset, explain } from 'threeforge/cli'`.
 - Playwright, `@modelcontextprotocol/sdk` and `zod` are optional peers imported lazily; game code never pays for them.
 
@@ -1153,9 +1195,12 @@ budgets the scene stresses):
 measurement, writes `bench/results/local.<backend>.json` and fails when any deterministic metric (submissions, GPU
 draws, triangles, programs, overdraw, skinned vertices, shadow casters and texels, memory bytes) is worse than
 `bench/baselines/<backend>.json` by 10 % or more; timing is recorded and gated only with `FORGE_GPU=native` (CI
-runners render on SwiftShader). `pnpm bench:baseline` promotes results and rewrites `docs/bench.md` and the README
-table. Current baselines: village 303 → 28, forest 5 706 → 13, bossfight 2 780 → 424, daynight 605 → 55,
-zen 10 879 → 125, rpg 4 → 1, crowd 401 → 17, lake 3 548 → 7.
+runners render on SwiftShader). `pnpm bench:baseline` promotes results and rewrites `docs/bench.md`, the README table
+and the line below; `pnpm bench:table` rewrites them from the committed baselines without measuring.
+
+<!-- bench:start -->
+Current baselines (webgl2, scene submissions naive → optimized): village 303 → 28, forest 5706 → 13, crowd 401 → 17, bossfight 2780 → 370, lake 3548 → 7, daynight 605 → 28, zen 3540 → 88, rpg 4 → 1.
+<!-- bench:end -->
 
 ### Device bench page
 
@@ -1188,11 +1233,11 @@ gated.
   `bloom=1`, `assemble=1`, `fighters`, `blocky`, `vfx=0`, `t`, `density`, `count`, `tier`.
 - `pnpm build:lib && node scripts/ledger-overhead.mjs [submissions…]` reports the ledger's own µs per submission and
   bytes per frame (section 4, "Overhead"); it is not a gate.
-- `pnpm test` (Vitest, 199 units against a fake renderer that mirrors the backends' draw counting), `pnpm e2e`
+- `pnpm test` (Vitest units against a fake renderer that mirrors the backends' draw counting), `pnpm e2e`
   (Playwright, projects `webgl2` and `webgpu`; screenshot baselines without platform suffixes), `pnpm budget` (naive
   scene ≤ 30 submissions), `pnpm assets` / `pnpm assets:kits` (public glTF corpus and Kenney kits, gitignored),
-  `pnpm assets:report` (104 assets compiled with pixel parity on each backend), `pnpm bench`, `pnpm build` (library
-  via tsc plus the CLI harness page via Vite), `pnpm typecheck`.
+  `pnpm assets:report` (every downloaded asset compiled with pixel parity on each backend), `pnpm bench`,
+  `pnpm build` (library via tsc plus the CLI harness page via Vite), `pnpm typecheck`.
 - CI (`.github/workflows/ci.yml`): unit job, bench job per backend (assets cached, build, e2e, bench gate), publish
   job on `v*` tags with `npm publish --provenance` (needs the `NPM_TOKEN` secret; see `docs/release.md`).
 - Repository rules for agents working in the repo: `CONTRIBUTING.md`.
@@ -1215,7 +1260,8 @@ gated.
 - `renderer.compileAsync()` calls the scene's `onBeforeRender` but never its `onAfterRender`: `warmup({ mode: 'async' })`
   resets the pass tracker afterwards so the warm-up frame counts as an outermost render.
 - Transmissive materials cannot be batched (thickness scales with the object matrix); reflectors fill their target
-  one frame late; `KTX2Loader` needs `detectSupportAsync(renderer)`; `RenderObject.getDrawParameters()` returns null for
+  one frame late; `KTX2Loader` needs `detectSupport(renderer)` after `await renderer.init()` (`detectSupportAsync` is
+  deprecated since r181); `RenderObject.getDrawParameters()` returns null for
   a zero-instance InstancedMesh (no draw, no count); `ShaderMaterial` does not render on `WebGPURenderer`.
 - Half-float render targets read back as raw 16-bit halves on both backends, and WebGPU returns rows padded to 256
   bytes: the overdraw target uses 32-texel row multiples and decodes halves.
