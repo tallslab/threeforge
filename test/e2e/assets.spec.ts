@@ -3,8 +3,13 @@
  * naively, compiled with policy 'auto', rendered again and compared pixel by pixel, then decompiled. Assertions are
  * soft so the whole report gets written to docs/assets-report.{json,md}; the run still fails if any asset misbehaves.
  * FORGE_ASSETS=Fox,Duck limits the run.
+ *
+ * Every row records the commit it was measured at and the id of the run that measured it, because rows merge on
+ * disk across worker restarts and across runs. The Markdown is rewritten only after a run that measured every
+ * asset (see the afterAll below); a partial run's rows still land in the JSON, stamped as its own.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { currentStamp, mergeRows, missingFromRun, renderReport, stampRow, type ReportRow } from './assets-report.js';
 import { expect, test } from './fixtures.js';
 import { pixelDiff } from './pixels.js';
 
@@ -16,52 +21,31 @@ interface AssetEntry {
   kind?: string;
 }
 
-interface Row {
-  name: string;
-  tags: string;
-  meshes?: number;
-  materials?: number;
-  triangles?: number;
-  animations?: number;
-  naive?: number;
-  compiled?: number;
-  batches?: number;
-  instanced?: number;
-  unattributed?: number;
-  diff?: number;
-  restored?: number;
-  loadMs?: number;
-  skipped?: string;
-  reasons?: string;
-  error?: string;
-}
-
 const files = 'test/assets/files';
 const lists: AssetEntry[] = [];
 for (const f of ['index.json', 'kits-index.json']) {
   if (existsSync(`${files}/${f}`)) lists.push(...(JSON.parse(readFileSync(`${files}/${f}`, 'utf8')) as AssetEntry[]));
 }
 const only = process.env.FORGE_ASSETS?.split(',').map((s) => s.trim());
-const assets = lists.filter((a) => a.entry && /\.(gltf|glb)$/i.test(a.entry) && !a.error && a.kind !== 'kit' && (!only || only.includes(a.name)));
+/** Every asset a full run measures. `assets` is what this run will actually attempt (FORGE_ASSETS narrows it). */
+const candidates = lists.filter((a) => a.entry && /\.(gltf|glb)$/i.test(a.entry) && !a.error && a.kind !== 'kit');
+const assets = candidates.filter((a) => !only || only.includes(a.name));
 const reportFor = (backend: string) => (backend === 'webgl2' ? 'docs/assets-report' : `docs/assets-report-${backend}`);
+/** The same commit and run id in every worker of this invocation, including the ones Playwright restarts. */
+const stamp = currentStamp();
 
 /** Playwright restarts its worker after a failure, so rows are merged on disk per test rather than kept in memory. */
-function saveRow(row: Row, backend: string): Row[] {
+function saveRow(row: ReportRow, backend: string): void {
   const reportPath = `${reportFor(backend)}.json`;
   mkdirSync('docs', { recursive: true });
-  const rows: Row[] = existsSync(reportPath) ? (JSON.parse(readFileSync(reportPath, 'utf8')) as Row[]) : [];
-  const i = rows.findIndex((r) => r.name === row.name);
-  if (i >= 0) rows[i] = row;
-  else rows.push(row);
-  rows.sort((a, b) => a.name.localeCompare(b.name));
-  writeFileSync(reportPath, JSON.stringify(rows, null, 2));
-  return rows;
+  const existing: unknown = existsSync(reportPath) ? JSON.parse(readFileSync(reportPath, 'utf8')) : [];
+  writeFileSync(reportPath, JSON.stringify(mergeRows(existing, stampRow(row, stamp)), null, 2));
 }
 
 for (const asset of assets) {
   test(`asset ${asset.name}`, async ({ forge }) => {
     test.setTimeout(180_000);
-    const row: Row = { name: asset.name, tags: (asset.tags ?? []).join(' ') };
+    const row: ReportRow = { name: asset.name, tags: (asset.tags ?? []).join(' ') };
     try {
       await forge.open('gltf', { asset: asset.name, ...(process.env.FORGE_ASSETS_MATERIALS ? { materials: process.env.FORGE_ASSETS_MATERIALS } : {}) });
     } catch (error) {
@@ -113,17 +97,30 @@ for (const asset of assets) {
   });
 }
 
+/**
+ * The Markdown is the table people read, so it is rewritten only after a run that measured every asset it set out
+ * to. A subset run (FORGE_ASSETS), a run that crashed part-way, and a run of the other backend all leave the
+ * tracked file exactly as it was, instead of shrinking it to whatever this run happened to cover — the old code
+ * rewrote both backends' Markdown from whatever JSON was on disk, so `pnpm assets:report` (webgl2 only) republished
+ * the webgpu table too. The JSON still merges either way; that is where a partial run's rows land, each stamped.
+ */
 test.afterAll(() => {
+  const expected = candidates.map((a) => a.name);
+  // Nothing downloaded: "every expected asset was measured" would be vacuously true and would republish the
+  // tracked table from rows this run never measured.
+  if (expected.length === 0) return;
   for (const backend of ['webgl2', 'webgpu']) {
     const jsonPath = `${reportFor(backend)}.json`;
     if (!existsSync(jsonPath)) continue;
-    const rows = JSON.parse(readFileSync(jsonPath, 'utf8')) as Row[];
-    const header = '| asset | meshes | materials | tris | anim | naive | compiled | batches | inst | unattr | diff % | restored | skipped | notes |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n';
-    const body = rows
-      .map((r) => `| ${r.name} | ${r.meshes ?? ''} | ${r.materials ?? ''} | ${r.triangles ?? ''} | ${r.animations ?? ''} | ${r.naive ?? ''} | ${r.compiled ?? ''} | ${r.batches ?? ''} | ${r.instanced ?? ''} | ${r.unattributed ?? ''} | ${r.diff ?? ''} | ${r.restored ?? ''} | ${r.skipped ?? ''} | ${r.error ?? ''} |`)
-      .join('\n');
-    const total = rows.length;
-    const ok = rows.filter((r) => !r.error && r.unattributed === 0 && (r.diff ?? 1) < 0.5 && r.restored === r.naive).length;
-    writeFileSync(`${reportFor(backend)}.md`, `# Public asset report (${backend})\n\nGenerated by \`pnpm assets:report\` on the ${backend} backend. ${ok}/${total} assets compile cleanly (0 unattributed, < 0.5% pixels changed, decompile restores).\n\n${header}${body}\n`);
+    const rows = JSON.parse(readFileSync(jsonPath, 'utf8')) as ReportRow[];
+    // A materials override measures a different configuration; its numbers must not become the published table.
+    const variant = process.env.FORGE_ASSETS_MATERIALS ? `FORGE_ASSETS_MATERIALS=${process.env.FORGE_ASSETS_MATERIALS}` : '';
+    const missing = variant ? expected : missingFromRun(rows, expected, stamp.run);
+    if (missing.length > 0) {
+      const why = variant ? `run under ${variant}` : `run ${stamp.run} measured ${expected.length - missing.length}/${expected.length} assets (missing ${missing.slice(0, 4).join(', ')}${missing.length > 4 ? `, +${missing.length - 4} more` : ''})`;
+      console.log(`${reportFor(backend)}.md left unchanged: ${why}`);
+      continue;
+    }
+    writeFileSync(`${reportFor(backend)}.md`, renderReport(rows, backend));
   }
 });
