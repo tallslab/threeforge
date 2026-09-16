@@ -45,6 +45,49 @@ async function shootViews(forge: ForgePage): Promise<Record<string, Buffer>> {
   return shots;
 }
 
+/** What the ledger reports was actually drawn, summarised so a naive frame and a compiled one can be compared. */
+interface DrawSet {
+  triangles: number;
+  /** Per pass, over scene submissions only: the output quad is renderer-internal and is left out of both sides. */
+  byPass: Record<string, { submissions: number; instancesDrawn: number; expectedGpuDraws: number }>;
+  /** Sorted names of the submissions the compiler did not fold into a batch, which survive compilation as themselves. */
+  named: string[];
+}
+
+/**
+ * Renders at `view` and summarises `ledger.frame({ items: true })`.
+ *
+ * Pixels alone cannot settle whether a prop was dropped: a prop lost in front of another prop reads prop-on-prop on
+ * both sides of the comparison and no colour test can see it. The draw set can, so the naive and compiled scenes are
+ * compared by what the ledger says each actually submitted. Leaves the camera on the first view, as `shootViews` does.
+ */
+async function drawSetAt(forge: ForgePage, view: View): Promise<DrawSet> {
+  await look(forge, view);
+  const set = await forge.page.evaluate(async () => {
+    const f = window.__forge;
+    for (let i = 0; i < 3; i++) await f.frameAsync(); // let per-instance culling settle at the new camera
+    const frame = await f.frameAsync({ items: true });
+    const scene = (frame.items ?? []).filter((i) => i.reason !== 'renderer-internal');
+    const byPass: Record<string, { submissions: number; instancesDrawn: number; expectedGpuDraws: number }> = {};
+    for (const item of scene) {
+      const bucket = (byPass[item.pass] ??= { submissions: 0, instancesDrawn: 0, expectedGpuDraws: 0 });
+      bucket.submissions++;
+      bucket.instancesDrawn += item.instancesDrawn;
+      bucket.expectedGpuDraws += item.expectedGpuDraws;
+    }
+    return {
+      triangles: frame.totals.triangles,
+      byPass,
+      named: scene
+        .filter((i) => i.reason !== 'batched')
+        .map((i) => i.name)
+        .sort(),
+    };
+  });
+  await look(forge, VIEWS[0]!);
+  return set;
+}
+
 /** A tinted group compiled with default options (a BatchedMesh) and with `bake: true` (a baked mesh). */
 const TINTED_MODES = [
   ['default options', {}],
@@ -57,6 +100,8 @@ test('world.compile() takes the naive scene from 503 to 28 submissions with iden
   expect(before.totals.sceneSubmissions).toBe(503);
   // Baseline image of the naive render; the compiled render must match it.
   if (forge.pixelChecks) await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
+  // Captured at the oblique camera, where the pixel diff is largest, and independently of whether screenshots work here.
+  const naiveDraw = await drawSetAt(forge, VIEWS[1]!);
   const naiveShots = forge.pixelChecks ? await shootViews(forge) : null;
 
   const { report, after, text } = await forge.page.evaluate(() => {
@@ -80,6 +125,7 @@ test('world.compile() takes the naive scene from 503 to 28 submissions with iden
   });
   expect(after.totals.programSwitches).toBeLessThan(before.totals.programSwitches);
   if (forge.pixelChecks) await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
+  const compiledDraw = await drawSetAt(forge, VIEWS[1]!);
   const compiledShots = forge.pixelChecks ? await shootViews(forge) : null;
 
   const restored = await forge.page.evaluate(() => {
@@ -90,11 +136,40 @@ test('world.compile() takes the naive scene from 503 to 28 submissions with iden
   // The scene is naive again: the picture must be the one it started with, not merely "some naive scene".
   const restoredShots = forge.pixelChecks ? await shootViews(forge) : null;
 
+  // The oblique view's pixel diff is the strictest check here and it is not zero, so "did a prop get dropped?" is
+  // settled on what the ledger says was submitted rather than on colours — a prop lost in front of another prop reads
+  // prop-on-prop on both sides and no colour test can see it. Batching may reorder draws and change how many GPU draws
+  // they cost, but it must never change which instances are drawn: a dropped prop shows up here at once, as fewer
+  // triangles or fewer drawn instances.
+  expect(Object.keys(compiledDraw.byPass).sort(), 'oblique: the same passes').toEqual(Object.keys(naiveDraw.byPass).sort());
+  for (const pass of Object.keys(naiveDraw.byPass)) {
+    expect(compiledDraw.byPass[pass]!.instancesDrawn, `oblique, pass ${pass}: instances drawn`).toBe(naiveDraw.byPass[pass]!.instancesDrawn);
+  }
+  expect(compiledDraw.triangles, 'oblique: triangles drawn').toBe(naiveDraw.triangles);
+  // And everything the compiler left as its own draw was drawn naively too, so nothing left the set under another name.
+  expect(naiveDraw.named, 'oblique: an object the compiler kept was not drawn naively').toEqual(expect.arrayContaining(compiledDraw.named));
+  note(
+    `[${forge.backend}] oblique draw set: triangles ${naiveDraw.triangles} naive / ${compiledDraw.triangles} compiled; ` +
+      Object.keys(naiveDraw.byPass)
+        .map(
+          (p) =>
+            `${p}: ${naiveDraw.byPass[p]!.instancesDrawn} -> ${compiledDraw.byPass[p]!.instancesDrawn} instances drawn, ` +
+            `${naiveDraw.byPass[p]!.expectedGpuDraws} -> ${compiledDraw.byPass[p]!.expectedGpuDraws} gpu draws, ` +
+            `${naiveDraw.byPass[p]!.submissions} -> ${compiledDraw.byPass[p]!.submissions} submissions`,
+        )
+        .join('; '),
+  );
+
   if (naiveShots && compiledShots && restoredShots) {
     for (const view of VIEWS) {
       const compiled = pixelDiff(naiveShots[view.name]!, compiledShots[view.name]!, { threshold: 4 });
       const back = pixelDiff(naiveShots[view.name]!, restoredShots[view.name]!, { threshold: 4 });
       note(`[${forge.backend}] ${view.name} view: compile ${(compiled * 100).toFixed(4)}%, decompile ${(back * 100).toFixed(4)}%`);
+      // The measured baseline, so whoever next sees this fail reads it against the known margin instead of rediscovering
+      // it: at the 800x600 viewport pixelDiff divides by 480,000, and the oblique view sits at 0.0467% (webgl2) /
+      // 0.0471% (webgpu) of the 0.0500% bound — 224 / 226 differing pixels, about 14 px of headroom. It is draw-order
+      // tie-breaking among overlapping distant props, which the draw-set comparison above proves rather than infers.
+      // The default view sits at 0.0069% / 0.0071%, and both decompile diffs are 0.0000%.
       expect(compiled, `${view.name} view: compile() changed the picture`).toBeLessThan(0.0005);
       expect(back, `${view.name} view: decompile() did not restore the picture`).toBeLessThan(0.0005);
     }
