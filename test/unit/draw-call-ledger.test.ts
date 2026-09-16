@@ -459,6 +459,64 @@ describe('DrawCallLedger and multi-draw slots a nested pass zeroed', () => {
       expect(frame.totals.unattributed, `webgpu ${webgpu}: unattributed`).toBe(0);
     }
   });
+
+  it('predicts every pass of a frame with two shadow lights, each pass narrowed against the other', () => {
+    // With one light, "the casters this light reaches" and "the casters any light of the frame reaches" are the same
+    // set, so the test above would still pass against a pass that appended the frame's whole union. Two lights whose
+    // shadow cameras cover different slices of the rows separate the two, so a pass narrowed relative to the other
+    // light is actually exercised.
+    const isInstanced = (draw: FakeDraw): boolean => (draw.object as { isInstancedMesh?: boolean }).isInstancedMesh === true;
+    for (const webgpu of [false, true]) {
+      const cs = webgpu ? WebGPUCoordinateSystem : WebGLCoordinateSystem;
+      const { scene, light, camera } = rows(cs);
+      light.name = 'west'; // covers x in [-50, 50], away from the main camera's [70, 110]
+      const east = new DirectionalLight();
+      east.name = 'east';
+      east.castShadow = true;
+      east.position.set(60, 60, 10);
+      const eastCamera = east.shadow.camera;
+      eastCamera.coordinateSystem = cs;
+      Object.assign(eastCamera, { left: -20, right: 20, top: 20, bottom: -20, near: 1, far: 200 });
+      eastCamera.updateProjectionMatrix();
+      east.target.position.set(60, 0, 0); // covers x in [40, 80]
+      scene.add(east, east.target);
+      scene.updateMatrixWorld(true);
+
+      const ledger = new DrawCallLedger();
+      const report = new World(scene, { ledger }).compile({ coordinateSystem: cs });
+      expect(report.after, `webgpu ${webgpu}: two instanced rows`).toMatchObject({ batches: 0, instanced: 2 });
+      const renderer = new FakeRenderer({ webgpu, sceneHooks: true, shadowTrigger: 'first-receiver', record: true, shadowLights: [light, east] });
+      ledger.attach(renderer as never);
+      renderer.render(scene, camera);
+
+      const frame = ledger.frame({ items: true });
+      const shadowPasses = renderer.passes.filter((p) => p.kind === 'shadow');
+      expect(
+        shadowPasses.map((p) => p.light!.name),
+        `webgpu ${webgpu}: both lights render a map`,
+      ).toEqual(['west', 'east']);
+      // Pass by pass, not lumped by kind: each pass's prediction has to match that pass's own draws.
+      for (const pass of renderer.passes) {
+        const id = pass.kind === 'shadow' ? `shadow:${pass.light!.name}` : 'main';
+        const draws = pass.draws.filter(isInstanced);
+        const items = frame.items!.filter((i) => i.reason === 'instanced' && i.pass === id);
+        expect(draws.length, `webgpu ${webgpu} ${id}: instanced draws`).toBe(2);
+        expect(
+          items.map((i) => i.expectedGpuDraws),
+          `webgpu ${webgpu} ${id}: GPU draws`,
+        ).toEqual(draws.map((d) => d.drawCalls));
+        // getDrawParameters takes instanceCount from object.count, which this pass's append set.
+        expect(
+          items.map((i) => i.instancesDrawn),
+          `webgpu ${webgpu} ${id}: drawn instances`,
+        ).toEqual(draws.map((d) => d.instanceCount));
+      }
+      // The two shadow passes really do append different slices, or the narrowing would go untested.
+      const appended = shadowPasses.map((p) => p.draws.filter(isInstanced).reduce((n, d) => n + d.instanceCount, 0));
+      expect(appended[0], `webgpu ${webgpu}: the two shadow passes append different slices`).not.toBe(appended[1]);
+      expect(frame.totals.unattributed, `webgpu ${webgpu}: unattributed`).toBe(0);
+    }
+  });
 });
 
 describe('DrawCallLedger frames and passes', () => {
