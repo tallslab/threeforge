@@ -5,8 +5,8 @@ import { differingPixels, pixelDiff } from './pixels.js';
  * three r186's `renderer.compileAsync()` builds render objects after `renderObject()` has restored
  * `material.side`, so transparent double-sided materials (foliage) and transmissive ones (glass) are compiled as
  * if single-pass DoubleSide, and transmission samples a viewport texture that is never written. Those cached
- * render objects then draw wrong for the rest of the session. `world.warmup()` must leave the picture exactly as
- * a cold first frame would, in both of its modes, on both backends.
+ * render objects then draw wrong for the rest of the session. `world.warmup()` must leave the picture as a cold first
+ * frame draws it, in both of its modes, on both backends: under 0.05 % of pixels changed at a per-channel tolerance of 4.
  */
 
 const cases = [
@@ -16,7 +16,7 @@ const cases = [
 
 for (const mode of ['frame', 'async'] as const) {
   for (const c of cases) {
-    test(`warmup(${mode}) keeps ${c.what} pixel-identical to a cold frame`, { tag: '@corpus' }, async ({ forge }) => {
+    test(`warmup(${mode}) keeps ${c.what} within 0.05 % changed pixels of a cold frame at tolerance 4`, { tag: '@corpus' }, async ({ forge }) => {
       test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
       await forge.open('gltf', { asset: c.asset });
       await forge.page.evaluate(async () => {

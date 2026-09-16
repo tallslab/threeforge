@@ -100,7 +100,7 @@ const TINTED_MODES = [
   ['bake: true', { bake: '1' }],
 ] as const;
 
-test('world.compile() takes the naive scene from 503 to 28 submissions with identical pixels, from two cameras, and decompile() puts the picture back', async ({ forge }) => {
+test('world.compile() takes the naive scene from 503 to 28 submissions, under 0.05 % of pixels changed at tolerance 4 from each of two cameras, and decompile() puts the picture back within 8 pixels', async ({ forge }) => {
   await forge.open('naive');
   const before = await forge.page.evaluate(() => window.__forge.frame());
   expect(before.totals.sceneSubmissions).toBe(503);
@@ -262,7 +262,7 @@ test('resolve() maps a raycast against the compiled scene back to the original p
   expect(result.resolvedName).toBe(result.targetName);
 });
 
-test("dynamics: 'batch-sync' folds the 10 movers into their batches: 28 -> 18 submissions, same pixels, and they still move", async ({ forge }) => {
+test("dynamics: 'batch-sync' folds the 10 movers into their batches: 28 -> 18 submissions, a screenshot within 0.2 % of the naive baseline's pixels, and they still move", async ({ forge }) => {
   await forge.open('naive', { dynamics: 'batch-sync', compile: '1' });
   const result = await forge.page.evaluate(() => {
     const f = window.__forge;
