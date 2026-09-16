@@ -1,8 +1,9 @@
-import { existsSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve as resolvePath } from 'node:path';
 import { analyzeAsset } from './analyze.js';
 import { validateInput } from './args.js';
 import { EnvironmentError, exitCodeFor, UsageError } from './errors.js';
+import { entryExists } from './gltf-uris.js';
 import { explain, REMEDIES } from './explain.js';
 import { inspectApp } from './inspect.js';
 import { Resources, type CliDeps } from './lifecycle.js';
@@ -59,11 +60,12 @@ function isFsRoot(path: string): boolean {
  * `realpathSync(target)`, resolving every symlink on the way — but `target` (an `optimize_asset.out`) may not
  * exist yet, since the write happens after this check, and `realpathSync` throws on a path that doesn't exist. So
  * this walks up to the nearest existing ancestor, canonicalises *that*, and appends the remaining, not-yet-existing
- * segments lexically (they cannot be symlinks if nothing exists at them yet). Falls back to `target` unchanged only
- * if nothing on the path resolves at all, which cannot happen for an absolute path (the filesystem root always
- * exists and always resolves).
+ * segments lexically (nothing exists at them, so none is a symlink). `null` when an entry exists but cannot be
+ * resolved: a dangling or looping symlink, which `realpathSync` rejects exactly like a missing path, but which a
+ * write would follow to wherever it points (final review F1: `<name>.forge.glb -> ~/.ssh/authorized_keys`). The
+ * same rule as `realPathOf` in `src/cli/gltf-uris.ts`.
  */
-function realish(target: string): string {
+function realish(target: string): string | null {
   const pending: string[] = [];
   let current = target;
   for (;;) {
@@ -71,8 +73,9 @@ function realish(target: string): string {
       const real = realpathSync(current);
       return pending.length ? resolvePath(real, ...pending) : real;
     } catch {
+      if (entryExists(current)) return null;
       const parent = dirname(current);
-      if (parent === current) return target;
+      if (parent === current) return null;
       pending.unshift(current.slice(parent.length + 1));
       current = parent;
     }
@@ -86,10 +89,12 @@ function realish(target: string): string {
  * file's directory and the working directory, or already exists without `overwrite: true`. The confinement check is
  * done on `realish`-canonicalised paths, so a symlink under either root that leads outside it is refused even
  * though it looks lexically contained (matching `src/cli/server.ts`'s `realpathSync` defense against the same
- * class of escape). The filesystem root is never treated as an allowed working directory (see `isFsRoot`), since
- * every path is trivially "inside" it. `cwd` and `exists` are injected so the logic is unit-testable.
+ * class of escape), and a dangling symlink anywhere on the path is refused outright (see `realish`). The filesystem
+ * root is never treated as an allowed working directory (see `isFsRoot`), since every path is trivially "inside" it.
+ * `exists` defaults to an `lstat` check, so a symlink at `out` counts as existing. `cwd` and `exists` are injected so
+ * the logic is unit-testable.
  */
-export function resolveOptimizeOut(file: string, out: string | null, overwrite: boolean, cwd: string = process.cwd(), exists: (path: string) => boolean = existsSync): string {
+export function resolveOptimizeOut(file: string, out: string | null, overwrite: boolean, cwd: string = process.cwd(), exists: (path: string) => boolean = entryExists): string {
   const resolvedFile = resolvePath(cwd, file);
   const target = resolvePath(cwd, out ?? defaultOutputPath(resolvedFile));
   if (!/\.(glb|gltf)$/i.test(target)) throw new UsageError(`out must end in .glb or .gltf (got ${out ?? target})`);
@@ -97,8 +102,13 @@ export function resolveOptimizeOut(file: string, out: string | null, overwrite: 
   const workingDir = resolvePath(cwd);
   const workingDirAllowed = !isFsRoot(workingDir);
   const realTarget = realish(target);
-  const insideFileDir = isInside(realish(fileDir), realTarget);
-  const insideWorkingDir = workingDirAllowed && isInside(realish(workingDir), realTarget);
+  if (realTarget === null) throw new UsageError(`out is a symlink that cannot be resolved, which a write would follow (got ${target})`);
+  const insideRoot = (root: string): boolean => {
+    const realRoot = realish(root);
+    return realRoot !== null && isInside(realRoot, realTarget);
+  };
+  const insideFileDir = insideRoot(fileDir);
+  const insideWorkingDir = workingDirAllowed && insideRoot(workingDir);
   if (!insideFileDir && !insideWorkingDir) {
     const scope = workingDirAllowed ? `the input's directory (${fileDir}) or the working directory (${workingDir})` : `the input's directory (${fileDir})`;
     throw new UsageError(`out must sit inside ${scope} (got ${target})`);

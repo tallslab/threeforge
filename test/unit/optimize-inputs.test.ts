@@ -259,6 +259,19 @@ describe("optimize --out overwrite (protects resource files, not just the input'
     expect(readFileSync(out, 'utf8')).toBe('stale glb bytes');
   });
 
+  it('with overwrite: false, a dangling symlink at a .glb or .gltf out counts as existing and nothing is written through it (final review F1)', async () => {
+    const file = await inputGlb();
+    for (const name of ['dangling.glb', 'dangling.gltf']) {
+      const target = join(root, `outside-${name}`);
+      const out = join(dir, name);
+      symlinkSync(target, out);
+      const error = await rejection(optimizeAsset({ ...inputFor(file, '--out', out), overwrite: false }));
+      expect(error, name).toBeInstanceOf(UsageError);
+      expect(error.message, name).toMatch(/exists/);
+      expect(existsSync(target), name).toBe(false);
+    }
+  });
+
   it('a .glb out that already exists still replaces when overwrite is left unset (CLI default)', async () => {
     const file = await inputGlb();
     const out = join(dir, 'existing2.glb');

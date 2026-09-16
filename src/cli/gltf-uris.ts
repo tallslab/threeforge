@@ -186,7 +186,8 @@ function realPathOf(target: string): string | null {
   }
 }
 
-function entryExists(path: string): boolean {
+/** Something is at `path`, a symlink included (dangling or not): `lstat`, which, unlike `existsSync`, never follows the final link. */
+export function entryExists(path: string): boolean {
   try {
     lstatSync(path);
     return true;

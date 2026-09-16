@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { UsageError } from '../../src/cli/errors.js';
+import { exitCodeFor, UsageError } from '../../src/cli/errors.js';
 import { resolveOptimizeOut } from '../../src/cli/mcp.js';
 
 /**
@@ -101,6 +101,63 @@ describe('resolveOptimizeOut symlink confinement (real filesystem)', () => {
     symlinkSync(inputDir, join(projectDir, 'alias'), 'dir');
     const out = resolveOptimizeOut(inputFile, join(projectDir, 'alias', 'aliased.glb'), false, projectDir, () => false);
     expect(out).toBe(join(projectDir, 'alias', 'aliased.glb'));
+  });
+
+  /**
+   * Final review area 3, F1 (High): a dangling symlink at the out path. `realpathSync` throws on it just as on a path
+   * that does not exist, so the old walk-up appended the link's own name lexically, the check passed, and `existsSync`
+   * (which follows the link) said nothing was there. `writeFileSync` then followed the link and created its target
+   * outside both roots. These use a real dangling link and the real default `exists`.
+   */
+  function refusal(call: () => unknown): unknown {
+    try {
+      call();
+    } catch (error) {
+      return error;
+    }
+    throw new Error('expected resolveOptimizeOut to throw, but it returned');
+  }
+
+  it('rejects the default out when <name>.forge.glb is a dangling symlink leading outside both roots (code 2)', () => {
+    setUp();
+    const stolen = join(outsideDir, 'authorized_keys');
+    symlinkSync(stolen, join(inputDir, 'Fox.forge.glb'));
+    expect(lstatSync(join(inputDir, 'Fox.forge.glb')).isSymbolicLink()).toBe(true);
+    const error = refusal(() => resolveOptimizeOut(inputFile, null, false, projectDir));
+    expect(error).toBeInstanceOf(UsageError);
+    expect(exitCodeFor(error)).toBe(2);
+    expect(existsSync(stolen)).toBe(false);
+  });
+
+  it('rejects an explicit out that is a dangling symlink leading outside, even with overwrite: true', () => {
+    setUp();
+    const stolen = join(outsideDir, 'x.glb');
+    symlinkSync(stolen, join(projectDir, 'out.glb'));
+    for (const overwrite of [false, true]) {
+      const error = refusal(() => resolveOptimizeOut(inputFile, join(projectDir, 'out.glb'), overwrite, projectDir));
+      expect(error, `overwrite: ${overwrite}`).toBeInstanceOf(UsageError);
+    }
+    expect(existsSync(stolen)).toBe(false);
+  });
+
+  it('rejects an out that is a dangling symlink even when its target would lie inside a root (a write would follow it)', () => {
+    setUp();
+    symlinkSync(join(inputDir, 'later.glb'), join(inputDir, 'link.glb'));
+    expect(() => resolveOptimizeOut(inputFile, join(inputDir, 'link.glb'), false, projectDir)).toThrow(UsageError);
+  });
+
+  it('rejects an out whose parent directory is a dangling symlink', () => {
+    setUp();
+    symlinkSync(join(outsideDir, 'missing-dir'), join(inputDir, 'gone'));
+    expect(() => resolveOptimizeOut(inputFile, join(inputDir, 'gone', 'x.glb'), false, projectDir)).toThrow(UsageError);
+  });
+
+  it('treats a symlink to an existing file inside a root as existing: overwrite is required', () => {
+    setUp();
+    writeFileSync(join(inputDir, 'real.glb'), 'bytes');
+    symlinkSync(join(inputDir, 'real.glb'), join(inputDir, 'alias.glb'));
+    expect(() => resolveOptimizeOut(inputFile, join(inputDir, 'alias.glb'), false, projectDir)).toThrow(/exists/);
+    expect(resolveOptimizeOut(inputFile, join(inputDir, 'alias.glb'), true, projectDir)).toBe(join(inputDir, 'alias.glb'));
   });
 
   it('still accepts a plain out with no symlink involved (no false positives from the realpath check)', () => {

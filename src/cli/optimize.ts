@@ -4,7 +4,7 @@ import { basename, dirname, extname, join, resolve } from 'node:path';
 import { VERSION } from '../version.js';
 import { analyzeAssetWithShots, comparePixels, failingViews, parityOf } from './analyze.js';
 import { EnvironmentError, UsageError } from './errors.js';
-import { assertConfinedUri, assertConfinedUris, readGltfJson, resourcePathsOf, type ResourcePath } from './gltf-uris.js';
+import { assertConfinedUri, assertConfinedUris, entryExists, readGltfJson, resourcePathsOf, type ResourcePath } from './gltf-uris.js';
 import type { CliDeps } from './lifecycle.js';
 import { planSteps } from './pipeline.js';
 import { applySteps, createIO, DRACO_INSTALL, loadDeps, requirementsOf, statsOf } from './transform.js';
@@ -105,13 +105,15 @@ interface InputFiles {
 
 /**
  * Refuses to replace an existing file at `path` unless `overwrite` — the general rule (Ruling R21) behind both the
- * `out` file itself and every resource target `writeOutput` is about to write. Runs before any write, so it must be
+ * `out` file itself and every resource target `writeOutput` is about to write. A symlink counts as existing, dangling or
+ * not (`lstat`): `existsSync` follows it, so a dangling link read as free and the write then created the link's target
+ * wherever it pointed (final review F1). Runs before any write, so it must be
  * called for every target (`out`, then each resource) before any of them is touched: a clash discovered on the
  * third resource must not have let the first two through already. `overwrite` defaults to `true` (`OptimizeInput`'s
  * own default) so the CLI keeps replacing; only an explicit `false` (MCP's `optimize_asset.overwrite`) enforces it.
  */
 function assertNotClobbering(path: string, overwrite: boolean): void {
-  if (!overwrite && existsSync(path)) throw new UsageError(`${cleanText(path, 300)} already exists; pass overwrite: true to replace it`);
+  if (!overwrite && entryExists(path)) throw new UsageError(`${cleanText(path, 300)} already exists; pass overwrite: true to replace it`);
 }
 
 /**
@@ -133,9 +135,12 @@ function assertNotClobbering(path: string, overwrite: boolean): void {
  * the only place resource targets are checked at all.
  */
 async function writeOutput(io: NodeIO, out: string, doc: Document, input: InputFiles, overwrite: boolean = true): Promise<void> {
+  // Without `overwrite`, every write is `wx` (`O_CREAT | O_EXCL`): it fails on anything already at the path, a symlink
+  // included, instead of following it, so a link planted between the check and the write cannot redirect it either.
+  const flag = overwrite ? 'w' : 'wx';
   if (/\.glb$/i.test(out)) {
     assertNotClobbering(out, overwrite);
-    writeFileSync(out, await io.writeBinary(doc));
+    writeExclusive(out, await io.writeBinary(doc), flag);
     return;
   }
   const dir = dirname(out);
@@ -154,10 +159,20 @@ async function writeOutput(io: NodeIO, out: string, doc: Document, input: InputF
   }
   assertNotClobbering(out, overwrite);
   for (const target of targets) assertNotClobbering(target.path, overwrite);
-  writeFileSync(out, JSON.stringify(json, null, 2));
+  writeExclusive(out, JSON.stringify(json, null, 2), flag);
   for (const target of targets) {
     mkdirSync(dirname(target.path), { recursive: true });
-    writeFileSync(target.path, resources[target.uri]!);
+    writeExclusive(target.path, resources[target.uri]!, flag);
+  }
+}
+
+/** `writeFileSync` with `flag`; an `EEXIST` from `wx` (something appeared after `assertNotClobbering`) is the same `UsageError`. */
+function writeExclusive(path: string, data: string | Uint8Array, flag: 'w' | 'wx'): void {
+  try {
+    writeFileSync(path, data, { flag });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new UsageError(`${cleanText(path, 300)} already exists; pass overwrite: true to replace it`);
+    throw error;
   }
 }
 

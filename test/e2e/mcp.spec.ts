@@ -1,5 +1,6 @@
 import { spawn, execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DATA_NOTE } from '../../src/cli/mcp.js';
 import { expect, test } from './fixtures.js';
@@ -112,6 +113,34 @@ test('optimize_asset rejects an out path outside the allowed scope as an isError
     expect(body.error).toMatch(/\.glb or \.gltf|out must/);
   } finally {
     await close();
+  }
+});
+
+test('optimize_asset rejects a default out that is a dangling symlink leading outside both roots, writing nothing there', { tag: '@corpus' }, async () => {
+  // Final review area 3, F1 (High): `<name>.forge.glb -> <outside>` passed the confinement check (realpath of a dangling
+  // link fails like a missing path) and `existsSync` followed it, so the GLB was written at the link's target.
+  test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
+  await ready();
+  const outsideDir = mkdtempSync(join(tmpdir(), 'forge-mcp-dangling-'));
+  const stolen = join(outsideDir, 'authorized_keys');
+  const link = join(dirname(fox()), 'Fox.forge.glb');
+  rmSync(link, { force: true });
+  symlinkSync(stolen, link);
+  const { client, close } = await connect();
+  try {
+    for (const args of [{ file: fox(), verify: false }, { file: fox(), verify: false, overwrite: true }]) {
+      const result = await client.callTool({ name: 'optimize_asset', arguments: args });
+      expect(result.isError, JSON.stringify(args)).toBe(true);
+      const body = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
+      expect(body.code).toBe(2);
+      expect(body.error).toMatch(/symlink/);
+      expect(existsSync(stolen)).toBe(false);
+    }
+    expect(readdirSync(outsideDir)).toEqual([]);
+  } finally {
+    await close();
+    rmSync(link, { force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
   }
 });
 
