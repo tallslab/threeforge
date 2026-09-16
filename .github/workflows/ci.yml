@@ -75,11 +75,16 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      # `test/unit/ledger-hot-path.test.ts` carries the branch's one wall-clock guard (µs per submission at 20k vs
-      # 2k, under 3x). Task 41 made it best-of-7 per size across 3 interleaved attempts, taking each size's own
+      # `test/unit/ledger-hot-path.test.ts` carries the branch's one wall-clock measurement (µs per submission at 20k
+      # vs 2k, under 3x). Task 41 made it best-of-7 per size across 3 interleaved attempts, taking each size's own
       # minimum, so a stall has to land on the fast half of every attempt to matter. No CI retry or skip is wired
       # here on purpose: the statistic already survives a noisy shared runner, and a retry would hide a real
       # super-linear regression behind a second roll of the dice.
+      # What it guards is *scaling*, not constant cost: adding a fixed cost per submission moves the ratio toward 1,
+      # so restoring 0.8.0's ~3.5-4.6 µs would make it pass more comfortably, not fail (independent review M6). The
+      # audited constant-cost mechanism is guarded by the count assertions in the same file — `describes === 0` and
+      # `reads <= 4` per frame, so `registry.describe()` cannot return to the hot path — which is a structural check
+      # no runner noise can move.
       - run: pnpm test
       - run: pnpm build
       # R136 (accepted from the independent review as a non-gating measure): nothing in CI watches the ledger's own
