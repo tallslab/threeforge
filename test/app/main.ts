@@ -141,6 +141,13 @@ export interface ForgeHarness {
    * loss already under way. The SwiftShader adapter drops the device between test steps; every later frame is empty.
    */
   deviceLost(waitMs?: number): Promise<string | null>;
+  /**
+   * When the loss `deviceLost` reports was recorded, and when threeforge's first `compile()` of the page started, both as
+   * `performance.now()` (null when not yet). `lostAtIsUpperBound`: three's `onDeviceLost` never fired and the loss was
+   * noticed by `deviceLost`'s own wait on `device.lost`, so it happened at or before `lostAt`. Lets a skip on device loss
+   * tell a loss before threeforge compiled anything (the environment) from one after (possibly threeforge).
+   */
+  deviceLostTiming(): { lostAt: number | null; lostAtIsUpperBound: boolean; compileStartedAt: number | null };
 }
 
 declare global {
@@ -160,19 +167,32 @@ try {
   await renderer.init();
   // Record a device loss (the SwiftShader adapter drops the device between test steps) before three logs it.
   let deviceLostMessage: string | null = null;
+  // When it was recorded, against threeforge's first compile (`compileStartedAt`, set in `compile` below).
+  let deviceLostAt: number | null = null;
+  let deviceLostAtIsUpperBound = false;
+  let compileStartedAt: number | null = null;
   const reportDeviceLost = renderer.onDeviceLost;
   renderer.onDeviceLost = function (this: WebGPURenderer, info: Parameters<WebGPURenderer['onDeviceLost']>[0]) {
     deviceLostMessage = (info as { message?: string }).message || 'device lost';
+    if (deviceLostAt === null || deviceLostAtIsUpperBound) {
+      deviceLostAt = performance.now();
+      deviceLostAtIsUpperBound = false;
+    }
     return reportDeviceLost.call(this, info);
   };
   const deviceLost = async (waitMs = 250): Promise<string | null> => {
     const lost = (renderer.backend as { device?: { lost?: Promise<{ message?: string }> } }).device?.lost;
     if (deviceLostMessage === null && lost) {
       const info = await Promise.race([lost, new Promise<null>((resolve) => setTimeout(() => resolve(null), waitMs))]);
-      if (info) deviceLostMessage = info.message || 'device lost';
+      if (info && deviceLostMessage === null) {
+        deviceLostMessage = info.message || 'device lost';
+        deviceLostAt = performance.now();
+        deviceLostAtIsUpperBound = true;
+      }
     }
     return deviceLostMessage;
   };
+  const deviceLostTiming = () => ({ lostAt: deviceLostAt, lostAtIsUpperBound: deviceLostAtIsUpperBound, compileStartedAt });
   renderer.setPixelRatio(1);
   renderer.setSize(800, 600, false);
 
@@ -620,6 +640,7 @@ try {
     ...(bench?.worldOptions ?? {}),
   });
   const compile = (): CompileReport => {
+    compileStartedAt ??= performance.now();
     const report = world.compile({ coordinateSystem: renderer.coordinateSystem });
     if (params.get('nocull') === '1') {
       // Diagnostic: identical instance lists in every pass (no per-instance culling or sorting).
@@ -709,7 +730,7 @@ try {
     });
   }
 
-  window.__forge = { three: THREE, bakeGeometries, webgpu: THREE_WEBGPU, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, particleReport, scaler, scheduler, shadowReport, refreshShadow, vat: vatInstances, streamer: bench?.streamer, memory, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer, deviceLost };
+  window.__forge = { three: THREE, bakeGeometries, webgpu: THREE_WEBGPU, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, particleReport, scaler, scheduler, shadowReport, refreshShadow, vat: vatInstances, streamer: bench?.streamer, memory, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer, deviceLost, deviceLostTiming };
 } catch (error) {
   window.__forge = { ready: false, error: error instanceof Error ? error.stack ?? error.message : String(error) } as ForgeHarness;
   throw error;

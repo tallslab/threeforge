@@ -28,11 +28,26 @@ const nestedQuery = (nested: Nested): Record<string, string> => (nested === 'aut
  * Without pixel checks the adapter is SwiftShader, which drops the WebGPU device between test steps (docs/design.md,
  * "WebGPU in the test harness"): every frame after that is empty, so the assertions that follow would fail on the
  * environment rather than on threeforge. Skips with the loss message instead; with pixel checks (native) it does nothing.
+ *
+ * The same skip would hide a device loss threeforge itself caused, so the reason also says when the loss was recorded
+ * against threeforge's first `compile()` (`deviceLostOrder`): a loss before it is the environment's, one after it needs
+ * a look. Which tests skip does not depend on it.
  */
 async function skipIfDeviceLost(forge: ForgePage): Promise<void> {
   if (forge.pixelChecks) return;
-  const lost = await forge.page.evaluate(() => window.__forge.deviceLost());
-  test.skip(lost !== null, `the ${forge.backend} adapter dropped the device (${lost}); the count assertions from here on cannot run`);
+  const { lost, timing } = await forge.page.evaluate(async () => ({ lost: await window.__forge.deviceLost(), timing: window.__forge.deviceLostTiming() }));
+  test.skip(lost !== null, `the ${forge.backend} adapter dropped the device (${lost}), ${deviceLostOrder(timing)}; the count assertions from here on cannot run`);
+}
+
+/** When a device loss was recorded against threeforge's first compile, in words for a skip reason. */
+function deviceLostOrder(timing: { lostAt: number | null; lostAtIsUpperBound: boolean; compileStartedAt: number | null }): string {
+  const { lostAt, lostAtIsUpperBound, compileStartedAt } = timing;
+  const noticed = lostAtIsUpperBound ? ' (noticed then; it may have happened earlier)' : '';
+  if (lostAt === null) return 'at an unrecorded time';
+  if (compileStartedAt === null) return `before threeforge compiled anything (no compile() yet): an environment limit${noticed}`;
+  const ms = Math.round(lostAt - compileStartedAt);
+  if (ms < 0) return `${-ms} ms before threeforge's first compile() started: an environment limit${noticed}`;
+  return `${ms} ms after threeforge's first compile() started: check whether threeforge caused it${noticed}`;
 }
 
 /** Keeps the measured numbers with the test result instead of printing them. */
