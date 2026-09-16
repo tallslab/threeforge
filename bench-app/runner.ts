@@ -134,9 +134,12 @@ async function runOne(host: Host, id: SceneId, variant: 'naive' | 'optimized', m
       renderer.render(scene, camera);
       return ledger.frame();
     };
+    // Tracked as the frames run so it can be read before measureOverdraw() below: the count materials' shader stages
+    // stay counted in renderer.info.memory.programs, so the final frame would report the diagnostic's shaders too.
+    let programs = 0;
     for (let i = 0; i < WARM; i++) {
       bench.setTime?.(i / 60);
-      await frameAsync();
+      programs = (await frameAsync()).totals.programs;
     }
     const render: number[] = [];
     const frames: number[] = [];
@@ -147,6 +150,7 @@ async function runOne(host: Host, id: SceneId, variant: 'naive' | 'optimized', m
       bench.setTime?.((WARM + i) / 60);
       const f = await frameAsync();
       const now = performance.now();
+      programs = f.totals.programs;
       render.push(f.js.renderMs);
       frames.push(now - last);
       shadowPasses.push(f.lighting.shadowPasses);
@@ -157,7 +161,7 @@ async function runOne(host: Host, id: SceneId, variant: 'naive' | 'optimized', m
     const overdraw = await ledger.measureOverdraw(scene, camera);
     ledger.rescan();
     const frame = await frameAsync();
-    return metricsOf({ ...frame, overdraw: { ...frame.overdraw, ...overdraw, measured: true } }, median(render), median(frames), shadowPasses.reduce((a, b) => a + b, 0) / Math.max(1, shadowPasses.length), shadowTexels);
+    return metricsOf({ ...frame, overdraw: { ...frame.overdraw, ...overdraw, measured: true } }, median(render), median(frames), shadowPasses.reduce((a, b) => a + b, 0) / Math.max(1, shadowPasses.length), shadowTexels, programs);
   } finally {
     world.decompile();
     disposeScene(scene);

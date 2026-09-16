@@ -41,10 +41,12 @@ for (const id of SCENE_IDS) {
             const s = [...a].sort((x, y) => x - y);
             return s[Math.floor(s.length / 2)]!;
           };
+          // Before the count: its materials' shader stages stay counted in renderer.info.memory.programs afterwards.
+          const programs = frame.totals.programs;
           const overdraw = await f.measureOverdraw();
           f.ledger.rescan();
           frame = await f.frameAsync();
-          return { frame, overdraw, renderMs: median(render), frameMs: median(frames), shadowPassesPerFrame: shadowPasses.reduce((a, b) => a + b, 0) / Math.max(1, shadowPasses.length), shadowTexels };
+          return { frame, overdraw, programs, renderMs: median(render), frameMs: median(frames), shadowPassesPerFrame: shadowPasses.reduce((a, b) => a + b, 0) / Math.max(1, shadowPasses.length), shadowTexels };
         },
         { warm: WARM, measured: MEASURED },
       );
@@ -56,7 +58,7 @@ for (const id of SCENE_IDS) {
       const file = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { schemaVersion: 1, env, scenes: {} };
       file.env = env;
       file.scenes[id] ??= {};
-      file.scenes[id][variant] = metricsOf({ ...out.frame, overdraw: { ...out.frame.overdraw, ...out.overdraw, measured: true } }, out.renderMs, out.frameMs, out.shadowPassesPerFrame, out.shadowTexels);
+      file.scenes[id][variant] = metricsOf({ ...out.frame, overdraw: { ...out.frame.overdraw, ...out.overdraw, measured: true } }, out.renderMs, out.frameMs, out.shadowPassesPerFrame, out.shadowTexels, out.programs);
       writeFileSync(path, JSON.stringify(file, null, 2));
     });
   }

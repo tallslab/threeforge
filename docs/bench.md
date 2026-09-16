@@ -31,3 +31,11 @@ apple metal-3 · tier desktop · three 186
 | daynight | 605 → 28 (21.6×) | 606 → 304 | 73.4k → 36.7k | 0.71 / 0.01 → 0.71 / 0.01 | 0 → 0 | 0.34 → 0.34 | 310 / 310 → 325 / 34 | 158 → 158 | 4.19M → 2.10M | 1.00 → 0.50 | 20 → 21 | 3.2 → 1.5 | 16.6 → 16.7 |
 | zen | 3540 → 88 (40.2×) | 3541 → 62 | 63.2k → 60.9k | 0.64 / 0.00 → 0.64 / 0.00 | 0 → 0 | 0.31 → 0.31 | 50.1k / 50.1k → 226 / 194 | 0 → 0 | 0 → 0 | 0.00 → 0.00 | 91 → 47 | 26.8 → 1.3 | 27.1 → 16.7 |
 | rpg | 4 → 1 (4.0×) | 5 → 2 | 365 → 365 | 0.24 / 0.00 → 0.24 / 0.00 | 0 → 0 | 0.09 → 0.09 | 10 / 10 → 6 / 6 | 326 → 326 | 0 → 0 | 0.00 → 0.00 | 3 → 3 | 0.5 → 0.4 | 16.7 → 16.7 |
+
+## How the numbers are measured
+
+Each variant runs 10 warm-up frames, then 60 measured frames, then one `measureOverdraw()` and a final frame. The columns do not all come from the same window, and two gated metrics are not columns at all:
+
+- **`programs`** (gated, not a column) is read from the last measured frame, *before* `measureOverdraw()` runs. The overdraw count materials are real materials: their shader stages count in `renderer.info.memory.programs`, and three releases a stage only once its `usedTimes` reaches 0 (`Pipelines._releaseProgram`), so they are still counted in the final frame. Reading the metric before the measurement keeps it a count of the shaders the *app* compiled, which is why it stays in the gate list. Read after the measurement, as it was, any change to `src/ledger/overdraw.ts` moved a gated number that has nothing to do with the scene.
+- **`shadow texels`** is the mean over the 60 measured frames, so a frozen or quantized map counts on the share of them it renders on. `shadowCasters` (gated, not a column) and every memory column instead come from the single final frame. The two windows differ; that predates these tables.
+- **`textureBytes`** applies a ×1.333 generated-mip factor only to textures that ask for one. The naive variants of `village`, `forest`, `lake` and `rpg` carry no such factor at all: their textures are procedural `DataTexture`s, whose `generateMipmaps` is `false` by three's default (`rpg`'s 320 bytes are five 4×4 RGBA gear textures, `lake`'s 1024 the 16×16 raindrop streak, and `forest` has no texture to count). A change to the mip factor therefore cannot move those four numbers, and their absence from such a diff is the expected result rather than a bug.

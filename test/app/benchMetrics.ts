@@ -41,15 +41,20 @@ export interface BenchMetrics {
  * Shared by the CI runner (test/e2e/bench.spec.ts) and the device bench page so the two cannot drift. `shadowTexels` is
  * `lighting.shadowTexels` of every measured frame: the metric is their mean, rounded, over the same fixed frame window
  * each run (a frozen or quantized map renders on a fixed share of those frames).
+ *
+ * `programs` comes from the caller rather than from `f`, because `f` is captured after `measureOverdraw()`: the count
+ * materials' shader stages are counted in `renderer.info.memory.programs` and three frees a stage only once its
+ * `usedTimes` reaches 0, so the final frame still counts the diagnostic's own shaders. Both callers pass what they read
+ * from the last measured frame, before the measurement, which keeps the metric about the shaders the app compiled.
  */
-export function metricsOf(f: FrameSnapshot, renderMs: number, frameMs: number, shadowPassesPerFrame: number, shadowTexels: readonly number[]): BenchMetrics {
+export function metricsOf(f: FrameSnapshot, renderMs: number, frameMs: number, shadowPassesPerFrame: number, shadowTexels: readonly number[], programs: number): BenchMetrics {
   let texels = 0;
   for (const t of shadowTexels) texels += t;
   return {
     sceneSubmissions: f.totals.sceneSubmissions,
     gpuDraws: f.totals.gpuDraws,
     triangles: f.totals.triangles,
-    programs: f.totals.programs,
+    programs,
     overdrawOpaque: f.overdraw.opaque,
     overdrawTransparent: f.overdraw.transparent,
     skinnedVertices: f.skinning.vertices,

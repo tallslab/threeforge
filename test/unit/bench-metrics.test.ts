@@ -22,9 +22,17 @@ describe('benchMetrics', () => {
     frame.overdraw.pixels = 480_000;
     frame.js.objects = 512;
     frame.js.autoUpdatedMatrices = 12;
-    expect(metricsOf(frame, 2.5, 16.7, 0.5, [4096, 0, 4096])).toEqual({ sceneSubmissions: 12, gpuDraws: 30, triangles: 1000, programs: 3, overdrawOpaque: 1.5, overdrawTransparent: 0.25, skinnedVertices: 400, shadowCasters: 2, shadowTexels: 2731, textureBytes: 10, geometryBytes: 20, renderTargetBytes: 30, particles: 7, fillMegapixels: 0.84, objects: 512, autoUpdatedMatrices: 12, shadowPassesPerFrame: 0.5, renderMs: 2.5, frameMs: 16.7, unattributed: 0 });
-    expect(metricsOf(frame, 2.5, 16.7, 0.5, []).shadowTexels).toBe(0);
+    expect(metricsOf(frame, 2.5, 16.7, 0.5, [4096, 0, 4096], 3)).toEqual({ sceneSubmissions: 12, gpuDraws: 30, triangles: 1000, programs: 3, overdrawOpaque: 1.5, overdrawTransparent: 0.25, skinnedVertices: 400, shadowCasters: 2, shadowTexels: 2731, textureBytes: 10, geometryBytes: 20, renderTargetBytes: 30, particles: 7, fillMegapixels: 0.84, objects: 512, autoUpdatedMatrices: 12, shadowPassesPerFrame: 0.5, renderMs: 2.5, frameMs: 16.7, unattributed: 0 });
+    expect(metricsOf(frame, 2.5, 16.7, 0.5, [], 3).shadowTexels).toBe(0);
     expect(SCENE_IDS).toEqual(['village', 'forest', 'crowd', 'bossfight', 'lake', 'daynight', 'zen', 'rpg']);
     expect([WARM, MEASURED]).toEqual([10, 60]);
+  });
+
+  it('takes programs from its argument, not from the snapshot, so the overdraw count cannot inflate it', () => {
+    const frame = emptyFrame({ three: '186', backend: 'webgl2', multiDraw: true, tier: 'desktop', gpu: 'x', dpr: 1, viewport: [800, 600] });
+    // The snapshot handed to metricsOf is captured after measureOverdraw(), whose count materials' shader stages are
+    // still counted in renderer.info.memory.programs. The caller passes the value it read before the measurement.
+    frame.totals.programs = 26;
+    expect(metricsOf(frame, 2.5, 16.7, 0, [], 17).programs).toBe(17);
   });
 });
