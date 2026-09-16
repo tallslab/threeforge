@@ -1,3 +1,4 @@
+import { MAX_MESSAGE_LENGTH } from '../ledger/text.js';
 import { EnvironmentError, PageError, UsageError } from './errors.js';
 
 /**
@@ -67,7 +68,10 @@ export function cleanLines(text: string, max: number = DEFAULT_TEXT_MAX): string
 }
 
 export interface SanitizeOptions {
-  /** Cap per string, in Unicode code points (default 256). */
+  /**
+   * Cap per string, in Unicode code points (default `MAX_MESSAGE_LENGTH`, 300): the ledger's own cap on a hint message,
+   * so a message it kept whole is not cut again here, losing its actionable tail (final review F6).
+   */
   maxString?: number;
   /** Cap per array, in elements; a longer array gets one extra `"(+N more)"` marker appended (default 256). */
   maxArray?: number;
@@ -75,7 +79,7 @@ export interface SanitizeOptions {
   maxDepth?: number;
 }
 
-const SANITIZE_DEFAULTS: Required<SanitizeOptions> = { maxString: 256, maxArray: 256, maxDepth: 16 };
+const SANITIZE_DEFAULTS: Required<SanitizeOptions> = { maxString: MAX_MESSAGE_LENGTH, maxArray: 256, maxDepth: 16 };
 
 /**
  * Recursively cleans a value that came from `page.evaluate`: every string through `cleanText`, every non-finite
