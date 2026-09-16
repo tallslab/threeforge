@@ -36,8 +36,9 @@ npx threeforge mcp                                                          # th
 ```
 
 `npx threeforge` with no arguments prints [AGENTS.md](AGENTS.md): commands, the JSON document, exit codes, the
-hint table and the one-line app integration. Every command prints JSON with `--json` and uses exit codes an agent
-can branch on.
+hint table and the one-line app integration. `analyze`, `inspect`, `optimize` and `explain` print JSON with
+`--json` and `schema` prints JSON either way; `mcp`, `decoders` and `help` take no `--json`. Every command uses
+exit codes an agent can branch on.
 
 ### Optimize assets at build time
 

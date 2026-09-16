@@ -170,7 +170,7 @@ export const COMMAND_SPECS: Readonly<Record<CommandName, CommandSpec>> = {
       { name: 'texture-size', kind: 'value', value: 'N', numeric: true, description: "Longest texture side in pixels (an integer from 1 to 16384; default: the preset's size, no resize outside presets)." },
       { name: 'texture-quality', kind: 'value', value: 'Q', numeric: true, description: 'Texture encoder quality (an integer from 1 to 100, default 85).' },
       { name: 'verify', kind: 'boolean', negatable: true, defaultOn: true, description: 'Render the original and the optimized file and compare pixels. On by default; `--no-verify` runs without a browser (and cannot take `--budget`).' },
-      { name: 'parity', kind: 'value', value: 'pct', numeric: true, description: 'Allowed percent of changed pixels between the original and the optimized render, from 0 to 100 (default 0.5).' },
+      { name: 'parity', kind: 'value', value: 'pct', numeric: true, description: 'Allowed percent of changed pixels between the original and the optimized render, from 0 to 100 (default 0.5). A threshold of 0 means zero: it is judged on the raw changed-pixel count of every view, not the rounded percent.' },
       { name: 'views', kind: 'value', value: 'N', numeric: true, description: 'Extra orbit views for the comparison (an integer from 0 to 64, default 2).' },
       { ...BUDGET, description: "Fail the verdict (exit 1) when the optimized file compiles to more than N scene submissions (an integer ≥ 0); needs verification, so not with `--no-verify`." },
       ...RUN_FLAGS.filter((flag) => flag !== BUDGET),

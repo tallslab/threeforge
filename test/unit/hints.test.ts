@@ -167,7 +167,7 @@ describe('hintsFor', () => {
       'unique-material': { submissions: 20, gpuDraws: 20, top: ['statue'] },
     };
     expect(hintsFor(f, budgetsFor('desktop'))).toEqual([
-      { category: 'drawCalls', severity: 'info', code: 'static-unbatched', message: '21 static meshes draw one by one although other draws share their material: batch them with World', objects: ['rock-1', 'rock-2'] },
+      { category: 'drawCalls', severity: 'info', code: 'static-unbatched', message: '21 static meshes draw one by one although other draws share their material: batch them with World (the draw that shares it may be one nothing can batch with: skinned, dynamic or already batched)', objects: ['rock-1', 'rock-2'] },
     ]);
     f.byReason['static-unbatched']!.submissions = 20;
     f.byReason['unique-material']!.submissions = 21;

@@ -48,8 +48,9 @@ const flagRows = [...flagRowsByKey.values()].map((row) => `| ${row.forms.map((fo
 const body = `# threeforge for AI agents
 
 threeforge ${VERSION} is a frame-budget compiler and diagnostics layer for three.js games (r186, WebGPU with a
-WebGL2 fallback). This file is what \`npx threeforge\` prints. Everything below is scriptable from a terminal and
-prints JSON with \`--json\`.
+WebGL2 fallback). This file is what \`npx threeforge\` prints. Everything below is scriptable from a terminal:
+\`analyze\`, \`inspect\`, \`optimize\` and \`explain\` print JSON with \`--json\`, \`schema\` prints JSON either way, and
+\`mcp\`, \`decoders\` and \`help\` take no \`--json\`.
 
 ## Install
 
@@ -114,7 +115,7 @@ other bundlers need their own.
   "asset": { "meshes": 12, "materials": 5, "vertices": 40210, "triangles": 38000, "animations": 1, "skinned": 1, "morph": 0, "loadMs": 120 },
   "before": { "totals": { "sceneSubmissions": 503 }, "overdraw": {}, "skinning": {}, "lighting": {}, "js": {}, "memory": {}, "hints": [] },
   "after":  { "totals": { "sceneSubmissions": 28 } },
-  "compile": { "after": { "batches": 15, "instanced": 0, "meshes": 13 }, "skipped": [{ "path": "player", "rule": "skinned-mesh" }] },
+  "compile": { "after": { "batches": 15, "instanced": 0, "meshes": 13 }, "skipped": [{ "name": "player", "rule": "skinned-mesh" }] },
   "parity": { "diffPct": 0.01, "threshold": 0.5, "pass": true, "views": [{ "view": "default", "diffPct": 0.01, "changedPixels": 92 }] },
   "hints": [{ "category": "lighting", "severity": "warn", "code": "point-light-shadow", "message": "...", "objects": ["lamp"] }],
   "verdict": { "pass": true, "budget": null, "errors": [], "reasons": [] },
@@ -188,7 +189,7 @@ command \`npx\` and args \`["threeforge", "mcp"]\`.
 
 \`\`\`ts
 import { analyzeAsset, inspectApp, optimizeAsset, explain } from 'threeforge/cli';
-const doc = await analyzeAsset({ file: 'scene.glb', backend: 'webgpu', tier: 'auto', budget: null, frames: 30, compile: true, timeout: 60000, headed: false });
+const doc = await analyzeAsset({ file: 'scene.glb', backend: 'webgpu', tier: 'auto', budget: null, frames: 30, compile: true, bake: 'off', views: 0, timeout: 60000, headed: false });
 \`\`\`
 
 ## Where to read more
