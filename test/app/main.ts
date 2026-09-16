@@ -136,6 +136,11 @@ export interface ForgeHarness {
   visibleMeshes(): number;
   /** Task 2 spike: run three's experimental SceneOptimizer on a fresh naive scene and measure it. */
   spikeSceneOptimizer(): Promise<SpikeResult>;
+  /**
+   * The message of the WebGPU device loss three reported (`renderer.onDeviceLost`), or null. Waits up to `waitMs` for a
+   * loss already under way. The SwiftShader adapter drops the device between test steps; every later frame is empty.
+   */
+  deviceLost(waitMs?: number): Promise<string | null>;
 }
 
 declare global {
@@ -153,6 +158,21 @@ try {
   const canvas = document.getElementById('c') as HTMLCanvasElement;
   const renderer = new WebGPURenderer({ canvas, antialias: false, forceWebGL: requestedBackend === 'webgl2' });
   await renderer.init();
+  // Record a device loss (the SwiftShader adapter drops the device between test steps) before three logs it.
+  let deviceLostMessage: string | null = null;
+  const reportDeviceLost = renderer.onDeviceLost;
+  renderer.onDeviceLost = function (this: WebGPURenderer, info: Parameters<WebGPURenderer['onDeviceLost']>[0]) {
+    deviceLostMessage = (info as { message?: string }).message || 'device lost';
+    return reportDeviceLost.call(this, info);
+  };
+  const deviceLost = async (waitMs = 250): Promise<string | null> => {
+    const lost = (renderer.backend as { device?: { lost?: Promise<{ message?: string }> } }).device?.lost;
+    if (deviceLostMessage === null && lost) {
+      const info = await Promise.race([lost, new Promise<null>((resolve) => setTimeout(() => resolve(null), waitMs))]);
+      if (info) deviceLostMessage = info.message || 'device lost';
+    }
+    return deviceLostMessage;
+  };
   renderer.setPixelRatio(1);
   renderer.setSize(800, 600, false);
 
@@ -689,7 +709,7 @@ try {
     });
   }
 
-  window.__forge = { three: THREE, bakeGeometries, webgpu: THREE_WEBGPU, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, particleReport, scaler, scheduler, shadowReport, refreshShadow, vat: vatInstances, streamer: bench?.streamer, memory, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer };
+  window.__forge = { three: THREE, bakeGeometries, webgpu: THREE_WEBGPU, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, particleReport, scaler, scheduler, shadowReport, refreshShadow, vat: vatInstances, streamer: bench?.streamer, memory, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer, deviceLost };
 } catch (error) {
   window.__forge = { ready: false, error: error instanceof Error ? error.stack ?? error.message : String(error) } as ForgeHarness;
   throw error;

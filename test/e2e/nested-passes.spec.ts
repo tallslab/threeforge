@@ -7,9 +7,13 @@
  * the rows the main pass already recorded (WebGPU submits the main pass only when it ends; on WebGL the receiver draws
  * right after the shadow render returns). Every scene compares the naive scene (one mesh per prop, three's own
  * per-object culling) with the compiled one, under the default policy ('per-pass' on both backends) and 'reuse-main'.
+ *
+ * Without pixel checks (the SwiftShader WebGPU adapter, where capturing the canvas drops the device) each test still
+ * runs: the pass counts, `unattributed` and the missing-caster spies need no screenshot, and only the captures and the
+ * pixel comparison are skipped.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { expect, test } from './fixtures.js';
+import { expect, test, type ForgePage } from './fixtures.js';
 import { pixelDiff, settle } from './pixels.js';
 
 const OUT = 'test-results/nested-passes';
@@ -20,6 +24,17 @@ type Nested = (typeof POLICIES)[number];
 const policyOf = (nested: Nested): string => (nested === 'reuse-main' ? 'reuse-main' : 'per-pass');
 const nestedQuery = (nested: Nested): Record<string, string> => (nested === 'auto' ? {} : { nested });
 
+/**
+ * Without pixel checks the adapter is SwiftShader, which drops the WebGPU device between test steps (docs/design.md,
+ * "WebGPU in the test harness"): every frame after that is empty, so the assertions that follow would fail on the
+ * environment rather than on threeforge. Skips with the loss message instead; with pixel checks (native) it does nothing.
+ */
+async function skipIfDeviceLost(forge: ForgePage): Promise<void> {
+  if (forge.pixelChecks) return;
+  const lost = await forge.page.evaluate(() => window.__forge.deviceLost());
+  test.skip(lost !== null, `the ${forge.backend} adapter dropped the device (${lost}); the count assertions from here on cannot run`);
+}
+
 /** Keeps the measured numbers with the test result instead of printing them. */
 async function attachNumbers(name: string, value: unknown): Promise<void> {
   await test.info().attach(name, { body: JSON.stringify(value, null, 2), contentType: 'application/json' });
@@ -27,7 +42,6 @@ async function attachNumbers(name: string, value: unknown): Promise<void> {
 
 for (const nested of POLICIES) {
   test(`tall casters out of view shadow a receiving batch through a narrow sun frustum (nestedPasses: ${nested})`, async ({ forge }) => {
-    test.skip(!forge.pixelChecks, 'pixel checks need a native WebGPU adapter');
     // threshold=1000 keeps the 289 repeated tiles in the BatchedMesh (the default 64 would make them an InstancedMesh).
     await forge.open('empty', { threshold: '1000', ...nestedQuery(nested) });
     const built = await forge.page.evaluate(async () => {
@@ -124,6 +138,7 @@ for (const nested of POLICIES) {
       };
     });
     await attachNumbers('pillars-naive', { backend: forge.backend, built, naive });
+    await skipIfDeviceLost(forge);
     // Three's per-object culling: the casters the sun sees; the tiles in view, the ground and the output quad.
     expect(naive.passes).toEqual([
       ['shadow:sun', built.castersInShadow],
@@ -131,7 +146,7 @@ for (const nested of POLICIES) {
     ]);
     expect({ mainTiles: naive.mainTiles, mainOthers: naive.mainOthers }).toEqual({ mainTiles: built.tilesInView, mainOthers: ['ground', 'Output Color Transform'] });
     await settle(forge.page, 2);
-    const before = await forge.page.screenshot({ type: 'png' });
+    const before = forge.pixelChecks ? await forge.page.screenshot({ type: 'png' }) : null;
 
     const compiled = await forge.page.evaluate(async () => {
       const f = window.__forge;
@@ -140,6 +155,7 @@ for (const nested of POLICIES) {
       const frame = await f.frameAsync();
       return { after: report.after, nestedPasses: report.nestedPasses, passes: frame.passes.map((p) => [p.id, p.submissions]), unattributed: frame.totals.unattributed };
     });
+    await skipIfDeviceLost(forge);
     expect(compiled.nestedPasses).toBe(policyOf(nested));
     expect(compiled.after).toMatchObject({ batches: 1, instanced: 0 });
     // One batch in each pass; the ground and the output quad stay.
@@ -149,6 +165,7 @@ for (const nested of POLICIES) {
     ]);
     expect(compiled.unattributed).toBe(0);
     await settle(forge.page, 2);
+    if (!before) return;
     const after = await forge.page.screenshot({ type: 'png' });
     mkdirSync(OUT, { recursive: true });
     const tag = `${nested}-${forge.backend}`;
@@ -160,7 +177,6 @@ for (const nested of POLICIES) {
   });
 
   test(`audit reproduction: the shadowed naive scene seen from (24, 10, 18) compiles with the same pixels (nestedPasses: ${nested})`, async ({ forge }) => {
-    test.skip(!forge.pixelChecks, 'pixel checks need a native WebGPU adapter');
     test.setTimeout(180_000);
     // transparent=keep: transparent statics stay individual meshes, so their draw order does not enter the comparison.
     await forge.open('naive', { shadows: '1', transparent: 'keep', ...nestedQuery(nested) });
@@ -177,10 +193,11 @@ for (const nested of POLICIES) {
       const frame = await f.frameAsync();
       return { instanced, passes: frame.passes.map((p) => [p.id, p.submissions, p.gpuDraws]) };
     });
+    await skipIfDeviceLost(forge);
     // The naive scene has no InstancedMesh (Task 17's compacted instancing), so this task controls every batch in it.
     expect(naive.instanced).toBe(0);
     await settle(forge.page, 2);
-    const before = await forge.page.screenshot({ type: 'png' });
+    const before = forge.pixelChecks ? await forge.page.screenshot({ type: 'png' }) : null;
     const compiled = await forge.page.evaluate(async () => {
       const f = window.__forge;
       const T = f.three;
@@ -238,7 +255,17 @@ for (const nested of POLICIES) {
         shadow: { needed, missing: missing.length, sample: missing.slice(0, 5) },
       };
     });
+    await skipIfDeviceLost(forge);
+    expect(compiled.nestedPasses).toBe(policyOf(nested));
+    expect(compiled.after.instanced).toBe(0);
+    expect(compiled.unattributed).toBe(0);
+    expect(compiled.shadow.needed, 'batched casters inside the shadow frustum').toBeGreaterThan(100);
+    expect(compiled.shadow.sample, 'batched casters missing from the shadow pass').toEqual([]);
     await settle(forge.page, 2);
+    if (!before) {
+      await attachNumbers('audit', { backend: forge.backend, nestedPasses: compiled.nestedPasses, after: compiled.after, naive: naive.passes, passes: compiled.passes, shadow: compiled.shadow, diffPct: null });
+      return;
+    }
     const after = await forge.page.screenshot({ type: 'png' });
     mkdirSync(OUT, { recursive: true });
     const tag = `${nested}-${forge.backend}`;
@@ -246,17 +273,11 @@ for (const nested of POLICIES) {
     writeFileSync(`${OUT}/audit-compiled-${tag}.png`, after);
     const diff = pixelDiff(before, after, { threshold: 4, diffPath: `${OUT}/audit-diff-${tag}.png` });
     await attachNumbers('audit', { backend: forge.backend, nestedPasses: compiled.nestedPasses, after: compiled.after, naive: naive.passes, passes: compiled.passes, shadow: compiled.shadow, diffPct: (diff * 100).toFixed(4) });
-    expect(compiled.nestedPasses).toBe(policyOf(nested));
-    expect(compiled.after.instanced).toBe(0);
-    expect(compiled.unattributed).toBe(0);
-    expect(compiled.shadow.needed, 'batched casters inside the shadow frustum').toBeGreaterThan(100);
-    expect(compiled.shadow.sample, 'batched casters missing from the shadow pass').toEqual([]);
     expect(diff).toBeLessThan(0.001);
   });
 
   for (const receiver of ['instanced', 'ground'] as const) {
     test(`1,500 tall instanced boxes shadow themselves through a sun and a spot light with casters out of view (first receiver: ${receiver}, nestedPasses: ${nested})`, async ({ forge }) => {
-      test.skip(!forge.pixelChecks, 'pixel checks need a native WebGPU adapter');
       test.setTimeout(180_000);
       await forge.open('empty', nestedQuery(nested));
       const built = await forge.page.evaluate(buildInstancedField, { groundFirst: receiver === 'ground', spot: true });
@@ -265,12 +286,24 @@ for (const nested of POLICIES) {
       expect(built.sunOutOfView, 'boxes the sun sees outside the view').toBeGreaterThan(50);
       expect(built.spotOutOfView, 'boxes the spot light sees outside the view').toBeGreaterThan(50);
       const naive = await forge.page.evaluate(async () => (await window.__forge.frameAsync()).passes.map((p) => [p.id, p.submissions]));
+      await skipIfDeviceLost(forge);
       expect(naive.map(([id]) => id)).toEqual(expect.arrayContaining(['shadow:sun', 'shadow:spot', 'main']));
       await settle(forge.page, 2);
-      const before = await forge.page.screenshot({ type: 'png' });
+      const before = forge.pixelChecks ? await forge.page.screenshot({ type: 'png' }) : null;
       const report = await forge.page.evaluate(compileInstancedField);
       const compiled = await forge.page.evaluate(spyInstancedField);
+      await skipIfDeviceLost(forge);
+      expect(report.nestedPasses).toBe(policyOf(nested));
+      expect(report.after).toMatchObject({ batches: 0, instanced: 1 });
+      expect(compiled.unattributed).toBe(0);
+      expect(compiled.needed.sun, 'instances inside the sun frustum').toBeGreaterThan(100);
+      expect(compiled.needed.spot, 'instances inside the spot frustum').toBeGreaterThan(100);
+      expect(compiled.sample, 'instances missing from the pass that needs them').toEqual({ main: [], sun: [], spot: [] });
       await settle(forge.page, 2);
+      if (!before) {
+        await attachNumbers('instanced-field', { backend: forge.backend, receiver, built, naive, compiled: { ...report, ...compiled }, diffPct: null });
+        return;
+      }
       const after = await forge.page.screenshot({ type: 'png' });
       mkdirSync(OUT, { recursive: true });
       const tag = `field-${receiver}-${nested}-${forge.backend}`;
@@ -278,18 +311,11 @@ for (const nested of POLICIES) {
       writeFileSync(`${OUT}/${tag}-compiled.png`, after);
       const diff = pixelDiff(before, after, { threshold: 4, diffPath: `${OUT}/${tag}-diff.png` });
       await attachNumbers('instanced-field', { backend: forge.backend, receiver, built, naive, compiled: { ...report, ...compiled }, diffPct: (diff * 100).toFixed(4) });
-      expect(report.nestedPasses).toBe(policyOf(nested));
-      expect(report.after).toMatchObject({ batches: 0, instanced: 1 });
-      expect(compiled.unattributed).toBe(0);
-      expect(compiled.needed.sun, 'instances inside the sun frustum').toBeGreaterThan(100);
-      expect(compiled.needed.spot, 'instances inside the spot frustum').toBeGreaterThan(100);
-      expect(compiled.sample, 'instances missing from the pass that needs them').toEqual({ main: [], sun: [], spot: [] });
       expect(diff).toBeLessThan(0.0005);
     });
   }
 
   test(`1,500 tall instanced boxes stay exact when the camera moves after the first compiled frame, the boxes receiving the sun's shadows first (nestedPasses: ${nested})`, async ({ forge }) => {
-    test.skip(!forge.pixelChecks, 'pixel checks need a native WebGPU adapter');
     test.setTimeout(180_000);
     await forge.open('empty', nestedQuery(nested));
     // The sun only. In three r186 Attributes.update keeps a version per attribute object, and every render object builds its
@@ -301,14 +327,25 @@ for (const nested of POLICIES) {
     await forge.page.evaluate(aimCamera, MOVED_VIEW);
     await forge.page.evaluate(async () => void (await window.__forge.frameAsync()));
     await settle(forge.page, 2);
-    const before = await forge.page.screenshot({ type: 'png' });
+    const before = forge.pixelChecks ? await forge.page.screenshot({ type: 'png' }) : null;
     // Compile and render at the first view: that frame creates the instance buffers with whole-array uploads. The first
     // frame at the second view then changes the main rows and the appended casters together: the update-range path.
     await forge.page.evaluate(aimCamera, FIELD_VIEW);
     const report = await forge.page.evaluate(compileInstancedField);
     await forge.page.evaluate(aimCamera, MOVED_VIEW);
     const moved = await forge.page.evaluate(spyInstancedField);
+    await skipIfDeviceLost(forge);
+    expect(report.nestedPasses).toBe(policyOf(nested));
+    expect(report.after).toMatchObject({ batches: 0, instanced: 1 });
+    expect(moved.unattributed).toBe(0);
+    expect(moved.needed.main, 'instances in the moved view').toBeGreaterThan(100);
+    expect(moved.needed.sun, 'instances inside the sun frustum').toBeGreaterThan(100);
+    expect(moved.sample, 'instances missing from the pass that needs them').toEqual({ main: [], sun: [] });
     await settle(forge.page, 2);
+    if (!before) {
+      await attachNumbers('instanced-field-moved', { backend: forge.backend, built, compiled: { ...report, ...moved }, diffPct: null });
+      return;
+    }
     const after = await forge.page.screenshot({ type: 'png' });
     mkdirSync(OUT, { recursive: true });
     const tag = `field-moved-${nested}-${forge.backend}`;
@@ -316,12 +353,6 @@ for (const nested of POLICIES) {
     writeFileSync(`${OUT}/${tag}-compiled.png`, after);
     const diff = pixelDiff(before, after, { threshold: 4, diffPath: `${OUT}/${tag}-diff.png` });
     await attachNumbers('instanced-field-moved', { backend: forge.backend, built, compiled: { ...report, ...moved }, diffPct: (diff * 100).toFixed(4) });
-    expect(report.nestedPasses).toBe(policyOf(nested));
-    expect(report.after).toMatchObject({ batches: 0, instanced: 1 });
-    expect(moved.unattributed).toBe(0);
-    expect(moved.needed.main, 'instances in the moved view').toBeGreaterThan(100);
-    expect(moved.needed.sun, 'instances inside the sun frustum').toBeGreaterThan(100);
-    expect(moved.sample, 'instances missing from the pass that needs them').toEqual({ main: [], sun: [] });
     expect(diff).toBeLessThan(0.0005);
   });
 }
