@@ -608,10 +608,16 @@ a threeforge transparent batch shares the main pass with another transparent sub
   three keeps their matrices in one vertex buffer that syncs once per frame per render object and is checked for
   upload at most once per render call (a nested render advances the call count, so a draw after it cannot upload
   what changed since): a nested pass that reaches a mesh before the outermost render did compacts it for the main
-  camera first; a shadow pass keeps the enclosing rows and appends, once per frame and in the same rows for every
-  shadow pass, the instances any shadow-casting light reaches (directional and spot frusta, a point light's cube of
-  half-size `distance || shadow.camera.far`); any other nested pass draws the enclosing rows; `count` and
-  `visibleIds` come back when the nested render ends. On that vertex buffer an outermost compaction marks only the
+  camera first; a shadow pass keeps the enclosing rows and appends only the instances **its own light** reaches
+  (directional and spot frusta, a point light's cube of half-size `distance || shadow.camera.far`). Every light of the
+  frame is queried once, at its first shadow pass, into one deduplicated caster list whose entries record which lights
+  reach them (one bit per shadow camera of the frame, up to 32; a camera past that carries no bit and its pass appends
+  the whole list, a correct superset). Each pass appends its own light's entries **in that list's order**, so a light
+  whose casters are the rows the tail already holds writes nothing — a point light's six faces always do, and so does
+  any light whose set is a prefix of the pass before it. An `InstancedMesh` draws one contiguous range `[0, count)`
+  (three r186 takes `instanceCount` from `object.count` and never writes `firstInstance`), so it cannot zero an
+  interior appended row the way a batch zeroes a slot: it rewrites the tail, and only rows that change are marked.
+  Any other nested pass draws the enclosing rows; `count` and `visibleIds` come back when the nested render ends. On that vertex buffer an outermost compaction marks only the
   rows it changed (`addUpdateRange`), while a nested pass that writes rows marks the whole matrix and colour buffers:
   a receiver's render object runs the instance `OnBeforeFrameUpdate` event before its `ShadowNode` (the position
   stack is flowed before the stage loop in `NodeBuilder.build`), so the shadow render object's own sync replaces the
@@ -619,7 +625,7 @@ a threeforge transparent batch shares the main pass with another transparent sub
 
   | Nested pass | Batch, `per-pass` | Batch, `reuse-main` | Compacted instanced mesh (either policy) |
   |---|---|---|---|
-  | an open pass culled the object | keep its rows, zero the unneeded, append the missing | same | shadow: keep its rows, append the frame's shadow casters; other: draw its rows |
+  | an open pass culled the object | keep its rows, zero the unneeded, append the missing | same | shadow: keep its rows, append its own light's casters; other: draw its rows |
   | no open pass culled it yet | fresh cull for the nested camera | append to the last outermost rows | compact for the main camera first, then as above |
   | outermost render | fresh cull | fresh cull | compact (skipped while the view and rows are unchanged) |
   | end of the nested render | counts restored | counts restored | `count`, `visibleIds` restored |

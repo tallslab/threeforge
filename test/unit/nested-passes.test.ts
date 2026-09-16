@@ -764,6 +764,57 @@ describe.each(backends)('compacted InstancedMesh in nested passes (webgpu: $webg
         }
       });
 
+      it('appends to each shadow light only the casters that light reaches, on top of the enclosing rows in their order', () => {
+        // Two suns with disjoint volumes, neither overlapping the main view: every appended caster belongs to exactly
+        // one of them, so a pass that appended the frame's union would draw the other light's casters too.
+        const r = instancedRig({ webgpu, nested, buffers, lights: (cs) => [sunLight('east', 60, cs, 20), sunLight('west', -60, cs, 20)] });
+        for (let frame = 1; frame <= 2; frame++) {
+          r.renderer.render(r.scene, r.main);
+          expect(passLabels(r.renderer)).toEqual(['render:0', 'shadow:1', 'shadow:1']);
+          expectInstancedPasses(r, `frame ${frame}`);
+          const [main, ...shadows] = r.renderer.passes as [FakePass, ...FakePass[]];
+          expect(shadows.map((p) => p.light!.name)).toEqual(['east', 'west']);
+          for (const mesh of [r.unlit, r.lit]) {
+            const name = mesh === r.unlit ? 'unlit' : 'lit';
+            const prefix = instancedIds(r, main, mesh, `frame ${frame}, ${name}, main`);
+            for (const pass of shadows) {
+              const label = `frame ${frame}, ${name}, ${pass.light!.name}`;
+              const ids = instancedIds(r, pass, mesh, label);
+              // Compared in row order, never as a set: the enclosing pass's rows must be the same rows, unreordered.
+              expect(ids.slice(0, prefix.length), `${label}: the enclosing pass's rows`).toEqual(prefix);
+              const own = reference(r, mesh, frustumOf(pass, r.cs));
+              const other = reference(r, mesh, frustumOf(shadows.find((p) => p !== pass)!, r.cs));
+              const held = new Set(prefix);
+              expect(other.must.filter((id) => !held.has(id) && !own.may.has(id)).length, `${label}: the other light has casters of its own`).toBeGreaterThan(15);
+              expect(
+                ids.slice(prefix.length).filter((id) => !own.may.has(id)),
+                `${label}: appended casters this light does not reach`,
+              ).toEqual([]);
+              expect(
+                own.must.filter((id) => !ids.includes(id)),
+                `${label}: casters this light reaches that were not drawn`,
+              ).toEqual([]);
+            }
+          }
+        }
+      });
+
+      it('rewrites the appended tail once per shadow light whose casters differ from the rows it holds', () => {
+        // The worst case for uploads: two disjoint caster sets, so each pass rewrites what the pass before it wrote.
+        // A light whose casters are the rows already there (a point light's faces, or a set the tail starts with)
+        // writes nothing; `writeRows` marks only rows that change.
+        const r = instancedRig({ webgpu, nested, buffers, lights: (cs) => [sunLight('east', 60, cs, 20), sunLight('west', -60, cs, 20)] });
+        const bumps = (): number[] => {
+          const before = [r.unlit, r.lit].map((m) => m.instanceMatrix.version);
+          r.renderer.render(r.scene, r.main);
+          return [r.unlit, r.lit].map((m, i) => m.instanceMatrix.version - before[i]!);
+        };
+        // Frame 1: the outermost compaction, then one append per sun. Frame 2: the compaction is skipped (the view and
+        // the rows are unchanged), and each sun rewrites the tail the other left.
+        expect(bumps(), 'frame 1').toEqual([3, 3]);
+        expect(bumps(), 'frame 2').toEqual([2, 2]);
+      });
+
       it("draws the main camera's list in a reflection drawn between the rows, which renders its own shadow map", () => {
         const r = instancedRig({ webgpu, nested, buffers });
         insertBefore(r.scene, mirrorMesh(r.scene, cameraAt(-60, r.cs)), r.lit);

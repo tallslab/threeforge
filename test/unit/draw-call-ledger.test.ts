@@ -427,6 +427,38 @@ describe('DrawCallLedger and multi-draw slots a nested pass zeroed', () => {
     // WEBGL_multi_draw packs the same slots into one call: the drawn instances do not depend on the packaging.
     expect(drawn['webgl2 multi-draw']).toEqual(drawn.webgl2);
   });
+
+  it('predicts a compacted InstancedMesh from the count each pass draws, so a shadow pass appending only its own light stays attributed', () => {
+    const isInstanced = (draw: FakeDraw): boolean => (draw.object as { isInstancedMesh?: boolean }).isInstancedMesh === true;
+    for (const webgpu of [false, true]) {
+      const cs = webgpu ? WebGPUCoordinateSystem : WebGLCoordinateSystem;
+      const { scene, light, camera } = rows(cs);
+      const ledger = new DrawCallLedger();
+      // The default instanceThreshold compacts each row of 101 repeats into a CulledInstancedMesh.
+      const report = new World(scene, { ledger }).compile({ coordinateSystem: cs });
+      expect(report.after, `webgpu ${webgpu}: two instanced rows`).toMatchObject({ batches: 0, instanced: 2 });
+      const renderer = new FakeRenderer({ webgpu, sceneHooks: true, shadowTrigger: 'first-receiver', record: true, shadowLights: [light] });
+      ledger.attach(renderer as never);
+      renderer.render(scene, camera);
+      const frame = ledger.frame({ items: true });
+      for (const kind of ['render', 'shadow'] as const) {
+        const draws = renderer.passes.filter((p) => p.kind === kind).flatMap((p) => p.draws.filter(isInstanced));
+        const items = frame.items!.filter((i) => i.reason === 'instanced' && i.pass.startsWith('shadow:') === (kind === 'shadow'));
+        expect(draws.length, `webgpu ${webgpu} ${kind}: instanced draws`).toBe(2);
+        // getDrawParameters takes instanceCount from object.count, which the pass's append set and its end restores
+        // after the ledger has read it: the prediction is that count, whatever subset of the frame's casters it holds.
+        expect(
+          items.map((i) => i.expectedGpuDraws),
+          `webgpu ${webgpu} ${kind}: GPU draws`,
+        ).toEqual(draws.map((d) => d.drawCalls));
+        expect(
+          items.map((i) => i.instancesDrawn),
+          `webgpu ${webgpu} ${kind}: drawn instances`,
+        ).toEqual(draws.map((d) => d.instanceCount));
+      }
+      expect(frame.totals.unattributed, `webgpu ${webgpu}: unattributed`).toBe(0);
+    }
+  });
 });
 
 describe('DrawCallLedger frames and passes', () => {

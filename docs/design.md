@@ -208,8 +208,10 @@ The same scene on the native WebGPU backend matches at 0.00 % too, after two bac
   nested render drew the mesh cannot upload them (under the old WebGL2 `per-pass` the 1,500-box field of
   `test/e2e/nested-passes.spec.ts` differed in 17.0 % of its pixels when the ground received shadows first, and in
   15.5 % when the boxes did, their main pass drawing the spot light's list). So a nested pass that reaches a mesh first compacts it for the main camera, a
-  shadow pass appends the frame's shadow casters of every light in the same rows (a point light's six faces share one
-  upload), and reflections draw the main list: they may miss instances outside the main frustum.
+  shadow pass appends the casters of its own light (every light is queried once per frame into one list that records
+  which lights reach each caster, and a pass appends its own light's entries in that list's order, so a tail that
+  already holds them — a point light's six faces, or a set that is a prefix of the pass before — is not rewritten),
+  and reflections draw the main list: they may miss instances outside the main frustum.
 
   | Nested pass | Batch `per-pass` | Batch `reuse-main` | Instanced mesh (either policy) |
   |---|---|---|---|

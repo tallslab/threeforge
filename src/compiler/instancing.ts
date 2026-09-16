@@ -142,13 +142,21 @@ function markRows(attribute: BufferAttribute, start: number, count: number, mode
  *   unchanged (the main key, kept apart from the nested passes' key).
  * - d >= 2, the outermost render has not compacted the mesh yet: compact it for the main camera first (under either
  *   `nestedPasses` policy), so no later write in this frame rewrites rows a pass has uploaded.
- * - A shadow pass (`scene.overrideMaterial.isShadowPassMaterial`) keeps the enclosing pass's rows `[0, n)` and appends,
- *   each once, the instances every shadow-casting light of the frame reaches: a directional or spot light's frustum
- *   after `shadow.updateMatrices(light)`, a point light's cube of half-size `light.distance || shadow.camera.far` (the
- *   six faces of `PointShadowNode`; its filter shadows up to that distance along the dominant axis). The set is
- *   built at the first shadow pass of a frame (rebuilt only when a light, its view or the instances changed: the
- *   nested key) and every shadow pass of the frame appends the same rows, so a point light's faces, which share one
- *   render object and so one frame event, need no second upload.
+ * - A shadow pass (`scene.overrideMaterial.isShadowPassMaterial`) keeps the enclosing pass's rows `[0, n)` and appends
+ *   the instances **its own light** reaches: a directional or spot light's frustum after `shadow.updateMatrices(light)`,
+ *   a point light's cube of half-size `light.distance || shadow.camera.far` (the six faces of `PointShadowNode`; its
+ *   filter shadows up to that distance along the dominant axis). Every light of the frame is queried once, at the
+ *   first shadow pass (rebuilt only when a light, its view or the instances changed: the nested key), into one
+ *   deduplicated list in which each entry records the lights that reach it (`unionBits`, one bit per shadow camera of
+ *   the frame; a camera past the 32nd carries no bit and its pass appends the whole list, a correct superset).
+ *   A pass then appends its own light's entries **in that list's order**, so a light whose casters are the rows the
+ *   tail already holds writes nothing — a point light's six faces always do, and so does any light whose set is a
+ *   prefix of the pass before it. `writeRows` marks only rows that change, so the upload cost is one bounded write
+ *   per shadow pass whose casters differ from the tail, and none otherwise.
+ *   Per-light selection has to rewrite the tail because an `InstancedMesh` draws one contiguous range `[0, count)`:
+ *   three r186's `RenderObject.getDrawParameters` takes `instanceCount` from `object.count` and leaves `firstInstance`
+ *   at 0, which nothing else ever writes (`renderers/common/RenderObject.js` ~603-626), and neither backend offers a
+ *   base instance. So a pass cannot skip an interior appended row the way a BatchedMesh zeroes a multi-draw slot.
  * - Update ranges. An outermost compaction (with a tracker) marks only the rows it changed (`addUpdateRange`). A write
  *   in a nested pass marks the whole matrix and colour buffers. A receiver's render object runs the instance
  *   `OnBeforeFrameUpdate` event before its `ShadowNode`: the event sits in the position stack, which
@@ -351,6 +359,10 @@ export function createCulledInstancedMesh(
   let unionLength = 0;
   const unionMarks = new Uint32Array(n);
   let unionMark = 0;
+  /** Per instance in the list: a bit per shadow camera of the frame that reaches it (bit i = `unionCameras[i]`). */
+  const unionBits = new Uint32Array(n);
+  /** The bit the running query sets; 0 for a camera past the 32nd, whose pass appends the whole list instead. */
+  let queryBit = 0;
   /** The tracker frame the union was checked for. */
   let unionFrame = -1;
   /** The shadow cameras the union covers this frame (a point light's one camera covers its six faces). */
@@ -363,9 +375,17 @@ export function createCulledInstancedMesh(
   /** Visibility, a matrix or an extra camera changed the union since it was built. */
   let unionDirty = true;
 
+  /** The bit of the `i`th shadow camera of the frame; 0 past the 32nd (see `unionBits`). */
+  const bitFor = (i: number): number => (i < 32 ? (1 << i) >>> 0 : 0);
+
   const addToUnion = (id: number): void => {
-    if (!visibleMask[id] || unionMarks[id] === unionMark) return;
+    if (!visibleMask[id]) return;
+    if (unionMarks[id] === unionMark) {
+      unionBits[id] = unionBits[id]! | queryBit;
+      return;
+    }
     unionMarks[id] = unionMark;
+    unionBits[id] = queryBit;
     unionIds[unionLength++] = id;
   };
   const visitIntersecting = (id: number): boolean => {
@@ -401,8 +421,11 @@ export function createCulledInstancedMesh(
     bvh.intersectsBox(_cube, visitIntersecting);
   };
 
-  /** Brings the union up to date at the first shadow pass of a frame, and covers `camera` if no listed light does. */
-  const ensureUnion = (renderer: RendererLike, scene: Scene, camera: Camera, group: Object3D): void => {
+  /**
+   * Brings the frame's caster list up to date at its first shadow pass, and covers `camera` if no listed light does.
+   * Returns the index of `camera` among the frame's shadow cameras, whose bit its casters carry in `unionBits`.
+   */
+  const ensureUnion = (renderer: RendererLike, scene: Scene, camera: Camera, group: Object3D): number => {
     if (unionFrame !== passes!.frame) {
       unionFrame = passes!.frame;
       // The lights of this render (Lighting.getNode(scene).getLights(): what the shadow render projected), filtered by
@@ -443,6 +466,7 @@ export function createCulledInstancedMesh(
         for (let i = 0; i < used; i++) {
           const light = nextLights[i] as ShadowLight;
           const offset = 16 * (i + 1);
+          queryBit = bitFor(i);
           if (light.isPointLight) addCube(group, nextKey[offset]!, nextKey[offset + 1]!, nextKey[offset + 2]!, nextKey[offset + 3]!);
           else addFrustum(group, light.shadow!.camera);
           unionLights[i] = light;
@@ -456,19 +480,26 @@ export function createCulledInstancedMesh(
       unionCameras.length = 0;
       for (let i = 0; i < used; i++) unionCameras.push((unionLights[i] as ShadowLight).shadow!.camera);
     }
-    if (!unionCameras.includes(camera)) {
+    let index = unionCameras.indexOf(camera);
+    if (index < 0) {
       // A shadow camera no listed light owns (or a renderer without `lighting`): cover it too, and rebuild next frame.
+      index = unionCameras.length;
+      queryBit = bitFor(index);
       addFrustum(group, camera);
       unionCameras.push(camera);
       unionDirty = true;
     }
+    return index;
   };
 
   const marks = new Uint32Array(n);
   let mark = 0;
 
-  /** Appends the union's instances that rows `[0, base)` of no level hold, after each level's base (`layerBase` at `at`). */
-  const appendUnion = (at: number, group: Object3D, camera: Camera): void => {
+  /**
+   * Appends the casters the frame's shadow camera `index` reaches that rows `[0, base)` of no level hold, after each
+   * level's base (`layerBase` at `at`), in the caster list's own order so a tail that already holds them is left alone.
+   */
+  const appendCasters = (at: number, group: Object3D, camera: Camera, index: number): void => {
     if (mark >= 0xfffffffe) {
       marks.fill(0);
       mark = 0;
@@ -484,8 +515,10 @@ export function createCulledInstancedMesh(
       if (hasMainEye) eye.copy(mainEye);
       else setEye(group, camera);
     }
+    const bit = bitFor(index);
     for (let j = 0; j < unionLength; j++) {
       const id = unionIds[j]!;
+      if (bit !== 0 && (unionBits[id]! & bit) === 0) continue; // a caster this shadow camera does not reach
       if (marks[id] !== mark) place(id);
     }
     for (let L = 0; L < levelCount; L++) writeRows(L, layerBase[at + L]!);
@@ -539,8 +572,7 @@ export function createCulledInstancedMesh(
     const at = layers.push(depth) * levelCount;
     for (let L = 0; L < levelCount; L++) layerBase[at + L] = layerCount[from + L]!;
     if (scene !== null && (scene.overrideMaterial as { isShadowPassMaterial?: boolean } | null)?.isShadowPassMaterial === true) {
-      ensureUnion(renderer as RendererLike, scene, camera, this);
-      appendUnion(at, this, camera);
+      appendCasters(at, this, camera, ensureUnion(renderer as RendererLike, scene, camera, this));
     } else {
       for (let L = 0; L < levelCount; L++) setCount(L, layerBase[at + L]!);
     }
