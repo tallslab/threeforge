@@ -4,21 +4,22 @@ import { differingPixels, pixelDiff, settle } from './pixels.js';
 /**
  * The measurements Ruling R164/R167 rests on, as a test instead of a comment (independent review M3).
  *
- * `docs/threeforge.md`, `src/compiler/batchStatics.ts` and `src/ledger/DrawCallLedger.ts` all quote percentages of a
- * frame that batching changes on **default settings** (bake off, `dynamics: 'separate'`): a `positionLocal` colour
- * gradient 3.32 %, an `alphaHash` pair 1.81 % (webgl2) / 1.82 % (webgpu), an object-space normal map 6.19 %. Nothing
- * pinned them, so if three ever makes batching preserve mesh-local space — or someone changes what the hint looks at —
- * the percentages, the hint's justification and the CHANGELOG rows would quietly become wrong with nothing red.
+ * `docs/threeforge.md`, `src/compiler/batchStatics.ts` and `src/ledger/DrawCallLedger.ts` say that batching changes
+ * the picture on **default settings** (bake off, `dynamics: 'separate'`) for three kinds of material, and cite this
+ * spec for it. Nothing pinned that before: if three ever makes batching preserve mesh-local space — or someone
+ * changes what the hint looks at — the claim, the hint's justification and the CHANGELOG rows would quietly become
+ * wrong with nothing red.
  *
  * Each case asserts both halves of the claim: the `batch-local-space` hint fires, **and** the picture changed
- * (`changedPixels > 0` at the same tolerance 4 the quoted figures were measured at). The control case asserts the
- * converse — a plain `MeshStandardMaterial` on the same transformed boxes gives no hint and no changed pixels — so a
- * run that changed every pixel for an unrelated reason cannot make the three cases pass by accident.
+ * (`changedPixels > 0` at tolerance 4). The control case asserts the converse — a plain `MeshStandardMaterial` on the
+ * same transformed boxes gives no hint and no changed pixels — so a run that changed every pixel for an unrelated
+ * reason cannot make the three cases pass by accident.
  *
- * What is pinned is that the change exists, not its size: the quoted percentages come from a scratch probe with its own
- * framing, and this spec's boxes are its own arrangement, so the share it records (annotated on each test, and larger
- * here because the boxes fill more of the frame) is not the same number. Asserting a percentage would pin the camera,
- * not the mechanism.
+ * What is pinned is that the change exists, not its size. Each case annotates the share of *this scene's* frame it
+ * measured, currently about 11.1 % for the `positionLocal` gradient, 5.6 % for `alphaHash` and 9.5 % for the
+ * object-space normal map on both backends; those shares scale with how much of the frame the affected meshes cover,
+ * so they are recorded rather than asserted — asserting a percentage would pin the camera, not the mechanism. The
+ * docs quote the same three numbers, from these annotations, and say the same about them.
  *
  * When this spec goes red because a case reached 0 changed pixels, that is the good outcome: batching became exact for
  * it, and the hint, the docs and the CHANGELOG rows for it should go, not the assertion.
@@ -27,7 +28,7 @@ function note(description: string): void {
   test.info().annotations.push({ type: 'local-space', description });
 }
 
-/** The tolerance the quoted percentages were measured at (`docs/threeforge.md`), not the e2e default of 24. */
+/** The tolerance these shares are measured at, as `docs/threeforge.md` states them; not the e2e default of 24. */
 const TOLERANCE = 4;
 
 /**
@@ -113,9 +114,9 @@ async function compileAndSettle(forge: ForgePage) {
 }
 
 for (const [kind, label] of [
-  ['gradient', 'a positionLocal colour gradient (docs measure 3.32 % of a frame)'],
-  ['alphaHash', 'alphaHash (docs measure 1.81 % webgl2, 1.82 % webgpu)'],
-  ['objectSpaceNormalMap', 'an object-space normal map (docs measure 6.19 %)'],
+  ['gradient', 'a positionLocal colour gradient (this scene: about 11.1 % of the frame)'],
+  ['alphaHash', 'alphaHash (this scene: about 5.6 % of the frame)'],
+  ['objectSpaceNormalMap', 'an object-space normal map (this scene: about 9.5 % of the frame)'],
 ] as const) {
   test(`batching changes the picture for ${label}, and the hint says so`, async ({ forge }) => {
     test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
