@@ -1530,6 +1530,19 @@ Each is documented where the mechanism is, and none has a fix in this release.
 - **`optimize --parity 0` is zero only between the two files as loaded** (section 10, "Verdict"): each file's own
   compile check stays at 0.5 % whatever `--parity` is, and is reported in `verify.optimized.parity`. Run
   `analyze --parity 0` to ask about a compile directly.
+- **`palette` is the one `safe` step never swept across the corpus** (independent review L6). `weld` and `resample`
+  were each swept and moved out of `safe` on what the sweep showed; `palette` was not, and it is the step in `safe`
+  that quantises — it writes material factors into 8-bit palette textures and adds a float UV attribute once five or
+  more untextured materials differ (`src/cli/transform.ts`, `min: 5`). Its lossless proof is two assets: the Fox and
+  the Buggy's 148 materials, at zero changed pixels on both backends (`test/e2e/cli.spec.ts`). If any preset step
+  deserves the corpus sweep next, it is this one. `--no-palette` drops it from any preset.
+- **A shadow pass's `#k` suffix is positional** (independent review L7, section 3, "Passes"): `shadowPassIds` numbers
+  lights that share a name in scene order, so `shadow:DirectionalLight#1` and `#2` can swap between frames when the
+  scene order changes. The counts stay right; the labels move. Name shadow-casting lights distinctly to pin them.
+- **Two lights sharing one `shadow.camera` object collapse into one pass** (independent review L7): the ledger keys
+  shadow passes by camera identity (`Map<Camera, ShadowPass>`), which is what makes a nested pass attributable at all,
+  so an app that assigns one light's `shadow.camera` onto another loses the second light's pass and its texels from
+  the frame. three itself renders both maps.
 
 ## 15. Glossary
 
