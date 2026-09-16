@@ -82,6 +82,25 @@ jobs:
       # super-linear regression behind a second roll of the dice.
       - run: pnpm test
       - run: pnpm build
+      # R136 (accepted from the independent review as a non-gating measure): nothing in CI watches the ledger's own
+      # cost, and a 50 % allocation regression has already reached this branch once and taken a bisect to attribute.
+      # This prints `scripts/ledger-overhead.mjs` into the run summary so the numbers are at least visible per run.
+      # It is INFORMATIONAL and UNVALIDATED until it has run once on a real runner (R10): the figures are
+      # machine-specific, a shared runner is noisy, and nothing here compares them to anything. `continue-on-error`
+      # so it can never fail the job, and it runs after `pnpm build` because the script reads `dist/`.
+      - name: Ledger overhead (informational, not a gate)
+        continue-on-error: true
+        run: |
+          {
+            echo '### Ledger overhead'
+            echo ''
+            echo 'Informational only: not a gate, nothing compares these to a baseline, and they are unvalidated'
+            echo 'until this step has run once on a real runner. Machine-specific; compare runs on one machine.'
+            echo ''
+            echo '```'
+            node scripts/ledger-overhead.mjs
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # The e2e suite minus everything that needs downloaded content. This job deliberately fetches NOTHING: no Kenney
   # kits, no glTF corpus. See the coverage note below.
