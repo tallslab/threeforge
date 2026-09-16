@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bakeProgressLine } from '../../src/cli/analyze.js';
+import { bakeProgressLine, failingViews, parityOf } from '../../src/cli/analyze.js';
 import { COMMAND_SPECS, COMMANDS, formatUsage, parseArgs, RANGES, UsageError, validateInput } from '../../src/cli/args.js';
 import { explain, REMEDIES } from '../../src/cli/explain.js';
 import { printDocument, summarize, summarizeOptimize } from '../../src/cli/format.js';
@@ -65,6 +65,29 @@ describe('verdict', () => {
     expect(exitCodeOf(verdictOf(clean, clean, null, null))).toBe(0);
   });
 
+  /**
+   * Ruling R108: `--parity 0` has to mean zero in the shipped tool, not "rounds to zero". Both call sites round
+   * each view's percentage to three decimals before judging it, and at the CLI harness's 1280x720 canvas that reads
+   * 0.000 for anything up to 4 changed pixels of 921,600 — so a run that moved pixels reported `pass: true`, a
+   * passing verdict and exit 0. That is the defect the e2e's own per-view assertion covered while the product did
+   * not. `parityOf` judges a threshold of 0 on the raw counts; everything else still compares the percentage.
+   */
+  it('fails --parity 0 on a one-pixel difference that rounds to 0.000, all the way to the exit code', () => {
+    const movedOnePixel = [{ view: 'default', diffPct: 0, changedPixels: 1 }];
+    expect(parityOf(movedOnePixel, 0).diffPct, 'the rounded percentage still reads zero').toBe(0);
+    expect(parityOf(movedOnePixel, 0).pass, 'but a moved pixel is not parity').toBe(false);
+    expect(parityOf([{ view: 'default', diffPct: 0, changedPixels: 0 }], 0).pass).toBe(true);
+    // An agent branches on the exit code, so the rejection has to survive the whole decision path.
+    const clean = emptyFrame(env);
+    const verdict = verdictOf(clean, clean, null, parityOf(movedOnePixel, 0));
+    expect(verdict.pass).toBe(false);
+    expect(exitCodeOf(verdict)).toBe(1);
+    // A non-zero threshold is unchanged: it is a percentage, and one pixel is far inside 0.5 %.
+    expect(parityOf(movedOnePixel, 0.5).pass).toBe(true);
+    expect(failingViews(movedOnePixel, 0)).toHaveLength(1);
+    expect(failingViews(movedOnePixel, 0.5)).toHaveLength(0);
+  });
+
   it('fails on page errors with one cleaned, capped reason, and passes with none', () => {
     const clean = emptyFrame(env);
     expect(verdictOf(clean, clean, null, null, [])).toEqual({ pass: true, budget: null, errors: [], reasons: [] });
@@ -125,8 +148,10 @@ describe('schema', () => {
     expect(SNAPSHOT_SCHEMA.$id).toBe('https://threeforge.dev/schema/frame-snapshot-v3.json');
     expect(SNAPSHOT_SCHEMA.title).toBe('threeforge FrameSnapshot v3');
     expect((SNAPSHOT_SCHEMA.properties.js as { required: string[] }).required).toEqual(Object.keys(emptyFrame(env).js));
-    // The analyze, inspect and optimize documents keep their own schemaVersion 1.
-    for (const s of [ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA]) expect(s.properties.schemaVersion).toEqual({ const: 1 });
+    // The analyze, inspect and optimize documents carry their own schemaVersion, 2 since `parity.views[]` gained
+    // `changedPixels`: `obj()` sets additionalProperties false *and* required, so the added field breaks validation
+    // in both directions and the version had to move with it.
+    for (const s of [ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA]) expect(s.properties.schemaVersion).toEqual({ const: 2 });
   });
 });
 
@@ -138,7 +163,7 @@ describe('summarize', () => {
     after.totals.sceneSubmissions = 30;
     after.hints = [{ category: 'lighting', severity: 'warn', code: 'shadow-texels', message: 'too many', objects: [] }];
     const input: AnalyzeInput = { file: 'a.glb', backend: 'webgl2', tier: 'auto', budget: 100, frames: 30, compile: true, bake: 'off', views: 0, timeout: 60000, headed: false };
-    const doc: AgentDocument = { schemaVersion: 1, tool: 'threeforge', version: '0.2.0', command: 'analyze', input, env, asset: null, before, after, compile: null, parity: { diffPct: 0.01, threshold: 0.5, pass: true, views: [{ view: 'default', diffPct: 0.01, changedPixels: 92 }] }, hints: after.hints, verdict: verdictOf(after, before, 100, null), timings: { totalMs: 10 } };
+    const doc: AgentDocument = { schemaVersion: 2, tool: 'threeforge', version: '0.2.0', command: 'analyze', input, env, asset: null, before, after, compile: null, parity: { diffPct: 0.01, threshold: 0.5, pass: true, views: [{ view: 'default', diffPct: 0.01, changedPixels: 92 }] }, hints: after.hints, verdict: verdictOf(after, before, 100, null), timings: { totalMs: 10 } };
     const text = summarize(doc);
     expect(text).toContain('PASS');
     expect(text).toContain('500 → 30 submissions');
@@ -152,7 +177,7 @@ describe('summarize', () => {
     const after = emptyFrame(env);
     const input: AnalyzeInput = { file: 'a.glb', backend: 'webgl2', tier: 'auto', budget: null, frames: 30, compile: true, bake: 'on', views: 0, timeout: 60000, headed: false };
     const compile = { after: { batches: 0, instanced: 0, baked: 1, spriteBatches: 0, frozen: 0, meshes: 0 }, skipped: [], bake } as unknown as AgentDocument['compile'];
-    return { schemaVersion: 1, tool: 'threeforge', version: '0.2.0', command: 'analyze', input, env, asset: null, before, after, compile, parity: null, hints: [], verdict: verdictOf(after, before, null, null), timings: { totalMs: 10 } };
+    return { schemaVersion: 2, tool: 'threeforge', version: '0.2.0', command: 'analyze', input, env, asset: null, before, after, compile, parity: null, hints: [], verdict: verdictOf(after, before, null, null), timings: { totalMs: 10 } };
   };
 
   it('prints the bake line with the coincident faces the seam guard kept', () => {
@@ -416,7 +441,7 @@ describe('optimize schema and summary', () => {
   const parsed = parseArgs(['optimize', 'a.glb', '--compress', 'meshopt']);
   const input: OptimizeInput = parsed.name === 'optimize' ? parsed.input : (undefined as never);
   const doc: OptimizeDocument = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     tool: 'threeforge',
     version: '0.3.0',
     command: 'optimize',

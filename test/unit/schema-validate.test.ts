@@ -41,7 +41,7 @@ function analyzeFixture(): AgentDocument {
   after.totals.sceneSubmissions = 4;
   const input: AnalyzeInput = { file: 'fixture.glb', backend: 'webgl2', tier: 'auto', budget: 100, frames: 5, compile: true, bake: 'on', views: 1, timeout: 60_000, headed: false };
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     tool: 'threeforge',
     version: '0.9.0',
     command: 'analyze',
@@ -62,7 +62,7 @@ function inspectFixture(): AgentDocument {
   const before = realFrame();
   const input: InspectInput = { url: 'http://127.0.0.1:5173/', backend: 'webgl2', tier: 'auto', budget: null, frames: 3, compile: false, timeout: 20_000, headed: false };
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     tool: 'threeforge',
     version: '0.9.0',
     command: 'inspect',
@@ -86,7 +86,7 @@ function optimizeFixture(): OptimizeDocument {
   const original = analyzeFixture();
   const optimized = analyzeFixture();
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     tool: 'threeforge',
     version: '0.9.0',
     command: 'optimize',

@@ -58,7 +58,7 @@ const stats: AssetStats = { nodes: 1, meshes: 1, primitives: 1, materials: 1, te
 
 function analyzed(): AgentDocument {
   const frame = emptyFrame(env);
-  return { schemaVersion: 1, tool: 'threeforge', version: 'test', command: 'analyze', input: {} as AnalyzeInput, env, asset, before: frame, after: frame, compile: null, parity: null, hints: [], verdict: { pass: true, budget: null, errors: [], reasons: [] }, timings: { totalMs: 1 } };
+  return { schemaVersion: 2, tool: 'threeforge', version: 'test', command: 'analyze', input: {} as AnalyzeInput, env, asset, before: frame, after: frame, compile: null, parity: null, hints: [], verdict: { pass: true, budget: null, errors: [], reasons: [] }, timings: { totalMs: 1 } };
 }
 
 const verify = (): OptimizeVerify => ({

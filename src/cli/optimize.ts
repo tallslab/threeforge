@@ -2,7 +2,7 @@ import type { Document, NodeIO } from '@gltf-transform/core';
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { VERSION } from '../version.js';
-import { analyzeAssetWithShots, comparePixels } from './analyze.js';
+import { analyzeAssetWithShots, comparePixels, failingViews, parityOf } from './analyze.js';
 import { EnvironmentError, UsageError } from './errors.js';
 import { assertConfinedUri, assertConfinedUris, readGltfJson, resourcePathsOf, type ResourcePath } from './gltf-uris.js';
 import type { CliDeps } from './lifecycle.js';
@@ -82,7 +82,7 @@ export async function optimizeAsset(input: OptimizeInput, log: (line: string) =>
   const verify = verified?.verify ?? null;
   const verdict = judgeOptimize(before, after, verify, input.budget, verified?.pageErrors);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     tool: 'threeforge',
     version: VERSION,
     command: 'optimize',
@@ -176,9 +176,9 @@ async function verifyPair(original: string, optimized: string, input: OptimizeIn
     const diff = comparePixels(shot.png, b.shots[i]!.png);
     return { view: shot.view, diffPct: Number(diff.diffPct.toFixed(3)), changedPixels: diff.changedPixels };
   });
-  const worst = views.length ? Math.max(...views.map((v) => v.diffPct)) : 0;
-  const parity: Parity = { diffPct: worst, threshold: input.parity, pass: worst <= input.parity, views };
-  if (!parity.pass) log(`pixel parity lost between the files: ${views.filter((v) => v.diffPct > input.parity).map((v) => `${v.view} ${v.diffPct}%`).join(', ')}`);
+  // `--parity 0` is judged on the raw counts, not the rounded percentage (Ruling R108): see `parityOf`.
+  const parity: Parity = parityOf(views, input.parity);
+  if (!parity.pass) log(`pixel parity lost between the files: ${failingViews(views, input.parity).map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct}%)`).join(', ')}`);
   const verify: OptimizeVerify = { backend: input.backend, parity, original: a.doc, optimized: b.doc, delta: deltaOf(a.doc, b.doc, statSync(original).size, statSync(optimized).size) };
   return { verify, pageErrors: { original: a.pageErrors, optimized: b.pageErrors } };
 }

@@ -39,7 +39,7 @@ export async function inspectApp(input: InspectInput, log: (line: string) => voi
     if (pageErrors.length) log(`page errors: ${formatPageErrors(pageErrors)}`);
     const verdict = verdictOf(after, before.snapshot, input.budget, null);
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       tool: 'threeforge',
       version: VERSION,
       command: 'inspect',

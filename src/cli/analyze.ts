@@ -56,6 +56,29 @@ export function pixelDiffPct(a: Buffer, b: Buffer): number {
   return comparePixels(a, b).diffPct;
 }
 
+/**
+ * The views a parity threshold rejects. At a threshold of 0 that is every view that changed a pixel, judged on the
+ * raw count; at any other threshold it is the views whose percentage exceeds it.
+ */
+export function failingViews(views: Parity['views'], threshold: number): Parity['views'] {
+  return threshold === 0 ? views.filter((v) => v.changedPixels > 0) : views.filter((v) => v.diffPct > threshold);
+}
+
+/**
+ * The parity verdict for a set of views.
+ *
+ * A threshold of 0 means exactly that, and is judged on `changedPixels` rather than on the percentage: `diffPct` is
+ * rounded to three decimals, so at the harness's 1280x720 canvas it reads `0.000` for anything up to 4 changed
+ * pixels of 921,600. Comparing the rounded percentage let `--parity 0` report `pass: true` and exit 0 while pixels
+ * moved (Ruling R108) — the tool has to mean zero when it says zero, because agents act on this number. A non-zero
+ * threshold is a percentage and is still compared as one.
+ */
+export function parityOf(views: Parity['views'], threshold: number): Parity {
+  const diffPct = views.length ? Math.max(...views.map((v) => v.diffPct)) : 0;
+  const pass = threshold === 0 ? views.every((v) => v.changedPixels === 0) : diffPct <= threshold;
+  return { diffPct, threshold, pass, views };
+}
+
 /** Screenshots of the default framing plus `views` orbit views (the page's `setView`), then back to the default. */
 async function captureViews(page: PlaywrightPage, views: number, timeout: number): Promise<Array<{ view: string; png: Buffer }>> {
   const shots: Array<{ view: string; png: Buffer }> = [];
@@ -131,15 +154,14 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
         const diff = comparePixels(shot.png, shotsAfter[i]!.png);
         return { view: shot.view, diffPct: Number(diff.diffPct.toFixed(3)), changedPixels: diff.changedPixels };
       });
-      const worst = Math.max(...views.map((v) => v.diffPct));
-      parity = { diffPct: worst, threshold: PARITY_THRESHOLD, pass: worst <= PARITY_THRESHOLD, views };
-      if (!parity.pass) log(`pixel parity lost: ${views.filter((v) => v.diffPct > PARITY_THRESHOLD).map((v) => `${v.view} ${v.diffPct}%`).join(', ')}`);
+      parity = parityOf(views, PARITY_THRESHOLD);
+      if (!parity.pass) log(`pixel parity lost: ${failingViews(views, PARITY_THRESHOLD).map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct}%)`).join(', ')}`);
     }
     if (pageErrors.length) log(`page errors: ${formatPageErrors(pageErrors)}`);
     const hints = (after ?? before.snapshot).hints;
     const verdict = verdictOf(after, before.snapshot, input.budget, parity, pageErrors);
     const doc: AgentDocument = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       tool: 'threeforge',
       version: VERSION,
       command: 'analyze',

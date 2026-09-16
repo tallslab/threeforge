@@ -67,7 +67,7 @@ export interface Verdict {
 
 /** The one document `analyze` and `inspect` print (and the MCP tools return). */
 export interface AgentDocument {
-  schemaVersion: 1;
+  schemaVersion: 2;
   tool: 'threeforge';
   version: string;
   command: 'analyze' | 'inspect';
@@ -182,7 +182,7 @@ export interface OptimizeVerify {
 }
 
 export interface OptimizeDocument {
-  schemaVersion: 1;
+  schemaVersion: 2;
   tool: 'threeforge';
   version: string;
   command: 'optimize';

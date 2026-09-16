@@ -81,7 +81,7 @@ function documentBody(command: 'analyze' | 'inspect', input: Schema, assetSchema
   return {
     type: 'object',
     properties: {
-      schemaVersion: { const: 1 },
+      schemaVersion: { const: 2 },
       tool: { const: 'threeforge' },
       version: string,
       command: { const: command },
@@ -140,7 +140,7 @@ const optimizeInput = obj({
   headed: boolean,
 });
 const optimizeProperties: Record<string, Schema> = {
-  schemaVersion: { const: 1 },
+  schemaVersion: { const: 2 },
   tool: { const: 'threeforge' },
   version: string,
   command: { const: 'optimize' },
