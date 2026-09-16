@@ -313,6 +313,61 @@ describe('the ledger memory section', () => {
     expect(info.destroyTexture).toBe(destroyTexture);
   });
 
+  it("allows three's DFG_LUT when info's texture hooks are prototype methods, and detach() makes the prototype's own visible again", () => {
+    // three's Info (renderers/common/Info.js ~230-252) defines createTexture and destroyTexture on its prototype, not
+    // as own properties. attach() adds own wrappers, which shadow them, and detach() removes those with `delete`, which
+    // is the only reason the prototype's methods come back (DrawCallLedger.ts ~289-292). The test above installs own
+    // properties and so exercises the other branch; this is the path three itself takes.
+    const renderer = new FakeRenderer();
+    const memory = Object.assign(renderer.info.memory, { textures: 0, geometries: 0 });
+    const calls: Array<[string, unknown, unknown]> = [];
+    const proto = {
+      createTexture(this: unknown, texture: unknown): void {
+        calls.push(['create', this, texture]);
+        memory.textures++;
+      },
+      destroyTexture(this: unknown, texture: unknown): void {
+        calls.push(['destroy', this, texture]);
+        memory.textures--;
+      },
+    };
+    Object.setPrototypeOf(renderer.info, proto);
+    const info = renderer.info as typeof renderer.info & typeof proto;
+    const owns = (key: string): boolean => Object.prototype.hasOwnProperty.call(info, key);
+    expect([owns('createTexture'), owns('destroyTexture')], 'the hooks start on the prototype').toEqual([false, false]);
+
+    const ledger = new DrawCallLedger();
+    ledger.attach(renderer as never);
+    expect([owns('createTexture'), owns('destroyTexture')], 'attach() wraps them as own properties').toEqual([true, true]);
+    expect(info.createTexture).not.toBe(proto.createTexture);
+
+    const { scene, camera } = sceneWithCamera();
+    scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial({ map: new DataTexture(new Uint8Array(4), 1, 1) })));
+    scene.updateMatrixWorld();
+    renderer.render(scene, camera);
+    Object.assign(memory, { textures: 1 + 2, geometries: 1 + 1 }); // the map, and the frame buffer's colour and depth
+
+    const lut = new DataTexture(new Uint16Array(16 * 16 * 2), 16, 16, RGFormat, HalfFloatType);
+    lut.name = 'DFG_LUT';
+    info.createTexture(lut);
+    // three's own prototype method still ran, with `info` as its `this`, and the ledger counted the LUT as allowed.
+    expect(calls).toEqual([['create', info, lut]]);
+    expect(memory.textures).toBe(4);
+    expect(ledger.measureMemory().unreferenced).toEqual({ geometries: 0, textures: 0 });
+    // A texture that is not the LUT is not allowed, so the allowance is the name, not the hook being wrapped at all.
+    info.createTexture(new DataTexture(new Uint8Array(4), 1, 1));
+    expect(ledger.measureMemory().unreferenced.textures).toBe(1);
+    info.destroyTexture(lut);
+    expect(calls[2]).toEqual(['destroy', info, lut]);
+    expect(memory.textures).toBe(4);
+    expect(ledger.measureMemory().unreferenced.textures).toBe(1);
+
+    ledger.detach();
+    expect([owns('createTexture'), owns('destroyTexture')], 'detach() deletes the wrappers').toEqual([false, false]);
+    expect(info.createTexture, "three's prototype method is visible again").toBe(proto.createTexture);
+    expect(info.destroyTexture).toBe(proto.destroyTexture);
+  });
+
   it('overdrawTargetOf(renderer) is the count target measureOverdraw keeps for that renderer, until disposeOverdraw()', async () => {
     const renderer = new FakeRenderer();
     const other = new FakeRenderer();

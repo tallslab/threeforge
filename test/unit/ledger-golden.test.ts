@@ -3,7 +3,10 @@
  *
  * Renders one deterministic scene for 3 frames and snapshots `DrawCallLedger.frame({ items: true })` to
  * `ledger-golden.snapshot.json`, stored next to this file. The scene touches every submission reason and pass
- * kind the ledger currently classifies (see the table in this file's describe block and in task-3-report.md).
+ * kind the ledger currently classifies (see the table in this file's describe block and in task-3-report.md), with
+ * one exception: `static-unbatched`. That reason needs two statics that share a material, and every static here has
+ * its own — the only shared material in the scene belongs to the two skinned meshes, `body` and `body-2` — so no
+ * item in the snapshot carries it. `draw-call-ledger.test.ts` covers `static-unbatched` instead.
  * Task 26 (a hot-path rewrite of the ledger) must keep this file byte-identical; later tasks that change a
  * number on purpose update it and the diff is reviewed by a human — that review is the point of a golden file.
  *
