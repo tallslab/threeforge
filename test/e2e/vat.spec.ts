@@ -12,8 +12,11 @@ import { pixelDiff } from './pixels.js';
  * The placement carries a y rotation rather than being a bare translation. `AnimatedInstances` builds each part's model
  * matrix as `instanceMatrix.mul(offset)` (src/skinning/AnimatedInstances.ts ~113); two translations commute, so under a
  * pure translation a reordered `offset.mul(instanceMatrix)` draws exactly the same picture and this test would pass
- * straight through that bug. A rotation does not commute with the part offset, so the order is pinned. The likeness is
- * measured on a lit surface as well, so the normals built from that same matrix (`normalLocal`, ~114) have to be right.
+ * straight through that bug. A rotation does not commute with the part offset, so the order is pinned for positions.
+ * It is not pinned for normals: `vatPartOffset` only translates the part, so the offset's upper 3x3 is the identity and
+ * `mat3(instanceMatrix * offset)` equals `mat3(offset * instanceMatrix)` (`normalLocal`, ~118): a reordered normal matrix
+ * draws the same picture here. The likeness is measured on a lit surface (`litSpread`), which catches normals that ignore
+ * the instance rotation altogether, not the order of that multiply.
  */
 
 /** Luminance spread across the pixels the character covers. A flat or unlit surface would have almost none. */
