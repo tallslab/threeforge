@@ -8,6 +8,8 @@
  * - Draw state is read after `renderObject` returns, so a nested shadow pass inside a receiver's draw (which zeroes
  *   prefix slots, appends rows and restores them at pass end) is attributed exactly.
  * - Pooled records never leak: items handed out by `frame({ items: true })`, or read inside a frame, keep their values.
+ * - A frame whose shadow maps render as nested passes keeps all of it: one walk of the scene, registry reads still
+ *   bounded by unique materials, and each caster marked once however many maps it is drawn into.
  *
  * `ListRenderer` stands in for three where a test must count the ledger's own traversals: it walks the scene with a
  * plain loop instead of `Object3D.traverse`.
@@ -56,8 +58,16 @@ class ListRenderer implements LedgerRenderer {
   expectedNames: string[] = [];
   /** renderObject's argument 7 for scene objects (three's lights node); internal objects get null. */
   lightsNode: { getLights(): Light[] } | null = null;
+  /**
+   * Shadow-casting lights whose maps render as nested passes of every outermost Scene render, before its own list, as
+   * three's ShadowNode.updateBefore does. A map's pass draws the scene's casters only, with `light.shadow.camera` —
+   * the camera the ledger's walk of the scene gave that light's pass id to.
+   */
+  shadowLights: (Light & { shadow: { camera: Camera } })[] = [];
+  private inShadowPass = false;
 
   render(scene: Scene, camera: Camera): unknown {
+    const shadowPass = this.inShadowPass;
     const draw = (object: Object3D, lightsNode: { getLights(): Light[] } | null): void => {
       const name = this.expectNames ? displayName(object, scene) : '';
       const mesh = object as Mesh;
@@ -66,12 +76,24 @@ class ListRenderer implements LedgerRenderer {
     };
     const visit = (object: Object3D): void => {
       if (!object.visible) return;
-      if ((object as Mesh).isMesh) draw(object, this.lightsNode);
+      // A shadow map draws casters only, like ShadowBaseNode's render-object function.
+      if ((object as Mesh).isMesh && (!shadowPass || object.castShadow)) draw(object, this.lightsNode);
       const children = object.children;
       for (let i = 0; i < children.length; i++) visit(children[i]!);
     };
+    if (!shadowPass && scene.isScene) {
+      for (const light of this.shadowLights) {
+        this.inShadowPass = true;
+        try {
+          // `this.render` is the ledger-patched instance method, so the map is a nested pass of this frame.
+          this.render(scene, light.shadow.camera);
+        } finally {
+          this.inShadowPass = false;
+        }
+      }
+    }
     visit(scene);
-    if (scene.isScene) for (const object of this.internal) draw(object, null);
+    if (!shadowPass && scene.isScene) for (const object of this.internal) draw(object, null);
     return undefined;
   }
 
@@ -348,6 +370,68 @@ describe('DrawCallLedger scene walks', () => {
     renderer.expectedNames = [];
     renderer.render(quad as unknown as Scene, camera);
     expect(ledger.frame({ items: true }).items!.map((i) => ({ name: i.name, reason: i.reason, pass: i.pass }))).toEqual([{ name: '', reason: 'fullscreen-pass', pass: 'fullscreen' }]);
+  });
+});
+
+/** A shadow-casting directional light, whose `shadow.camera` the ListRenderer renders its map with. */
+function shadowLight(name: string): DirectionalLight {
+  const light = new DirectionalLight();
+  light.name = name;
+  light.castShadow = true;
+  return light;
+}
+
+describe('DrawCallLedger shadow passes on the hot path', () => {
+  it('traverses a scene at most once in a frame whose shadow maps render as nested passes, and counts each caster once across them', () => {
+    const { scene, camera } = sceneWithCamera();
+    const lights = [shadowLight('sun'), shadowLight('lamp')];
+    scene.add(...lights);
+    for (let i = 0; i < 20; i++) {
+      const mesh = tag.static(new Mesh(box, new MeshBasicMaterial()));
+      mesh.castShadow = i % 2 === 0;
+      scene.add(mesh);
+    }
+    const renderer = new ListRenderer();
+    renderer.shadowLights = lights;
+    const ledger = new DrawCallLedger();
+    ledger.attach(renderer);
+    renderer.render(scene, camera); // the first frame rescans
+
+    expect(countTraversals(() => renderer.render(scene, camera))).toBeLessThanOrEqual(1);
+    const frame = ledger.frame();
+    expect(frame.passes.map((p) => p.id)).toEqual(['shadow:sun', 'shadow:lamp', 'main']);
+    // 10 casters, each drawn into both maps: the per-object frame stamp counts each once, in either pass.
+    expect(frame.lighting).toMatchObject({ shadowPasses: 2, shadowCasters: 10, shadowSubmissions: 20 });
+    expect(frame.totals.sceneSubmissions).toBe(40);
+  });
+
+  it('reads the registry at most once per unique material in a frame whose shadow maps render as nested passes', () => {
+    const registry = new MaterialRegistry();
+    const materials = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00].map((color) => registry.register(new MeshStandardMaterial({ color })));
+    const { scene, camera } = sceneWithCamera();
+    const lights = [shadowLight('sun'), shadowLight('lamp')];
+    scene.add(...lights);
+    for (let i = 0; i < 40; i++) {
+      const mesh = tag.static(new Mesh(box, materials[i % 4]!));
+      mesh.castShadow = true;
+      scene.add(mesh);
+    }
+    const renderer = new ListRenderer();
+    renderer.shadowLights = lights;
+    const ledger = new DrawCallLedger({ registry });
+    ledger.attach(renderer);
+    renderer.render(scene, camera); // the first frame rescans
+
+    const keys = vi.spyOn(registry, 'keys');
+    renderer.render(scene, camera);
+    const reads = keys.mock.calls.length;
+    keys.mockRestore();
+
+    const frame = ledger.frame();
+    // Every mesh draws in the main pass and in both shadow passes: the memo spans the passes of one frame.
+    expect(frame.totals.sceneSubmissions).toBe(40 * 3);
+    expect(frame.lighting).toMatchObject({ shadowPasses: 2, shadowCasters: 40 });
+    expect(reads).toBeLessThanOrEqual(4);
   });
 });
 

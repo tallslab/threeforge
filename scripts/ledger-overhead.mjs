@@ -6,6 +6,8 @@
 // twice: once bare and once with a ledger attached. The difference is the ledger's cost.
 // - flat: N unnamed meshes directly under the scene (every name is a `Mesh[i]` path), tags alternating static/dynamic.
 // - nested: N unnamed meshes in unnamed groups of 50 under named, static-tagged zones of 500 (`zone-3/Group[4]/Mesh[17]`).
+// - shadow: the flat scene with a shadow-casting sun, whose map renders as a nested pass of every frame drawing the
+//   quarter of the meshes that cast; it covers the per-submission caster marking and the frame's shadow pass ids.
 // Both share 16 registered materials and one geometry. µs per submission is the best of 9 ledger rounds of 5 frames
 // minus the best of 9 bare rounds (the best of the per-round differences picks the round whose ledger time was lowest
 // and whose bare time was highest, which is biased low and can even read negative); bytes per
@@ -41,14 +43,21 @@ const BYTE_FRAMES = 10;
 
 /** three's render loop reduced to what the ledger patches: a fixed render list, one renderObject call per item. */
 class MinimalRenderer {
-  constructor(list) {
+  /** `shadow`, when given, is `{ camera, list }`: one shadow map rendered as a nested pass of every other render. */
+  constructor(list, shadow = null) {
     this.list = list;
+    this.shadow = shadow;
     this.info = { render: { drawCalls: 0, triangles: 0 }, memory: { programs: MATERIALS, textures: 0, geometries: 1 } };
     this.backend = { hasFeature: (name) => name === 'WEBGL_multi_draw' };
   }
 
   render(scene, camera) {
-    const list = this.list;
+    const shadow = this.shadow;
+    const shadowPass = shadow !== null && camera === shadow.camera;
+    // three renders a light's map inside the frame that needs it. `this.render` is the ledger-patched instance method,
+    // so the ledger sees the map as a nested pass of this frame, exactly as it sees ShadowNode's.
+    if (shadow !== null && !shadowPass) this.render(scene, shadow.camera);
+    const list = shadowPass ? shadow.list : this.list;
     for (let i = 0; i < list.length; i++) {
       const object = list[i];
       this.renderObject(object, scene, camera, object.geometry, object.material, null, null, null, null);
@@ -68,6 +77,7 @@ function buildScene(shape, submissions) {
   const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
   const sun = new DirectionalLight(0xffffff, 1);
   sun.name = 'sun';
+  if (shape === 'shadow') sun.castShadow = true;
   scene.add(sun);
   const geometry = new BoxGeometry(1, 1, 1);
   const materials = [];
@@ -78,7 +88,7 @@ function buildScene(shape, submissions) {
   for (let i = 0; i < submissions; i++) {
     const mesh = new Mesh(geometry, materials[i % MATERIALS]);
     mesh.castShadow = i % 4 === 0;
-    if (shape === 'flat') {
+    if (shape !== 'nested') {
       (i % 2 === 0 ? tag.static : tag.dynamic)(mesh);
       scene.add(mesh);
     } else {
@@ -96,7 +106,8 @@ function buildScene(shape, submissions) {
     list.push(mesh);
   }
   scene.updateMatrixWorld(true);
-  return { scene, camera, materials, list };
+  const shadow = shape === 'shadow' ? { camera: sun.shadow.camera, list: list.filter((mesh) => mesh.castShadow) } : null;
+  return { scene, camera, materials, list, shadow };
 }
 
 function frames(renderer, scene, camera, n) {
@@ -108,11 +119,11 @@ function heapUsed() {
 }
 
 function measure(shape, submissions) {
-  const { scene, camera, materials, list } = buildScene(shape, submissions);
+  const { scene, camera, materials, list, shadow } = buildScene(shape, submissions);
   const registry = new MaterialRegistry();
   for (const m of materials) registry.register(m);
-  const bare = new MinimalRenderer(list);
-  const renderer = new MinimalRenderer(list);
+  const bare = new MinimalRenderer(list, shadow);
+  const renderer = new MinimalRenderer(list, shadow);
   const ledger = new DrawCallLedger({ registry });
   ledger.attach(renderer);
   // Warm up the JIT and every cache, then restart the 60-frame rescan period so no window below contains a rescan.
@@ -152,20 +163,22 @@ function measure(shape, submissions) {
     rescanMs = Math.min(rescanMs, performance.now() - t);
   }
 
+  // The shadow scene submits its casters again in the map's pass; µs is per submission the frame actually made.
+  const expected = submissions + (shadow === null ? 0 : shadow.list.length);
   const snapshot = ledger.frame();
-  if (snapshot.totals.submissions !== submissions) throw new Error(`expected ${submissions} submissions, the ledger saw ${snapshot.totals.submissions}`);
+  if (snapshot.totals.submissions !== expected) throw new Error(`expected ${expected} submissions, the ledger saw ${snapshot.totals.submissions}`);
   ledger.detach();
-  return { shape, submissions, usPerSubmission: (best * 1000) / submissions, bytesPerFrame: ledgerBytes - bareBytes, rescanMs };
+  return { shape, submissions: expected, usPerSubmission: (best * 1000) / expected, bytesPerFrame: ledgerBytes - bareBytes, rescanMs };
 }
 
 const pad = (value, width) => String(value).padStart(width);
 console.log(`threeforge ledger overhead: node ${process.version}, three r${REVISION} (not a gate; compare runs on one machine)`);
 console.log(`${'scene'.padEnd(7)} ${pad('submissions', 11)} ${pad('µs/submission', 13)} ${pad('bytes/frame', 12)} ${pad('MB/frame', 8)} ${pad('rescan ms', 9)}`);
-for (const shape of ['flat', 'nested']) {
+for (const shape of ['flat', 'nested', 'shadow']) {
   for (const n of SUBMISSIONS) {
     const r = measure(shape, n);
     const bytes = Math.max(0, Math.round(r.bytesPerFrame));
-    console.log(`${shape.padEnd(7)} ${pad(n, 11)} ${pad(r.usPerSubmission.toFixed(2), 13)} ${pad(bytes, 12)} ${pad((bytes / 1e6).toFixed(2), 8)} ${pad(r.rescanMs.toFixed(1), 9)}`);
+    console.log(`${shape.padEnd(7)} ${pad(r.submissions, 11)} ${pad(r.usPerSubmission.toFixed(2), 13)} ${pad(bytes, 12)} ${pad((bytes / 1e6).toFixed(2), 8)} ${pad(r.rescanMs.toFixed(1), 9)}`);
   }
 }
 console.log('targets at 10k submissions: ≤ 1 µs per submission and ≤ 1 MB per frame (audit of 0.8.0: 3.8 µs, 8.7 MB)');

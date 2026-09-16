@@ -288,8 +288,10 @@ per-submission path allocates nothing, and none of the following changes a numbe
 
 `pnpm build:lib && node scripts/ledger-overhead.mjs [submissions…]` reports the µs added per submission, the bytes
 allocated per frame and the rescan time, at 2k, 10k and 20k submissions by default. It renders a flat scene (unnamed
-meshes under the scene) and a nested one (unnamed meshes in unnamed groups under named zones) through a minimal
-renderer, bare and with a ledger attached. It is a report, not a gate: compare runs on one machine. On a 10-core Mac
+meshes under the scene), a nested one (unnamed meshes in unnamed groups under named zones) and a shadow one (the flat
+scene with a shadow-casting sun, whose map renders as a nested pass drawing the quarter of the meshes that cast)
+through a minimal renderer, bare and with a ledger attached. µs per submission is the best ledger round minus the best
+bare round. It is a report, not a gate: compare runs on one machine. On a 10-core Mac
 with node 22, the flat scene over two runs (timings move between runs, bytes do not):
 
 | submissions | µs / submission | MB / frame | rescan ms | 0.8.0: µs / submission | 0.8.0: MB / frame |
