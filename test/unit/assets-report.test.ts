@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   commitStamp,
+  corpusPlan,
   markdownBlock,
   markdownTarget,
   mergeRows,
@@ -11,7 +12,9 @@ import {
   runIdOf,
   shortCommit,
   stampRow,
+  onlyOf,
   type GateInput,
+  type IndexEntry,
   type ReportRow,
 } from '../e2e/assets-report.js';
 
@@ -297,5 +300,85 @@ describe('markdownTarget / markdownBlock (the gate on the tracked Markdown)', ()
     const empty = input({ expected: [] });
     expect(markdownTarget(empty)).toBeNull();
     expect(markdownBlock(empty)).toContain('no assets');
+  });
+});
+
+/**
+ * Which assets a run must measure. This used to be an inline filter in `assets.spec.ts` that dropped every index
+ * entry carrying `error`, and the Markdown gate read the same shrunken list: `fetch-assets.mjs` records a failed
+ * download as `{ error }` and exits 0, so a corpus run that fetched 40 of 55 models generated 40 tests, "measured
+ * every asset it set out to", republished a shorter table and went green. An asset that failed to download is a
+ * failure, not an absence. An asset filtered out on purpose by FORGE_ASSETS is neither.
+ */
+describe('corpusPlan', () => {
+  const model = (name: string, extra: Partial<IndexEntry> = {}): IndexEntry => ({ name, entry: `${name}/${name}.glb`, ...extra });
+  const lists: IndexEntry[] = [
+    model('Duck'),
+    model('Fox'),
+    model('Buggy', { error: '404 https://example.invalid/Buggy.glb' }),
+    { name: 'Sponza', entry: 'Sponza/Sponza.gltf' },
+    { name: 'kenney-nature-kit', kind: 'kit', glbs: ['kenney-nature-kit/a.glb'] } as IndexEntry,
+    { name: 'kenney-car-kit', kind: 'kit', error: '503 kenney.nl' },
+    { name: 'waternormals', entry: 'waternormals/waternormals.jpg' },
+    { name: 'three-textures', entry: 'three-textures/spark1.png', error: '404 spark1.png' },
+  ];
+
+  it('expects an asset that failed to download, and attempts it so its test fails instead of vanishing', () => {
+    const plan = corpusPlan(lists, undefined);
+    expect(plan.expected).toEqual(['Duck', 'Fox', 'Buggy', 'Sponza']);
+    expect(plan.attempt.map((a) => a.name)).toEqual(['Duck', 'Fox', 'Buggy', 'Sponza']);
+    expect(plan.attempt.find((a) => a.name === 'Buggy')?.error).toBe('404 https://example.invalid/Buggy.glb');
+    expect(plan.unknown).toEqual([]);
+  });
+
+  it('fails the Markdown gate for a run whose only gap is an asset that never downloaded', () => {
+    // The spec fails an undownloaded asset's test without saving a row, so the gate sees it as missing.
+    const rows = ['Duck', 'Fox', 'Sponza'].map((n) => stampRow(row(n), stamp));
+    const plan = corpusPlan(lists, undefined);
+    const block = markdownBlock({ backend: 'webgl2', rows, expected: plan.expected, run: stamp.run, env: {} });
+    expect(block).toBe('run run1234 measured 3/4 assets (missing Buggy)');
+    // The old rule dropped Buggy from `expected` too, and this same run published: the defect, pinned.
+    const shrunken = lists.filter((a) => a.entry && /\.(gltf|glb)$/i.test(a.entry) && !a.error && a.kind !== 'kit').map((a) => a.name);
+    expect(markdownBlock({ backend: 'webgl2', rows, expected: shrunken, run: stamp.run, env: {} })).toBeNull();
+  });
+
+  it('does not attempt an errored asset FORGE_ASSETS filtered out on purpose, so a subset run still passes', () => {
+    const plan = corpusPlan(lists, ['Fox', 'Duck']);
+    expect(plan.attempt.map((a) => a.name)).toEqual(['Duck', 'Fox']);
+    expect(plan.attempt.some((a) => a.error)).toBe(false);
+    expect(plan.unknown).toEqual([]);
+    // Still a subset: the full `expected` is unchanged, so the gate keeps the tracked Markdown as it was.
+    expect(plan.expected).toEqual(['Duck', 'Fox', 'Buggy', 'Sponza']);
+    const rows = ['Duck', 'Fox'].map((n) => stampRow(row(n), stamp));
+    expect(markdownBlock({ backend: 'webgl2', rows, expected: plan.expected, run: stamp.run, env: {} })).not.toBeNull();
+  });
+
+  it('attempts an errored asset FORGE_ASSETS names, because asking for it and not getting it is a failure', () => {
+    const plan = corpusPlan(lists, ['Buggy']);
+    expect(plan.attempt).toEqual([model('Buggy', { error: '404 https://example.invalid/Buggy.glb' })]);
+  });
+
+  it('reports a FORGE_ASSETS name that matches no model, so a typo cannot make a run of nothing', () => {
+    const plan = corpusPlan(lists, ['Foxx', 'Fox', 'waternormals']);
+    expect(plan.attempt.map((a) => a.name)).toEqual(['Fox']);
+    expect(plan.unknown).toEqual(['Foxx', 'waternormals']);
+  });
+
+  it('counts an errored entry of unknown type as expected: without an entry it cannot be shown not to be a model', () => {
+    const plan = corpusPlan([model('Fox'), { name: 'polyhaven-boulder_01', error: 'no gltf variant' }], undefined);
+    expect(plan.expected).toEqual(['Fox', 'polyhaven-boulder_01']);
+  });
+
+  it('skips kits, non-model entries and malformed rows, and keeps the first of a repeated name', () => {
+    const plan = corpusPlan([null, 7, { entry: 'x.glb' }, model('Fox'), model('Fox', { error: 'dup' }), { name: 'three-textures', kind: 'kit', textures: [] }] as unknown[], undefined);
+    expect(plan.expected).toEqual(['Fox']);
+    expect(plan.attempt).toEqual([model('Fox')]);
+  });
+});
+
+describe('onlyOf (FORGE_ASSETS)', () => {
+  it('splits and trims, and treats an unset, empty or comma-only value as no filter', () => {
+    expect(onlyOf({ FORGE_ASSETS: 'Fox, Duck ' })).toEqual(['Fox', 'Duck']);
+    for (const value of [undefined, '', '  ', ' , ,']) expect(onlyOf({ FORGE_ASSETS: value })).toBeUndefined();
   });
 });

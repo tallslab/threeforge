@@ -108,6 +108,68 @@ export function missingFromRun(rows: ReportRow[], expected: string[], run: strin
   return expected.filter((name) => !measured.has(name));
 }
 
+/** One row of test/assets/files/index.json or kits-index.json, as `scripts/fetch-assets.mjs` and `fetch-kits.mjs` write it. */
+export interface IndexEntry {
+  name: string;
+  /** The file to open, relative to test/assets/files. A failed Poly Haven fetch has none: its entry name comes from the API. */
+  entry?: string;
+  /** `kit` for a Kenney kit or the three.js texture bundle: never measured as one asset. */
+  kind?: string;
+  tags?: string[];
+  /** Set when the fetch failed; the files are then absent. */
+  error?: string;
+}
+
+/** What one `assets.spec.ts` invocation measures, decided before any test runs. */
+export interface CorpusPlan {
+  /** Every glTF model a full run must measure, downloaded or not, in index order. The Markdown gate's `expected`. */
+  expected: string[];
+  /** The entries this run generates a test for: `expected` narrowed by FORGE_ASSETS. One carrying `error` must fail. */
+  attempt: IndexEntry[];
+  /** FORGE_ASSETS names that match no model in the index, each of which must fail rather than run nothing. */
+  unknown: string[];
+}
+
+const MODEL = /\.(gltf|glb)$/i;
+
+/**
+ * The assets a run must measure, judged against what the index says *should* be there rather than what happened to
+ * download. `fetch-assets.mjs` records a failed download as `{ error }` and exits 0; the spec used to drop such
+ * entries from both its tests and the gate's `expected`, so a partial fetch produced a green run and a silently
+ * shorter table. Now an errored model stays in `expected` and in `attempt`, where its test fails naming the fetch
+ * error and saves no row, so the gate reports it missing too.
+ *
+ * `only` (FORGE_ASSETS) narrows `attempt` and nothing else: an asset left out on purpose is not missing, even if it
+ * errored, while one it names is attempted whatever its state. An errored entry with no `entry` counts as a model,
+ * since nothing shows it is not one. Kits, non-glTF entries (textures) and malformed rows are skipped; a repeated
+ * name keeps its first entry. Pure.
+ */
+export function corpusPlan(lists: readonly unknown[], only: readonly string[] | undefined): CorpusPlan {
+  const models: IndexEntry[] = [];
+  const seen = new Set<string>();
+  for (const value of lists) {
+    if (typeof value !== 'object' || value === null) continue;
+    const e = value as IndexEntry;
+    if (typeof e.name !== 'string' || e.name === '' || e.kind === 'kit' || seen.has(e.name)) continue;
+    const isModel = typeof e.entry === 'string' ? MODEL.test(e.entry) : typeof e.error === 'string';
+    if (!isModel) continue;
+    seen.add(e.name);
+    models.push(e);
+  }
+  const wanted = only && only.length > 0 ? new Set(only) : undefined;
+  return {
+    expected: models.map((m) => m.name),
+    attempt: wanted ? models.filter((m) => wanted.has(m.name)) : models,
+    unknown: wanted ? [...wanted].filter((name) => !seen.has(name)) : [],
+  };
+}
+
+/** FORGE_ASSETS as a list of names, or `undefined` (no filter) when it is unset, empty or only commas and spaces. */
+export function onlyOf(env: { FORGE_ASSETS?: string | undefined }): string[] | undefined {
+  const names = (env.FORGE_ASSETS ?? '').split(',').map((s) => s.trim()).filter((s) => s !== '');
+  return names.length > 0 ? names : undefined;
+}
+
 /** Where a backend's report files live, without the extension. */
 export function reportFor(backend: string): string {
   return backend === 'webgl2' ? 'docs/assets-report' : `docs/assets-report-${backend}`;

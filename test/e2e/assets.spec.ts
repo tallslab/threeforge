@@ -2,34 +2,29 @@
  * Dogfooding on public glTF assets (test/assets/files, fetched by `pnpm assets`). Every asset is loaded, rendered
  * naively, compiled with policy 'auto', rendered again and compared pixel by pixel, then decompiled. Assertions are
  * soft so the whole report gets written to docs/assets-report.{json,md}; the run still fails if any asset misbehaves.
- * FORGE_ASSETS=Fox,Duck limits the run.
+ * A model the index lists but whose download failed fails too, instead of being left out. FORGE_ASSETS=Fox,Duck
+ * limits the run.
  *
  * Every row records the commit it was measured at and the id of the run that measured it, because rows merge on
  * disk across worker restarts and across runs. The Markdown is rewritten only after a run that measured every
  * asset (see the afterAll below); a partial run's rows still land in the JSON, stamped as its own.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { currentStamp, markdownBlock, markdownTarget, mergeRows, renderReport, reportFor, rowsForReport, stampRow, type GateInput, type ReportRow } from './assets-report.js';
+import { corpusPlan, currentStamp, markdownBlock, markdownTarget, mergeRows, onlyOf, renderReport, reportFor, rowsForReport, stampRow, type GateInput, type ReportRow } from './assets-report.js';
 import { expect, test } from './fixtures.js';
 import { pixelDiff } from './pixels.js';
 
-interface AssetEntry {
-  name: string;
-  entry?: string;
-  tags?: string[];
-  error?: string;
-  kind?: string;
-}
-
 const files = 'test/assets/files';
-const lists: AssetEntry[] = [];
+const lists: unknown[] = [];
 for (const f of ['index.json', 'kits-index.json']) {
-  if (existsSync(`${files}/${f}`)) lists.push(...(JSON.parse(readFileSync(`${files}/${f}`, 'utf8')) as AssetEntry[]));
+  if (existsSync(`${files}/${f}`)) lists.push(...(JSON.parse(readFileSync(`${files}/${f}`, 'utf8')) as unknown[]));
 }
-const only = process.env.FORGE_ASSETS?.split(',').map((s) => s.trim());
-/** Every asset a full run measures. `assets` is what this run will actually attempt (FORGE_ASSETS narrows it). */
-const candidates = lists.filter((a) => a.entry && /\.(gltf|glb)$/i.test(a.entry) && !a.error && a.kind !== 'kit');
-const assets = candidates.filter((a) => !only || only.includes(a.name));
+/**
+ * Every model a full run measures (`plan.expected`, downloaded or not) and what this run attempts (`plan.attempt`,
+ * narrowed by FORGE_ASSETS). A model whose download failed is attempted and fails; it is not silently left out.
+ * The decision is `corpusPlan`'s, unit-tested in test/unit/assets-report.test.ts, because this spec may not be run.
+ */
+const plan = corpusPlan(lists, onlyOf(process.env));
 /** The same commit and run id in every worker of this invocation, including the ones Playwright restarts. */
 const stamp = currentStamp();
 /** Set when the harness is told to override materials: such a run's numbers are a variant, and every row says so. */
@@ -43,8 +38,16 @@ function saveRow(row: ReportRow, backend: string): void {
   writeFileSync(reportPath, JSON.stringify(mergeRows(existing, stampRow(row, stamp)), null, 2));
 }
 
-for (const asset of assets) {
+for (const name of plan.unknown) {
+  test(`asset ${name}`, { tag: '@corpus' }, () => {
+    throw new Error(`FORGE_ASSETS names ${name}, which is no glTF model in ${files}/index.json or kits-index.json`);
+  });
+}
+
+for (const asset of plan.attempt) {
   test(`asset ${asset.name}`, { tag: '@corpus' }, async ({ forge }) => {
+    // No row is saved: a download failure is not a measurement, and without a row the gate reports it missing.
+    if (asset.error !== undefined) throw new Error(`${asset.name} was never downloaded (${asset.error}); rerun pnpm assets`);
     test.setTimeout(180_000);
     const row: ReportRow = { name: asset.name, tags: (asset.tags ?? []).join(' '), ...(materialsOverride ? { materialsOverride } : {}) };
     try {
@@ -106,7 +109,7 @@ for (const asset of assets) {
  * the webgpu table too. The JSON still merges either way; that is where a partial run's rows land, each stamped.
  */
 test.afterAll(() => {
-  const expected = candidates.map((a) => a.name);
+  const expected = plan.expected;
   for (const backend of ['webgl2', 'webgpu']) {
     const jsonPath = `${reportFor(backend)}.json`;
     if (!existsSync(jsonPath)) continue;
