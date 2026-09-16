@@ -151,6 +151,23 @@ describe('RenderScheduler running-mixer internals (canary)', () => {
     expect(action.isRunning()).toBe(false);
     expect(startTimeOf(action)).toBe(10);
   });
+
+  it('pins AnimationAction._weightInterpolant: set by fadeOut(), evaluated while paused, cleared at the end of the fade', () => {
+    // AnimationAction.js ~922 (_scheduleFading) sets `_weightInterpolant`; ~638 (_updateWeight) evaluates it whenever
+    // the action is enabled, before ~386 (stopFading) clears it and a fade to 0 disables the action.
+    const { mixer, action } = makeAnimatedMixer();
+    const weightInterpolantOf = () => (action as unknown as { _weightInterpolant: unknown })._weightInterpolant;
+    action.play();
+    expect(weightInterpolantOf()).toBeNull();
+    action.paused = true;
+    action.fadeOut(1);
+    expect(weightInterpolantOf()).not.toBeNull();
+    mixer.update(0.5);
+    expect(action.getEffectiveWeight()).toBeCloseTo(0.5);
+    mixer.update(0.6);
+    expect(weightInterpolantOf()).toBeNull();
+    expect(action.enabled).toBe(false);
+  });
 });
 
 describe('RenderScheduler running-mixer rule (real AnimationMixer)', () => {
@@ -246,6 +263,36 @@ describe('RenderScheduler running-mixer rule (real AnimationMixer)', () => {
 
     time += 16;
     expect(scheduler.tick(time)).toBe(true); // still running, now via the isRunning() branch
+  });
+
+  it('keeps rendering while a finished, clamped (paused) clip fades out, through the tick the fade ends on, then skips', () => {
+    const { root, mixer, action } = makeAnimatedMixer();
+    action.setLoop(LoopOnce, 1);
+    action.clampWhenFinished = true;
+    action.play();
+    const { scheduler } = setup({ mixers: [mixer] });
+    let time = 0;
+    scheduler.tick(time);
+    for (let i = 0; i < 5; i++) scheduler.tick((time += 500));
+    expect(action.paused).toBe(true);
+    expect(scheduler.tick((time += 16))).toBe(false); // finished and clamped: nothing changes
+    const clamped = root.position.x;
+
+    // AnimationAction._updateWeight evaluates the weight interpolant whenever the action is enabled, paused or not, so
+    // the mixer blends the clamped pose back towards the original over the fade although isRunning() is false.
+    action.fadeOut(1);
+    expect(action.isRunning()).toBe(false);
+    const xs: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      expect(scheduler.tick((time += 250)), `fading, tick ${i}`).toBe(true);
+      xs.push(root.position.x);
+    }
+    expect(xs[0]).toBeLessThan(clamped);
+    expect(xs[2]).toBeLessThan(xs[0]!);
+    // The tick that crosses the end of the fade applies its last step (and disables the action): still a change.
+    expect(scheduler.tick((time += 300)), 'the tick the fade ends on').toBe(true);
+    expect(action.enabled).toBe(false);
+    expect(scheduler.tick((time += 16))).toBe(false);
   });
 
   it('treats an active, enabled, unpaused action with weight 0 as running (a fadeIn() target starts there)', () => {

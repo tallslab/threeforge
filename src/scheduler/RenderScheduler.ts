@@ -28,6 +28,8 @@ interface MixerInternals {
 interface ActionInternals {
   isRunning?(): boolean;
   _startTime?: number | null;
+  enabled?: boolean;
+  _weightInterpolant?: unknown;
 }
 
 /**
@@ -41,6 +43,11 @@ interface ActionInternals {
  * (mixer-like test doubles that do not model three's internals). `isRunning()` does not consult `weight`, so an
  * active, enabled, unpaused action with `weight === 0` still counts as running here — intentional, not a gap:
  * `fadeIn()` starts its target action at weight 0, and skipping a tick would miss the start of the fade.
+ *
+ * An enabled action with a weight fade under way (`_weightInterpolant !== null`) counts too, paused or not:
+ * `_updateWeight` (~638) evaluates the interpolant whenever the action is enabled, so a clamped (paused) clip given
+ * `fadeOut()` blends its pose back over the fade although `isRunning()` is false. A time-scale fade on a paused action
+ * does not count: `_updateTimeScale` (~675) returns 0 without evaluating it.
  */
 function isMixerAnimating(mixer: SchedulerMixer): boolean {
   const internals = mixer as unknown as Partial<MixerInternals>;
@@ -51,6 +58,7 @@ function isMixerAnimating(mixer: SchedulerMixer): boolean {
     const action = actions[i];
     if (!action) continue;
     if ((typeof action.isRunning === 'function' && action.isRunning()) || (action._startTime !== null && action._startTime !== undefined)) return true;
+    if (action.enabled === true && action._weightInterpolant !== null && action._weightInterpolant !== undefined) return true;
   }
   return false;
 }
@@ -153,6 +161,9 @@ export class RenderScheduler {
     this.lastTick = time;
     let animating = false;
     for (const mixer of this.mixers) {
+      // Asked before the update as well: the update that ends a clip or a fade applies its last step and stops the action,
+      // so the frame showing that step would otherwise be skipped.
+      if (isMixerAnimating(mixer)) animating = true;
       mixer.update(delta);
       if (isMixerAnimating(mixer)) animating = true;
     }
