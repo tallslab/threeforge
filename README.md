@@ -64,8 +64,8 @@ optimized file fails `--budget`, or when either render raised a page error. Text
 
 Draw-call numbers so far: the naive test scene (500 props, 40 material recipes, a new material per prop) goes from
 **503 to 28** scene submissions with pixel-identical output (**18** with `dynamics: 'batch-sync'`); the 20k-instance
-field scene goes from 3892 submissions to **3 instanced draws** with BVH culling; 104 public glTF assets
-compile pixel-identical on both backends. `pnpm budget` fails CI above 30.
+field scene goes from 3892 submissions to **3 instanced draws** with BVH culling; the public glTF corpus compiles
+pixel-identical on both backends ([docs/assets-report.md](docs/assets-report.md)). `pnpm budget` fails CI above 30.
 
 ```ts
 import { DrawCallLedger, MaterialRegistry, World, prepareLods, tag } from 'threeforge';

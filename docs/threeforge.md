@@ -19,7 +19,8 @@ three things:
 3. **Explains** what to fix: per-tier budgets turn into hints with a remedy each, readable by a person on the
    overlay or by an AI agent through JSON, a CLI and an MCP server.
 
-Everything is proven on a fixed benchmark suite of eight scenes and on 104 public glTF assets, on both backends,
+Everything is proven on a fixed benchmark suite of eight scenes and on a corpus of public glTF assets
+(`docs/assets-report.md`, regenerated at release), on both backends,
 with a regression gate that fails the build on a 10 % regression.
 
 Principles: three.js renders; a wrong deletion is visible and a missed one is invisible (so every removal is
@@ -325,17 +326,20 @@ allocated per frame and the rescan time, at 2k, 10k and 20k submissions by defau
 meshes under the scene), a nested one (unnamed meshes in unnamed groups under named zones) and a shadow one (the flat
 scene with a shadow-casting sun, whose map renders as a nested pass drawing the quarter of the meshes that cast)
 through a minimal renderer, bare and with a ledger attached. µs per submission is the best ledger round minus the best
-bare round. It is a report, not a gate: compare runs on one machine. Measured on 2026-09-16 on a 10-core Apple M1
-Max with node v22.23.1, the flat scene over two runs (timings move between runs, bytes do not):
+bare round. It is a report, not a gate: compare runs on one machine. The table reports the **default invocation**,
+`node scripts/ledger-overhead.mjs` with no arguments, which measures 2k, 10k and 20k in one process; the same build
+prints a different figure for a single size given on its own, so quote the invocation together with the number.
+Measured on 2026-09-16 on a 10-core Apple M1 Max with node v22.23.1, the flat scene over two runs (timings move
+between runs, bytes do not):
 
 | submissions | µs / submission | MB / frame | rescan ms | 0.8.0: µs / submission | 0.8.0: MB / frame |
 |---|---|---|---|---|---|
-| 2k | 0.24 | 0.26 | 0.5–0.6 | 0.83 | 2.3 |
-| 10k | 0.33–0.34 | 1.20 | 1.8–1.9 | 1.84 | 11.4 |
-| 20k | 0.40–0.41 | 2.55 | 5.5–5.6 | 3.07 | 23.1 |
+| 2k | 0.24 | 0.18 | 0.5 | 0.83 | 2.3 |
+| 10k | 0.32–0.33 | 0.80 | 1.6–1.9 | 1.84 | 11.4 |
+| 20k | 0.37–0.39 | 1.83 | 5.1–5.2 | 3.07 | 23.1 |
 
-The `0.8.0` columns are the numbers recorded when the hot-path work landed, on the machine of the day: they show the
-scale of the change, not a same-run comparison. Re-measure both sides on one machine before quoting a ratio.
+The `0.8.0` columns are the audit numbers recorded before the hot-path work, on the machine of the day: they show the
+scale of that change rather than a same-run comparison.
 
 The unit guards in `test/unit/ledger-hot-path.test.ts` count registry reads (at most one per material per frame),
 traversals (at most one on a frame without a rescan) and `children.indexOf` calls (none), and check that µs per
