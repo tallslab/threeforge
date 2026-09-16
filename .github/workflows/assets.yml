@@ -54,12 +54,22 @@ jobs:
           path: test/assets/files
           key: corpus-${{ hashFiles('scripts/fetch-kits.mjs', 'scripts/fetch-assets.mjs', 'test/assets/manifest.json') }}
       # The kits and the Poly Haven models: the whole corpus, unlike ci.yml's FORGE_KITS_ONLY bench fetch.
+      # FORGE_FETCH_STRICT=1: both scripts record a failed download and would otherwise exit 0, so a network failure
+      # has to fail here, named at its source, not steps later as a shorter corpus.
       - run: pnpm assets:kits
+        env:
+          FORGE_FETCH_STRICT: '1'
       - run: pnpm assets
+        env:
+          FORGE_FETCH_STRICT: '1'
       - run: pnpm build # cli.spec.ts and mcp.spec.ts drive the built CLI
       # Everything except @bench: the benchmark gate is ci.yml's job and would only re-measure scenes here.
-      # `assets.spec.ts` uses soft assertions so the whole report is written, and still fails the run if any asset
-      # misbehaves — so "fails when not every asset passes" needs no extra step.
+      # "Fails when not every asset passes" rests on two things, not on soft assertions alone. An asset that RAN and
+      # misbehaved fails through assets.spec.ts's soft assertions (the whole report is still written). An asset that
+      # never downloaded is stopped by the strict fetch above, and — should an errored entry reach the spec anyway,
+      # as it does in a local non-strict run — `corpusPlan` (test/e2e/assets-report.ts, unit-tested) still generates its test,
+      # which fails naming the fetch error, and keeps it in the Markdown gate's `expected`. Soft assertions by
+      # themselves covered only the first case: an errored entry used to produce no test at all.
       - name: Full corpus on ${{ matrix.backend }}
         run: pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "@bench" --forbid-only
       # always(): the report is most useful precisely when the run went red.

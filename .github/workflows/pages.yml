@@ -34,8 +34,12 @@ jobs:
           path: test/assets/files
           key: kits-${{ hashFiles('scripts/fetch-kits.mjs', 'scripts/fetch-safe.mjs') }}
       # The page needs the eight mini characters and the water map. FORGE_BENCH_APP_OPTIONAL is NOT set here: a
-      # missing kit must fail this build rather than publish a bench page whose crowd scene is empty.
-      - run: FORGE_KITS_ONLY=1 pnpm assets:kits
+      # missing kit must fail this build rather than publish a bench page whose crowd scene is empty. And
+      # FORGE_FETCH_STRICT=1 makes that failure name the download that failed, at the step that failed.
+      - run: pnpm assets:kits
+        env:
+          FORGE_KITS_ONLY: '1'
+          FORGE_FETCH_STRICT: '1'
       # Regenerate bench/devices/index.json (and docs/devices.md) from bench/devices/*.json before the build:
       # `bench-app-assets.mjs` copies that index into the page as devices.json, so without this step a result that
       # `bench-results` committed would be on main but missing from the published table. Not committed here.

@@ -19,7 +19,8 @@ concurrency:
 
 jobs:
   # CONTRIBUTING.md rule 4 as a check: a commit touching a rendering path carries the budget it measured.
-  # Pull requests only — the push that first creates `main` imports history that predates this check.
+  # Pull requests only: three commits on fix/audit-0.9.0 predate the rule and fail it, and history is not rewritten,
+  # so that branch must reach main by a direct push. docs/release.md ("seed main with a push") says how and why.
   commit-rules:
     name: Budget line on every rendering commit
     if: github.event_name == 'pull_request'
@@ -136,8 +137,13 @@ jobs:
         with:
           path: test/assets/files
           key: kits-${{ hashFiles('scripts/fetch-kits.mjs', 'scripts/fetch-safe.mjs') }}
-      # Kits and single files only; the Poly Haven corpus is `assets.yml`'s business.
-      - run: FORGE_KITS_ONLY=1 pnpm assets:kits
+      # Kits and single files only; the Poly Haven corpus is `assets.yml`'s business. FORGE_FETCH_STRICT=1 so a failed
+      # download fails this step by name, instead of surfacing in bench.spec.ts as `kenney-mini-characters kit not
+      # found` — a network failure that reads as a threeforge defect.
+      - run: pnpm assets:kits
+        env:
+          FORGE_KITS_ONLY: '1'
+          FORGE_FETCH_STRICT: '1'
       - run: node scripts/bench-run.mjs ${{ matrix.backend }}
       - uses: actions/upload-artifact@v4
         if: always()

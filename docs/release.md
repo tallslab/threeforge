@@ -1,5 +1,21 @@
 # Releasing threeforge
 
+## Before anything else: seed `main` with a push, not a pull request
+
+Everything already committed locally has to reach GitHub's `main` by a **direct push**, never through a pull
+request. CI's `commit-rules` job checks that every commit touching rendering code carries a `Budget:` line, and
+three commits predate that rule and fail it: `b037656`, `451ab9f` and `4b61bd6`, all touching `src/ledger/`.
+History is not rewritten to fix them, so the job runs on pull requests only — a push is never judged, while a pull
+request carrying those commits would be red on its very first CI run, on a rule nobody had seen.
+
+Those three commits are on `fix/audit-0.9.0`, **not** on the local `main` (which is still at 0.8.0, an ancestor of
+that branch). So pushing the local `main` first and then opening a pull request for the audit branch is exactly the
+flow that fails. Instead: bring the branch into `main` locally (`git checkout main && git merge --ff-only
+fix/audit-0.9.0`), then `git push origin main`. After that, open pull requests as normal; each is judged only on
+the commits it adds.
+
+## Cutting a release
+
 1. Bump `version` in `package.json` and `src/version.ts` (a unit test keeps them equal), regenerate the agent docs
    with `pnpm build:lib && node scripts/agents-md.mjs`, update `CHANGELOG.md`.
 2. `pnpm typecheck && pnpm test && pnpm build && pnpm e2e && pnpm bench` on a machine with a GPU.
@@ -18,14 +34,18 @@ job would never fire.
 
 `.github/workflows/ci.yml` runs on every pull request and every push to `main`:
 
-- **`commit-rules`** (pull requests only) — `scripts/commit-rules.mjs` over the commits the pull request adds:
-  a commit touching a rendering path (`src/{compiler,ledger,registry,lighting,skinning,overdraw,scheduler,streaming,memory,lod,load}/`,
-  `test/{scenes,app}/`) must carry `Budget: <n>` or `Budget: n/a <reason>` on a body line. That is CONTRIBUTING.md
-  rule 4, checked rather than remembered. Run it locally the same way: `node scripts/commit-rules.mjs main..HEAD`.
+- **`commit-rules`** (pull requests only; see the seeding note at the top) — `scripts/commit-rules.mjs` over the
+  commits the pull request adds: a commit touching rendering code must carry `Budget: <n>` or
+  `Budget: n/a <reason>` on a body line. That is CONTRIBUTING.md rule 4, checked rather than remembered. What counts as
+  rendering is `RENDERING_PATHS` in that script, and what deliberately does not is `EXCLUDED_PATHS`, each entry with
+  its reason; a unit test fails if any top-level entry of `src/` is in neither list. Merge commits are not checked.
+  Run it locally the same way: `node scripts/commit-rules.mjs main..HEAD`.
 - **`unit`** — `pnpm typecheck`, `pnpm test`, `pnpm build`.
 - **`e2e`** — both backends, `--grep-invert "@corpus|@bench"`, and **no downloaded content at all**.
 - **`bench`** — both backends, the gate in `scripts/bench-run.mjs`. The only pull-request job that downloads
   anything: the bench scenes reach the Kenney kits through `bossfight`/`crowd` and the water map through `lake`.
+  The fetch runs with `FORGE_FETCH_STRICT=1`, so a failed download fails that step by name rather than
+  surfacing later as a scene error.
   Deterministic cost metrics are gated; timing is recorded only, since the runner is SwiftShader, not a GPU.
 
 **A green pull-request run is not full coverage, and should not be read as one.** The `@corpus` tag takes every
@@ -39,9 +59,17 @@ backends), of which `e2e` runs **91 per project** (182 across both) in 28 files.
 - `arena`, `assets`, `bench`, `biome`, `crowd`, `vat` and `warmup`, which contribute no tests to the run.
 
 Those are covered by **`.github/workflows/assets.yml`**: weekly (Mondays 04:17 UTC) and on manual dispatch, the
-full corpus on both backends, failing when any asset misbehaves. It uploads `docs/assets-report*` as a build
-artifact and **never commits** — the tracked report files are updated by hand from that artifact. It pins
+full corpus on both backends. It fails when any asset misbehaves **and when any asset failed to download**: the
+fetch steps run with `FORGE_FETCH_STRICT=1`, and `assets.spec.ts` builds its tests from `corpusPlan`, which keeps a
+model whose download errored in the run (its test fails naming the error) instead of dropping it, so a partial
+fetch can no longer pass as a smaller corpus. It uploads `docs/assets-report*` as a build artifact and
+**never commits** — the tracked report files are updated by hand from that artifact. It pins
 `FORGE_RUN_ID` per job so a run crossing midnight UTC does not split its id and decline to publish the Markdown.
+
+`FORGE_FETCH_STRICT=1` makes `pnpm assets` and `pnpm assets:kits` exit 1, listing every failed download, after
+writing the index. Unset — the default for local work — a failed download is recorded in the index and the script
+exits 0 with whatever did download, so a flaky connection does not block you; a full local `pnpm assets:report`
+then fails the models that are missing by name.
 
 `FORGE_BENCH_APP_OPTIONAL=1` lets `scripts/bench-app-assets.mjs` warn instead of exiting 1 when the Kenney kits
 are absent. Only Playwright's port-5180 `webServer` sets it: that command's exit status fails the *whole*
@@ -50,6 +78,7 @@ Playwright run rather than one spec, so without it a kit-less machine loses all 
 
 ## Device bench page and results (one-time repository settings)
 
+- Seed `main` with a direct push before opening any pull request (see the top of this file).
 - Settings → Pages → Source: **GitHub Actions**. The `pages` workflow then deploys `dist/bench-app` on every push to
   `main`, and `bench-results` also dispatches it (`gh workflow run pages.yml`) after every accepted result, since a
   `GITHUB_TOKEN` push does not itself fire another workflow's `on: push`. The page's submit button targets this
