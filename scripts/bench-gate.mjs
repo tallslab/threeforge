@@ -3,6 +3,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+/** Why a gated value is unusable: absent, or present but not a finite number. Shared so the two sites cannot drift. */
+const unusable = (value) => (value === undefined ? 'missing from results' : `${String(value)} is not a finite number`);
+
 export const DETERMINISTIC = ['sceneSubmissions', 'gpuDraws', 'triangles', 'programs', 'overdrawOpaque', 'overdrawTransparent', 'skinnedVertices', 'shadowCasters', 'shadowTexels', 'textureBytes', 'geometryBytes', 'renderTargetBytes', 'particles', 'fillMegapixels', 'objects', 'autoUpdatedMatrices', 'shadowPassesPerFrame'];
 export const TIMING = ['renderMs', 'frameMs'];
 
@@ -37,7 +40,7 @@ export function compare(baseline, result, { gateTiming, tolerance }) {
         rows.push({ scene, variant, metric, before, after, ratio: variant === 'optimized' ? ratio : null });
         if (!gated.includes(metric)) continue;
         if (!Number.isFinite(after)) {
-          failures.push(`${scene} ${variant} ${metric}: ${after === undefined ? 'missing from results' : `${String(after)} is not a finite number`}`);
+          failures.push(`${scene} ${variant} ${metric}: ${unusable(after)}`);
           continue;
         }
         if (before === undefined) continue;
@@ -50,7 +53,7 @@ export function compare(baseline, result, { gateTiming, tolerance }) {
       }
       // `unattributed` is gated at 0, so it is held to the same rule: absent or non-finite is a hole, not a zero.
       const unattributed = res[variant].unattributed;
-      if (!Number.isFinite(unattributed)) failures.push(`${scene} ${variant} unattributed: ${unattributed === undefined ? 'missing from results' : `${String(unattributed)} is not a finite number`}`);
+      if (!Number.isFinite(unattributed)) failures.push(`${scene} ${variant} unattributed: ${unusable(unattributed)}`);
       else if (unattributed) failures.push(`${scene} ${variant}: ${unattributed} unattributed draws`);
     }
   }

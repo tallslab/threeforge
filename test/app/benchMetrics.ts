@@ -38,6 +38,13 @@ export interface BenchMetrics {
 }
 
 /**
+ * The metric keys in wire order: the single TypeScript-side source, used by `bench-app/submit.ts`.
+ * `scripts/bench-schema.mjs` repeats the list for the node scripts, which cannot import TypeScript;
+ * `test/unit/bench-metrics.test.ts` asserts the two agree and that together they cover `BenchMetrics` exactly.
+ */
+export const METRIC_KEYS: ReadonlyArray<keyof BenchMetrics> = ['sceneSubmissions', 'gpuDraws', 'triangles', 'programs', 'overdrawOpaque', 'overdrawTransparent', 'skinnedVertices', 'shadowCasters', 'shadowTexels', 'textureBytes', 'geometryBytes', 'renderTargetBytes', 'particles', 'fillMegapixels', 'objects', 'autoUpdatedMatrices', 'shadowPassesPerFrame', 'renderMs', 'frameMs', 'unattributed'];
+
+/**
  * Shared by the CI runner (test/e2e/bench.spec.ts) and the device bench page so the two cannot drift. `shadowTexels` is
  * `lighting.shadowTexels` of every measured frame: the metric is their mean, rounded, over the same fixed frame window
  * each run (a frozen or quantized map renders on a fixed share of those frames).

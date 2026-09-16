@@ -1,25 +1,7 @@
-export interface DeviceMetrics {
-  sceneSubmissions: number;
-  gpuDraws: number;
-  triangles: number;
-  programs: number;
-  overdrawOpaque: number;
-  overdrawTransparent: number;
-  skinnedVertices: number;
-  shadowCasters: number;
-  shadowTexels: number;
-  textureBytes: number;
-  geometryBytes: number;
-  renderTargetBytes: number;
-  particles: number;
-  fillMegapixels: number;
-  objects: number;
-  autoUpdatedMatrices: number;
-  shadowPassesPerFrame: number;
-  renderMs: number;
-  frameMs: number;
-  unattributed: number;
-}
+import type { BenchMetrics } from '../test/app/benchMetrics.js';
+
+/** A device result carries exactly a `pnpm bench` result's metrics. */
+export type DeviceMetrics = BenchMetrics;
 export interface DeviceEnv {
   three: string;
   backend: 'webgl2' | 'webgpu';
@@ -43,7 +25,7 @@ export interface DeviceResult {
   scenes: Record<string, { naive: DeviceMetrics; optimized: DeviceMetrics }>;
 }
 export const SCENE_IDS: readonly string[];
-export const METRIC_KEYS: readonly string[];
+export const METRIC_KEYS: ReadonlyArray<keyof BenchMetrics>;
 export const ENV_KEYS: readonly string[];
 export function validateDeviceResult(value: unknown): { ok: true; result: DeviceResult } | { ok: false; errors: string[] };
 export function expandWire(value: unknown): { value: unknown; error?: undefined } | { error: string; value?: undefined };

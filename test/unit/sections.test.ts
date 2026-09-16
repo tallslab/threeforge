@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AmbientLight, DirectionalLight, Group, PointLight, Scene, SpotLight } from 'three';
-import { lightingOf, scanLights, skinningOf } from '../../src/ledger/sections.js';
+import { lightingOf, NO_SHADOW_WORK, scanLights, skinningOf } from '../../src/ledger/sections.js';
 import type { SubmissionRecord } from '../../src/ledger/snapshot.js';
 
 const rec = (over: Partial<SubmissionRecord>): SubmissionRecord => ({
@@ -71,6 +71,6 @@ describe('lighting', () => {
   });
 
   it('lightingOf without shadow work reports no texels and no casters, whatever the lights are configured to', () => {
-    expect(lightingOf(lights, items)).toMatchObject({ shadowLights: 3, shadowPasses: 2, shadowCasters: 0, shadowTexels: 0, shadowSubmissions: 3 });
+    expect(lightingOf(lights, items, NO_SHADOW_WORK)).toMatchObject({ shadowLights: 3, shadowPasses: 2, shadowCasters: 0, shadowTexels: 0, shadowSubmissions: 3 });
   });
 });

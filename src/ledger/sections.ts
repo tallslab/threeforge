@@ -23,7 +23,8 @@ export interface ShadowWork {
   casters: number;
 }
 
-const NO_SHADOW_WORK: ShadowWork = Object.freeze({ texels: 0, casters: 0 });
+/** A frame that rendered no shadow map. `buildFrame` passes this when its optional `shadows` input is absent. */
+export const NO_SHADOW_WORK: ShadowWork = Object.freeze({ texels: 0, casters: 0 });
 
 /** Skinned work of the main pass: vertices, unique skeletons and their bones. */
 export function skinningOf(items: SubmissionRecord[]): SkinningSnapshot {
@@ -80,9 +81,13 @@ const TYPE_KEYS: Record<string, keyof LightingSnapshot['lights']> = {
 /**
  * The lighting section. `lights` are the frame's lights by type, `shadowLights` those configured to cast. Shadow passes
  * and shadow submissions count the scene submissions of `shadow:*` passes: renderer-internal items (the VSM blur quads of
- * `shadow:<id>:vsm`) are neither. Texels and casters are what the ledger saw render (`shadows`; none without it).
+ * `shadow:<id>:vsm`) are neither. Texels and casters are what the ledger saw render (`shadows`).
+ *
+ * `shadows` is required: it used to default to `NO_SHADOW_WORK`, which gave a caller that forgot it 0 texels and 0
+ * casters whatever its lights were configured to do — a wrong number that reads like a measured one. Pass
+ * `NO_SHADOW_WORK` explicitly for a frame that rendered no shadow map.
  */
-export function lightingOf(lights: LightInfo[], items: SubmissionRecord[], shadows: ShadowWork = NO_SHADOW_WORK): LightingSnapshot {
+export function lightingOf(lights: LightInfo[], items: SubmissionRecord[], shadows: ShadowWork): LightingSnapshot {
   const counts = { directional: 0, point: 0, spot: 0, hemisphere: 0, ambient: 0, other: 0 };
   let shadowLights = 0;
   for (const l of lights) {

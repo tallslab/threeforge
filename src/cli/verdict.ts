@@ -20,7 +20,14 @@ export function verdictOf(after: FrameSnapshot | null, before: FrameSnapshot, bu
   if (budgetResult && !budgetResult.pass) reasons.push(`${budgetResult.actual} scene submissions over the budget of ${budgetResult.maxSubmissions}`);
   const errors = frame.hints.filter((h) => h.severity === 'error').map((h) => h.code);
   for (const code of errors) reasons.push(`error hint ${code}`);
-  if (parity && !parity.pass) reasons.push(`pixel parity ${parity.diffPct.toFixed(2)}% > ${parity.threshold}%`);
+  if (parity && !parity.pass) {
+    // The percentage is rounded, so at `--parity 0` a real failure reads `pixel parity 0.00% > 0%` and looks like a
+    // passing run. The exact count is what proves a pixel moved, and it sat only in the adjacent log line.
+    let worst = 0;
+    for (const view of parity.views) worst = Math.max(worst, view.changedPixels);
+    const count = parity.views.length > 0 ? ` (${worst} changed pixel${worst === 1 ? '' : 's'} in the worst view)` : '';
+    reasons.push(`pixel parity ${parity.diffPct.toFixed(2)}% > ${parity.threshold}%${count}`);
+  }
   if (pageErrors.length > 0) reasons.push(pageErrorsReason(pageErrors));
   return { pass: reasons.length === 0, budget: budgetResult, errors, reasons };
 }

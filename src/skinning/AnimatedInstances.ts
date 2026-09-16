@@ -46,6 +46,12 @@ export class AnimatedInstances {
    */
   readonly matrixBuffer: InstancedInterleavedBuffer;
   private readonly timeUniform: { value: number };
+  /**
+   * Per part: its geometry, its material, and the `mat4` uniform holding the part's offset from the character root
+   * (`animation.parts[k].matrix`).
+   * @internal `offset` is reachable only through a cast and is exposed in this shape mainly for the tests that
+   * assert the transform a part is drawn at.
+   */
   private readonly parts: Array<{ geometry: InstancedBufferGeometry; material: MeshStandardNodeMaterial; offset: { value: Matrix4 } }> = [];
   private seconds = 0;
 

@@ -4,6 +4,7 @@ export { tag, FORGE_TAG_KEY, type ForgeTag } from './tags.js';
 export {
   MaterialRegistry,
   type MaterialDescription,
+  type MaterialHashes,
   type ProgramStats,
   type RegisterOutcome,
   type RegistryStats,

@@ -1,5 +1,5 @@
 import type { Flag, Reason, SubmissionKind } from './reasons.js';
-import { lightingOf, skinningOf, type LightInfo, type ShadowWork } from './sections.js';
+import { lightingOf, skinningOf, NO_SHADOW_WORK, type LightInfo, type ShadowWork } from './sections.js';
 import { capName } from './text.js';
 
 export interface SubmissionRecord {
@@ -262,7 +262,7 @@ export interface FrameInput {
   overdraw?: OverdrawSnapshot;
 }
 
-export function buildFrame({ env, items, reportedDrawCalls, triangles, programs, descriptions, lights = [], shadows, js, memory, overdraw }: FrameInput): FrameSnapshot {
+export function buildFrame({ env, items, reportedDrawCalls, triangles, programs, descriptions, lights = [], shadows = NO_SHADOW_WORK, js, memory, overdraw }: FrameInput): FrameSnapshot {
   const passes = new Map<string, PassSnapshot>();
   const byReason = new Map<string, ReasonSnapshot>();
   const programMap = new Map<string, ProgramSnapshot>();

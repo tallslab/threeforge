@@ -62,6 +62,10 @@ describe('verdict', () => {
     bad.hints = [{ category: 'drawCalls', severity: 'error', code: 'unsupported-material', message: 'x', objects: [] }];
     expect(verdictOf(bad, bad, null, null).errors).toEqual(['unsupported-material']);
     expect(verdictOf(clean, clean, null, { diffPct: 2, threshold: 0.5, pass: false, views: [] }).reasons).toContain('pixel parity 2.00% > 0.5%');
+    // R114: at `--parity 0` a sub-rounding failure reads `pixel parity 0.00% > 0%`, which looks like a passing run.
+    // The counts are in the adjacent log line only, so the reason itself has to carry one.
+    const subRounding = { diffPct: 0, threshold: 0, pass: false, views: [{ view: 'default', diffPct: 0, changedPixels: 3 }, { view: 'orbit-0', diffPct: 0, changedPixels: 1 }] };
+    expect(verdictOf(clean, clean, null, subRounding).reasons).toContain('pixel parity 0.00% > 0% (3 changed pixels in the worst view)');
     expect(exitCodeOf(verdictOf(clean, clean, null, null))).toBe(0);
   });
 

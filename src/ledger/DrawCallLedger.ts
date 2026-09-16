@@ -198,6 +198,9 @@ export class DrawCallLedger {
    * `destroyTexture` (calling three's own with the same `this` and arguments) to count three's `DFG_LUT` texture for the
    * memory section: three r186 creates it the first time a lit Standard or Physical material builds and holds it with
    * nothing in the scene reaching it. A LUT three created before `attach()` is not seen. `detach()` restores all four.
+   *
+   * Also resets the render depth to 0: a `detach()` from inside a draw leaves the running render wrapper's `exit()`
+   * to take `depth` below 0, and without this reset the next render on a re-attached ledger threw.
    */
   attach(renderer: LedgerRenderer): void {
     if (this.renderer) this.detach();

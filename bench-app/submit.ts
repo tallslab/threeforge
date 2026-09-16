@@ -1,5 +1,5 @@
 import { computeResultId } from '../scripts/bench-id.mjs';
-import type { BenchMetrics, SceneId } from '../test/app/benchMetrics.js';
+import { METRIC_KEYS, type BenchMetrics, type SceneId } from '../test/app/benchMetrics.js';
 
 export type Backend = 'webgl2' | 'webgpu';
 export type Tier = 'desktop' | 'phone-mid' | 'phone-low';
@@ -101,11 +101,11 @@ export function compact(r: DeviceResult): DeviceResult {
 
 /** The issue-body form: metrics as arrays in `metricKeys` order (about a third of the size, so the prefilled URL fits). */
 export interface WireResult extends Omit<DeviceResult, 'scenes'> {
-  metricKeys: Array<keyof BenchMetrics>;
+  metricKeys: ReadonlyArray<keyof BenchMetrics>;
   scenes: Record<SceneId, { naive: number[]; optimized: number[] }>;
 }
 
-export const METRIC_KEYS: Array<keyof BenchMetrics> = ['sceneSubmissions', 'gpuDraws', 'triangles', 'programs', 'overdrawOpaque', 'overdrawTransparent', 'skinnedVertices', 'shadowCasters', 'shadowTexels', 'textureBytes', 'geometryBytes', 'renderTargetBytes', 'particles', 'fillMegapixels', 'objects', 'autoUpdatedMatrices', 'shadowPassesPerFrame', 'renderMs', 'frameMs', 'unattributed'];
+export { METRIC_KEYS };
 
 export function toWire(r: DeviceResult): WireResult {
   const c = compact(r);

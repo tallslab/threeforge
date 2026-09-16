@@ -1,5 +1,11 @@
 /** JSON Schemas (draft 2020-12) for the data an agent sees: the snapshot and the analyze/inspect documents. */
 type Schema = Record<string, unknown>;
+/**
+ * An object schema with named properties. `Schema` itself is `Record<string, unknown>`, and spreading that into
+ * `SNAPSHOT_SCHEMA` erases the very keys its consumers read (`properties`, `required`), so the bodies below are
+ * annotated with this narrowing of it instead.
+ */
+type ObjectSchema = { type: 'object'; properties: Record<string, Schema>; required: string[]; additionalProperties: boolean };
 const number: Schema = { type: 'number' };
 const integer: Schema = { type: 'integer' };
 const string: Schema = { type: 'string' };
@@ -23,6 +29,13 @@ const variantHash: Schema = {
   description: 'Groups submissions sharing one program and the same uniform values (colour, map, etc). Same run-only stability caveat as programHash.',
 };
 
+/** The per-frame index of a submission's canonical material (`materialUses`). */
+const materialIndex: Schema = {
+  type: 'integer',
+  minimum: 0,
+  description: "Per-frame index of the submission's canonical material, in first-draw order: submissions drawing one material share it. Not stable across frames.",
+};
+
 const snapshotProperties: Record<string, Schema> = {
   schemaVersion: { const: 3 },
   env: obj({ three: string, backend: { enum: ['webgl2', 'webgpu', 'unknown'] }, multiDraw: boolean, tier: { enum: ['desktop', 'phone-mid', 'phone-low'] }, gpu: string, dpr: number, viewport: { type: 'array', items: number, minItems: 2, maxItems: 2 } }),
@@ -36,7 +49,7 @@ const snapshotProperties: Record<string, Schema> = {
   js: obj({ renderMs: number, ledgerMs: number, frameMs: number, objects: integer, autoUpdatedMatrices: integer, hiddenOriginals: integer, skipped: integer }),
   memory: obj({ textures: obj({ count: integer, bytes: integer }), geometries: obj({ count: integer, bytes: integer }), renderTargets: obj({ count: integer, bytes: integer }), unreferenced: obj({ geometries: integer, textures: integer }), chunks: obj({ total: integer, resident: integer }), measured: nullable(obj({ textures: obj({ count: integer, bytes: number }), geometries: obj({ count: integer, bytes: number }), renderTargets: obj({ count: integer }), bytes: number })), estimated: { const: true } }),
   hints: arr(hint),
-  items: arr(obj({ name: string, kind: string, material: integer, materialType: string, programHash, variantHash, transparent: boolean, pass: string, reason: string, flags: arr(string), expectedGpuDraws: integer, instances: integer, instancesDrawn: integer, vertices: integer, bones: integer, skeleton: nullable(integer), morphTargets: integer })),
+  items: arr(obj({ name: string, kind: string, material: materialIndex, materialType: string, programHash, variantHash, transparent: boolean, pass: string, reason: string, flags: arr(string), expectedGpuDraws: integer, instances: integer, instancesDrawn: integer, vertices: integer, bones: integer, skeleton: nullable(integer), morphTargets: integer })),
 };
 const snapshotRequired = ['byReason', 'env', 'hints', 'js', 'lighting', 'memory', 'overdraw', 'passes', 'programs', 'schemaVersion', 'skinning', 'totals'];
 
@@ -46,7 +59,7 @@ const snapshotRequired = ['byReason', 'env', 'hints', 'js', 'lighting', 'memory'
  * registering a second schema under `frame-snapshot-v3.json`. Every exported schema then validates standalone in ajv:
  * no `addSchema` of the others, and no network or `$id` resolution at validation time.
  */
-function frameSnapshotDef() {
+function frameSnapshotDef(): ObjectSchema {
   return { type: 'object', properties: snapshotProperties, required: snapshotRequired, additionalProperties: false };
 }
 

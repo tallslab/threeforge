@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { MEASURED, metricsOf, SCENE_IDS, WARM } from '../../test/app/benchMetrics.js';
+import { DETERMINISTIC, TIMING } from '../../scripts/bench-gate.mjs';
+import { METRIC_KEYS as SCHEMA_METRIC_KEYS } from '../../scripts/bench-schema.mjs';
+import { MEASURED, METRIC_KEYS, metricsOf, SCENE_IDS, WARM } from '../../test/app/benchMetrics.js';
 import { emptyFrame } from '../../src/ledger/snapshot.js';
 
 describe('benchMetrics', () => {
@@ -26,6 +28,18 @@ describe('benchMetrics', () => {
     expect(metricsOf(frame, 2.5, 16.7, 0.5, [], 3).shadowTexels).toBe(0);
     expect(SCENE_IDS).toEqual(['village', 'forest', 'crowd', 'bossfight', 'lake', 'daynight', 'zen', 'rpg']);
     expect([WARM, MEASURED]).toEqual([10, 60]);
+  });
+
+  /**
+   * Ruling R115: the key list existed in three places (this module for the page, `scripts/bench-schema.mjs` for the
+   * node scripts, and `scripts/bench-gate.d.mts`'s type, which had silently lost five keys). The node scripts cannot
+   * import TypeScript, so one copy has to stay: this pins it, and pins the gate's own split of the same keys.
+   */
+  it('keeps the metric key lists in step: the TS source, the node schema, and the gate', () => {
+    const produced = Object.keys(metricsOf(emptyFrame({ three: '186', backend: 'webgl2', multiDraw: true, tier: 'desktop', gpu: 'x', dpr: 1, viewport: [800, 600] }), 0, 0, 0, [], 0));
+    expect([...METRIC_KEYS].sort(), 'METRIC_KEYS covers exactly what metricsOf produces').toEqual([...produced].sort());
+    expect([...SCHEMA_METRIC_KEYS], "scripts/bench-schema.mjs's copy, in the same wire order").toEqual([...METRIC_KEYS]);
+    expect([...DETERMINISTIC, ...TIMING, 'unattributed'].sort(), 'every metric is gated, timed, or unattributed').toEqual([...METRIC_KEYS].sort());
   });
 
   it('takes programs from its argument, not from the snapshot, so the overdraw count cannot inflate it', () => {

@@ -1,20 +1,8 @@
-export interface BenchMetrics {
-  sceneSubmissions: number;
-  gpuDraws: number;
-  triangles: number;
-  programs: number;
-  overdrawOpaque: number;
-  overdrawTransparent: number;
-  skinnedVertices: number;
-  shadowCasters: number;
-  shadowTexels: number;
-  textureBytes: number;
-  geometryBytes: number;
-  renderTargetBytes: number;
-  renderMs: number;
-  frameMs: number;
-  unattributed: number;
-}
+// The gate reads whatever `metricsOf` produced, so the type is that one rather than a copy: this declaration had
+// drifted, missing particles, fillMegapixels, objects, autoUpdatedMatrices and shadowPassesPerFrame.
+import type { BenchMetrics } from '../test/app/benchMetrics.js';
+
+export type { BenchMetrics };
 export interface BenchFile {
   schemaVersion: number;
   env: Record<string, unknown>;
