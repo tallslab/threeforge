@@ -399,14 +399,14 @@ export class DrawCallLedger {
     const renderTargets: Array<AllowedRenderTarget | null> = [this.renderer ? overdrawTargetOf(this.renderer) : null, ...this.drawnTargets.live()];
     // three r186 keeps its frame-buffer targets in `_frameBufferTargets` (Renderer.js ~1561-1601) and draws none when a
     // RenderPipeline renders the output itself; without the map the estimate allows the usual colour and depth.
-    const frameBuffers = (this.renderer as { _frameBufferTargets?: unknown } | null)?._frameBufferTargets;
+    const frameBuffers = frameBufferTargetsOf(this.renderer);
     this.memoryStats = estimateMemory(scene, info, this.environment.viewport, {
       renderTargets,
       internalTextures: this.internalTextures.size,
       rendererTextures: this.pmremTextures,
       internalGeometries: this.internalGeometries.live(),
       shadowMapType: this.renderer?.shadowMap?.type,
-      ...(frameBuffers instanceof Map ? { frameBufferTargets: [...(frameBuffers.values() as Iterable<AllowedRenderTarget>)] } : {}),
+      ...(frameBuffers ? { frameBufferTargets: frameBuffers } : {}),
     });
     this.last = { ...this.last, js: { ...this.last.js, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals }, memory: this.memoryNow() };
     this.last = { ...this.last, hints: hintsFor(this.last, this.budgets(), { ...this.hintContext, items: this.lastItems, objects: this.mainObjects }) };
@@ -859,6 +859,23 @@ class WeakMembers<T extends object> {
     this.refs = new Set();
     this.byMember = new WeakMap();
   }
+}
+
+/**
+ * The renderer's frame-buffer targets in three r186's shape (`renderer._frameBufferTargets`: a Map whose values are
+ * RenderTargets), or null. A private field: anything else — absent, renamed, not a Map, or holding values that are not
+ * render targets — is not read, so the estimate keeps its fixed allowance instead of counting a reshaped field wrong.
+ * The canary in test/unit/memory.test.ts pins the shape against three itself.
+ */
+function frameBufferTargetsOf(renderer: LedgerRenderer | null): AllowedRenderTarget[] | null {
+  const map = (renderer as { _frameBufferTargets?: unknown } | null)?._frameBufferTargets;
+  if (!(map instanceof Map)) return null;
+  const targets: AllowedRenderTarget[] = [];
+  for (const value of map.values()) {
+    if ((value as { isRenderTarget?: boolean } | null)?.isRenderTarget !== true) return null;
+    targets.push(value as AllowedRenderTarget);
+  }
+  return targets;
 }
 
 /** Whether `object` and every ancestor up to and including `root` is visible: what three's render lists test. */

@@ -29,6 +29,7 @@ import {
   VSMShadowMap,
   type Light,
 } from 'three';
+import Renderer from 'three/src/renderers/common/Renderer.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { estimateMemory, geometryBytes, textureBytes } from '../../src/ledger/memory.js';
 import { disposeOverdraw, measureOverdraw, overdrawTargetOf } from '../../src/ledger/overdraw.js';
@@ -298,7 +299,60 @@ describe('memory estimate', () => {
   });
 });
 
+// Canary: pins the three r186 Renderer internal the memory section reads, `_frameBufferTargets` (Renderer.js ~463,
+// ~1561-1601). It exercises three's own Renderer, constructed in node with a backend that only supplies a canvas. If it
+// fails, three renamed or reshaped the field, and `frameBufferTargetsOf` in DrawCallLedger.ts must change with it; until
+// then the ledger falls back to its fixed allowance of a colour and a depth texture (see the test after this one).
+describe("three r186 renderer internals the memory section reads (canary)", () => {
+  it('pins Renderer._frameBufferTargets: a Map of the RenderTargets _getFrameBufferTarget() creates, marked isPostProcessingRenderTarget', () => {
+    const backend = { getDomElement: () => ({ width: 300, height: 150, style: {} }) };
+    const renderer = new Renderer(backend as never) as unknown as { _frameBufferTargets: unknown; _getFrameBufferTarget(): unknown; needsFrameBufferTarget: boolean; depth: boolean };
+    expect(renderer._frameBufferTargets).toBeInstanceOf(Map);
+    const targets = renderer._frameBufferTargets as Map<unknown, unknown>;
+    expect(targets.size, 'none until a frame needs one').toBe(0);
+    expect(renderer.needsFrameBufferTarget).toBe(true);
+    const target = renderer._getFrameBufferTarget() as RenderTarget & { isPostProcessingRenderTarget?: boolean };
+    expect([...targets.values()]).toEqual([target]);
+    expect(target.isRenderTarget).toBe(true);
+    expect(target.isPostProcessingRenderTarget).toBe(true);
+    expect(target.textures).toHaveLength(1);
+    expect(target.depthBuffer).toBe(renderer.depth);
+    // What the estimate allows for it: its colour texture and the depth texture three creates for its depth buffer.
+    const { scene } = sceneWithMap();
+    expect(estimateMemory(scene, { textures: 1 + 2, geometries: 2 }, [0, 0], { frameBufferTargets: [target] }).unreferenced.textures).toBe(0);
+  });
+});
+
 describe('the ledger memory section', () => {
+  it("reads the renderer's frame-buffer targets only in three r186's shape, else keeps the fixed colour-and-depth allowance", () => {
+    const measure = (frameBufferTargets: unknown): number => {
+      const renderer = new FakeRenderer();
+      if (frameBufferTargets !== undefined) Object.assign(renderer, { _frameBufferTargets: frameBufferTargets });
+      const ledger = new DrawCallLedger();
+      ledger.attach(renderer as never);
+      const { scene, camera } = sceneWithCamera();
+      scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial({ map: new DataTexture(new Uint8Array(4), 1, 1) })));
+      scene.updateMatrixWorld();
+      renderer.render(scene, camera);
+      Object.assign(renderer.info.memory, { textures: 1 + 2, geometries: 1 + 1 }); // the map, and two textures more
+      const textures = ledger.measureMemory().unreferenced.textures;
+      ledger.detach();
+      return textures;
+    };
+    const withDepth = Object.assign(new RenderTarget(8, 8), { isPostProcessingRenderTarget: true });
+    const colourOnly = Object.assign(new RenderTarget(8, 8, { depthBuffer: false }), { isPostProcessingRenderTarget: true });
+    expect(measure(undefined), 'absent: the fixed allowance').toBe(0);
+    expect(measure(new Map([['canvas', withDepth]])), 'a colour and a depth target').toBe(0);
+    expect(measure(new Map([['canvas', colourOnly]])), 'a colour-only target').toBe(1);
+    expect(measure(new Map()), 'three drew into no frame-buffer target').toBe(2);
+    // A renamed or reshaped field must not become a wrong count: anything but a Map of render targets is not read.
+    expect(measure({ canvas: withDepth }), 'not a Map').toBe(0);
+    expect(measure(new WeakMap()), 'a WeakMap').toBe(0);
+    expect(measure(new Map([['canvas', { target: withDepth }]])), 'values that are not render targets').toBe(0);
+    expect(measure(null), 'null').toBe(0);
+  });
+
+
   it('a ledger that measured overdraw reports no unreferenced textures on a scene with nothing else unreferenced', async () => {
     const renderer = new FakeRenderer();
     const ledger = new DrawCallLedger();
