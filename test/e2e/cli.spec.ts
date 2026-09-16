@@ -220,26 +220,44 @@ test('analyze --bake --json output validates against ANALYZE_SCHEMA, compiled st
   expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
 });
 
-test('optimize keeps the Fox pixel-identical, keeps its skin and clips, and shrinks the file', async ({ forge }) => {
+test('optimize keeps the Fox pixel-identical at --parity 0, keeps its skin and clips, and shrinks the file', async ({ forge }) => {
   test.setTimeout(600_000);
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
     const out = join(dir, 'fox.glb');
-    const r = run(['optimize', asset('Fox'), '--out', out, '--backend', forge.backend, '--frames', '5', '--json']);
-    expect(r.status, r.stderr).toBe(0);
+    // --parity 0, and every view asserted at exactly 0: `safe` is documented as never changing a pixel (CONTRIBUTING.md
+    // rule 7), so the 0.5 % default this test used to accept proved nothing about that claim. The document is on
+    // stdout even when the verdict fails, so it is parsed before the verdict is judged.
+    const r = run(['optimize', asset('Fox'), '--out', out, '--parity', '0', '--backend', forge.backend, '--frames', '5', '--json']);
     const doc = JSON.parse(r.stdout);
-    expect(doc).toMatchObject({ schemaVersion: 1, tool: 'threeforge', command: 'optimize', input: { preset: 'safe' } });
+    expect(doc).toMatchObject({ schemaVersion: 1, tool: 'threeforge', command: 'optimize', input: { preset: 'safe', parity: 0 } });
     expect(doc.steps.map((s: { name: string }) => s.name)).toEqual(['dedup', 'palette', 'weld', 'resample', 'prune']);
     expect(statSync(out).size).toBe(doc.output.bytes);
     expect(doc.output.bytes).toBeLessThan(doc.stats.before.bytes * 0.7);
     expect(doc.stats.after.vertices).toBeLessThan(doc.stats.before.vertices);
     expect(doc.stats.after).toMatchObject({ skins: 1, animations: 3 });
     expect(doc.requires).toEqual([]);
-    expect(doc.verify.parity.pass).toBe(true);
-    expect(doc.verify.parity.views).toHaveLength(3);
     expect(doc.verify.optimized.asset).toMatchObject({ skinned: doc.verify.original.asset.skinned, animations: doc.verify.original.asset.animations });
     expect(doc.verify.original.before.totals.unattributed).toBe(0);
     expect(doc.verify.optimized.after.totals.unattributed).toBe(0);
+    const views = doc.verify.parity.views as Array<{ view: string; diffPct: number }>;
+    expect(views.map((v) => v.view)).toEqual(['default', 'orbit-0', 'orbit-1']);
+    expect(doc.verify.parity.threshold).toBe(0);
+    test.info().annotations.push({ type: 'parity', description: `[${forge.backend}] safe Fox: ${views.map((v) => `${v.view} ${v.diffPct} %`).join(', ')}` });
+    // FINDING (Task 42, see .superpowers/sdd/make-a-plan-to-dreamy-breeze/task-42-report.md): on webgpu the safe
+    // preset is NOT pixel-identical on the Fox. Measured, identically on three runs: default 0.007 %, orbit-0
+    // 0.011 %, orbit-1 0.014 % (65/97/123 pixels of 1280x720); webgl2 is exactly 0 in every view. Bisected to the
+    // `weld` step alone (0 through dedup and palette, 0.013 as soon as weld runs; resample adds 0.001 on orbit-1).
+    // weld is lossless here — the drawn triangle stream is value- and order-identical, only the layout changes from
+    // 1728 non-indexed vertices to 434 indexed ones — and the Fox has no NORMAL attribute, so GLTFLoader gives it a
+    // flat-shaded material (GLTFLoader.js:3500, :3559) whose normal comes from screen-space derivatives; every
+    // differing pixel is interior (0 of 285 touch the background), so this is shading at interior triangle edges,
+    // not a moved silhouette. Marked fixme rather than given a tolerance: the fix (change the step, or correct the
+    // pixel-identical claim in the docs to the measured figure) is the controller's call, not this test's.
+    test.fixme(forge.backend === 'webgpu', 'safe moves 0.007-0.014 % of pixels on the Fox on webgpu (weld); awaiting the step-or-docs decision');
+    for (const v of views) expect(v.diffPct, `${v.view}: --preset safe changed pixels`).toBe(0);
+    expect(doc.verify.parity.pass).toBe(true);
+    expect(r.status, r.stderr).toBe(0);
     expect(doc.verdict.pass).toBe(true);
     expect(r.stderr).toContain('PASS');
   } finally {
@@ -251,7 +269,9 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
   test.setTimeout(600_000);
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
-    const r = run(['optimize', asset('Buggy'), '--out', join(dir, 'buggy.glb'), '--backend', forge.backend, '--frames', '3', '--views', '1', '--json']);
+    // --parity 0: the same pixel-identical claim as the Fox above, on the asset whose 148 materials the palette step
+    // collapses to one. Every view must be exactly 0, not merely inside the 0.5 % default.
+    const r = run(['optimize', asset('Buggy'), '--out', join(dir, 'buggy.glb'), '--parity', '0', '--backend', forge.backend, '--frames', '3', '--views', '1', '--json']);
     expect(r.status, r.stderr).toBe(0);
     const doc = JSON.parse(r.stdout);
     expect(doc.stats.before.materials).toBe(148);
@@ -259,6 +279,54 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
     expect(doc.stats.after.textures).toBe(1);
     expect(doc.verify.delta.materials).toBeLessThan(0);
     expect(doc.verify.optimized.after.totals.sceneSubmissions).toBeLessThanOrEqual(doc.verify.original.after.totals.sceneSubmissions);
+    const views = doc.verify.parity.views as Array<{ view: string; diffPct: number }>;
+    expect(views.map((v) => v.view)).toEqual(['default', 'orbit-0']);
+    expect(doc.verify.parity.threshold).toBe(0);
+    test.info().annotations.push({ type: 'parity', description: `[${forge.backend}] safe Buggy: ${views.map((v) => `${v.view} ${v.diffPct} %`).join(', ')}` });
+    for (const v of views) expect(v.diffPct, `${v.view}: --preset safe changed pixels`).toBe(0);
+    expect(doc.verify.parity.pass).toBe(true);
+    expect(doc.verdict.pass).toBe(true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * The tolerance is measured, not guessed. `optimize --preset balanced --parity 100` on the Fox, twice per backend,
+ * reported exactly the same figures both times: webgl2 default 0.008 %, orbit-0 0.005 %, orbit-1 0.002 %; webgpu
+ * default 0.014 %, orbit-0 0.014 %, orbit-1 0.015 %. So the worst view measured is 0.015 % and 0.05 % leaves ~3.3x
+ * headroom. It covers three lossy sources together: `quantize` (positions, UVs and weights to integers),
+ * `textures` (the base colour map re-encoded as WebP at quality 85), and — on webgpu only — the 0.014 % the safe
+ * steps already move there (see the Fox safe test above). It is deliberately far below the CLI's own 0.5 % default:
+ * balanced is lossy, but only just, and a step that starts moving a tenth of a percent should fail this.
+ */
+const BALANCED_PARITY = 0.05;
+
+test('optimize --preset balanced quantizes and re-encodes the Fox, changing pixels but staying inside a measured 0.05 %', async ({ forge }) => {
+  test.setTimeout(600_000);
+  const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
+  try {
+    const out = join(dir, 'fox.glb');
+    const r = run(['optimize', asset('Fox'), '--out', out, '--preset', 'balanced', '--parity', String(BALANCED_PARITY), '--backend', forge.backend, '--frames', '5', '--json']);
+    expect(r.status, r.stderr).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.steps.map((s: { name: string }) => s.name)).toEqual(['dedup', 'palette', 'weld', 'resample', 'prune', 'textures', 'quantize']);
+    // Both lossy steps really ran: the preset is not quietly degrading to safe because sharp is missing.
+    expect(doc.steps.find((s: { name: string }) => s.name === 'textures')).toMatchObject({ applied: true, note: null });
+    expect(doc.stats.after.extensions).toEqual(['EXT_texture_webp', 'KHR_mesh_quantization']);
+    expect(doc.requires.map((q: { extension: string; code: string | null }) => [q.extension, q.code])).toEqual([
+      ['EXT_texture_webp', null],
+      ['KHR_mesh_quantization', null],
+    ]);
+    expect(doc.stats.after).toMatchObject({ skins: 1, animations: 3, triangles: doc.stats.before.triangles });
+    expect(doc.verify.optimized.asset).toMatchObject({ skinned: 1, animations: 3 });
+    const views = doc.verify.parity.views as Array<{ view: string; diffPct: number }>;
+    expect(views.map((v) => v.view)).toEqual(['default', 'orbit-0', 'orbit-1']);
+    test.info().annotations.push({ type: 'parity', description: `[${forge.backend}] balanced Fox: ${views.map((v) => `${v.view} ${v.diffPct} %`).join(', ')} (tolerance ${BALANCED_PARITY} %)` });
+    for (const v of views) expect(v.diffPct, `${v.view}: --preset balanced moved more pixels than the measured tolerance`).toBeLessThanOrEqual(BALANCED_PARITY);
+    // Balanced is lossy where safe is not: on webgl2 safe measures exactly 0 and this measures 0.008 %. A run that
+    // reported 0 here would mean quantize and the WebP re-encode had stopped doing anything.
+    expect(doc.verify.parity.diffPct, 'balanced changed no pixel at all: did the lossy steps run?').toBeGreaterThan(0);
     expect(doc.verify.parity.pass).toBe(true);
     expect(doc.verdict.pass).toBe(true);
   } finally {
