@@ -244,7 +244,8 @@ describe('renderDevices inline Markdown and HTML', () => {
   for (const payload of payloads) {
     it(`renders ${payload} as literal text, as gpu and as platform`, () => {
       const hostile = { ...result, env: { ...env, gpu: payload, platform: payload } };
-      expect(validateDeviceResult({ ...hostile, id: computeResultId(hostile.env, createdAt.slice(0, 10)) }).errors ?? []).toEqual([]);
+      const validated = validateDeviceResult({ ...hostile, id: computeResultId(hostile.env, createdAt.slice(0, 10)) });
+      expect(validated.ok, JSON.stringify(validated)).toBe(true);
       const row = renderDevices([hostile]).split('\n').find((l) => l.startsWith('| ') && !l.startsWith('| device'))!;
       expect(row).toContain(`\`${payload}\``);
       const live = outsideCodeSpans(row);
