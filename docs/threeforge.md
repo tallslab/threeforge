@@ -1508,7 +1508,10 @@ Each is documented where the mechanism is, and none has a fix in this release.
   an `alphaHash` pair 1.81 % (webgl2) and 1.82 % (webgpu); on four rotated boxes an object-space normal map 6.19 %
   (webgl2 6.1896 %, webgpu 6.1927 %), identical batched, instanced and baked. The `batch-local-space` hint (warn) names
   the batches, instanced groups and baked meshes whose material has a node in any slot, custom material code (a class
-  that is not one of three's own, or an own function), `alphaHash` or an object-space normal map. Tag such meshes `dynamic` (without `dynamics: 'batch-sync'`) to keep them individual.
+  that is not one of three's own, or an own function), `alphaHash` or an object-space normal map. Tag such meshes `dynamic` (without `dynamics: 'batch-sync'`) to keep them individual. All three cases are pinned on
+  both backends by `test/e2e/local-space.spec.ts`, which compiles each on transformed statics and asserts that the hint
+  fires and that the picture changed (with a plain material as the zero-change control); it records its own
+  arrangement's share as an annotation rather than re-asserting the percentages above, which are the probe's.
 - **The bake's seam and buried-face removals leave a hole when the camera's near plane cuts into a module**
   (section 8, "Near-plane limitation").
 - **`memory.unreferenced` has residual blind spots** (section 4, "Limits of the memory section"): resources three
