@@ -67,6 +67,9 @@ export class DayNight {
   private readonly everyDegrees: number;
   private readonly previous: { fog: Scene['fog']; background: Scene['background']; fogColor: Color | null };
   private readonly heights: Float32Array | null;
+  /** The zenith and horizon the dome's vertex colours were last written from; NaN until the first write, so it always happens. */
+  private readonly lastZenith = new Color(Number.NaN, Number.NaN, Number.NaN);
+  private readonly lastHorizon = new Color(Number.NaN, Number.NaN, Number.NaN);
   private lastShadowAngle = Number.NaN;
   private angle = 0;
   private hours = 12;
@@ -161,7 +164,10 @@ export class DayNight {
 
     _zenith.setHex(this.colors.nightZenith).lerp(_tmp.setHex(this.colors.dayZenith), up);
     _horizon.setHex(this.colors.nightHorizon).lerp(_tmp.setHex(this.colors.dayHorizon), up);
-    if (this.dome && this.heights) {
+    // Only the dome's vertex colours are skipped, and only when both ends of the gradient are exactly what they were
+    // written from: everything above (the sun's place, intensity and colour) and below (hemisphere, fog, background,
+    // the shadow refresh) runs on every call.
+    if (this.dome && this.heights && !(this.lastZenith.equals(_zenith) && this.lastHorizon.equals(_horizon))) {
       const colors = this.dome.geometry.getAttribute('color') as Float32BufferAttribute;
       const array = colors.array as Float32Array;
       for (let i = 0; i < this.heights.length; i++) {
@@ -173,6 +179,8 @@ export class DayNight {
         array[i * 3 + 2] = _horizon.b + (_zenith.b - _horizon.b) * k;
       }
       colors.needsUpdate = true;
+      this.lastZenith.copy(_zenith);
+      this.lastHorizon.copy(_horizon);
     }
     if (this.hemisphere) {
       this.hemisphere.color.copy(_zenith).lerp(_horizon, 0.5);

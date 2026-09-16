@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BackSide, Color, Fog, Mesh, MeshBasicMaterial, Scene } from 'three';
+import { BackSide, Color, Fog, Mesh, MeshBasicMaterial, Scene, Vector3, type BufferAttribute } from 'three';
 import { DayNight } from '../../src/lighting/DayNight.js';
 import { tag } from '../../src/tags.js';
 
@@ -11,6 +11,8 @@ function setup(everyDegrees = 1) {
   return { scene, dn };
 }
 const domeColors = (dome: Mesh): number[] => Array.from(dome.geometry.getAttribute('color').array as Float32Array);
+/** The direction the sun shades from: its world position relative to its target's. */
+const sunDirection = (dn: DayNight): Vector3 => dn.sun.getWorldPosition(new Vector3()).sub(dn.sun.target.getWorldPosition(new Vector3())).normalize();
 
 describe('DayNight', () => {
   it('adds a sun with its target, a static gradient dome and a hemisphere light', () => {
@@ -68,6 +70,34 @@ describe('DayNight', () => {
     expect(dn.sun.shadow.needsUpdate).toBe(true);
     const every = new DayNight(new Scene(), { shadow: { everyDegrees: 0 } });
     expect(every.sun.shadow.autoUpdate).toBe(true);
+  });
+
+  it('skips the dome write when the sky colours are unchanged, and still moves the sun and its shading direction', () => {
+    // Day and night share one palette, so every setTime computes the same zenith and horizon whatever the hour.
+    const flat = { dayZenith: 0x336699, nightZenith: 0x336699, dayHorizon: 0x99bbdd, nightHorizon: 0x99bbdd };
+    const scene = new Scene();
+    const dn = new DayNight(scene, { shadow: false, colors: flat });
+    const attribute = dn.dome!.geometry.getAttribute('color') as BufferAttribute;
+    const written = domeColors(dn.dome!);
+    const version = attribute.version;
+    dn.setTime(3);
+    const night = { position: dn.sun.position.clone(), direction: sunDirection(dn), intensity: dn.sun.intensity, color: dn.sun.color.getHex() };
+    dn.setTime(15);
+    expect(attribute.version, 'unchanged colours write nothing').toBe(version);
+    expect(domeColors(dn.dome!)).toEqual(written);
+    // The sun still moves: position, shading direction, intensity and colour all follow the hour.
+    expect(dn.sun.position.equals(night.position)).toBe(false);
+    expect(sunDirection(dn).equals(night.direction)).toBe(false);
+    expect(dn.sun.intensity).not.toBe(night.intensity);
+    expect(dn.sun.color.getHex()).not.toBe(night.color);
+    expect(scene.children).toContain(dn.sun.target);
+    // A palette that does change still writes the dome.
+    const real = new DayNight(new Scene(), { shadow: false });
+    const realAttribute = real.dome!.geometry.getAttribute('color') as BufferAttribute;
+    const realVersion = realAttribute.version;
+    real.setTime(0);
+    expect(realAttribute.version).toBeGreaterThan(realVersion);
+    expect(domeColors(real.dome!)).not.toEqual(domeColors(dn.dome!));
   });
 
   it('dispose removes what it added and restores fog and background', () => {

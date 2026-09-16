@@ -819,7 +819,9 @@ Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects f
   gradient sky dome (`sky-dome`, vertex colours, static-tagged so it freezes and draws once), a hemisphere light,
   fog and background following the horizon; `setTime(hours)` drives all of it and requests a shadow-map render
   only when the sun moved `everyDegrees` (default 0.5) since the last one, through `shadow.needsUpdate` with
-  `autoUpdate` off. `refreshShadow()`, `dispose()`. The day/night benchmark renders the map every second frame.
+  `autoUpdate` off. The dome's vertex colours are rewritten only when the zenith or horizon colour differs from the
+  one they were last written from, so stepping the hour within an unchanging palette costs no vertex walk and no
+  re-upload. `refreshShadow()`, `dispose()`. The day/night benchmark renders the map every second frame.
 - **`ShadowBudget`** (`src/lighting/ShadowBudget.ts`): `apply(scene)` switches shadows off on the `off` tiers,
   drops point-light shadows off phones, then halves the largest map until the texel sum fits the tier's
   `shadowTexels` budget (floor `minMapSize`); three resizes the targets on the next shadow render. `release()`
