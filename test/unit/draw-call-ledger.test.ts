@@ -249,6 +249,14 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     expect(draws('spectre'), 'no position but a finite drawRange: three draws it').toEqual([1]);
     expect(draws('panel'), 'the second group lies outside the drawRange').toEqual([1, 0]);
     expect(draws('gone'), 'the drawRange starts past the last vertex').toEqual([0]);
+    // An instance nothing drew is not a drawn instance: `instancesDrawn` follows the same rule, on the same three
+    // geometries, so no total counts work three skipped. `instances` (what the submission covers) is unchanged.
+    const drawn = (name: string): number[] => frame.items!.filter((i) => i.name === name).map((i) => i.instancesDrawn);
+    expect(drawn('ghost')).toEqual([0]);
+    expect(drawn('spectre'), 'a finite drawRange draws, so its instance is drawn').toEqual([1]);
+    expect(drawn('panel')).toEqual([1, 0]);
+    expect(drawn('gone')).toEqual([0]);
+    expect(frame.items!.filter((i) => i.name === 'ghost').map((i) => i.instances), 'the submission still covers its mesh').toEqual([1]);
     // The parity assertion the review points at: predicting a draw three never makes takes this below zero.
     expect(frame.totals.unattributed).toBe(0);
     expect(frame.totals.gpuDraws).toBe(frame.totals.reportedDrawCalls);

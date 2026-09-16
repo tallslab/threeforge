@@ -163,7 +163,9 @@ For each submission the ledger predicts the draw calls three r186's `renderer.in
   attribute under the default infinite `drawRange` (vertices from storage buffers, no `setDrawRange`); a `drawRange`
   disjoint from the group being drawn (groups `(0,18)` and `(18,18)` with `setDrawRange(0, 10)`); and a `drawRange`
   starting past the last vertex. The wireframe range factor scales the item count as an approximation of three's
-  generated wireframe index, which can only matter for a wireframe mesh whose range is already disjoint.
+  generated wireframe index, which can only matter for a wireframe mesh whose range is already disjoint. Such a
+  submission's `instancesDrawn` is 0 too, so no total counts work three skipped; its `instances`, what the submission
+  covers, is unchanged.
 
 `reportedDrawCalls` is the change in `renderer.info.render.drawCalls` inside the frame;
 `unattributed = reportedDrawCalls − gpuDraws` and is asserted to be 0 in every test. `drawCommands` counts multi-draw

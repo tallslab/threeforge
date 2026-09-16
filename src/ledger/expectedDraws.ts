@@ -128,8 +128,13 @@ export function expectedGpuDraws(object: Object3D, sides: number, info: BackendI
  * ledger's pooled record). Like `expectedGpuDraws`, read after the renderer processed the object. A BatchedMesh draws
  * the multi-draw slots whose index count is not zero: a slot a nested pass zeroed (stable-prefix culling,
  * `src/compiler/culling.ts`) still adds a draw call but draws no instance.
+ *
+ * A submission whose vertex range three rejects (`drawsNoVertices`, the same three inputs `expectedGpuDraws` predicts
+ * 0 draws for) draws no instance either, so `instancesDrawn` is 0 for it — without that, a total counted work three
+ * skipped. `instances`, what the submission *covers*, is unchanged: the mesh is still the submission's subject. A
+ * BatchedMesh is exempt as it is there, because three returns before the vertex range for one.
  */
-export function writeInstanceCounts<T extends { instances: number; instancesDrawn: number }>(object: Object3D, into: T): T {
+export function writeInstanceCounts<T extends { instances: number; instancesDrawn: number }>(object: Object3D, into: T, material: Material | null = null, group: DrawGroup | null = null): T {
   const o = object as Counted;
   if (o.isBatchedMesh) {
     into.instances = o.instanceCount ?? 0;
@@ -154,5 +159,6 @@ export function writeInstanceCounts<T extends { instances: number; instancesDraw
     into.instances = 1;
     into.instancesDrawn = 1;
   }
+  if (!o.isBatchedMesh && into.instancesDrawn !== 0 && drawsNoVertices(o, material, group)) into.instancesDrawn = 0;
   return into;
 }

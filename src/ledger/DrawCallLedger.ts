@@ -821,7 +821,7 @@ export class DrawCallLedger {
   /** Snapshots the draw state into the record once the renderer returned, then files it as this frame's next item. */
   private file(record: SubmissionRecord, object: Object3D, material: Material, group: DrawGroup | null, sides: number, hashes: MaterialHashes, backSide: boolean): void {
     record.expectedGpuDraws = expectedGpuDraws(object, sides, this.backendInfo, material, group);
-    writeInstanceCounts(object, record);
+    writeInstanceCounts(object, record, material, group);
     const state = this.current;
     if (state === null) return; // detached inside the draw
     const buffer = state.buffer;
