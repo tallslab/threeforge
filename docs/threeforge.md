@@ -311,7 +311,10 @@ items?:    per-submission records with ledger.frame({ items: true })
   (`HintContext.unsupportedObjects`): the material renders in none of them on WebGPU, so a mesh drawn only into a
   shadow map still counts, one drawn in several passes counts once, and the hint appears whenever such a submission
   exists. `byReason` still counts submissions in every pass. The `point-light-shadow` and `transmission` hints name only lights and
-  meshes three renders (world-visible; no point light while `renderer.shadowMap.enabled` is false).
+  meshes three renders (world-visible; no point light while `renderer.shadowMap.enabled` is false). The
+  `batch-local-space` hint (`HintContext.localSpaceDraws`, gathered on the rescan) names world-visible draws
+  `World.compile()` made (a `forge:batch:` batch, the base level of a `forge:instanced:` group, a baked mesh) whose
+  material has a node in any slot, `alphaHash` or an object-space normal map (section 7).
 - **programHash / variantHash** (the `programs` keys, and each item's hashes) come from the material registry
   (section 5). A hash for a material with instance code, a class that is not one of three's own, or identity-keyed
   data (a function or class instance in a user-added property) is stable within a run only: identity numbers follow
@@ -433,7 +436,7 @@ Budgets per tier (`BUDGETS`, `budgetsFor(tier, overrides)`):
 
 Hint codes (`hintsFor`, remedies in `npx threeforge explain --all`): `over-budget-submissions`,
 `over-budget-triangles`, `untagged`, `unique-materials`, `static-unbatched`, `unsupported-material`, `programs`, `transparent-overdraw`,
-`skinned-vertices`, `point-light-shadow`, `shadow-texels`, `transmission`, `transparent-batch-order`, `texture-bytes`,
+`skinned-vertices`, `point-light-shadow`, `shadow-texels`, `transmission`, `transparent-batch-order`, `batch-local-space`, `texture-bytes`,
 `static-auto-update`, `particles-over-budget`, `sprites-unbatched`, `js-objects`, `detach-originals`,
 `bones-over-budget`, `skinned-crowd`, `geometry-bytes`, `unreferenced-resources`.
 
@@ -629,6 +632,29 @@ submissions in the same pass, not by true per-object depth against them. `transp
 this (its transparent statics stay individual meshes, each sorted by three like any other transparent object), at
 the cost of one draw per mesh instead of one per batch; the `transparent-batch-order` hint (info) names it whenever
 a threeforge transparent batch shares the main pass with another transparent submission.
+
+Batching and instancing also move a material's mesh-local space into the scene's, so node materials that shade from
+`positionLocal`, `alphaHash` and object-space normal maps stay batched by default too, with the limit named by a hint
+and an opt-out per mesh (section 14). three r186 multiplies `positionLocal` by the instance matrix in a batch
+(`batch()`, `Batch.js:148`) and an instanced mesh (`instance()`, `Instance.js:206-207`), and World writes those
+matrices in the scene's space; a baked mesh's positions are written there too. `positionLocal` is a varying
+(`Position.js:45`), so a node reading it in either stage sees the vertex in the scene's space instead of the mesh's
+own, and `alphaHash` hashes it (`NodeMaterial.js:893`), which moves the pattern of discarded pixels. An object-space
+normal map's normals go through `transformNormalToView` (`NormalMapNode.js:120-122`), which uses the draw's
+`modelNormalMatrix` (`Normal.js:183-197`): the batch's, instanced mesh's or baked mesh's, not each module's, so a rotated
+module is lit as if unrotated. `normalLocal` is not affected in the fragment stage: three redeclares it per stage
+(`Normal.js:23-35`, a `toVar`, not a varying), and a tangent-space normal map follows the batched normal and tangent.
+Measured on four translated, rotated and scaled boxes (a scratch probe, both backends, changed pixels at tolerance 4,
+the same within 0.001 % whether batched, instanced or, where the bake takes the group, baked): a `positionLocal` colour
+gradient 7.21 % (a node material, so `bake` batches it), `alphaHash` 3.66 %, an object-space normal map 6.19 %; a
+tangent-space normal map and a plain `MeshStandardMaterial` 0 %. The
+`batch-local-space` hint (info) names every world-visible batch, instanced group and baked mesh World made whose
+material has a node in any slot (the test `spriteRule`'s `sprite-node-material` uses), `alphaHash: true`, or a
+`normalMap` with `normalMapType: ObjectSpaceNormalMap`, with the material names. It cannot see into a node graph, so it
+also names nodes that never read `positionLocal` (a texture lookup by uv, or `MeshSSSNodeMaterial`'s constant
+`thickness*Node` defaults). Tag the meshes that must keep their own local space `dynamic` (under the default
+`dynamics: 'separate'`) to leave them individual draws; an object-space normal map re-authored in tangent space batches
+unchanged.
 
 ### Culling, instancing, chunks, LOD, occlusion
 
@@ -1076,7 +1102,9 @@ has a node in any slot, or has a `displacementMap`. A node graph can read `posit
 `positionGeometry` inside a `Fn` closure nothing inspects before it builds, and three displaces along the local normal
 in local units, so all of these may change once the geometry is in scene space (a `normalLocal` colour node and a
 displacement map on scaled, rotated boxes changed 4.40 % of the frame on both backends when baked, and 0 once
-batched). It also batches a group where any geometry carries an attribute the bake does not carry faithfully (`unbakeableAttribute(geometry, vertexColors, builtInReads)` in
+batched). `alphaHash` and an object-space normal map on three's own materials still bake: they read mesh-local space,
+which batching and instancing move the same way, so they changed the same pixels baked, batched or instanced (section 7,
+the `batch-local-space` hint) and leaving the bake would restore none. It also batches a group where any geometry carries an attribute the bake does not carry faithfully (`unbakeableAttribute(geometry, vertexColors, builtInReads)` in
 `src/compiler/bake.ts`, not exported from the package entry point): a four-component `color` the material reads (the
 bake writes three components, and three multiplies the alpha into the diffuse colour, so a glTF `BLEND` material with
 an RGBA `COLOR_0` would render more opaque), a `color` the material's `vertexColors: false` ignores but something
@@ -1441,12 +1469,17 @@ Each is documented where the mechanism is, and none has a fix in this release.
   originals, the batches stay in the scene and the originals stay hidden, while `compiled` stays false, so
   neither `decompile()` nor `dispose()` undoes any of it. Only the pass tracker's scene hooks are removed on that path. Rebuild the
   scene (or reload) rather than retrying `compile()` on it.
-- **Batching moves `positionLocal` for node materials that shade from it, and `alphaHash`** (section 8, "Groups the
-  bake leaves to batching"): `batch()` (three r186 `Batch.js:148`) assigns `positionLocal = batchingMatrix *
-  positionLocal`, so a colour or hash computed from local position differs once a static group is batched, and the
-  same once baked. Measured with `bake` off: a `positionLocal` colour gradient on transformed boxes 3.32 % of the frame
-  on both backends, an `alphaHash` pair 1.81 % (webgl2) and 1.82 % (webgpu). Tag such meshes `dynamic` (without
-  `dynamics: 'batch-sync'`) to keep them individual.
+- **Batching and instancing move mesh-local space for node materials that shade from `positionLocal`, `alphaHash` and
+  object-space normal maps** (section 7, and section 8, "Groups the bake leaves to batching"): `batch()` (three r186
+  `Batch.js:148`) assigns `positionLocal = batchingMatrix * positionLocal`, and `instance()` (`Instance.js:206-207`) the
+  same with the instance matrix, so a colour or hash computed from local position differs once a static group is
+  batched or instanced, and the same once baked; an object-space normal map is transformed by the batch's (or baked
+  mesh's) normal matrix, not each module's (`NormalMapNode.js:120-122`), so a rotated module is lit as if unrotated.
+  Measured with `bake` off: a `positionLocal` colour gradient on transformed boxes 3.32 % of the frame on both backends,
+  an `alphaHash` pair 1.81 % (webgl2) and 1.82 % (webgpu); on four rotated boxes an object-space normal map 6.19 %
+  (webgl2 6.1896 %, webgpu 6.1927 %), identical batched, instanced and baked. The `batch-local-space` hint (info) names
+  the batches, instanced groups and baked meshes whose material has a node in any slot, `alphaHash` or an object-space
+  normal map. Tag such meshes `dynamic` (without `dynamics: 'batch-sync'`) to keep them individual.
 - **The bake's seam and buried-face removals leave a hole when the camera's near plane cuts into a module**
   (section 8, "Near-plane limitation").
 - **`memory.unreferenced` has residual blind spots** (section 4, "Limits of the memory section"): resources three
