@@ -31,10 +31,18 @@ for (const mode of ['frame', 'async'] as const) {
         return { ...result, unattributed: f.frame().totals.unattributed };
       }, mode);
       const warmed = await forge.page.screenshot({ type: 'png' });
+      // And back: decompile() restores the originals, so the picture must return to the cold frame it started from.
+      await forge.page.evaluate(async () => {
+        const f = window.__forge;
+        f.decompile();
+        for (let i = 0; i < 3; i++) await f.frameAsync();
+      });
+      const restored = await forge.page.screenshot({ type: 'png' });
       expect(result.mode).toBe(mode);
       expect(result.unattributed).toBe(0);
       if (mode === 'async') expect(result.repaired).toBeGreaterThanOrEqual(c.repaired);
-      expect(pixelDiff(cold, warmed), 'pixels changed by warm-up').toBeLessThan(0.0005);
+      expect(pixelDiff(cold, warmed, { threshold: 4 }), 'pixels changed by warm-up').toBeLessThan(0.0005);
+      expect(pixelDiff(cold, restored, { threshold: 4 }), 'pixels changed by decompile() after warm-up').toBeLessThan(0.0005);
     });
   }
 }

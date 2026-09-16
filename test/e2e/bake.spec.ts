@@ -25,12 +25,23 @@ test('baking the village keeps the pixels and draws one mesh per group', async (
     return { after: report.after, bake: report.bake, totals: frame.totals, baked: frame.byReason.baked?.submissions ?? 0 };
   });
   const after = await forge.page.screenshot({ type: 'png' });
+  // And back: decompile() puts the originals in place of the baked meshes, so the picture must return to the first one.
+  await forge.page.evaluate(async () => {
+    window.__forge.decompile();
+    for (let i = 0; i < 3; i++) await window.__forge.frameAsync();
+  });
+  await settle(forge.page, 2);
+  const restored = await forge.page.screenshot({ type: 'png' });
   expect(r.after.baked).toBeGreaterThan(5);
   expect(r.after.batches).toBe(0);
   expect(r.baked).toBe(r.after.baked);
   expect(r.totals.unattributed).toBe(0);
   expect(r.bake!.triangles).toBeLessThanOrEqual(r.bake!.inputTriangles);
-  expect(pixelDiff(before, after)).toBeLessThan(0.0005);
+  const diff = pixelDiff(before, after, { threshold: 4 });
+  const restoredDiff = pixelDiff(before, restored, { threshold: 4 });
+  note(`[${forge.backend}] village bake: ${r.after.baked} baked, pixel diff ${(diff * 100).toFixed(4)}%, after decompile ${(restoredDiff * 100).toFixed(4)}%`);
+  expect(diff).toBeLessThan(0.0005);
+  expect(restoredDiff, 'decompile() did not restore the naive picture').toBeLessThan(0.0005);
 });
 
 /** A 6 x 3 wall of touching unit boxes (27 seams), optionally a block hidden inside a solid, optionally under a mirrored scene. */

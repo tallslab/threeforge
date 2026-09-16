@@ -1,9 +1,48 @@
-import { expect, test } from './fixtures.js';
+import { expect, test, type ForgePage } from './fixtures.js';
 import { pixelDiff, settle } from './pixels.js';
 
 /** Records a measurement on the test (visible in the JSON and HTML reports) instead of printing it. */
 function note(description: string): void {
   test.info().annotations.push({ type: 'materials', description });
+}
+
+interface View {
+  name: string;
+  position: [number, number, number];
+  lookAt: [number, number, number];
+}
+
+/**
+ * Two viewpoints on the naive scene. The first is the harness default, which the committed baseline images were taken
+ * from; the second is low and oblique across the prop field, so the props are drawn in a different order, at a
+ * different depth and with a different set of them culled. One camera can miss a batch that is wrong only where that
+ * camera does not look, or right only in that one draw order.
+ */
+const VIEWS: View[] = [
+  { name: 'default', position: [0, 110, 150], lookAt: [0, 0, 0] },
+  { name: 'oblique', position: [-70, 18, -70], lookAt: [20, 5, 20] },
+];
+
+async function look(forge: ForgePage, view: View): Promise<void> {
+  await forge.page.evaluate((v: View) => {
+    const f = window.__forge;
+    f.camera.position.set(v.position[0], v.position[1], v.position[2]);
+    f.camera.lookAt(v.lookAt[0], v.lookAt[1], v.lookAt[2]);
+    f.camera.updateMatrixWorld();
+  }, view);
+}
+
+/** One screenshot per view, leaving the camera back on the first (the one the committed baselines were taken from). */
+async function shootViews(forge: ForgePage): Promise<Record<string, Buffer>> {
+  const shots: Record<string, Buffer> = {};
+  for (const view of VIEWS) {
+    await look(forge, view);
+    await settle(forge.page, 3);
+    shots[view.name] = await forge.page.screenshot({ type: 'png' });
+  }
+  await look(forge, VIEWS[0]!);
+  await settle(forge.page, 2);
+  return shots;
 }
 
 /** A tinted group compiled with default options (a BatchedMesh) and with `bake: true` (a baked mesh). */
@@ -12,12 +51,13 @@ const TINTED_MODES = [
   ['bake: true', { bake: '1' }],
 ] as const;
 
-test('world.compile() takes the naive scene from 503 to 28 submissions with identical pixels', async ({ forge }) => {
+test('world.compile() takes the naive scene from 503 to 28 submissions with identical pixels, from two cameras, and decompile() puts the picture back', async ({ forge }) => {
   await forge.open('naive');
   const before = await forge.page.evaluate(() => window.__forge.frame());
   expect(before.totals.sceneSubmissions).toBe(503);
   // Baseline image of the naive render; the compiled render must match it.
   if (forge.pixelChecks) await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
+  const naiveShots = forge.pixelChecks ? await shootViews(forge) : null;
 
   const { report, after, text } = await forge.page.evaluate(() => {
     const f = window.__forge;
@@ -40,12 +80,25 @@ test('world.compile() takes the naive scene from 503 to 28 submissions with iden
   });
   expect(after.totals.programSwitches).toBeLessThan(before.totals.programSwitches);
   if (forge.pixelChecks) await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
+  const compiledShots = forge.pixelChecks ? await shootViews(forge) : null;
 
   const restored = await forge.page.evaluate(() => {
     window.__forge.decompile();
     return window.__forge.frame().totals.sceneSubmissions;
   });
   expect(restored).toBe(503);
+  // The scene is naive again: the picture must be the one it started with, not merely "some naive scene".
+  const restoredShots = forge.pixelChecks ? await shootViews(forge) : null;
+
+  if (naiveShots && compiledShots && restoredShots) {
+    for (const view of VIEWS) {
+      const compiled = pixelDiff(naiveShots[view.name]!, compiledShots[view.name]!, { threshold: 4 });
+      const back = pixelDiff(naiveShots[view.name]!, restoredShots[view.name]!, { threshold: 4 });
+      note(`[${forge.backend}] ${view.name} view: compile ${(compiled * 100).toFixed(4)}%, decompile ${(back * 100).toFixed(4)}%`);
+      expect(compiled, `${view.name} view: compile() changed the picture`).toBeLessThan(0.0005);
+      expect(back, `${view.name} view: decompile() did not restore the picture`).toBeLessThan(0.0005);
+    }
+  }
 });
 
 test("transparent: 'keep' leaves transparent statics unbatched: no unattributed draws, more submissions than the default 28", async ({ forge }) => {
