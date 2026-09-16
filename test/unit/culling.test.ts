@@ -4,6 +4,7 @@ import { attachBvhCulling, FORGE_HOOK } from '../../src/compiler/culling.js';
 import { mulberry32 } from '../../test/scenes/naive.js';
 
 const box = new BoxGeometry(1, 1, 1);
+const _scratch = new Matrix4();
 
 /** A batch of `count` instances scattered over `area`, plus a camera at ground level seeing a small slice. */
 function field(count: number, area = 2000) {
@@ -25,11 +26,50 @@ function field(count: number, area = 2000) {
   const renderer = { coordinateSystem: WebGLCoordinateSystem };
   const scene = new Scene();
   const cull = () => batch.onBeforeRender(renderer as never, scene, camera, batch.geometry, batch.material as never, null as never);
+  /**
+   * The instance ids of the multi-draw list, **in draw order**.
+   *
+   * This helper used to `.sort()` them before returning, which is the pattern `bossfight-attribution-report.md` §5.2
+   * flags: every assertion built on it read as "the same instances were drawn" while proving only "the same set", and
+   * draw order is a real part of what a cull produces — a batch with `sortObjects` (three's default, and this one
+   * keeps it) must write its slots near-to-far. Returning them unsorted makes the order assertable; the two places
+   * that genuinely mean set membership now say so at the call site.
+   */
   const drawn = () => {
     const b = batch as unknown as { _multiDrawCount: number; _indirectTexture: { image: { data: Uint32Array } } };
-    return Array.from(b._indirectTexture.image.data.subarray(0, b._multiDrawCount)).sort((x, y) => x - y);
+    return Array.from(b._indirectTexture.image.data.subarray(0, b._multiDrawCount));
   };
-  return { batch, camera, cull, drawn };
+  /** The sort key three uses for an instance: its bounding-sphere centre along the camera's forward axis. */
+  const eye = new Vector3().setFromMatrixPosition(camera.matrixWorld);
+  const forward = new Vector3(0, 0, -1).transformDirection(camera.matrixWorld);
+  const depthOf = (id: number): number => {
+    batch.getMatrixAt(id, _scratch);
+    return batch.getBoundingSphereAt(0, new Sphere())!.applyMatrix4(_scratch).center.sub(eye).dot(forward);
+  };
+  return { batch, camera, cull, drawn, depthOf };
+}
+
+/**
+ * How many per-instance bounding-sphere tests `run` costs. This is the work a BVH cull exists to avoid and the exact
+ * work a cull that stops using its tree multiplies: three's own scan reads one sphere for every instance in the batch,
+ * the BVH reads one per candidate leaf its frustum query reaches. Counting it replaces a `performance.now()` guard
+ * ("at least twice as fast as the linear scan") whose failure mode was another vitest worker holding the CPU, and
+ * which on a fast enough machine would have passed a cull that had quietly become linear (Ruling R97).
+ */
+function sphereTests(batch: BatchedMesh, run: () => void): number {
+  let tests = 0;
+  const original = BatchedMesh.prototype.getBoundingSphereAt;
+  const own = batch as { getBoundingSphereAt?: BatchedMesh['getBoundingSphereAt'] };
+  own.getBoundingSphereAt = function (this: BatchedMesh, ...args: Parameters<BatchedMesh['getBoundingSphereAt']>) {
+    tests++;
+    return original.apply(this, args);
+  };
+  try {
+    run();
+  } finally {
+    delete own.getBoundingSphereAt;
+  }
+  return tests;
 }
 
 describe('attachBvhCulling', () => {
@@ -42,6 +82,8 @@ describe('attachBvhCulling', () => {
     attachBvhCulling(f.batch, WebGLCoordinateSystem);
     f.cull();
     const bvh = f.drawn();
+    // Membership, deliberately: this cell is about *which* instances survive each cull, and the BVH may legitimately
+    // draw fewer. The order both lists are written in is the next cell's subject.
     const linearSet = new Set(linear);
     expect(bvh.every((id) => linearSet.has(id))).toBe(true);
     expect(bvh.length).toBeGreaterThanOrEqual(linear.length * 0.98);
@@ -68,6 +110,33 @@ describe('attachBvhCulling', () => {
     expect(inside).toBeGreaterThan(0);
   });
 
+  it("writes its slots in three's draw order, not the order its tree visits them", () => {
+    const f = field(5000);
+    f.cull();
+    const linear = f.drawn();
+    attachBvhCulling(f.batch, WebGLCoordinateSystem);
+    f.cull();
+    const bvh = f.drawn();
+    // `sortObjects` is three's default and this batch keeps it, so a cull owes the renderer a near-to-far list. The
+    // BVH hands its candidates back in tree order, so `cullPlain` has to run three's own depth sort over them before
+    // writing the slots. Nothing else in this file could see that: every other assertion compares ids as a set, and
+    // until the `drawn()` helper stopped sorting, none of them *could*. A batch drawn out of depth order loses
+    // early-z on opaque materials and draws transparent instances in the wrong order -- a picture defect, not a
+    // count one, so no submission or instance total moves when it happens.
+    for (const [label, ids] of [
+      ['three', linear],
+      ['bvh', bvh],
+    ] as const) {
+      const depths = ids.map(f.depthOf);
+      const ascending = depths.every((z, i) => i === 0 || depths[i - 1]! <= z);
+      expect(ascending, `${label}: drawn near-to-far, first depths ${depths.slice(0, 6).map((z) => z.toFixed(2)).join(', ')}`).toBe(true);
+    }
+    // And the same order instance for instance over the ids both draw: the BVH rejects a few the linear scan keeps
+    // (its exact boxes are tighter than three's spheres), but it may not reshuffle the rest.
+    const bvhSet = new Set(bvh);
+    expect(linear.filter((id) => bvhSet.has(id))).toEqual(bvh);
+  });
+
   it('marks its hook so the ledger does not report it as a custom hook', () => {
     const f = field(10);
     attachBvhCulling(f.batch, WebGLCoordinateSystem);
@@ -80,9 +149,9 @@ describe('attachBvhCulling', () => {
     const handle = attachBvhCulling(f.batch, WebGLCoordinateSystem);
     f.cull();
     const before = f.drawn();
-    const outside = before.length > 0 ? -1 : 0;
-    expect(outside).toBe(-1);
-    // Move the first drawn instance far behind the camera and re-cull: it must disappear.
+    expect(before.length, 'nothing to move if the cull drew nothing').toBeGreaterThan(0);
+    // Move the first drawn instance far behind the camera and re-cull: it must disappear. `drawn()` is in draw order,
+    // so this really is the first one drawn -- while the helper sorted, it was whichever had the lowest id.
     const id = before[0]!;
     f.batch.setMatrixAt(id, new Matrix4().makeTranslation(-5000, 1, 0));
     handle.move(id);
@@ -90,25 +159,24 @@ describe('attachBvhCulling', () => {
     expect(f.drawn()).not.toContain(id);
   });
 
-  it('is at least twice as fast as the linear scan at 20k instances when few are visible', () => {
+  it('tests a small fraction of the 20k instance spheres the linear scan tests, for the same picture', () => {
     const f = field(20_000);
-    // Best of several trials: other vitest workers share the CPU, so single averages are noisy.
-    const best = () => {
-      let min = Infinity;
-      for (let trial = 0; trial < 7; trial++) {
-        const start = performance.now();
-        for (let i = 0; i < 5; i++) f.cull();
-        min = Math.min(min, (performance.now() - start) / 5);
-      }
-      return min;
-    };
-    f.cull();
-    const linear = best();
+    const linearTests = sphereTests(f.batch, f.cull);
+    const linear = f.drawn();
     attachBvhCulling(f.batch, WebGLCoordinateSystem);
-    f.cull();
-    const bvh = best();
-    console.log(`culling 20k instances: linear ${linear.toFixed(3)} ms, bvh ${bvh.toFixed(3)} ms`);
-    expect(bvh).toBeLessThan(linear / 2);
+    const bvhTests = sphereTests(f.batch, f.cull);
+    const bvh = f.drawn();
+    console.log(`culling 20k instances: linear ${linearTests} sphere tests, bvh ${bvhTests}`);
+    // three's scan reads one sphere per instance, always. That is the cost the tree exists to remove, and the number
+    // a cull that stopped using its tree -- a frustum query that visits every leaf, an `attachBvhCulling` that fell
+    // back to the prototype hook, a tree built so wide that nothing prunes -- would go straight back to.
+    expect(linearTests, "three's scan tests every instance").toBe(20_000);
+    expect(bvhTests, `${bvhTests} sphere tests against ${linearTests}`).toBeLessThan(linearTests / 10);
+    // Fewer tests only counts if the picture is the same one: a tree that pruned everything would test nothing at
+    // all and score best of all.
+    const linearSet = new Set(linear);
+    expect(bvh.every((id) => linearSet.has(id)), 'drew an instance the linear scan culled').toBe(true);
+    expect(bvh.length, `${bvh.length} drawn against ${linear.length}`).toBeGreaterThanOrEqual(linear.length * 0.98);
   });
 
   it('detaches cleanly, restoring the prototype behaviour', () => {
@@ -119,6 +187,8 @@ describe('attachBvhCulling', () => {
     handle.detach();
     expect(Object.prototype.hasOwnProperty.call(f.batch, 'onBeforeRender')).toBe(false);
     f.cull();
+    // Order included, now that `drawn()` keeps it: "restores the prototype behaviour" means the same list, not the
+    // same set of ids in some order the BVH left behind.
     expect(f.drawn()).toEqual(linear);
   });
 });
@@ -165,6 +235,10 @@ describe('attachBvhCulling margin changes what is drawn', () => {
     expect(none.drawn, 'margin 0 never offers it as a candidate').toEqual([0]);
     const margined = parked(1);
     expect(margined.handle.margin).toBe(1);
-    expect(margined.drawn.slice().sort((a, b) => a - b), 'a margin offers it, and three\'s sphere test admits it').toEqual([0, 1]);
+    // Membership on purpose, and the one place in this file where sorting drawn ids is the right relation: both
+    // instances sit at z = -10 with the camera at the origin looking down -z, so their sort keys are equal and the
+    // order between them is a stable-sort tie broken by whichever the tree visited first. The claim here is that a
+    // margin hands the parked instance back at all, not where in the list it lands.
+    expect(margined.drawn.slice().sort((a, b) => a - b), "a margin offers it, and three's sphere test admits it").toEqual([0, 1]);
   });
 });

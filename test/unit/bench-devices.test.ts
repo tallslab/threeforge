@@ -132,10 +132,66 @@ describe('ingest', () => {
     }
   });
 
-  it('extractJson scans linearly (no catastrophic backtracking) and caps the body size', () => {
-    const start = performance.now();
-    expect(extractJson('```json' + ' \n'.repeat(2000))).toBeNull();
-    expect(performance.now() - start).toBeLessThan(50);
+  /**
+   * The defect this guards: a regex fence scan (`/```json\s*\n([\s\S]*?)\n\s*```/`, which is what this started as)
+   * back-tracks catastrophically on a body whose fence never closes — a whitespace tail took seconds — and an issue
+   * body is attacker-supplied, so that is a denial of service on the ingest workflow.
+   *
+   * The guard used to be `performance.now() < 50 ms` around one 4,000-character body. Its failure mode was another
+   * vitest worker holding the CPU, and, worse, it would pass on a fast machine at the one size it tried even if the
+   * scan had gone quadratic again (Ruling R97). Counted instead, with no clock in it: whatever `extractJson` does, it
+   * must be a fixed number of native linear passes over the body — one `indexOf` per fence — and no regular
+   * expression at all, and that number must not grow with the body. A reintroduced regex registers as regex work
+   * whatever its shape, and a hand-rolled rescan registers as extra passes.
+   *
+   * Limitation, so the proxy is not over-trusted: it counts the scan's *form*, so a rescan written as an indexed
+   * `for` loop over the characters would call neither and go uncounted. The size cap asserted at the end is what
+   * bounds the cost of any form, and it is the reason the cap exists.
+   */
+  it('finds the fence with a fixed number of native passes and no regular expression, at any body size', () => {
+    const probe = (body: string) => {
+      const counts = { indexOf: 0, wholeString: 0 };
+      const restore: Array<[Record<PropertyKey, unknown>, PropertyKey, unknown]> = [];
+      const wrap = (proto: object, key: PropertyKey, bump: () => void): void => {
+        const target = proto as Record<PropertyKey, (...args: unknown[]) => unknown>;
+        const original = target[key];
+        if (typeof original !== 'function') return;
+        restore.push([target as Record<PropertyKey, unknown>, key, original]);
+        target[key] = function (this: unknown, ...args: unknown[]) {
+          bump();
+          return original.apply(this, args);
+        };
+      };
+      wrap(String.prototype, 'indexOf', () => counts.indexOf++);
+      for (const key of ['match', 'matchAll', 'replace', 'replaceAll', 'search', 'split'] as const) wrap(String.prototype, key, () => counts.wholeString++);
+      for (const key of ['exec', 'test', Symbol.match, Symbol.matchAll, Symbol.replace, Symbol.search, Symbol.split] as PropertyKey[]) wrap(RegExp.prototype, key, () => counts.wholeString++);
+      try {
+        return { result: extractJson(body), ...counts };
+      } finally {
+        for (const [target, key, original] of restore) target[key] = original;
+      }
+    };
+
+    // An unclosed fence: the shape the regex back-tracked on. The small body is checked first, and the "no regex"
+    // assertion comes before the large one is ever built — deliberately, because an implementation that does use a
+    // back-tracking regex must fail this test rather than hang it. At 23 characters the regex finishes in
+    // microseconds and this assertion stops the test; at 60,007 it is the denial of service itself.
+    const small = probe('```json' + ' \n'.repeat(8));
+    expect(small.result, 'an unclosed fence yields nothing').toBeNull();
+    expect(small.wholeString, 'no regular expression ran').toBe(0);
+    expect(small.indexOf, 'at most one pass per fence, open and close').toBeLessThanOrEqual(2);
+
+    // Three orders of magnitude larger, so a scan whose cost grows with the body shows up as more passes here
+    // instead of as more milliseconds.
+    const large = probe('```json' + ' \n'.repeat(30_000));
+    expect(large.result, 'an unclosed fence yields nothing at any size').toBeNull();
+    expect(large.wholeString, 'no regular expression ran').toBe(0);
+    expect(large.indexOf, `${small.indexOf} passes over a 23-character body, ${large.indexOf} over a 60,007-character one`).toBe(small.indexOf);
+    // The same two passes still find a well-formed fence, so "no regex" has not been bought with a broken parser.
+    const found = probe('lead\n```json\n{"a":1}\n```\ntail');
+    expect(found.result).toBe('{"a":1}');
+    expect([found.indexOf, found.wholeString]).toEqual([2, 0]);
+    // And the cap, which is what bounds the cost of a scan of any form.
     expect(() => extractJson('x'.repeat(65537))).toThrow(/65536/);
   });
 });
