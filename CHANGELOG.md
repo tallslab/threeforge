@@ -119,6 +119,8 @@ entries of [All changes](#all-changes), which also lists every fix that needs no
 
 ### All changes
 
+- `MaterialRegistry.stats().registered` counts materials, not `register()` calls: registering a material again no longer adds to it, so one `forget()` takes it back out and `CompileReport.registry.registered` no longer grows across compile and decompile cycles of one `World` (it doubled on the second compile of the same scene).
+- A `World.compile()` that throws now uninstalls the pass tracker's scene hooks before rethrowing. Before, `compiled` stayed false, so `decompile()` and `dispose()` never removed them, and a retried `compile()` installed the tracker a second time, which ran every outermost render at depth 2 (occlusion then never decided).
 - `lightingOf(lights, items, shadows)`'s third argument is now required. It defaulted to no shadow work, so a direct caller that omitted it reported 0 shadow texels and 0 casters whatever its lights were configured to do — a wrong number indistinguishable from a measured one. Breaking for direct callers only: `NO_SHADOW_WORK` is exported for a frame that really rendered no shadow map, `buildFrame` passes it for its own optional input, and no number the ledger reports moves.
 - A failing pixel-parity verdict reason now names the worst view's changed-pixel count, e.g. `pixel parity 0.00% > 0% (3 changed pixels in the worst view)`. The reason rounds the percentage to two decimals, so at `--parity 0` a real failure read `pixel parity 0.00% > 0%` and looked like a passing run, with the counts only in the adjacent log line. A parity carrying no views keeps the old wording.
 - `MaterialHashes`, the return type of the public `registry.hashesOf()`, is exported from the package entry point.

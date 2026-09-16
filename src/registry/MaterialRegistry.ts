@@ -98,9 +98,11 @@ export class MaterialRegistry {
   }
 
   register(material: Material): Material {
-    this.registered++;
     const existing = this.records.get(material);
     if (existing) return existing.canonical ?? material;
+    // A live count of registered materials, not of calls: a repeat registration is not counted, so one `forget()`
+    // undoes one material whatever number of times it was registered.
+    this.registered++;
 
     const keys = this.keys(material);
     if (keys.unsupported) {
@@ -268,8 +270,8 @@ export class MaterialRegistry {
    * registration record are dropped, `registered`/`merged`/`unsupported` and its program's bookkeeping are
    * unwound, and — when it was itself a canonical — its entry in `canonicalByFullKey` and its program's
    * `canonicals`/`variants` sets are cleared too (shared with `invalidate()`'s removal step via `deindex()`).
-   * Not wired into disposal in this task: `World.decompile()` and `ResourceTracker` start calling it in a later
-   * phase. Forgetting an unknown material is a no-op.
+   * `World.decompile()` and `ResourceTracker.release()` call it for the materials they release. Forgetting an unknown
+   * material is a no-op.
    *
    * **`forget` does not track or release dependents, and this is a real disposal hazard, not just bookkeeping.**
    * If `material` was a canonical that other registered materials were merged into (`dependentsOf(material) > 0`

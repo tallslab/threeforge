@@ -259,6 +259,44 @@ describe('MaterialRegistry caching', () => {
     expect(after.canonical).toBe(before.canonical - 1);
   });
 
+  it('stats().registered counts materials, not register() calls: a repeat registration adds nothing and one forget() undoes it', () => {
+    const registry = new MaterialRegistry();
+    const a = new MeshStandardMaterial({ color: 0xff0000 });
+    const unsupported = new ShaderMaterial();
+    const duplicate = new MeshStandardMaterial({ color: 0xff0000 });
+    for (let i = 0; i < 3; i++) {
+      registry.register(a);
+      registry.register(unsupported);
+      registry.register(duplicate);
+    }
+    expect(registry.stats()).toMatchObject({ registered: 3, canonical: 1, merged: 1, unsupported: 1 });
+    registry.forget(a);
+    registry.forget(unsupported);
+    registry.forget(duplicate);
+    expect(registry.stats()).toMatchObject({ registered: 0, canonical: 0, merged: 0, unsupported: 0 });
+  });
+
+  it("stats().registered does not grow across compile and decompile cycles of one World", () => {
+    const registry = new MaterialRegistry();
+    const scene = new Scene();
+    const material = new MeshStandardMaterial({ color: 0x808080 });
+    for (let i = 0; i < 4; i++) {
+      const mesh = new Mesh(new BoxGeometry(1, 1, 1), i % 2 === 0 ? material : new MeshStandardMaterial({ color: 0x404040 + i }));
+      mesh.position.x = i * 2;
+      mesh.userData.forge = 'static';
+      scene.add(mesh);
+    }
+    scene.updateMatrixWorld(true);
+    const world = new World(scene, { registry });
+    const counts: number[] = [];
+    for (let cycle = 0; cycle < 3; cycle++) {
+      counts.push(world.compile().registry.registered);
+      world.decompile();
+    }
+    expect(counts[1]).toBe(counts[0]);
+    expect(counts[2]).toBe(counts[0]);
+  });
+
   it('forget() on a merged duplicate leaves its canonical untouched', () => {
     const registry = new MaterialRegistry();
     const a = registry.register(new MeshStandardMaterial({ color: 0xff0000, roughness: 0.5 }));
