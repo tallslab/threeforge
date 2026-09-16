@@ -5,7 +5,7 @@ import { flagsInto, isVsmBlur, kindOf, reasonOf, type Reason } from './reasons.j
 import { DisplayNames, type PathCache } from './names.js';
 import { budgetsFor, type Budgets } from './budgets.js';
 import { Vector2 } from 'three';
-import { hintsFor, type HintContext } from './hints.js';
+import { hintsFor, type HintContext, type MainPassObjects } from './hints.js';
 import { estimateMemory } from './memory.js';
 import { disposeOverdraw, measureOverdraw, overdrawTargetOf, type OverdrawRenderer, type OverdrawResult } from './overdraw.js';
 import { formatCostRows, formatHints } from '../overlay/index.js';
@@ -86,6 +86,12 @@ interface RecordBuffer {
   /** The records filed this frame, in filing order (a pass nested inside a draw files before that draw). */
   items: SubmissionRecord[];
   acquired: number;
+  /**
+   * Per filed item, in filing order: 1 when three drew it as the back-side half of a double pass (`passId`
+   * `'backSide'`, Renderer._renderTransparents), the second main-pass record of an object already filed once.
+   * Grows by doubling, so a steady frame allocates nothing.
+   */
+  backSide: Uint8Array;
 }
 
 interface FrameState {
@@ -150,8 +156,8 @@ export class DrawCallLedger {
   private last: FrameSnapshot;
   private lastItems: SubmissionRecord[] = [];
   private readonly buffers: [RecordBuffer, RecordBuffer] = [
-    { records: [], items: [], acquired: 0 },
-    { records: [], items: [], acquired: 0 },
+    { records: [], items: [], acquired: 0, backSide: new Uint8Array(256) },
+    { records: [], items: [], acquired: 0, backSide: new Uint8Array(256) },
   ];
   /** The buffer the next frame writes: never the one holding `lastItems`. */
   private write = 0;
@@ -184,6 +190,8 @@ export class DrawCallLedger {
   private readonly internalTextures = new Set<object>();
   private textureInfo: { info: LedgerRenderer['info']; create: (texture: unknown) => void; destroy: (texture: unknown) => void; own: { create: boolean; destroy: boolean } } | null = null;
   private hintContext: HintContext = {};
+  /** Distinct objects the last frame's main pass drew, per reason the draw-call hints count (filled in `exit()`). */
+  private readonly mainObjects: MainPassObjects = { untagged: 0, 'unique-material': 0, 'static-unbatched': 0, sprite: 0 };
   private overdraw: OverdrawResult | null = null;
   private paused = false;
   private readonly budgetOverrides: Partial<Budgets>;
@@ -217,7 +225,7 @@ export class DrawCallLedger {
     const ledger = this;
 
     // `arguments` forwards exactly what three passed without copying it into a rest array on every call.
-    renderer.renderObject = function (this: LedgerRenderer, object: Object3D, scene: Scene, _camera: Camera, _geometry: unknown, material: Material, group: unknown, lightsNode: unknown) {
+    renderer.renderObject = function (this: LedgerRenderer, object: Object3D, scene: Scene, _camera: Camera, _geometry: unknown, material: Material, group: unknown, lightsNode: unknown, _clippingContext: unknown, passId: unknown) {
       // Paused: an overdraw count render, possibly inside a draw of the open frame (a measurement from a render hook).
       if (ledger.depth === 0 || ledger.current === null || ledger.paused) return originals.renderObject.apply(this, arguments as unknown as unknown[]);
       const hashes = ledger.hashesOf(material);
@@ -228,7 +236,7 @@ export class DrawCallLedger {
       // Draw state is read after the call returns: BatchedMesh fills `_multiDrawCount` in its onBeforeRender (a sprite
       // batch its `instanceCount`), and a pass nested inside this draw (the shadow map a receiver triggers) restores the
       // counts it changed as it ends.
-      ledger.file(record, object, sides, hashes);
+      ledger.file(record, object, sides, hashes, passId === 'backSide');
       return result;
     };
     renderer.render = function (this: LedgerRenderer, scene: Scene, camera: Camera) {
@@ -314,7 +322,7 @@ export class DrawCallLedger {
     let objects = 0;
     let auto = 0;
     let hidden = 0;
-    const ctx: Required<Omit<HintContext, 'items'>> = { staticAutoUpdated: [], pointShadowLights: [], transmissive: [] };
+    const ctx: Required<Omit<HintContext, 'items' | 'objects'>> = { staticAutoUpdated: [], pointShadowLights: [], transmissive: [] };
     const paths = this.names.forRoot(scene);
     // three renders no shadow map with shadow maps off (ShadowNode builds none), so no point light's six faces.
     const shadowMapsOn = this.renderer?.shadowMap?.enabled !== false;
@@ -350,7 +358,7 @@ export class DrawCallLedger {
       shadowMapType: this.renderer?.shadowMap?.type,
     });
     this.last = { ...this.last, js: { ...this.last.js, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals }, memory: this.memoryNow() };
-    this.last = { ...this.last, hints: hintsFor(this.last, this.budgets(), { ...this.hintContext, items: this.lastItems }) };
+    this.last = { ...this.last, hints: hintsFor(this.last, this.budgets(), { ...this.hintContext, items: this.lastItems, objects: this.mainObjects }) };
   }
 
   /** A RenderScheduler whose skipped ticks the js section reports; null detaches. */
@@ -540,6 +548,9 @@ export class DrawCallLedger {
     // One pass over the frame's items, before anything reads their reasons (the rescan's hints included).
     let transparentSubmissions = 0;
     let particles = 0;
+    const objects = this.mainObjects;
+    objects.untagged = objects['unique-material'] = objects['static-unbatched'] = objects.sprite = 0;
+    const backSide = state.buffer.backSide;
     // An index loop, deliberately, not `for…of`: this walks every submission of every frame, on the same V8
     // iterator-elision boundary a sibling walk fell off (a 40-byte iterator result per submission: 0.80 -> 1.20 MB per
     // frame at 10k). See `skinningOf` in sections.ts; test/unit/ledger-hot-path.test.ts guards every such walk.
@@ -549,6 +560,9 @@ export class DrawCallLedger {
       // record of the object follows, since its index names the same mark.
       if (i.reason === 'unique-material' && this.uses.shared(i.material)) i.reason = 'static-unbatched';
       if (i.pass !== 'main') continue;
+      // Objects, not submissions, for the draw-call hints: a shadow map or a nested pass draws an object again, and three's
+      // back-side pass of a double-sided transmissive material draws it twice in the main pass itself.
+      if (backSide[k] === 0 && (i.reason === 'untagged' || i.reason === 'unique-material' || i.reason === 'static-unbatched' || i.reason === 'sprite')) objects[i.reason]++;
       if (i.transparent && i.reason !== 'renderer-internal') transparentSubmissions++;
       particles += i.kind === 'points' ? i.vertices : i.reason === 'sprite-batch' ? i.instances : i.kind === 'sprite' ? 1 : 0;
     }
@@ -584,7 +598,7 @@ export class DrawCallLedger {
         measured: this.overdraw !== null,
       },
     });
-    this.last.hints = hintsFor(this.last, this.budgets(), { ...this.hintContext, items });
+    this.last.hints = hintsFor(this.last, this.budgets(), { ...this.hintContext, items, objects: this.mainObjects });
     this.current = null;
     // `js` is this frame's own object (buildFrame keeps it): no earlier snapshot shares it.
     js.ledgerMs = this.now() - renderEnd;
@@ -709,12 +723,19 @@ export class DrawCallLedger {
   }
 
   /** Snapshots the draw state into the record once the renderer returned, then files it as this frame's next item. */
-  private file(record: SubmissionRecord, object: Object3D, sides: number, hashes: MaterialHashes): void {
+  private file(record: SubmissionRecord, object: Object3D, sides: number, hashes: MaterialHashes, backSide: boolean): void {
     record.expectedGpuDraws = expectedGpuDraws(object, sides, this.backendInfo);
     writeInstanceCounts(object, record);
     const state = this.current;
     if (state === null) return; // detached inside the draw
-    state.buffer.items[state.count++] = record;
+    const buffer = state.buffer;
+    if (state.count >= buffer.backSide.length) {
+      const grown = new Uint8Array(buffer.backSide.length * 2);
+      grown.set(buffer.backSide);
+      buffer.backSide = grown;
+    }
+    buffer.backSide[state.count] = backSide ? 1 : 0;
+    buffer.items[state.count++] = record;
     if (!state.descriptions.has(record.programHash)) state.descriptions.set(record.programHash, { type: record.materialType, description: hashes.description });
   }
 }

@@ -21,6 +21,20 @@ export interface HintContext {
   transmissive?: string[];
   /** This frame's draw-call items, for rules that need per-submission detail (main-pass transparency ordering). */
   items?: HintItem[];
+  /**
+   * Distinct objects the main pass drew per reason, which the `untagged`, `unique-materials`, `static-unbatched` and
+   * `sprites-unbatched` hints count and compare with their thresholds (the ledger fills it). Without it they fall back to
+   * `byReason` submissions, which count an object again in every shadow map and nested pass that draws it.
+   */
+  objects?: MainPassObjects;
+}
+
+/** Distinct main-pass objects per reason, for the draw-call hints (`HintContext.objects`). */
+export interface MainPassObjects {
+  untagged: number;
+  'unique-material': number;
+  'static-unbatched': number;
+  sprite: number;
 }
 
 const mb = (n: number): string => `${(n / (1024 * 1024)).toFixed(0)} MB`;
@@ -37,20 +51,26 @@ export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): H
   const t = f.totals;
   if (t.sceneSubmissions > b.sceneSubmissions) push('drawCalls', 'error', 'over-budget-submissions', `${t.sceneSubmissions} scene submissions, budget ${b.sceneSubmissions} for this tier`);
   if (t.triangles > b.triangles) push('drawCalls', 'warn', 'over-budget-triangles', `${t.triangles} triangles, budget ${b.triangles}`);
+  // Objects, not submissions (`HintContext.objects`): a caster under a point light is one mesh, not seven.
+  const objectsOf = (reason: keyof MainPassObjects): number => ctx.objects?.[reason] ?? f.byReason[reason]?.submissions ?? 0;
   const untagged = f.byReason.untagged;
-  if (untagged) push('drawCalls', 'warn', 'untagged', `${untagged.submissions} untagged meshes: tag.static() or tag.dynamic() them`, untagged.top);
+  const untaggedObjects = objectsOf('untagged');
+  if (untagged && untaggedObjects > 0) push('drawCalls', 'warn', 'untagged', `${untaggedObjects} untagged meshes: tag.static() or tag.dynamic() them`, untagged.top);
   const unique = f.byReason['unique-material'];
-  if (unique && unique.submissions > 20) push('drawCalls', 'info', 'unique-materials', `${unique.submissions} meshes each with a material used once: share materials through the registry`, unique.top);
+  const uniqueObjects = objectsOf('unique-material');
+  if (unique && uniqueObjects > 20) push('drawCalls', 'info', 'unique-materials', `${uniqueObjects} meshes each with a material used once: share materials through the registry`, unique.top);
   // The statics `unique-materials` used to count although another draw shares their material: the same threshold.
   const unbatched = f.byReason['static-unbatched'];
-  if (unbatched && unbatched.submissions > 20) push('drawCalls', 'info', 'static-unbatched', `${unbatched.submissions} static meshes draw one by one although other draws share their material: batch them with World (the draw that shares it may be one nothing can batch with: skinned, dynamic or already batched)`, unbatched.top);
+  const unbatchedObjects = objectsOf('static-unbatched');
+  if (unbatched && unbatchedObjects > 20) push('drawCalls', 'info', 'static-unbatched', `${unbatchedObjects} static meshes draw one by one although other draws share their material: batch them with World (the draw that shares it may be one nothing can batch with: skinned, dynamic or already batched)`, unbatched.top);
   const unsupported = f.byReason['unsupported-material'];
   if (unsupported) push('drawCalls', 'error', 'unsupported-material', `${unsupported.submissions} ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer`, unsupported.top);
   if (t.programs > 40) push('drawCalls', 'warn', 'programs', `${t.programs} shader programs: fewer material variants means fewer compiles and switches`);
   if (f.overdraw.measured && f.overdraw.transparent > b.transparentOverdraw) push('overdraw', 'warn', 'transparent-overdraw', `${f.overdraw.transparent.toFixed(2)} transparent fragments per pixel, budget ${b.transparentOverdraw}`);
   if (f.overdraw.particles > b.particles) push('overdraw', 'warn', 'particles-over-budget', `${f.overdraw.particles} particles drawn per frame, budget ${b.particles} for this tier: apply a ParticleBudget`);
   const sprites = f.byReason.sprite;
-  if (sprites && sprites.submissions >= 8) push('overdraw', 'info', 'sprites-unbatched', `${sprites.submissions} sprites drawn one by one: World batches sprites that share a material (sprites: 'batch')`, sprites.top);
+  const spriteObjects = objectsOf('sprite');
+  if (sprites && spriteObjects >= 8) push('overdraw', 'info', 'sprites-unbatched', `${spriteObjects} sprites drawn one by one: World batches sprites that share a material (sprites: 'batch')`, sprites.top);
   if (f.skinning.vertices > b.skinnedVertices) push('skinning', 'warn', 'skinned-vertices', `${f.skinning.vertices} skinned vertices per frame, budget ${b.skinnedVertices}`);
   if (f.skinning.bones > b.bones) push('skinning', 'warn', 'bones-over-budget', `${f.skinning.bones} skeleton bones updated on the CPU every frame, budget ${b.bones} for this tier`);
   if (f.skinning.submissions >= 50) push('skinning', 'info', 'skinned-crowd', `${f.skinning.submissions} skinned draws: bake the clips to an animation texture and instance the characters (AnimatedInstances)`);

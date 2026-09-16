@@ -160,6 +160,25 @@ describe('hintsFor', () => {
     expect(hints.find((h) => h.code === 'untagged')).toEqual({ category: 'drawCalls', severity: 'warn', code: 'untagged', message: '7 untagged meshes: tag.static() or tag.dynamic() them', objects: ['crate', 'barrel'] });
   });
 
+  it('counts and thresholds the draw-call hints by the main-pass objects the ledger passes, not by submissions', () => {
+    const f = emptyFrame(env);
+    // One untagged caster under a point light, 21 unique statics casting under a sun: submissions count them per pass.
+    f.byReason = {
+      untagged: { submissions: 7, gpuDraws: 7, top: ['crate'] },
+      'unique-material': { submissions: 42, gpuDraws: 42, top: ['statue-0'] },
+      'static-unbatched': { submissions: 30, gpuDraws: 30, top: ['rock-1'] },
+      sprite: { submissions: 8, gpuDraws: 8, top: ['spark'] },
+    };
+    const objects = { untagged: 1, 'unique-material': 21, 'static-unbatched': 15, sprite: 7 };
+    const hints = hintsFor(f, budgetsFor('desktop'), { objects });
+    expect(hints.find((h) => h.code === 'untagged')?.message).toBe('1 untagged meshes: tag.static() or tag.dynamic() them');
+    expect(hints.find((h) => h.code === 'unique-materials')?.message).toBe('21 meshes each with a material used once: share materials through the registry');
+    expect(hints.map((h) => h.code)).not.toContain('static-unbatched');
+    expect(hints.map((h) => h.code)).not.toContain('sprites-unbatched');
+    // A reason drawn only outside the main pass names no main-pass object: no hint.
+    expect(hintsFor(f, budgetsFor('desktop'), { objects: { ...objects, untagged: 0 } }).map((h) => h.code)).not.toContain('untagged');
+  });
+
   it('reports static-unbatched above 20 statics that draw alone although their material is shared, apart from unique-materials', () => {
     const f = emptyFrame(env);
     f.byReason = {

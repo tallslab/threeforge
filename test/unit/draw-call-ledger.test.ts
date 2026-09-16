@@ -1063,3 +1063,65 @@ describe('DrawCallLedger shared materials: unique-material and static-unbatched'
     ]);
   });
 });
+
+describe('DrawCallLedger hints count objects, not submissions', () => {
+  const hint = (ledger: DrawCallLedger, code: string) => ledger.frame().hints.find((h) => h.code === code);
+
+  it('counts 11 shadow-casting statics under a sun as 11 meshes: no unique-materials hint below its threshold of more than 20', () => {
+    const sun = new DirectionalLight();
+    sun.name = 'sun';
+    sun.castShadow = true;
+    const { renderer, ledger, scene, camera } = attached({ shadowLight: sun });
+    scene.add(sun);
+    for (let i = 0; i < 11; i++) {
+      const mesh = tag.static(new Mesh(box, new MeshStandardMaterial({ color: 0x101010 * (i + 1) })));
+      mesh.name = `statue-${i}`;
+      mesh.castShadow = true;
+      scene.add(mesh);
+    }
+    renderer.render(scene, camera);
+    expect(ledger.frame().byReason['unique-material']?.submissions, 'main and shadow pass').toBe(22);
+    expect(hint(ledger, 'unique-materials')).toBeUndefined();
+    for (let i = 11; i < 21; i++) {
+      const mesh = tag.static(new Mesh(box, new MeshStandardMaterial({ color: 0x0f0f0f * (i + 1) })));
+      mesh.name = `statue-${i}`;
+      scene.add(mesh);
+    }
+    renderer.render(scene, camera);
+    expect(hint(ledger, 'unique-materials')?.message).toBe('21 meshes each with a material used once: share materials through the registry');
+  });
+
+  it('counts one untagged caster under a point light as one untagged mesh, not seven', () => {
+    const lamp = new PointLight(0xffffff, 1);
+    lamp.name = 'lamp';
+    lamp.castShadow = true;
+    const { renderer, ledger, scene, camera } = attached({ shadowLight: lamp });
+    const crate = new Mesh(box, new MeshStandardMaterial());
+    crate.name = 'crate';
+    crate.castShadow = true;
+    scene.add(lamp, crate);
+    renderer.render(scene, camera);
+    expect(ledger.frame().byReason.untagged?.submissions, 'the main pass and six cube faces').toBe(7);
+    expect(hint(ledger, 'untagged')?.message).toBe('1 untagged meshes: tag.static() or tag.dynamic() them');
+  });
+
+  it("counts a double-sided transmissive mesh once although the main pass draws it twice (three's back-side pass)", () => {
+    const { renderer, ledger, scene, camera } = attached();
+    const glass = new Mesh(box, new MeshPhysicalMaterial({ transmission: 1, side: DoubleSide }));
+    glass.name = 'glass';
+    scene.add(glass);
+    renderer.render(scene, camera);
+    expect(ledger.frame({ items: true }).items!.filter((i) => i.name === 'glass' && i.pass === 'main')).toHaveLength(2);
+    expect(hint(ledger, 'untagged')?.message).toBe('1 untagged meshes: tag.static() or tag.dynamic() them');
+  });
+
+  it('counts sprites drawn one by one as objects for sprites-unbatched, and keeps the counts on a rescan between frames', () => {
+    const { renderer, ledger, scene, camera } = attached();
+    const material = new SpriteMaterial();
+    for (let i = 0; i < 8; i++) scene.add(new Sprite(material));
+    renderer.render(scene, camera);
+    expect(hint(ledger, 'sprites-unbatched')?.message).toBe('8 sprites drawn one by one: World batches sprites that share a material (sprites: \'batch\')');
+    ledger.rescan();
+    expect(hint(ledger, 'sprites-unbatched')?.message).toBe('8 sprites drawn one by one: World batches sprites that share a material (sprites: \'batch\')');
+  });
+});

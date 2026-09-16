@@ -84,7 +84,7 @@
         "category": "drawCalls",
         "severity": "warn",
         "code": "untagged",
-        "message": "2 untagged meshes: tag.static() or tag.dynamic() them",
+        "message": "1 untagged meshes: tag.static() or tag.dynamic() them",
         "objects": [
           "Mesh[2]",
           "Mesh[2]"
@@ -377,7 +377,7 @@
         "category": "drawCalls",
         "severity": "warn",
         "code": "untagged",
-        "message": "2 untagged meshes: tag.static() or tag.dynamic() them",
+        "message": "1 untagged meshes: tag.static() or tag.dynamic() them",
         "objects": [
           "Mesh[2]",
           "Mesh[2]"
@@ -670,7 +670,7 @@
         "category": "drawCalls",
         "severity": "warn",
         "code": "untagged",
-        "message": "2 untagged meshes: tag.static() or tag.dynamic() them",
+        "message": "1 untagged meshes: tag.static() or tag.dynamic() them",
         "objects": [
           "Mesh[2]",
           "Mesh[2]"
