@@ -422,7 +422,7 @@ describe('hintsFor', () => {
   // The ledger gathers `localSpaceDraws` on its rescan (draw-call-ledger.test.ts covers which draws it names); these
   // pin the wording, the counts and the caps.
   describe('batch-local-space', () => {
-    const tail = "a node in a material slot, custom material code, alphaHash or an object-space normal map, which read mesh-local space, now the scene's: shading can change — tag those meshes dynamic to keep them individual";
+    const tail = "a node in a material slot, custom material code, alphaHash or an object-space normal map, which threeforge cannot rule out reading mesh-local space, now the scene's: shading can change — tag them dynamic";
 
     it('names one compiled draw and its material in the singular', () => {
       const hints = hintsFor(emptyFrame(env), budgetsFor('desktop'), { localSpaceDraws: [{ object: 'forge:batch:aa11:0', material: 'gradient' }] });

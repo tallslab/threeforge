@@ -157,7 +157,7 @@ export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): H
       'drawCalls',
       'warn',
       'batch-local-space',
-      `${subject} a node in a material slot, custom material code, alphaHash or an object-space normal map, which read mesh-local space, now the scene's: shading can change — tag those meshes dynamic to keep them individual (materials: ${listed})`,
+      `${subject} a node in a material slot, custom material code, alphaHash or an object-space normal map, which threeforge cannot rule out reading mesh-local space, now the scene's: shading can change — tag them dynamic (materials: ${listed})`,
       localDraws.slice(0, 5).map((d) => d.object),
     );
   }

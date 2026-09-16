@@ -1311,7 +1311,7 @@ describe('DrawCallLedger batch-local-space hint', () => {
       category: 'drawCalls',
       severity: 'warn',
       code: CODE,
-      message: "1 threeforge batched, instanced or baked draw uses a node in a material slot, custom material code, alphaHash or an object-space normal map, which read mesh-local space, now the scene's: shading can change — tag those meshes dynamic to keep them individual (materials: gradient)",
+      message: "1 threeforge batched, instanced or baked draw uses a node in a material slot, custom material code, alphaHash or an object-space normal map, which threeforge cannot rule out reading mesh-local space, now the scene's: shading can change — tag them dynamic (materials: gradient)",
       objects: [report.groups[0]!.name],
     });
     expect(report.groups[0]!.name.startsWith('forge:batch:')).toBe(true);

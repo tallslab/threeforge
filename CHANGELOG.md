@@ -319,7 +319,9 @@ Documented in `docs/threeforge.md` (section 14 lists them), not fixed in 0.9.0:
   change to shading of 3-6 % of a frame on default settings. Severity is presentation only — `verdictOf` fails on
   `error` alone — so no CLI verdict changes. `transparent-batch-order` stays `info`: an ordering artefact is a
   different magnitude. The hint's message and `threeforge explain batch-local-space` name custom material code as a
-  cause alongside node slots, `alphaHash` and object-space normal maps.
+  cause alongside node slots, `alphaHash` and object-space normal maps, and both say the draw uses a material
+  threeforge "cannot rule out reading mesh-local space" rather than one that does: a node graph and a subclass are
+  named because they cannot be inspected, not because they were found to read it.
 - The `batch-local-space` hint also names a compiled draw whose material is a class that is not one of three's own or
   carries an own function, not only one with a node in a slot, `alphaHash` or an object-space normal map: a subclass
   overriding `setupPosition` (or any other `setup*`) reads `positionLocal` with no `*Node` property for `hasNodeSlot`
