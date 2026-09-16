@@ -16,5 +16,5 @@ export interface AssetIndexEntry {
  */
 export function mergeIndex<T extends { name: string }>(existing: unknown, entries: T[]): Array<T | AssetIndexEntry>;
 
-/** Downloads `names` (every manifest asset when empty) into test/assets/files and writes (or, for a subset, merges) index.json. */
-export function main(names?: string[]): Promise<void>;
+/** Downloads `names` (every manifest asset when empty) into test/assets/files, writes (or, for a subset, merges) index.json, and returns this run's entries. */
+export function main(names?: string[]): Promise<AssetIndexEntry[]>;

@@ -7,6 +7,7 @@ import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/pro
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { safeLocalPath } from './fetch-safe.mjs';
+import { strictExitCode } from './fetch-strict.mjs';
 
 const root = 'test/assets/files';
 
@@ -60,8 +61,9 @@ async function readIndex(path) {
 }
 
 /** Downloads `names` (every manifest asset when empty) into `root`. A run limited to `names` merges its entries into
- * the existing index.json; a full run rewrites it. The only top-level side effect is the entry guard below, so
- * importing this module (e.g. from a test) does no network or filesystem writes. */
+ * the existing index.json; a full run rewrites it. Returns this run's entries, failed ones included. The only
+ * top-level side effect is the entry guard below, so importing this module (e.g. from a test) does no network or
+ * filesystem writes. The entry guard exits 1 under FORGE_FETCH_STRICT=1 if any download failed (fetch-strict.mjs). */
 export async function main(names = []) {
   const manifest = JSON.parse(await readFile('test/assets/manifest.json', 'utf8'));
   const only = new Set(names);
@@ -110,8 +112,10 @@ export async function main(names = []) {
   await writeFile(indexPath, JSON.stringify(written, null, 2));
   console.log(`\n${index.filter((a) => !a.error).length}/${index.length} assets ready, ${(total / 1e6).toFixed(1)} MB in ${root}`);
   if (only.size) console.log(`index.json: ${written.length} entries (merged)`);
+  return index;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  await main(process.argv.slice(2));
+  // Judged on this run's entries only, not the merged index: a subset run is not failed by an older error it did not retry.
+  process.exitCode = strictExitCode(await main(process.argv.slice(2)));
 }

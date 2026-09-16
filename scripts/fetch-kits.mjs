@@ -2,12 +2,14 @@
  * Second asset source: Kenney CC0 kits (zips of many low-poly GLBs sharing palette textures), Poly Haven CC0
  * models (heavy realistic props via their API, 1k textures), and a few single files (three.js car, water normals).
  * Writes test/assets/files/kits-index.json. Usage: node scripts/fetch-kits.mjs
+ * A failed download is recorded as `{ name, error }` and the script carries on; FORGE_FETCH_STRICT=1 makes it exit 1.
  */
 import { execFileSync } from 'node:child_process';
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { safeLocalPath } from './fetch-safe.mjs';
+import { strictExitCode } from './fetch-strict.mjs';
 
 const root = 'test/assets/files';
 const kits = [
@@ -108,7 +110,9 @@ export async function main() {
       const pick = (cat, n) => Object.entries(all).filter(([, v]) => (v.categories ?? []).includes(cat)).map(([k]) => k).slice(0, n);
       ids = [...new Set([...ids, ...pick('trees', 4), ...pick('vehicles', 4)])];
     } catch (e) {
+      // Recorded, not just logged: the trees and vehicles picks silently leave the corpus otherwise.
       console.log(`polyhaven list FAILED ${e.message}`);
+      index.push({ name: 'polyhaven-list', error: e.message });
     }
     for (const id of ids) {
       try {
@@ -132,11 +136,11 @@ export async function main() {
   }
 
   for (const single of singles) {
+    const name = single.url.split('/').pop();
     try {
-      const name = single.url.split('/').pop();
       const bytes = await download(single.url, safeLocalPath(join(root, single.name), name));
       if (single.name === 'three-textures') {
-        const existing = index.find((e) => e.name === 'three-textures') ?? (index.push({ name: 'three-textures', kind: 'kit', textures: [], glbs: [], source: 'mrdoob/three.js examples', bytes: 0, tags: ['texture'] }), index[index.length - 1]);
+        const existing = index.find((e) => e.name === 'three-textures' && !e.error) ?? (index.push({ name: 'three-textures', kind: 'kit', textures: [], glbs: [], source: 'mrdoob/three.js examples', bytes: 0, tags: ['texture'] }), index[index.length - 1]);
         existing.textures.push(`three-textures/${name}`);
         existing.bytes += bytes;
         continue;
@@ -145,13 +149,16 @@ export async function main() {
       console.log(`${single.name.padEnd(30)} ${(bytes / 1e6).toFixed(1).padStart(6)} MB`);
     } catch (e) {
       console.log(`${single.name.padEnd(30)} FAILED ${e.message}`);
-      index.push({ name: single.name, error: e.message });
+      // The entry is known before the download, so a failed texture is never mistaken for a missing model.
+      index.push({ name: single.name, entry: `${single.name}/${name}`, error: e.message });
     }
   }
   await writeFile(join(root, 'kits-index.json'), JSON.stringify(index, null, 2));
   console.log(`\nkits-index.json: ${index.filter((a) => !a.error).length}/${index.length} ok`);
+  return index;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  await main();
+  // FORGE_FETCH_STRICT=1 (CI) exits 1 naming every failed download; without it a partial fetch still exits 0.
+  process.exitCode = strictExitCode(await main());
 }
