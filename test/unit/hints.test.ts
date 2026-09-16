@@ -3,8 +3,8 @@ import { BUDGETS, budgetsFor, detectTier, tierInputFromNavigator, type TierInput
 import { hintsFor } from '../../src/ledger/hints.js';
 import { emptyFrame } from '../../src/ledger/snapshot.js';
 import type { Tier } from '../../src/ledger/snapshot.js';
-// The package entry, not the module: `HintContext` (exported there) types `objects` as a `MainPassObjects`, so a consumer must be able to name it.
-import type { MainPassObjects } from '../../src/index.js';
+// The package entry, not the module: `HintContext` (exported there) types `objects` and `items` as `MainPassObjects` and `HintItem[]`, so a consumer must be able to name both.
+import type { HintItem, MainPassObjects } from '../../src/index.js';
 
 const env = { three: '0.186.0', backend: 'webgl2' as const, multiDraw: true, tier: 'phone-low' as const, gpu: 'Adreno 610', dpr: 2, viewport: [390, 844] as [number, number] };
 
@@ -321,7 +321,7 @@ describe('hintsFor', () => {
 
     it('does not fire when the transparent batch is the only transparent submission in the main pass', () => {
       const f = emptyFrame(env);
-      const items = [{ name: 'forge:batch:aa11:0', pass: 'main', reason: 'batched' as const, transparent: true }];
+      const items: HintItem[] = [{ name: 'forge:batch:aa11:0', pass: 'main', reason: 'batched', transparent: true }];
       expect(hintsFor(f, budgetsFor('desktop'), { items }).some((h) => h.code === 'transparent-batch-order')).toBe(false);
     });
 
