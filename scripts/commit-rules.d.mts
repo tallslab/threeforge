@@ -39,5 +39,22 @@ export function exemptedCommits(commits: readonly CommitRecord[], exempt?: Reado
 export function checkCommits(commits: readonly CommitRecord[], exempt?: Readonly<Record<string, CommitExemption>>): BudgetViolation[];
 /** Reads `range` out of the repository in `cwd`, merges excluded. */
 export function readCommits(range: string, cwd?: string): CommitRecord[];
-/** Runs the check; returns the process exit code (0 ok, 1 violations, 2 usage). */
-export function main(argv: readonly string[], cwd?: string, exempt?: Readonly<Record<string, CommitExemption>>): number;
+/** What a push event sends as `before` when it created the ref. */
+export const ZERO_SHA: string;
+/** The three git questions `pushRange` asks, injectable so both paths are testable without a remote. */
+export interface PushRangeGit {
+  has(sha: string): boolean;
+  isAncestor(a: string, b: string): boolean;
+  mergeBase(a: string, b: string): string;
+}
+/** The range a push is judged over: `range` is null when there is none, and `reason` is null on the plain path. */
+export interface PushRangeResult {
+  range: string | null;
+  reason: string | null;
+}
+/** The commits a push adds: before..after when it fast-forwarded, else the merge-base with the default ref. */
+export function pushRange(event: { before: string; after: string; defaultRef?: string }, git: PushRangeGit): PushRangeResult;
+/** `pushRange`'s queries against a real repository; each answers instead of throwing. */
+export function gitQueries(cwd?: string): PushRangeGit;
+/** Runs the check; returns the process exit code (0 ok, 1 violations, 2 usage). `argv` may be `--push <before> <after>`. */
+export function main(argv: readonly string[], cwd?: string, exempt?: Readonly<Record<string, CommitExemption>>, git?: PushRangeGit | null): number;
