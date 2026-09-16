@@ -8,6 +8,13 @@ const TIER_ORDER = { 'phone-low': 0, 'phone-mid': 1, desktop: 2 };
 const short = (s) => (s.length > 40 ? `${s.slice(0, 39)}…` : s);
 /** Escapes a value for a Markdown table cell: `|` would end the cell early and a newline would end the row. */
 const cell = (s) => String(s).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+/**
+ * A free-form submitted string (GPU, platform) as a code span inside a table cell. The schema's safe charset admits
+ * `[ ] ( ) ! < >`, so as plain text `[Apple M2](https://phish.example)` or `<img src=…>` would render as a live link,
+ * image or element on GitHub; inside a code span nothing renders, bare URLs included. The schema bans backticks, and
+ * any that reach here anyway become `'`, so a value cannot close its own span.
+ */
+const code = (s) => `\`${cell(s).replace(/`/g, "'")}\``;
 
 /** Low tier first, then by GPU name, newest first for the same device. */
 export function sortResults(results) {
@@ -23,8 +30,8 @@ export function renderDevices(results) {
       const s = r.scenes[id];
       return `${s.naive.sceneSubmissions} → ${s.optimized.sceneSubmissions} / ${s.naive.frameMs.toFixed(1)} → ${s.optimized.frameMs.toFixed(1)}`;
     });
-    const gpu = cell(short(r.env.gpu));
-    const platform = cell(short(r.env.platform));
+    const gpu = code(short(r.env.gpu));
+    const platform = code(short(r.env.platform));
     const backend = cell(r.env.backend);
     const tier = cell(r.env.tier);
     const date = cell(r.createdAt.slice(0, 10));

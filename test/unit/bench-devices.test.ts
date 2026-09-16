@@ -230,6 +230,34 @@ describe('renderDevices', () => {
   });
 });
 
+/**
+ * Final review area 3, F7: the schema's safe charset admits `[ ] ( ) ! < >`, so a submitted GPU or platform string
+ * could render as a live link, image or HTML element in docs/devices.md. Free-form env strings now sit in code spans
+ * (backticks are banned by the schema, so a value cannot close its span), where GitHub renders nothing.
+ */
+describe('renderDevices inline Markdown and HTML', () => {
+  const payloads = ['[Apple M2](https://phish.example)', '![x](https://x.example/p.png)', '<img src=https://x.example/p>', '<a href=https://phish.example>M2</a>'];
+
+  /** The row with every code span removed: what GitHub would still parse as Markdown or HTML. */
+  const outsideCodeSpans = (row: string): string => row.replace(/`[^`]*`/g, '');
+
+  for (const payload of payloads) {
+    it(`renders ${payload} as literal text, as gpu and as platform`, () => {
+      const hostile = { ...result, env: { ...env, gpu: payload, platform: payload } };
+      expect(validateDeviceResult({ ...hostile, id: computeResultId(hostile.env, createdAt.slice(0, 10)) }).errors ?? []).toEqual([]);
+      const row = renderDevices([hostile]).split('\n').find((l) => l.startsWith('| ') && !l.startsWith('| device'))!;
+      expect(row).toContain(`\`${payload}\``);
+      const live = outsideCodeSpans(row);
+      for (const marker of ['](', '![', '<', '>', 'http']) expect(live, `${payload}: ${marker}`).not.toContain(marker);
+    });
+  }
+
+  it('cannot be closed early: a backtick in an unvalidated value is replaced, never ends the span', () => {
+    const row = renderDevices([{ ...result, env: { ...env, gpu: 'a`[x](https://phish.example)`b' } }]).split('\n').find((l) => l.startsWith('| ') && !l.startsWith('| device'))!;
+    expect(outsideCodeSpans(row)).not.toContain('](');
+  });
+});
+
 describe('readResults', () => {
   it('throws on an invalid file and names it', () => {
     const dir = mkdtempSync(join(tmpdir(), 'forge-devices-'));
