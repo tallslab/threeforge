@@ -181,4 +181,6 @@ for (const shape of ['flat', 'nested', 'shadow']) {
     console.log(`${shape.padEnd(7)} ${pad(r.submissions, 11)} ${pad(r.usPerSubmission.toFixed(2), 13)} ${pad(bytes, 12)} ${pad((bytes / 1e6).toFixed(2), 8)} ${pad(r.rescanMs.toFixed(1), 9)}`);
   }
 }
-console.log('targets at 10k submissions: ≤ 1 µs per submission and ≤ 1 MB per frame (audit of 0.8.0: 3.8 µs, 8.7 MB)');
+// Only this run's own figures and the fixed targets: an older release's numbers came from another machine and run, and
+// printed beside a measurement they read as current (docs/threeforge.md keeps the 0.8.0 reference with its provenance).
+console.log('targets at 10k submissions (goals, not measurements): ≤ 1 µs per submission and ≤ 1 MB per frame');
