@@ -3,7 +3,7 @@
 import { writeFileSync } from 'node:fs';
 import { COMMAND_SPECS, flagForms, usageLine } from '../dist/cli/args.js';
 import { REMEDIES } from '../dist/cli/explain.js';
-import { DATA_NOTE } from '../dist/cli/mcp.js';
+import { DATA_NOTE, ERROR_NOTE } from '../dist/cli/mcp.js';
 import { VERSION } from '../dist/version.js';
 
 const hintRows = Object.values(REMEDIES)
@@ -135,7 +135,8 @@ Names and messages are capped (120 and 300 characters); an \`inspect\` page snap
 ANSI escapes, control characters and bidi/zero-width formatting characters, and capped in string and array size,
 because its target is any page, not only one built with threeforge. The MCP tools \`analyze_asset\`, \`inspect_app\`
 and \`optimize_asset\` return this same paragraph as a second \`content\` block after the JSON; \`explain_hint\`'s
-result carries no asset or page text, so it has no such block.
+result carries no asset or page text, so it has no such block. An error result (\`isError\`, \`{ error, code }\`) from
+those three tools carries a second block too, because an error can quote the asset or the page: "${ERROR_NOTE}"
 
 ## Hints and what to do about them
 
