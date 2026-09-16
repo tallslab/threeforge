@@ -945,11 +945,12 @@ export class World {
     this.baked = [];
     for (const batch of this.spriteBatchList) {
       batch.mesh.removeFromParent();
-      // `SpriteBatch.dispose()` owns this material and disposes it; drop it from the registry first, unless a
-      // registered material still resolves to it (then it has to stay findable, as `releaseMaterial` keeps one).
-      const material = batch.material as Material;
-      if (this.registry.canonicalOf(material) !== undefined && this.registry.dependentsOf(material) === 0) this.registry.forget(material);
-      batch.dispose();
+      // `SpriteBatch.dispose()` would dispose this material unconditionally; `releaseMaterial` decides instead, by
+      // the same rule as every other material this compile created. So a material another registered material still
+      // merges into is left registered *and* alive: that material resolves to this exact object, and a disposed
+      // canonical would break every mesh drawn with it.
+      batch.dispose({ material: false });
+      this.releaseMaterial(batch.material as Material);
     }
     this.spriteBatchList = [];
     for (const f of this.frozenList.reverse()) f.object.matrixAutoUpdate = f.matrixAutoUpdate;

@@ -149,3 +149,23 @@ describe('ResourceTracker and the material registry', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 });
+
+describe('ResourceTracker with a partial registry', () => {
+  it('forgets merged duplicates but never a canonical when the registry offers no dependentsOf', () => {
+    const registry = new MaterialRegistry();
+    const canonical = registry.register(new MeshStandardMaterial({ color: 0x778899, roughness: 0.4 }));
+    const duplicate = new MeshStandardMaterial({ color: 0x778899, roughness: 0.4 });
+    expect(registry.register(duplicate)).toBe(canonical);
+    const forgotten: Material[] = [];
+    const stub = {
+      canonicalOf: (m: Material): Material | undefined => registry.canonicalOf(m),
+      forget: (m: Material): void => {
+        forgotten.push(m);
+        registry.forget(m);
+      },
+    };
+    const root = new Group().add(new Mesh(new BoxGeometry(), canonical), new Mesh(new BoxGeometry(), duplicate));
+    new ResourceTracker({ registry: stub }).track(root).release(root);
+    expect(forgotten, 'a canonical cannot be shown free without dependentsOf').toEqual([duplicate]);
+  });
+});

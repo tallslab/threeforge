@@ -5,8 +5,9 @@ export interface ResourceTrackerOptions {
   /**
    * The scene's `MaterialRegistry`. A material it knows is shared across the scene and is never disposed here; when
    * the released owner was the last one holding it, it is dropped from the registry instead (`forget`), so the
-   * registry's records stop keeping a material nothing references alive. `forget` and `dependentsOf` are optional:
-   * without them a known material is simply left registered, as before.
+   * registry's records stop keeping a material nothing references alive. Both extra methods are optional: without
+   * `forget` a known material is simply left registered, as before, and without `dependentsOf` only materials merged
+   * into a canonical are forgotten — a canonical cannot be shown free of dependents, so it is kept.
    */
   registry?: {
     canonicalOf(material: Material): Material | undefined;
@@ -58,7 +59,8 @@ export class ResourceTracker {
    * other owner holds any more is forgotten, so the registry does not keep it alive for the process's lifetime.
    * Materials merged into a canonical are forgotten before canonicals, and a canonical another *registered* material
    * still resolves to is kept: dropping it would leave that material pointing at an object the registry no longer
-   * knows. Such a canonical is not revisited when its last dependent is released later; it stays registered.
+   * knows. Such a canonical is not revisited when its last dependent is released later; it stays registered. A
+   * registry without `dependentsOf` keeps every canonical, since none of them can be shown free.
    */
   release(owner: object): ReleaseReport {
     const report: ReleaseReport = { geometries: 0, materials: 0, textures: 0 };
@@ -95,7 +97,8 @@ export class ResourceTracker {
       for (const m of forgettable) {
         const canonical = registry.canonicalOf(m);
         if (canonical === undefined) continue; // already forgotten above
-        if (canonical === m && (registry.dependentsOf?.(m) ?? 0) > 0) continue;
+        // Without `dependentsOf` there is no way to show nothing still merges into this canonical, so it is kept.
+        if (canonical === m && (registry.dependentsOf === undefined || registry.dependentsOf(m) > 0)) continue;
         registry.forget(m);
       }
     }

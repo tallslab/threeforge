@@ -294,3 +294,35 @@ describe('World sprite batch material', () => {
     expect(report.after.spriteBatches, `${label}: only the plain sprites batch`).toBe(1);
   });
 });
+
+describe('World sprite batch material on decompile', () => {
+  it('forgets and disposes a registered sprite batch material nothing merges into', () => {
+    const { registry, ledger, scene } = setup();
+    const world = new World(scene, { registry, ledger });
+    world.compile();
+    const material = world.spriteBatches[0]!.material as SpriteNodeMaterial;
+    // The batch material is reachable through `world.spriteBatches`, so app code can register it.
+    expect(registry.register(material as unknown as Material)).toBe(material);
+    let disposed = 0;
+    material.addEventListener('dispose', () => disposed++);
+    world.decompile();
+    expect(disposed, 'the World created it, so it is still disposed').toBe(1);
+    expect(registry.describe(material as unknown as Material).outcome, 'and forgotten first').toBe('unregistered');
+  });
+
+  it('never leaves a live registered material resolving to a disposed sprite batch material', () => {
+    const { registry, ledger, scene } = setup();
+    const world = new World(scene, { registry, ledger });
+    world.compile();
+    const material = world.spriteBatches[0]!.material as SpriteNodeMaterial;
+    expect(registry.register(material as unknown as Material)).toBe(material);
+    const twin = material.clone();
+    expect(registry.register(twin as unknown as Material), 'an identical material merges into the batch material').toBe(material);
+    let disposed = 0;
+    material.addEventListener('dispose', () => disposed++);
+    world.decompile();
+    expect(disposed, 'disposing it would break every mesh drawn with the twin').toBe(0);
+    expect(registry.canonicalOf(twin as unknown as Material), 'which still resolves to it').toBe(material);
+    expect(registry.describe(material as unknown as Material).outcome, 'so it stays registered too').not.toBe('unregistered');
+  });
+});

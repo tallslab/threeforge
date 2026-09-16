@@ -137,3 +137,59 @@ describe('attachBvhCulling margin', () => {
     expect(margined.drawn()).toEqual(expected);
   });
 });
+
+describe('attachBvhCulling margin: draw order', () => {
+  /** The indirect rows in slot order, not sorted: the order a sorted batch blends its instances in. */
+  const rows = (batch: BatchedMesh): number[] => {
+    const b = batch as unknown as { _multiDrawCount: number; _indirectTexture: { image: { data: Uint32Array } } };
+    return Array.from(b._indirectTexture.image.data.subarray(0, b._multiDrawCount));
+  };
+
+  /** Instances on eight planes perpendicular to the view, so forty of them share a sort key exactly. */
+  function tied(perPlane = 40, planes = 8) {
+    const count = perPlane * planes;
+    const batch = new BatchedMesh(count, box.attributes.position!.count, box.index!.count, new MeshStandardMaterial());
+    const id = batch.addGeometry(box);
+    const m = new Matrix4();
+    for (let p = 0; p < planes; p++) {
+      for (let i = 0; i < perPlane; i++) {
+        const instance = batch.addInstance(id);
+        m.makeTranslation((i - perPlane / 2) * 1.5, 1, -(20 + p * 20));
+        batch.setMatrixAt(instance, m);
+      }
+    }
+    batch.computeBoundingSphere();
+    const camera = new PerspectiveCamera(70, 1.5, 0.1, 400);
+    camera.position.set(0, 1, 0);
+    camera.lookAt(0, 1, -1);
+    camera.updateMatrixWorld();
+    camera.updateProjectionMatrix();
+    const scene = new Scene();
+    const cull = () => batch.onBeforeRender({ coordinateSystem: WebGLCoordinateSystem } as never, scene, camera, batch.geometry, batch.material as never, null as never);
+    return { batch, cull };
+  }
+
+  it('leaves the row order of a sorted batch alone, tie-breaks included', () => {
+    const none = tied();
+    expect(none.batch.sortObjects, 'three sorts a BatchedMesh by default').toBe(true);
+    attachBvhCulling(none.batch, WebGLCoordinateSystem);
+    none.cull();
+    const expected = rows(none.batch);
+    expect(expected.length).toBeGreaterThan(100);
+    const margined = tied(); // the same instances
+    attachBvhCulling(margined.batch, WebGLCoordinateSystem, { margin: 25 });
+    margined.cull();
+    expect(rows(margined.batch)).toEqual(expected);
+  });
+
+  it('leaves the row order of the scattered field alone too', () => {
+    const none = field(4000);
+    attachBvhCulling(none.batch, WebGLCoordinateSystem);
+    none.cull();
+    const expected = rows(none.batch);
+    const margined = field(4000);
+    attachBvhCulling(margined.batch, WebGLCoordinateSystem, { margin: 25 });
+    margined.cull();
+    expect(rows(margined.batch)).toEqual(expected);
+  });
+});

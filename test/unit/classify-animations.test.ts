@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AnimationClip, BoxGeometry, Group, InstancedMesh, Mesh, MeshStandardMaterial, NumberKeyframeTrack, PropertyBinding, Scene, VectorKeyframeTrack } from 'three';
-import { classify } from '../../src/compiler/classify.js';
+import { animatedRoots, classify } from '../../src/compiler/classify.js';
 import { World } from '../../src/compiler/World.js';
 import { tag } from '../../src/tags.js';
 
@@ -81,5 +81,42 @@ describe('World resolves animation tracks once per compile', () => {
     findNode.mockRestore();
     expect(calls, 'one graph search per track, not one per track per pass').toBe(2);
     expect(report.skipped).toContainEqual({ name: 'moving', rule: 'animated' });
+  });
+});
+
+describe("World with originals: 'detach' and animations", () => {
+  it('resolves a track to the same node before and after the batched originals leave the graph', () => {
+    const scene = new Scene();
+    // Two nodes share a name; PropertyBinding.findNode returns the first match in child order. The statics that are
+    // batched are removed from the graph under `originals: 'detach'`, which is what could move that first match.
+    const statics = [0, 1, 2].map((i) => {
+      const m = tag.static(new Mesh(box, mat()));
+      m.name = 'spinner';
+      m.position.set(i * 2, 0, 0);
+      scene.add(m);
+      return m;
+    });
+    const group = new Group();
+    group.name = 'spinner';
+    // Its own material variant, so it stays a singleton: a batched leaf would be detached with the rest and leave
+    // `group` holding nothing freezable, which is a rule of its own and not what this test is about.
+    const leaf = tag.static(new Mesh(new BoxGeometry(2, 2, 2), new MeshStandardMaterial({ roughness: 0.123 })));
+    leaf.name = 'leaf';
+    group.add(leaf);
+    scene.add(group);
+    const clip = new AnimationClip('spin', 1, [new VectorKeyframeTrack('spinner.position', [0, 1], [0, 0, 0, 1, 1, 1])]);
+
+    const before = animatedRoots(scene, [clip]);
+    const world = new World(scene, { animations: [clip], originals: 'detach' });
+    const report = world.compile();
+    const after = animatedRoots(scene, [clip]);
+    expect([...before], 'the first match is the first same-named static').toEqual([statics[0]]);
+    // The resolved node is animated, so classify makes it dynamic and it is never batched, so it is never detached:
+    // the freeze pass would have resolved the very same node whenever it ran.
+    expect([...after], 'and it still is once the batched originals are detached').toEqual([...before]);
+    expect(statics[0]!.parent, 'the animated static stays in the graph').toBe(scene);
+    expect(report.skipped).toContainEqual({ name: 'spinner', rule: 'animated' });
+    expect(world.frozenObjects, 'the group is all-static and holds a leaf').toContain(group);
+    expect(world.frozenObjects, 'the animated static is not frozen').not.toContain(statics[0]);
   });
 });

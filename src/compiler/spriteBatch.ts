@@ -12,8 +12,16 @@ export interface SpriteBatch {
   material: SpriteNodeMaterial;
   centers: InstancedBufferAttribute;
   scales: InstancedBufferAttribute;
-  /** Restores the hook and frees the geometry and the material. */
-  dispose(): void;
+  /**
+   * Restores the hook and frees the geometry, and the material unless `material: false` — then the caller owns it,
+   * which is how `World.decompile()` keeps a batch material another registered material still merges into.
+   */
+  dispose(options?: SpriteBatchDisposeOptions): void;
+}
+
+export interface SpriteBatchDisposeOptions {
+  /** `false` leaves the batch material alone; the caller disposes it, or deliberately keeps it alive. */
+  material?: boolean;
 }
 
 export interface SpriteBatchOptions {
@@ -112,10 +120,10 @@ export function buildSpriteBatch(group: SpriteGroup, index: number, options: Spr
     material,
     centers,
     scales,
-    dispose() {
+    dispose(options: SpriteBatchDisposeOptions = {}) {
       restoreHook();
       geometry.dispose();
-      material.dispose();
+      if (options.material !== false) material.dispose();
     },
   };
 }
