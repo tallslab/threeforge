@@ -51,6 +51,19 @@ for (const id of SCENE_IDS) {
         { warm: WARM, measured: MEASURED },
       );
       expect(out.frame.totals.unattributed, 'unattributed draws').toBe(0);
+      // Ruling R117: `programs` is read from the last measured frame, *before* `measureOverdraw()`. The overdraw
+      // count materials are real materials whose shader stages stay counted in `renderer.info.memory.programs`
+      // afterwards — three frees a stage only once its `usedTimes` reaches 0 — so a capture taken after the
+      // measurement reports the diagnostic's own shaders as if the scene had compiled them, and any edit to
+      // `src/ledger/overdraw.ts` then moves a gated bench metric that has nothing to do with the scene. That capture
+      // point was held only by a comment in each of the two callers, so moving it back below the measurement left
+      // every test green. `out.frame` is the post-measurement, post-rescan frame: the recorded value must never be it.
+      expect(out.programs, 'programs must be read before measureOverdraw()').toBeLessThanOrEqual(out.frame.totals.programs);
+      // And on a scene where the count materials measurably add stages, strictly below it — which is the assertion
+      // that actually fails when the capture moves. Measured on webgl2: zen naive 6 -> 10 programs across the
+      // measurement, zen optimized 80 -> 158. The other scenes are not asserted strictly because their gap is not
+      // guaranteed to be non-zero, and a guard that can pass vacuously is the kind this branch keeps removing.
+      if (id === 'zen') expect(out.programs, 'zen: the count materials add stages, so the captured value must sit below the post-measurement frame').toBeLessThan(out.frame.totals.programs);
       const path = `bench/results/local.${forge.backend}.json`;
       mkdirSync('bench/results', { recursive: true });
       // The file's env describes the machine; the viewport is per scene (rpg is portrait) and stays out of it.
