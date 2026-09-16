@@ -100,7 +100,7 @@ entries of [All changes](#all-changes), which also lists every fix that needs no
 | rejected | `analyze` (and the MCP `analyze_asset`) applies the same resource-URI check to its input before it opens a browser, and confines the harness page to its own static server with a catch-all route. | An asset with an absolute, scheme-carrying, backslashed, NUL-carrying, undecodable or directory-escaping `images[].uri`/`buffers[].uri` exits 2 naming the URI, where 0.8.0 let headless Chromium fetch it from this machine's network; a file that is not readable glTF JSON exits 2 instead of 4. | Keep every resource inside the asset's directory, or embed it as `data:`. |
 | rejected | `optimize --out` must end in `.glb` or `.gltf` and must not be the input (by device and inode) or one of a `.gltf` input's resources; a `.gltf` output's resources must not land on the input or its resources. A `.GLB` output is written as binary glTF. | Those runs exit 2 before writing: `optimize scene.gltf --out scene.opt.gltf` fails instead of rewriting `scene.bin`, and `--out x.txt` fails instead of writing glTF JSON. | Write a `.gltf` output to another directory, or as `.glb`. |
 | default | `optimize --preset safe` runs dedup, palette and prune; `weld` and `resample` move to `balanced` and `aggressive`. | `safe` outputs lose weld's and lossy resampling's savings. | Add `--weld`, or `--resample` (lossless under `safe`), or use `balanced`. |
-| rejected | `--parity 0` is judged on every view's raw `changedPixels` (a pixel whose R, G or B moved by more than 24), in `optimize` and in `analyze`'s new `--parity` (below), both through `parityOf`. `optimize --parity` governs the comparison of the two files as loaded, and each file's own compile check runs at the stricter of it and 0.5 % — so a value above 0.5 never loosens the compile checks, and `--parity 0` bounds them at zero as well. | An `optimize --parity 0` run that moved up to 4 of 921,600 pixels between the files, which reported `pass: true` and exited 0, now fails; so does one where **compiling** either file moves a pixel, which is a property of the asset and threeforge's batching, not of the rewrite. The Buggy is such an asset: `safe` is still pixel-identical between its two files, but compiling it moves 1 px (webgl2) or 2 px (webgpu) of 921,600, so `optimize --parity 0` on it now exits 1 — exactly as `analyze --parity 0` on it already did. | Pass a non-zero `--parity` to allow a small change; read `verify.parity` for the rewrite itself and `verify.optimized.parity` for the optimized file's compile. |
+| rejected | `--parity 0` is judged on every view's raw `changedPixels` (a pixel whose R, G or B moved by more than 24), in `optimize` and in `analyze`'s new `--parity` (below), both through `parityOf`. `optimize --parity` governs the comparison of the two files as loaded; each file's own compile parity stays at 0.5 %. | An `optimize --parity 0` run that moved up to 4 of 921,600 pixels between the files, which reported `pass: true` and exited 0, now fails. | Pass a non-zero `--parity` to allow a small change; read `verify.optimized.parity`, or run `analyze --parity 0`, for the optimized file's compile. |
 | API | `analyze` takes `--parity <pct>` (MCP `analyze_asset`: `parity`): the allowed percent of changed pixels between the render before and after compiling, 0 to 100, default 0.5; `AnalyzeInput.parity` is optional (absent means 0.5). | Nothing changes: the verdict still passes a view with up to 0.5 % of its pixels changed. | Pass `--parity 0` to require zero changed pixels, for example before trusting `--bake`. |
 | rejected | Parity (`comparePixels`, and so `pixelDiffPct`, `analyze` and `optimize`) reports two renders of different sizes as every pixel changed: `diffPct` 100, `changedPixels` and `comparedPixels` the larger image's pixel count. | A pair of renders of different sizes, which compared only their overlap and could pass, fails at any threshold. | Nothing, unless you compare images of different sizes on purpose. |
 | rejected | A page error raised by the harness page fails the `analyze` verdict and, in either verified render, the `optimize` verdict. | Such runs exit 1 with a reason quoting up to five errors; `inspect` still only logs them. | Fix what the asset raises in the page. |
@@ -161,16 +161,19 @@ Documented in `docs/threeforge.md` (section 14 lists them), not fixed in 0.9.0:
   into a wall sees a hole where a removed contact face was.
 - `memory.unreferenced` still counts resources three created before `ledger.attach()` and transmission's and XR's
   viewport textures, and allows a render target drawn once and abandoned without `dispose()`.
-- `optimize --parity` above 0.5 does not loosen each file's own compile check: those run at the stricter of `--parity`
-  and 0.5 %, so `--parity 5` still holds them at 0.5 %. `--parity 0` bounds them at zero too.
+- `optimize --parity 0` guarantees zero changed pixels between the two files as loaded; each file's own compile check
+  stays at 0.5 %, reported in `verify.optimized.parity`. `analyze --parity 0` asks about a compile directly.
 - CI's `webgpu` e2e job runs on SwiftShader with pixel checks off: WebGPU pixel parity is proven only by a local run on
   a native adapter.
 
 ### All changes
 
 - `optimize`'s verdict reason for a lost compile parity names the worst view's raw changed-pixel count as well as the
-  rounded percent (`… (2 changed pixels in the worst view, 0.00%)`), which reads 0.00 % for a change small enough to
-  matter only at `--parity 0` (Ruling R108's principle applied to this message).
+  rounded percent (`… (2 changed pixels in the worst view, 0.00%)`), which alone reads 0.00 % for a small change
+  (Ruling R108's principle applied to this message).
+- `analyze` exits 2, not 4, on a file it cannot read as glTF JSON (a truncated GLB, a GLB whose first chunk is not
+  JSON, a `.gltf` that is not a JSON object): the resource-URI pre-flight reads the document before a browser opens,
+  exactly as `optimize` does, so bad input is a usage error rather than a page error.
 - Every page wait in `analyze` and `inspect` is bounded by `--timeout`: `page.screenshot` is given the bound and
   wrapped in the same `withTimeout` as every `page.evaluate` (it fell back to Playwright's 30 s page default), and
   `browser.newPage()`, which had no bound at all, is wrapped too.

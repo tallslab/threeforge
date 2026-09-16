@@ -178,18 +178,23 @@ function writeExclusive(path: string, data: string | Uint8Array, flag: 'w' | 'wx
 }
 
 /**
- * The input each of the two files is analyzed with. `input.parity` is the threshold between the two *files*; each
- * file's own compile check is a different question and keeps the `analyze` default — except that a `--parity`
- * *stricter* than the default carries into it as well (R156, reopened by the independent review). `Math.min` can only
- * tighten, never loosen: `--parity 5` still holds each compile check at 0.5 %, while `--parity 0` no longer leaves a
- * user who asked for zero with a sibling check silently at 0.5 %. The cost, which is the information that user asked
- * for: a `--parity 0` run can now fail on the compiler's own sub-0.5 % drift on either file.
+ * The input each of the two files is analyzed with. `input.parity` is the threshold between the two *files* and stays
+ * there; each file's own compile check is a **different question** and keeps the `analyze` default.
+ *
+ * R156 was reopened by the independent review and then closed again, deliberately, against a measurement. Carrying a
+ * stricter `--parity` into the inner checks (`Math.min`) looks like a free tightening and is not: `--parity 0` asks
+ * "is the optimized asset exactly the original?", and for the Buggy the answer is yes — `verify.parity` is 0 changed
+ * pixels in every view on both backends — while compiling *either* file moves 1 px (webgl2) or 2 px (webgpu) of
+ * 921,600, identically, because that is what threeforge's batching does to that asset. Bounding the inner checks made
+ * the run answer "no" to a question whose answer is yes, on one of the two assets CONTRIBUTING.md rule 7 anchors. The drift
+ * is not hidden by keeping the default: it is reported in `verify.optimized.parity`, which an agent needing compile
+ * exactness reads, and `analyze --parity 0` asks that question directly.
  *
  * Exported because it is the decision this function exists to make, and a unit test pins it
- * (`test/unit/optimize-inputs.test.ts`) rather than re-deriving it.
+ * (`test/unit/optimize-inputs.test.ts`) rather than re-deriving it; `cli.spec.ts`'s Buggy case pins the consequence.
  */
 export function verifyAnalyzeInput(input: OptimizeInput): Omit<AnalyzeInput, 'file'> {
-  return { backend: input.backend, tier: input.tier, budget: null, frames: input.frames, compile: input.compile, bake: 'off', views: input.views, parity: Math.min(input.parity, DEFAULT_PARITY), timeout: input.timeout, headed: input.headed };
+  return { backend: input.backend, tier: input.tier, budget: null, frames: input.frames, compile: input.compile, bake: 'off', views: input.views, parity: DEFAULT_PARITY, timeout: input.timeout, headed: input.headed };
 }
 
 /**
@@ -247,10 +252,9 @@ export function judgeOptimize(before: AssetStats, after: AssetStats, verify: Opt
     if (b.skinned < a.skinned) reasons.push(`the harness loaded ${b.skinned} of ${a.skinned} skinned meshes`);
     if (b.morph < a.morph) reasons.push(`the harness loaded ${b.morph} of ${a.morph} morph meshes`);
   }
-  // The raw count as well as the percent (Ruling R108): `diffPct` is rounded, so at `--parity 0` — which now reaches
-  // this check too — a reason reading "0.00%" would say nothing about what actually moved. The count is what the
-  // threshold was judged on, and it is what tells a reader whether this is threeforge's own sub-pixel batching drift
-  // or a real loss from the rewrite.
+  // The raw count as well as the percent (Ruling R108): `diffPct` is rounded to two decimals here, so a compile that
+  // moved a few pixels of 921,600 would report "0.00%" and say nothing about what actually moved. The count is what
+  // tells a reader whether this is threeforge's own sub-pixel batching drift or a real loss from the rewrite.
   if (verify.optimized.parity && !verify.optimized.parity.pass) {
     const worst = Math.max(0, ...verify.optimized.parity.views.map((view) => view.changedPixels));
     reasons.push(`the optimized file lost pixel parity when compiled (${worst} changed pixels in the worst view, ${verify.optimized.parity.diffPct.toFixed(2)}%)`);

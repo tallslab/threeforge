@@ -411,32 +411,31 @@ describe("optimize never overwrites a .gltf input's resources", () => {
 });
 
 /**
- * R156, reopened by the independent review. `--parity` is the threshold between the two files, and each file's own
- * compile check is a different question — but `verifyPair` hard-coded `DEFAULT_PARITY` for both inner analyses, so a
- * user who explicitly asked for zero silently got sibling checks held at 0.5 %. The threshold now follows the flag
- * when the flag is *stricter*, which can only tighten, never loosen. This is the decision path itself:
+ * R156. `--parity` is the threshold between the two *files*, and each file's own compile check is a different
+ * question that keeps the `analyze` default. The independent review proposed carrying a stricter `--parity` into the
+ * inner checks (`Math.min`); that was tried and reverted against a measurement — see `verifyAnalyzeInput`'s comment
+ * and `cli.spec.ts`'s Buggy case, which pins the consequence end to end. This pins the decision itself:
  * `verifyAnalyzeInput` is the object `verifyPair` hands to each `analyzeAssetWithShots` call.
  */
-describe('verifyAnalyzeInput: the inner compile checks follow --parity when it is stricter', () => {
+describe('verifyAnalyzeInput: the inner compile checks keep the analyze default, whatever --parity says', () => {
   const optimizeInput = (...extra: string[]): OptimizeInput => {
     const command = parseArgs(['optimize', 'x.glb', ...extra]);
     if (command.name !== 'optimize') throw new Error(`parsed as ${command.name}`);
     return command.input;
   };
 
-  it('passes 0 through when the user asked for 0', () => {
-    expect(verifyAnalyzeInput(optimizeInput('--parity', '0')).parity).toBe(0);
+  it('does not follow --parity down: a run asking for zero between the files still compiles at the default', () => {
+    // The question `--parity 0` asks is "is the optimized asset exactly the original?", which `verify.parity`
+    // answers. Whether compiling either file moves a pixel is a separate question, reported in
+    // `verify.optimized.parity` and asked directly by `analyze --parity 0`.
+    expect(verifyAnalyzeInput(optimizeInput('--parity', '0')).parity).toBe(DEFAULT_PARITY);
+    for (const pct of ['0', '0.001', '0.1', '0.49']) expect(verifyAnalyzeInput(optimizeInput('--parity', pct)).parity, pct).toBe(DEFAULT_PARITY);
   });
 
-  it('never loosens: a threshold above the default leaves the compile checks at the default', () => {
+  it('does not follow --parity up either', () => {
     expect(verifyAnalyzeInput(optimizeInput()).parity).toBe(DEFAULT_PARITY);
     expect(verifyAnalyzeInput(optimizeInput('--parity', '5')).parity).toBe(DEFAULT_PARITY);
     expect(verifyAnalyzeInput(optimizeInput('--parity', '100')).parity).toBe(DEFAULT_PARITY);
-  });
-
-  it('tightens for any threshold under the default', () => {
-    for (const pct of ['0', '0.001', '0.1', '0.49']) expect(verifyAnalyzeInput(optimizeInput('--parity', pct)).parity, pct).toBe(Number(pct));
-    expect(verifyAnalyzeInput(optimizeInput('--parity', '0.5')).parity).toBe(DEFAULT_PARITY);
   });
 
   it('carries the run flags each file is rendered with, and never bakes', () => {
