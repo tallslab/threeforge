@@ -129,6 +129,15 @@ describe('schema-validate: every exported schema is self-contained', () => {
     expect(JSON.stringify(OPTIMIZE_SCHEMA)).not.toContain(ANALYZE_SCHEMA.$id);
     expect((OPTIMIZE_SCHEMA as { $defs: { AnalyzeDocument?: unknown } }).$defs.AnalyzeDocument).toBeDefined();
   });
+
+  it("the compile report's description says which rule keeps each counted face (BakeSummary's own docs)", () => {
+    const description = (ANALYZE_SCHEMA.properties.compile as { anyOf: Array<{ description?: string }> }).anyOf[0]!.description!;
+    // keptCoincidentFaces is the seam rule's count (BakeSummary.keptCoincidentFaces), never the buried pass's.
+    expect(description).not.toContain('buried pass kept');
+    expect(description).toContain('`keptCoincidentFaces` (coincident faces the seam guard kept)');
+    expect(description).toContain('`keptDuplicateFaces`');
+    expect(description).toContain('`unbakeableEntries`');
+  });
 });
 
 describe('schema-validate: every exported schema compiles standalone in ajv and validates real documents', () => {

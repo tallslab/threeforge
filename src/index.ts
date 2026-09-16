@@ -17,7 +17,7 @@ export { BUDGETS, budgetsFor, detectTier, tierInputFromNavigator, type Budgets, 
 export { hintsFor, type HintContext } from './ledger/hints.js';
 export { disposeOverdraw, measureOverdraw, overdrawTargetOf, type OverdrawOptions, type OverdrawRenderer, type OverdrawResult } from './ledger/overdraw.js';
 export { estimateMemory, geometryBytes, textureBytes, type AllowedRenderTarget, type MemoryEstimateOptions, type RendererMemoryInfo } from './ledger/memory.js';
-export { lightingOf, scanLights, skinningOf, type LightInfo, type ShadowWork } from './ledger/sections.js';
+export { lightingOf, NO_SHADOW_WORK, scanLights, skinningOf, type LightInfo, type ShadowWork } from './ledger/sections.js';
 export { classify, exclusionRule, animatedRoots, type Classification, type ClassifyOptions, type MeshKind } from './compiler/classify.js';
 export { attributeSignature, ensureIndexed, isBatchCompatible } from './compiler/geometryCompat.js';
 export { World, FORGE_HIDDEN_LAYER, type BakeSummary, type CompileOptions, type CompileReport, type DirtyEvent, type WarmupOptions, type WarmupRenderer, type WarmupResult, type WorldOptions } from './compiler/World.js';

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AmbientLight, DirectionalLight, Group, PointLight, Scene, SpotLight } from 'three';
 import { lightingOf, NO_SHADOW_WORK, scanLights, skinningOf } from '../../src/ledger/sections.js';
 import type { SubmissionRecord } from '../../src/ledger/snapshot.js';
+import * as entry from '../../src/index.js';
 
 const rec = (over: Partial<SubmissionRecord>): SubmissionRecord => ({
   name: 'x', kind: 'mesh', material: 0, materialType: 'M', programHash: 'p', variantHash: 'v', transparent: false, pass: 'main', reason: 'untagged', flags: [],
@@ -72,5 +73,10 @@ describe('lighting', () => {
 
   it('lightingOf without shadow work reports no texels and no casters, whatever the lights are configured to', () => {
     expect(lightingOf(lights, items, NO_SHADOW_WORK)).toMatchObject({ shadowLights: 3, shadowPasses: 2, shadowCasters: 0, shadowTexels: 0, shadowSubmissions: 3 });
+  });
+
+  it('NO_SHADOW_WORK is exported from the package entry point beside lightingOf, whose doc tells callers to pass it', () => {
+    expect(entry.NO_SHADOW_WORK).toBe(NO_SHADOW_WORK);
+    expect(entry.lightingOf).toBe(lightingOf);
   });
 });
