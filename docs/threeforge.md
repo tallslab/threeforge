@@ -374,7 +374,9 @@ back-to-back runs (a range where the runs differ; bytes move by under 1 KB betwe
 | 10k | 0.30 | 17.1–17.3 | 1.7–2.0 | 1.84 | 11.4 |
 | 20k | 0.35 | 27.3–27.4 | 4.9–5.6 | 3.07 | 23.1 |
 
-The same runs measured the nested scene at 15.5–18.0 KB per frame and the shadow scene at 19.0–29.4 KB. Before the
+Two later back-to-back runs of the same invocation on the same machine, at `e567797` (after the final fixes), measured
+the nested scene at 15.5–25.7 KB per frame and the shadow scene at 19.1–29.5 KB; their flat rows read 0.22, 0.30–0.32
+and 0.40–0.41 µs per submission and 23.4–23.6, 17.1–17.3 and 27.1–27.5 KB per frame at 2k, 10k and 20k. Before the
 flags were rewritten in place, the flat scene allocated 0.10, 0.40 and 0.79 MB per frame at 2k, 10k and 20k. The
 `0.8.0` columns are the audit numbers recorded before the hot-path work, on the machine of the day: they show the
 scale of that change rather than a same-run comparison. (The 0.8.0 audit also quoted 3.8 µs and 8.7 MB at 10k from
@@ -1063,8 +1065,9 @@ is carried and compared by the weld):
    of opaque, front-side modules that cast no shadow are removed; room interiors and open backsides survive; back-side
    faces never block a ray (a back-side shell draws its far wall behind whatever is inside it).
 5. **Weld**: vertices merge only when position (`tolerance`, default 1e-4), normal and tangent xyz (`normalAngle`,
-   default 0.5°), tangent `w` (exact), uv (exact) and colour (`colorTolerance`, default 1/255) agree, so shading
-   never changes.
+   default 0.5°), tangent `w` (exact), uv (exact) and colour (`colorTolerance`, default 1/255) agree, so a merge moves
+   shading by at most those tolerances; `bake.spec.ts` holds every baked scene it renders under 0.05 % changed pixels
+   at a per-channel tolerance of 4.
 
 **Groups the bake leaves to batching**: `World` batches, rather than bakes, a group where any geometry carries an
 attribute the bake does not carry faithfully (`unbakeableAttribute(geometry, vertexColors, builtInReads)` in
@@ -1368,7 +1371,8 @@ gated.
     tag that differs from `package.json` and running `npm publish --provenance` (needs the `NPM_TOKEN` secret).
   - **The `webgpu` e2e leg checks no pixels.** Its adapter is SwiftShader, whose canvas capture drops the device, so
     `test/e2e/fixtures.ts` turns `pixelChecks` off: screenshot-gated tests skip whole and the rest skip their
-    screenshot steps. WebGPU pixel parity is proven only by a local run on a native adapter (`docs/release.md`, step 2).
+    screenshot steps. WebGPU pixel parity is proven only by a local run on a native adapter (`docs/release.md`, step 2 for the e2e
+    specs and step 3's corpus run for the corpus models).
   - `assets.yml`, weekly and on dispatch: every non-`@bench` test on both backends with the kits and the corpus
     downloaded strictly (`FORGE_FETCH_STRICT=1`), `FORGE_RUN_ID` pinned per job; it uploads `docs/assets-report*` as an
     artifact and never commits.

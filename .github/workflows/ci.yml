@@ -91,8 +91,8 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium chromium-headless-shell
       - run: pnpm build # cli.spec.ts and mcp.spec.ts drive the built CLI in dist/
       # COVERAGE, stated so a green run is not read as more than it is (Rulings R102, R110, R121). Measured at
-      # 5bf1fdf with `pnpm exec playwright test --list [--grep-invert "@corpus|@bench"]`: the suite is 258 tests in
-      # 36 files PER PROJECT (516 across the two); this selection runs 94 per project (188 across both) in 28 files.
+      # e567797 with `pnpm exec playwright test --list [--grep-invert "@corpus|@bench"]`: the suite is 259 tests in
+      # 36 files PER PROJECT (518 across the two); this selection runs 95 per project (190 across both) in 28 files.
       # Dropped here and covered only by the weekly full-corpus `assets.yml`: 148 @corpus tests per project and the
       # 16 @bench ones. Concretely, a green run here does NOT cover
       #   - 15 of cli.spec.ts's 20 tests and 10 of mcp.spec.ts's 13 (the CLI/MCP agent surface on real models),

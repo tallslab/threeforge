@@ -90,7 +90,8 @@ Keys are computed at registration; a material mutated later is not re-keyed.
   instances and stay hidden with `matrixAutoUpdate` on. A pre-render hook compares each synced `matrixWorld` with
   the last copy (16 floats) and, on change, writes it into the batch (`setMatrixAt` + BVH `move`) or the instanced
   master. The batch's own `frustumCulled` is turned off because a mover can leave the precomputed bounds. Colour
-  changes are not synced. Naive scene: 28 becomes 18 submissions with the same pixels.
+  changes are not synced. Naive scene: 28 becomes 18 submissions, and the compiled screenshot stays within 0.2 % of
+  the naive render's pixels (`compile.spec.ts`: `maxDiffPixelRatio: 0.002` at Playwright's default colour threshold).
 - **`setVisible(original, bool)`** routes to `setVisibleAt` on batches, the visibility mask on instanced meshes,
   or `visible` on plain meshes.
 - **LOD** (`lod: { distances }` after `await prepareLods(scene, { ratios })`). Levels are generated with

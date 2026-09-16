@@ -67,9 +67,10 @@ lost, when the optimized file fails `--budget`, or when either render raised a p
 `npm i -D draco3dgltf`. The output never uses Draco.
 
 Draw-call numbers so far: the naive test scene (500 props, 40 material recipes, a new material per prop) goes from
-**503 to 28** scene submissions (**18** with `dynamics: 'batch-sync'`), with under 0.05 % of pixels changed per view
-at a per-channel tolerance of 4 (the e2e records 224 / 226 changed pixels of 480,000 at its oblique view on webgl2 /
-webgpu, from draw-order ties); the 20k-instance field scene goes from 3892 submissions to **3 instanced draws** with BVH culling. The public
+**503 to 28** scene submissions, with under 0.05 % of pixels changed per view at a per-channel tolerance of 4 (the e2e
+records 224 / 226 changed pixels of 480,000 at its oblique view on webgl2 / webgpu, from draw-order ties), and to
+**18** with `dynamics: 'batch-sync'`, whose one screenshot stays within 0.2 % of the naive render's pixels (Playwright's
+`maxDiffPixelRatio: 0.002` at its default colour threshold); the 20k-instance field scene goes from 3892 submissions to **3 instanced draws** with BVH culling. The public
 glTF corpus report ([webgl2](docs/assets-report.md), [webgpu](docs/assets-report-webgpu.md)), generated from 0.9.0
 code at commit `a485e57` (run `fix-audit-0.9.0-corpus-20260916`), passes 104 of 104 models on each backend: every
 model compiles with 0 unattributed draws, restores its naive count on decompile, and changes under 0.5 % of the
