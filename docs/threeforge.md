@@ -334,9 +334,9 @@ between runs, bytes do not):
 
 | submissions | µs / submission | MB / frame | rescan ms | 0.8.0: µs / submission | 0.8.0: MB / frame |
 |---|---|---|---|---|---|
-| 2k | 0.24 | 0.18 | 0.5 | 0.83 | 2.3 |
-| 10k | 0.32–0.33 | 0.80 | 1.6–1.9 | 1.84 | 11.4 |
-| 20k | 0.37–0.39 | 1.83 | 5.1–5.2 | 3.07 | 23.1 |
+| 2k | 0.24–0.25 | 0.10 | 0.5 | 0.83 | 2.3 |
+| 10k | 0.31–0.32 | 0.40 | 1.6–1.8 | 1.84 | 11.4 |
+| 20k | 0.34–0.43 | 0.79 | 4.8–5.9 | 3.07 | 23.1 |
 
 The `0.8.0` columns are the audit numbers recorded before the hot-path work, on the machine of the day: they show the
 scale of that change rather than a same-run comparison.
