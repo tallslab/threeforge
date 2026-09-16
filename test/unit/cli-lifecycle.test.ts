@@ -134,6 +134,71 @@ describe('Resources', () => {
   });
 });
 
+/**
+ * Final review area 3, F8: `armAbort` closed the stack once, when the signal fired, and `add()` did not look at the
+ * signal, so a browser registered after an MCP client disconnected mid-launch was never closed and the page was
+ * measured to completion with nobody listening.
+ */
+describe('Resources after an abort', () => {
+  it('add() after the armed signal aborted closes the resource at once and throws a PageError', async () => {
+    const resources = new Resources();
+    const controller = new AbortController();
+    resources.armAbort(controller.signal);
+    controller.abort();
+    let closed = 0;
+    expect(() => resources.add('the browser', () => closed++)).toThrow(PageError);
+    expect(() => resources.add('the page', () => closed++)).toThrow(/aborted/);
+    await new Promise((ok) => setTimeout(ok, 0));
+    expect(closed).toBe(2);
+    expect(await resources.close()).toEqual([]);
+    expect(closed).toBe(2);
+  });
+
+  it('add() before any abort, or with no signal armed, only registers', async () => {
+    const armed = new Resources();
+    armed.armAbort(new AbortController().signal);
+    const unarmed = new Resources();
+    let closed = 0;
+    armed.add('a', () => closed++);
+    unarmed.add('b', () => closed++);
+    expect(closed).toBe(0);
+    await armed.close();
+    await unarmed.close();
+    expect(closed).toBe(2);
+  });
+
+  it('a client that disconnects while the browser launches: analyze closes the browser it gets and never opens a page', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'forge-lifecycle-'));
+    try {
+      const file = join(dir, 'a.glb');
+      writeFileSync(file, 'glb');
+      const { serve, state } = countingServe();
+      const controller = new AbortController();
+      let browserClosed = 0;
+      let pagesOpened = 0;
+      const launch = async (): Promise<BrowserHandle> => {
+        controller.abort(); // the MCP client's stdin ends while Chromium starts
+        return {
+          newPage: async () => {
+            pagesOpened++;
+            return stuckPage();
+          },
+          close: async () => {
+            browserClosed++;
+          },
+        };
+      };
+      const error = await settle(analyzeAssetWithShots(analyzeInput(file), undefined, false, { serve, launch, appDir: dir, signal: controller.signal }));
+      expect(error).toBeInstanceOf(PageError);
+      expect(browserClosed).toBe(1);
+      expect(pagesOpened).toBe(0);
+      expect(state.closed).toBe(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('armExitWatchdog', () => {
   it('arms an unref’d timer that exits once it fires', async () => {
     const exit = vi.fn();

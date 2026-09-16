@@ -37,11 +37,22 @@ export async function withTimeout<T>(what: string, ms: number, work: PromiseLike
  */
 export class Resources {
   private readonly stack: Array<{ what: string; close: () => unknown }> = [];
+  /** The signal `armAbort` was given, so `add` can tell that the call was already aborted. */
+  private signal: AbortSignal | undefined;
 
   constructor(private readonly closeTimeoutMs = CLOSE_TIMEOUT_MS) {}
 
-  /** Register `close` for `what` (e.g. `'the browser'`) right after opening it. */
+  /**
+   * Register `close` for `what` (e.g. `'the browser'`) right after opening it. If the armed signal has already aborted
+   * — the MCP client disconnected while this resource was still opening, after `armAbort` had closed everything
+   * registered so far — nothing would ever close it: it is closed at once (bounded, errors ignored) and a
+   * `PageError` stops the caller before it uses it (final review F8).
+   */
   add(what: string, close: () => unknown): void {
+    if (this.signal?.aborted) {
+      void withTimeout(`closing ${what}`, this.closeTimeoutMs, async () => close()).catch(() => {});
+      throw new PageError(`aborted: ${what} was closed as soon as it opened`);
+    }
     this.stack.push({ what, close });
   }
 
@@ -63,10 +74,12 @@ export class Resources {
    * If `signal` later aborts, closes everything registered so far (newest first), same as `close()` — so a caller
    * whose work is stuck (e.g. a page that never resolves) still has its browser/server torn down promptly instead
    * of running to completion after nobody is listening for the result. A no-op when `signal` is undefined; closes
-   * immediately when `signal` is already aborted at call time. Call once, right after construction, before `run`.
+   * immediately when `signal` is already aborted at call time. A resource `add`ed after the abort is closed at once
+   * (see `add`). Call once, right after construction, before `run`.
    */
   armAbort(signal?: AbortSignal): void {
     if (!signal) return;
+    this.signal = signal;
     if (signal.aborted) {
       void this.close();
       return;
