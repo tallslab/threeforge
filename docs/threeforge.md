@@ -404,7 +404,7 @@ submission grows less than 3× from 2k to 20k submissions (best of 7).
 
 ### Tiers, budgets and hints
 
-`detectTier({ gpu, deviceMemory, cores, touch, mobile, dpr })` is GPU-first: a recognised GPU name decides the
+`detectTier({ gpu, deviceMemory, cores, touch, mobile, platform, dpr })` is GPU-first: a recognised GPU name decides the
 tier before touch is even considered, so a touch-capable desktop (a Windows laptop with a discrete GPU and a
 touchscreen) is not mistaken for a phone. A mobile GPU *family name* is the weakest signal of the seven, because
 those families also ship in laptops, so it decides only after everything that contradicts it directly. All seven
@@ -422,12 +422,16 @@ it), in order:
 4. The renderer string names an ANGLE Direct3D backend or Windows (`D3D11`, `Direct3D11`, `Windows`) → `desktop`.
    Windows-on-ARM laptops (Snapdragon X, 8cx) carry Adreno GPUs and report both brands through ANGLE, e.g.
    `ANGLE (Qualcomm, Adreno (TM) X1-85 (0x00043050), D3D11)`; Android's ANGLE strings name OpenGL ES or Vulkan.
-5. A mobile/tablet GPU matches (higher-end Adreno/Mali, PowerVR, Xclipse, Qualcomm, Apple A-series) → `phone-mid`,
-   or `phone-low` when `deviceMemory <= 2`. Before the `mobile` step, because Chrome reports an Android **tablet** as
-   `userAgentData.mobile: false`: reading that as "desktop" gives a Mali tablet desktop budgets and silences its
-   budget hints. What separates that tablet from the Windows-on-ARM laptop is the graphics API in the renderer string,
-   and steps 3–4 have already had their say on it, so a mobile GPU family reaching this step has no desktop API named
-   beside it.
+5. A mobile/tablet GPU matches (higher-end Adreno/Mali, PowerVR, Xclipse, Qualcomm, Apple A-series) → `desktop` when
+   `platform` names an OS no phone or tablet runs (Windows, macOS, Linux, ChromeOS, in any spelling a browser uses),
+   else `phone-mid`, or `phone-low` when `deviceMemory <= 2`. Before the `mobile` step, because Chrome reports an
+   Android **tablet** as `userAgentData.mobile: false`: reading that as "desktop" gives a Mali tablet desktop budgets
+   and silences its budget hints. What separates that tablet from a Windows-on-ARM laptop (Snapdragon X: an Adreno
+   GPU in a laptop) is the graphics API in the renderer string on **WebGL2**, which steps 3–4 have already had their
+   say on — and on **WebGPU** there is no such token at all, because `gpu` comes from `adapter.info` and names a
+   vendor and an architecture only (this repository's own WebGPU string is `apple metal-3`). That is what `platform`
+   is for. With neither signal — a mobile GPU family and no platform reported — the GPU family name decides, as it
+   did before `platform` existed.
 6. `mobile` is defined: `true` → `phone-mid` (or `phone-low` under `deviceMemory <= 2`); `false` → `desktop`. For a
    GPU string none of steps 1–5 recognised, the browser's own answer is the best signal there is.
 7. Otherwise the old touch-only rule: no `touch` → `desktop`; `touch` and `deviceMemory <= 2` → `phone-low`;
@@ -436,7 +440,11 @@ it), in order:
 `tierInputFromNavigator(gpu, nav)` builds the `TierInput` that feeds `detectTier` from a GPU name and `navigator`
 (passed explicitly so it is unit-testable with fake navigators) — `test/app/main.ts`, `cli-app/main.ts` and
 `bench-app/runner.ts` all call it the same way. `touch` is the real touch capability
-(`navigator.maxTouchPoints > 0`) and nothing else. `mobile` (step 6) is resolved separately, in priority order:
+(`navigator.maxTouchPoints > 0`) and nothing else. `platform` (step 5) is resolved in priority order:
+`navigator.userAgentData.platform` (Chromium, the only one stated rather than inferred), then the OS named in
+`navigator.userAgent`, then `navigator.platform`. The user agent comes before `navigator.platform` because Android
+reports `Linux armv8l` there while its user agent says `Android`, and reading the platform string first would call an
+Android tablet a Linux desktop. `mobile` (step 6) is resolved separately, in priority order:
 `navigator.userAgentData.mobile` (Chromium, most reliable — correctly `false` for a touch-capable desktop even
 though `touch` is `true`), then a `"Mobi"` sniff of `navigator.userAgent` (non-Chromium browsers), else left
 `undefined` when neither is available, so `detectTier` falls back to `touch` alone (step 7). Every field it reads

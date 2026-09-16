@@ -88,6 +88,20 @@ describe('tiers', () => {
     ['Chrome Android tablet (Adreno, Vulkan) + touch + mobile:false -> phone-mid', { gpu: 'ANGLE (Qualcomm, Adreno (TM) 740, Vulkan 1.3.0)', touch: true, mobile: false, deviceMemory: 8 }, 'phone-mid'],
     ['bare Mali-G710 + mobile:false, no API named -> phone-mid (the GPU family decides when nothing contradicts it)', { gpu: 'Mali-G710', touch: true, mobile: false }, 'phone-mid'],
     ['Snapdragon X (Adreno, Direct3D11) + mobile:false, no touch -> desktop (a desktop API is named)', { gpu: 'ANGLE (Qualcomm, Adreno (TM) X1-85 (0x00043050), D3D11)', mobile: false, deviceMemory: 16 }, 'desktop'],
+    // Under WebGPU there is no renderer string: `gpu` is built from `adapter.info` (description, else device, else
+    // vendor + architecture), which names a vendor and an architecture and never a graphics API — this repository's
+    // own WebGPU value is `apple metal-3`. So the Direct3D token that rescues the laptop on WebGL2 is absent, and the
+    // platform is what separates a Windows-on-ARM laptop from an Android tablet.
+    ['Snapdragon X under WebGPU (qualcomm adreno-x1, platform Windows) + touch + mobile:false -> desktop', { gpu: 'qualcomm adreno-x1', platform: 'Windows', touch: true, mobile: false, deviceMemory: 16 }, 'desktop'],
+    ['Snapdragon X under WebGPU, no touch -> desktop', { gpu: 'qualcomm adreno-x1', platform: 'Windows', mobile: false, deviceMemory: 16 }, 'desktop'],
+    ['Snapdragon 8cx under WebGPU (platform Win32, as navigator.platform spells it) -> desktop', { gpu: 'qualcomm adreno-690', platform: 'Win32', touch: true, mobile: false }, 'desktop'],
+    ['a Linux workstation with a Mali dev board GPU (platform Linux) -> desktop', { gpu: 'arm mali-g710', platform: 'Linux x86_64', mobile: false }, 'desktop'],
+    ['a Chromebook (platform Chrome OS) with a Mali GPU -> desktop', { gpu: 'arm mali-g710', platform: 'Chrome OS', touch: true, mobile: false }, 'desktop'],
+    ['Android tablet under WebGPU (arm mali-g710, platform Android) + touch + mobile:false -> phone-mid', { gpu: 'arm mali-g710', platform: 'Android', touch: true, mobile: false, deviceMemory: 8 }, 'phone-mid'],
+    ['Android phone under WebGPU (qualcomm adreno-740, platform Android) + mobile:true -> phone-mid', { gpu: 'qualcomm adreno-740', platform: 'Android', touch: true, mobile: true, deviceMemory: 8 }, 'phone-mid'],
+    ['an iPad reporting a mobile GPU name with platform iOS -> phone-mid', { gpu: 'apple a17', platform: 'iOS', touch: true }, 'phone-mid'],
+    ['a mobile GPU with no platform at all -> phone-mid (the documented fallback, unchanged)', { gpu: 'qualcomm adreno-x1', mobile: false }, 'phone-mid'],
+    ['apple metal-3 (this repo under WebGPU) + platform macOS -> desktop', { gpu: 'apple metal-3', platform: 'macOS', mobile: false }, 'desktop'],
   ];
 
   it.each(table)('%s', (_name, input, expected) => {
@@ -167,6 +181,40 @@ describe('tiers', () => {
       });
       expect(ipad.mobile).toBe(false);
       expect(detectTier(ipad)).toBe('phone-mid');
+    });
+
+    it('resolves `platform` from userAgentData, then the user agent, then navigator.platform', () => {
+      // Chromium states it outright.
+      expect(tierInputFromNavigator('qualcomm adreno-x1', { userAgentData: { mobile: false, platform: 'Windows' }, platform: 'Win32' }).platform).toBe('Windows');
+      // No userAgentData (Safari, Firefox): the user agent names the OS.
+      expect(tierInputFromNavigator('apple metal-3', { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15', platform: 'MacIntel' }).platform).toBe('macOS');
+      expect(tierInputFromNavigator('nvidia', { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0' }).platform).toBe('Windows');
+      // Android reports `Linux armv8l` as navigator.platform, so the user agent has to win or a tablet reads as a
+      // Linux desktop — which would put it back on desktop budgets.
+      expect(tierInputFromNavigator('arm mali-g710', { userAgent: 'Mozilla/5.0 (Linux; Android 14; SM-X910) AppleWebKit/537.36', platform: 'Linux armv8l' }).platform).toBe('Android');
+      expect(detectTier(tierInputFromNavigator('arm mali-g710', { userAgent: 'Mozilla/5.0 (Linux; Android 14; SM-X910) AppleWebKit/537.36', platform: 'Linux armv8l', maxTouchPoints: 5 }))).toBe('phone-mid');
+      // Nothing but the deprecated platform string.
+      expect(tierInputFromNavigator('intel', { platform: 'Linux x86_64' }).platform).toBe('Linux x86_64');
+      // Nothing at all.
+      expect(tierInputFromNavigator('intel', {}).platform).toBeUndefined();
+    });
+
+    it('H3 under WebGPU: a Snapdragon X laptop whose adapter string names no graphics API is still a desktop', () => {
+      // What cli-app/main.ts, test/app/main.ts and bench-app/runner.ts build for `gpu` on WebGPU: adapter.info's
+      // description, else device, else vendor + architecture. It never names Direct3D, so DESKTOP_DRIVER cannot help.
+      const nav = {
+        maxTouchPoints: 10, hardwareConcurrency: 12, deviceMemory: 16,
+        userAgentData: { mobile: false, platform: 'Windows' },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', platform: 'Win32',
+      };
+      const input = tierInputFromNavigator('qualcomm adreno-x1', nav);
+      expect(input.platform).toBe('Windows');
+      expect(input.mobile).toBe(false);
+      expect(detectTier(input)).toBe('desktop');
+      // The same machine on WebGL2, where the ANGLE string carries the token instead.
+      expect(detectTier(tierInputFromNavigator('ANGLE (Qualcomm, Adreno (TM) X1-85 (0x00043050), D3D11)', nav))).toBe('desktop');
+      // And this repository's own WebGPU adapter string on a Mac.
+      expect(detectTier(tierInputFromNavigator('apple metal-3', { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', platform: 'MacIntel', hardwareConcurrency: 10 }))).toBe('desktop');
     });
 
     it('passes deviceMemory and hardwareConcurrency through as cores/deviceMemory', () => {
