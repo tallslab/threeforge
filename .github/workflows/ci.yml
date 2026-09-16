@@ -1,11 +1,44 @@
 name: ci
+# Pull requests and pushes to main, plus the release tags the `publish` job reacts to. `branches:` alone filters
+# tag pushes out entirely, so `tags:` has to be spelled here or `publish` can never fire.
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
+
+# Read-only for every job; `publish` re-declares the one extra permission npm provenance needs.
+permissions:
+  contents: read
+
+# One run per ref. A superseded pull-request run is cancelled; a push to main or a tag is not, so a release never
+# loses its own run to the next commit.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  unit:
+  # CONTRIBUTING.md rule 4 as a check: a commit touching a rendering path carries the budget it measured.
+  # Pull requests only — the push that first creates `main` imports history that predates this check.
+  commit-rules:
+    name: Budget line on every rendering commit
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the base..head range has to resolve; the default shallow merge-ref checkout has neither end
+      - name: Check the commits this pull request adds
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/commit-rules.mjs "$BASE..$HEAD"
+
+  unit:
+    name: Typecheck, units, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -17,13 +50,73 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      # `test/unit/ledger-hot-path.test.ts` carries the branch's one wall-clock guard (µs per submission at 20k vs
+      # 2k, under 3x). Task 41 made it best-of-7 per size across 3 interleaved attempts, taking each size's own
+      # minimum, so a stall has to land on the fast half of every attempt to matter. No CI retry or skip is wired
+      # here on purpose: the statistic already survives a noisy shared runner, and a retry would hide a real
+      # super-linear regression behind a second roll of the dice.
       - run: pnpm test
       - run: pnpm build
-  bench:
-    # Both backends must pass. Ubuntu runners render through SwiftShader (WebGL2 via ANGLE, WebGPU via Dawn's
-    # software adapter): deterministic cost metrics are gated, timing is recorded only.
+
+  # The e2e suite minus everything that needs downloaded content. This job deliberately fetches NOTHING: no Kenney
+  # kits, no glTF corpus. See the coverage note below.
+  e2e:
+    name: e2e ${{ matrix.backend }}
     runs-on: ubuntu-latest
     needs: unit
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: webgl2
+          # A SwiftShader runner that reports no WebGPU adapter makes the fixture skip every webgpu test, and the job
+          # goes green having rendered nothing. FORGE_REQUIRE_WEBGPU=1 turns that skip into a failure.
+          - backend: webgpu
+            requireWebgpu: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # `chromium` for the full build, `chromium-headless-shell` for the WebGPU/SwiftShader path the Linux default
+      # (FORGE_WEBGPU unset ⇒ swiftshader) takes.
+      - run: pnpm exec playwright install --with-deps chromium chromium-headless-shell
+      - run: pnpm build # cli.spec.ts and mcp.spec.ts drive the built CLI in dist/
+      # COVERAGE, stated so a green run is not read as more than it is (Rulings R102, R110, R121). Measured at
+      # 8f9bc12 with `pnpm exec playwright test --list [--grep-invert "@corpus|@bench"]`: the suite is 251 tests in
+      # 36 files PER PROJECT (502 across the two); this selection runs 91 per project (182 across both) in 28 files.
+      # Dropped here and covered only by the weekly full-corpus `assets.yml`: 144 @corpus tests per project and the
+      # 16 @bench ones. Concretely, a green run here does NOT cover
+      #   - 14 of cli.spec.ts's 19 tests and 7 of mcp.spec.ts's 10 (the CLI/MCP agent surface on real models),
+      #   - ParticleBudget at all (particles.spec.ts contributes zero tests here; it opens `bossfight`, which reaches
+      #     the Kenney kits through buildArena), and only the naive half of shadow-budget.spec.ts,
+      #   - arena, assets, bench, biome, crowd, vat and warmup, which contribute zero tests here.
+      # `--forbid-only` so a stray test.only cannot quietly shrink this selection further.
+      - name: e2e without downloaded content
+        run: pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "@corpus|@bench" --forbid-only
+        env:
+          FORGE_REQUIRE_WEBGPU: ${{ matrix.requireWebgpu }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-${{ matrix.backend }}-artifacts
+          path: test-results
+          retention-days: 7
+
+  # The benchmark gate (CONTRIBUTING.md rule 8). Separate from `e2e` because it is the only PR job that downloads
+  # anything: the bench scenes reach the Kenney kits through bossfight/crowd and the water map through lake.
+  # Only deterministic cost metrics are gated here; timing is recorded, since FORGE_GPU is not `native`.
+  bench:
+    name: bench gate ${{ matrix.backend }}
+    runs-on: ubuntu-latest
+    needs: unit
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -42,19 +135,26 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: test/assets/files
-          key: assets-${{ hashFiles('scripts/fetch-kits.mjs', 'scripts/fetch-assets.mjs', 'test/assets/manifest.json') }}
+          key: kits-${{ hashFiles('scripts/fetch-kits.mjs', 'scripts/fetch-safe.mjs') }}
+      # Kits and single files only; the Poly Haven corpus is `assets.yml`'s business.
       - run: FORGE_KITS_ONLY=1 pnpm assets:kits
-      - run: pnpm assets Fox,Buggy
-      - run: pnpm build
-      - run: pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "assets|bench "
       - run: node scripts/bench-run.mjs ${{ matrix.backend }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-results-${{ matrix.backend }}
+          path: bench/results
+          retention-days: 14
+          if-no-files-found: ignore
+
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    needs: [unit, bench]
+    needs: [unit, e2e, bench]
+    timeout-minutes: 20
     permissions:
       contents: read
-      id-token: write
+      id-token: write # npm provenance
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -66,6 +166,20 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
+      # npm publishes whatever package.json says, not what the tag says; a tag that disagrees would ship a version
+      # nobody asked for under a git tag that points somewhere else. (`src/version.ts` is held equal to package.json
+      # by a unit test, which `needs: unit` has already run.)
+      - name: The tag must match package.json
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -eu
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "$REF_NAME" != "v$VERSION" ]; then
+            echo "tag $REF_NAME does not match package.json version $VERSION" >&2
+            exit 1
+          fi
+          echo "tag $REF_NAME matches package.json $VERSION"
       - run: pnpm build
       - run: npm publish --provenance --access public
         env:

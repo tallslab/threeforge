@@ -4,16 +4,21 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+
+# Read-only by default. `pages: write` and `id-token: write` are what mint a deployment, so they live on the
+# deploy job alone — the build job runs `pnpm install` and a Vite build over third-party dependency code and has
+# no business holding a token that can publish to the site.
 permissions:
   contents: read
-  pages: write
-  id-token: write
+
 concurrency:
   group: pages
   cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -27,21 +32,33 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: test/assets/files
-          key: assets-${{ hashFiles('scripts/fetch-kits.mjs', 'scripts/fetch-assets.mjs', 'test/assets/manifest.json') }}
+          key: kits-${{ hashFiles('scripts/fetch-kits.mjs', 'scripts/fetch-safe.mjs') }}
+      # The page needs the eight mini characters and the water map. FORGE_BENCH_APP_OPTIONAL is NOT set here: a
+      # missing kit must fail this build rather than publish a bench page whose crowd scene is empty.
       - run: FORGE_KITS_ONLY=1 pnpm assets:kits
+      # Regenerate bench/devices/index.json (and docs/devices.md) from bench/devices/*.json before the build:
+      # `bench-app-assets.mjs` copies that index into the page as devices.json, so without this step a result that
+      # `bench-results` committed would be on main but missing from the published table. Not committed here.
+      - run: pnpm bench:devices
       - run: pnpm build:bench-app
         env:
           VITE_FORGE_REPO: ${{ github.repository }}
-      - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist/bench-app
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # `actions/configure-pages` used to sit in the build job. It is gone rather than moved: its outputs were
+      # never read, and it needs the Pages API permission this file now keeps out of the build job. A repository
+      # whose Pages source is not "GitHub Actions" fails here instead, with a message that says so.
       - id: deployment
         uses: actions/deploy-pages@v4

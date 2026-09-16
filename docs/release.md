@@ -9,6 +9,45 @@
 
 Consumers: `npm i -D threeforge playwright && npx playwright install chromium`, then `npx threeforge`.
 
+The `publish` job refuses a tag that does not match `package.json` (`v0.9.0` needs `"version": "0.9.0"`), because
+npm publishes what `package.json` says and the tag would otherwise point somewhere else. `ci.yml`'s `on:` lists
+`tags: ['v*']` as well as `branches: [main]`: a `branches:` filter on its own drops tag pushes entirely, and the
+job would never fire.
+
+## What CI covers, and what it does not
+
+`.github/workflows/ci.yml` runs on every pull request and every push to `main`:
+
+- **`commit-rules`** (pull requests only) — `scripts/commit-rules.mjs` over the commits the pull request adds:
+  a commit touching a rendering path (`src/{compiler,ledger,registry,lighting,skinning,overdraw,scheduler,streaming,memory,lod,load}/`,
+  `test/{scenes,app}/`) must carry `Budget: <n>` or `Budget: n/a <reason>` on a body line. That is CONTRIBUTING.md
+  rule 4, checked rather than remembered. Run it locally the same way: `node scripts/commit-rules.mjs main..HEAD`.
+- **`unit`** — `pnpm typecheck`, `pnpm test`, `pnpm build`.
+- **`e2e`** — both backends, `--grep-invert "@corpus|@bench"`, and **no downloaded content at all**.
+- **`bench`** — both backends, the gate in `scripts/bench-run.mjs`. The only pull-request job that downloads
+  anything: the bench scenes reach the Kenney kits through `bossfight`/`crowd` and the water map through `lake`.
+  Deterministic cost metrics are gated; timing is recorded only, since the runner is SwiftShader, not a GPU.
+
+**A green pull-request run is not full coverage, and should not be read as one.** The `@corpus` tag takes every
+test that needs downloaded content out of the `e2e` job. Measured at `8f9bc12` with
+`pnpm exec playwright test --list`: the suite is 251 tests in 36 files **per project** (502 across the two
+backends), of which `e2e` runs **91 per project** (182 across both) in 28 files. Not covered there:
+
+- 14 of `cli.spec.ts`'s 19 tests and 7 of `mcp.spec.ts`'s 10 — most of the CLI and MCP agent surface on real models;
+- `ParticleBudget` entirely (`particles.spec.ts` contributes no tests to the run) and the boss-fight half of
+  `shadow-budget.spec.ts`, because both open `bossfight`, which reaches the kits through `buildArena`;
+- `arena`, `assets`, `bench`, `biome`, `crowd`, `vat` and `warmup`, which contribute no tests to the run.
+
+Those are covered by **`.github/workflows/assets.yml`**: weekly (Mondays 04:17 UTC) and on manual dispatch, the
+full corpus on both backends, failing when any asset misbehaves. It uploads `docs/assets-report*` as a build
+artifact and **never commits** — the tracked report files are updated by hand from that artifact. It pins
+`FORGE_RUN_ID` per job so a run crossing midnight UTC does not split its id and decline to publish the Markdown.
+
+`FORGE_BENCH_APP_OPTIONAL=1` lets `scripts/bench-app-assets.mjs` warn instead of exiting 1 when the Kenney kits
+are absent. Only Playwright's port-5180 `webServer` sets it: that command's exit status fails the *whole*
+Playwright run rather than one spec, so without it a kit-less machine loses all 91 non-corpus tests per project.
+`pnpm build:bench-app` and `pnpm bench:app` never set it, so a published page still fails hard without the kits.
+
 ## Device bench page and results (one-time repository settings)
 
 - Settings → Pages → Source: **GitHub Actions**. The `pages` workflow then deploys `dist/bench-app` on every push to
