@@ -7,7 +7,6 @@ import {
   budgetDeclaration,
   checkCommits,
   EXCLUDED_PATHS,
-  EXEMPT_COMMITS,
   gitQueries,
   main,
   pushRange,
@@ -65,22 +64,14 @@ function run(dir: string, range: string): { status: number; out: string } {
   }
 }
 
-/**
- * `main()` in-process with an allow-list of this test's own choosing. The exemption is deliberately *not* reachable
- * from the environment or the command line — a guard whose bypass is one env var away is not a guard — so injecting
- * the list here is the only way to exercise the reporting path on a throwaway repository's SHAs.
- */
-function mainIn(
-  dir: string,
-  range: string,
-  exempt?: Record<string, { date: string; reason: string }>,
-): { status: number; out: string } {
+/** `main()` in-process, with what it printed captured. */
+function mainIn(dir: string, range: string): { status: number; out: string } {
   const lines: string[] = [];
   const write = (...parts: unknown[]): void => void lines.push(parts.join(' '));
   const out = vi.spyOn(console, 'log').mockImplementation(write);
   const err = vi.spyOn(console, 'error').mockImplementation(write);
   try {
-    return { status: main([range], dir, exempt), out: lines.join('\n') };
+    return { status: main([range], dir), out: lines.join('\n') };
   } finally {
     out.mockRestore();
     err.mockRestore();
@@ -300,82 +291,6 @@ describe('checkCommits', () => {
     expect(checkCommits([{ ...rendering, message: 'compiler: x\n\nbudget: 28\n' }])[0]?.problem).toContain(
       'budget: 28',
     );
-  });
-});
-
-/**
- * Six commits exempted from the budget rule: they touch rendering with no `Budget:` line — three predate the rule,
- * three were written after it. The exemption lives here, dated and by full SHA, so it is reviewable and so the CI job
- * can run on push.
- */
-describe('EXEMPT_COMMITS', () => {
-  const shas = () => Object.keys(EXEMPT_COMMITS ?? {});
-
-  it('is exactly the six commits, by full 40-character SHA', () => {
-    expect(shas()).toHaveLength(6);
-    expect(shas().filter((sha) => !/^[0-9a-f]{40}$/.test(sha))).toEqual([]);
-    expect(new Set(shas()).size).toBe(6);
-    expect(
-      shas()
-        .map((sha) => sha.slice(0, 7))
-        .sort(),
-    ).toEqual(['2e9b125', '451ab9f', '4b61bd6', 'a485e57', 'b037656', 'efb7464']);
-  });
-
-  it('carries a date and a reason for each, so the exemption can be reviewed rather than trusted', () => {
-    for (const [sha, entry] of Object.entries(EXEMPT_COMMITS)) {
-      expect(entry.date, sha).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(entry.reason.trim().length, sha).toBeGreaterThan(20);
-    }
-  });
-
-  it('lets an exempt commit pass, and still fails a commit that is not on the list', () => {
-    const exempt = shas()[0]!;
-    const rendering = {
-      subject: 'ledger: x',
-      files: ['src/ledger/hints.ts'],
-      message: 'ledger: x\n\nno budget line\n',
-    };
-    expect(checkCommits([{ ...rendering, sha: exempt }])).toEqual([]);
-    // The same commit under any other SHA, and a near-miss abbreviation of an exempt one, are still violations.
-    expect(checkCommits([{ ...rendering, sha: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef' }])).toHaveLength(1);
-    expect(checkCommits([{ ...rendering, sha: exempt.slice(0, 7) }])).toHaveLength(1);
-  });
-
-  it('exempts nothing that does not touch rendering, and nothing that already declares a budget', () => {
-    // Belt and braces: an exempt SHA must not be a way to skip the file scan or the declaration parse for other work.
-    const exempt = shas()[0]!;
-    expect(checkCommits([{ sha: exempt, subject: 'docs: y', files: ['docs/x.md'], message: 'docs: y\n' }])).toEqual([]);
-    expect(
-      checkCommits([
-        { sha: exempt, subject: 'ledger: x', files: ['src/ledger/hints.ts'], message: 'ledger: x\n\nBudget: 28\n' },
-      ]),
-    ).toEqual([]);
-  });
-});
-
-describe('the exempt commits reported by the run', () => {
-  it('are named in the summary, so an exemption is visible in the log rather than silent', () => {
-    const r = repo();
-    const base = r.commit('chore: init', ['README.md']);
-    r.commit('ledger: x\n\nno budget line', ['src/ledger/hints.ts']);
-    const head = r.git('rev-parse', 'HEAD').trim();
-    expect(run(r.dir, `${base}..HEAD`).status).toBe(1);
-    // The same repository and the same commit, with that SHA on the list: it passes and the summary says so.
-    const exempted = mainIn(r.dir, `${base}..HEAD`, {
-      [head]: { date: '2026-09-16', reason: 'a reason long enough to be reviewable' },
-    });
-    expect(exempted.status, exempted.out).toBe(0);
-    expect(exempted.out).toContain('1 exempt');
-    expect(exempted.out).toContain(head.slice(0, 7));
-    expect(exempted.out).toContain('a reason long enough to be reviewable');
-  });
-
-  it('does not exempt by default: the shipped list decides, and this commit is not on it', () => {
-    const r = repo();
-    const base = r.commit('chore: init', ['README.md']);
-    r.commit('ledger: x\n\nno budget line', ['src/ledger/hints.ts']);
-    expect(mainIn(r.dir, `${base}..HEAD`).status).toBe(1);
   });
 });
 

@@ -6,8 +6,8 @@ Every commit that touches a rendering path (`RENDERING_PATHS` in `scripts/commit
 `Budget: <n>` or `Budget: n/a <reason>` line in its body, the `sceneSubmissions` number from `pnpm budget`
 (CONTRIBUTING.md rule 4). CI's `commit-rules` job checks this on every pull request and every push, over the commits
 the pull request or push adds; merge commits are not checked. Run it locally the same way:
-`node scripts/commit-rules.mjs main..HEAD`. The only way past the rule is `EXEMPT_COMMITS` in the same script, a
-dated allow-list of full SHAs with a reason each, and every run prints what it excused.
+`node scripts/commit-rules.mjs main..HEAD`. There is no way past the rule: a rendering commit without a
+`Budget:` line fails the run.
 
 ## Cutting a release
 

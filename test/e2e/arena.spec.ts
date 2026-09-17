@@ -5,7 +5,6 @@ import { pixelDiff } from './pixels.js';
 test('the fight arena compiles with the same pixels and every draw explained', {
   tag: '@corpus',
 }, async ({ forge }) => {
-  // Skinned fighters, weapons on bones, shadowed lights and VFX, all in one scene.
   test.setTimeout(600_000);
   await forge.open('arena', { freeze: '1', dynamics: 'batch-sync', t: '1.1' });
   const naive = await forge.page.evaluate(async () => {

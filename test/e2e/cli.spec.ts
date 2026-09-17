@@ -67,7 +67,6 @@ test('analyze renders a sample asset, compiles it and prints the document', { ta
 test('analyze --parity 0 judges compile parity on the raw changed-pixel count', {
   tag: '@corpus',
 }, async ({ forge }) => {
-  // Through the built binary, not the in-process decision path.
   test.setTimeout(600_000);
   const r = run([
     'analyze',

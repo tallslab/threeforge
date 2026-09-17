@@ -5,7 +5,6 @@ import { pixelDiff } from './pixels.js';
 test('the biome compiles to a few dozen submissions with the same pixels', {
   tag: '@corpus',
 }, async ({ forge }) => {
-  // Terrain, water, thousands of props, cars and hi-poly rocks.
   test.setTimeout(600_000);
   const extra: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env))

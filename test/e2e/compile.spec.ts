@@ -295,7 +295,6 @@ test("dynamics: 'batch-sync' folds the 10 movers into their batches: 28 -> 18 su
 });
 
 test('tinted node statics keep setupOutput, alphaTest, an own property and a userData uniform', async ({ forge }) => {
-  // The compiler's group clone carries the tints; it must carry these along with them.
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   for (const [mode, query] of TINTED_MODES) {
     await forge.open('empty', { ...query });
@@ -384,7 +383,6 @@ test('tinted node statics keep setupOutput, alphaTest, an own property and a use
 });
 
 test('tinted classic statics keep onBeforeCompile, a define, own property and userData uniform', async ({ forge }) => {
-  // The compiler's group clone carries the tints; it must carry these too, the uniform animated through the source.
   // three r186 runs material onBeforeCompile and defines only in renderers/WebGLRenderer.js; the harness's WebGPURenderer
   // (both backends) ignores them, so this cell draws the same scene with a classic WebGLRenderer inside the page.
   for (const [mode, query] of TINTED_MODES) {

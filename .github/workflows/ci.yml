@@ -18,10 +18,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # CONTRIBUTING.md rule 4 as a check: a commit touching a rendering path carries the budget it measured.
-  # Runs on pushes as well as pull requests: gating it on pull_request alone would leave a direct push to main
-  # unchecked. Commits that predate the rule are exempted by the dated allow-list in scripts/commit-rules.mjs
-  # (EXEMPT_COMMITS), in code rather than in prose; the run prints each one it excused.
+  # CONTRIBUTING.md rule 4 as a check: every commit in the pushed range that touches a rendering path carries a
+  # `Budget:` line. Runs on pushes as well as pull requests: gating it on pull_request alone would leave a direct
+  # push to main unchecked.
   commit-rules:
     name: Budget line on every rendering commit
     runs-on: ubuntu-latest

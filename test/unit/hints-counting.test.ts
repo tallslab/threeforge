@@ -216,7 +216,7 @@ describe('DrawCallLedger shared materials: unique-material and static-unbatched'
 });
 
 describe('DrawCallLedger hints count objects, not submissions', () => {
-  /** The object count the hint with `code` opens its message with; undefined without the hint. The wording is pinned above. */
+  /** The object count the hint with `code` opens its message with; undefined without the hint. */
   const countOf = (ledger: DrawCallLedger, code: string): number | undefined => {
     const hint = ledger.frame().hints.find((h) => h.code === code);
     return hint && Number(/^\d+/.exec(hint.message)?.[0]);
