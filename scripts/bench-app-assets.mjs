@@ -11,6 +11,7 @@
 // `pnpm build:bench-app` and `pnpm bench:app` do not set it: a published page always needs the real kits.
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { copyDecoders } from './copy-decoders.mjs';
 
 const root = 'test/assets/files';
 const out = 'bench-app/public';
@@ -30,9 +31,7 @@ function fail(message) {
 }
 
 mkdirSync(out, { recursive: true });
-const libs = 'node_modules/three/examples/jsm/libs';
-cpSync(`${libs}/draco/gltf`, join(out, '_decoders/draco'), { recursive: true });
-cpSync(`${libs}/basis`, join(out, '_decoders/basis'), { recursive: true });
+copyDecoders(join(out, '_decoders'));
 
 /** The mini-characters entry trimmed to its eight character GLBs, or `null` when the kit is not usable. */
 function characterKit() {

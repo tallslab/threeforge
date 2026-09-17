@@ -189,8 +189,14 @@ export interface FrameEnv {
   viewport: [number, number];
 }
 
+/**
+ * The frame snapshot's `schemaVersion`: what `emptyFrame` and `buildFrame` stamp, what `exposeToAgents` advertises on
+ * `window.__threeforge`, what the CLI's `SNAPSHOT_SCHEMA` declares and `measureViaHook` requires of a page.
+ */
+export const SNAPSHOT_SCHEMA_VERSION = 3 as const;
+
 export interface FrameSnapshot {
-  schemaVersion: 3;
+  schemaVersion: typeof SNAPSHOT_SCHEMA_VERSION;
   env: FrameEnv;
   totals: FrameTotals;
   passes: PassSnapshot[];
@@ -205,7 +211,7 @@ export interface FrameSnapshot {
   items?: SubmissionRecord[];
 }
 
-export type FrameSections = Pick<FrameSnapshot, 'overdraw' | 'skinning' | 'lighting' | 'js' | 'memory' | 'hints'>;
+type FrameSections = Pick<FrameSnapshot, 'overdraw' | 'skinning' | 'lighting' | 'js' | 'memory' | 'hints'>;
 
 export function emptySections(): FrameSections {
   return {
@@ -255,11 +261,11 @@ export interface BudgetResult {
   offenders: BudgetOffender[];
 }
 
-export const TOP_NAMES = 5;
+const TOP_NAMES = 5;
 
 export function emptyFrame(env: FrameSnapshot['env']): FrameSnapshot {
   return {
-    schemaVersion: 3,
+    schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     env,
     totals: {
       submissions: 0,
@@ -281,7 +287,7 @@ export function emptyFrame(env: FrameSnapshot['env']): FrameSnapshot {
   };
 }
 
-export interface FrameInput {
+interface FrameInput {
   env: FrameSnapshot['env'];
   items: SubmissionRecord[];
   reportedDrawCalls: number;
@@ -371,7 +377,7 @@ export function buildFrame({
     Object.fromEntries([...map.entries()].sort(([a], [b]) => a.localeCompare(b)));
 
   return {
-    schemaVersion: 3,
+    schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     env,
     ...emptySections(),
     skinning: skinningOf(items),

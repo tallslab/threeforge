@@ -1,7 +1,7 @@
 /**
  * The ledger's per-submission hot path: guarded by counts, not timings, plus one µs ratio.
  *
- * - Registry cache reads per frame are bounded by unique materials (the ledger memoizes `hashesOf()` per frame and
+ * - Registry cache reads per frame are bounded by unique materials (the ledger memoizes `keys()` per frame and
  *   never calls `describe()`), and stay current across `registry.invalidate()`.
  * - A frame without a rescan traverses the scene at most once; nothing calls `children.indexOf` for display names,
  *   and cached names always equal `displayName()` computed at the same instant.

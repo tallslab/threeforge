@@ -8,13 +8,14 @@ import { EnvironmentError, UsageError } from './errors.js';
 import {
   assertConfinedUri,
   assertConfinedUris,
-  entryExists,
   type ResourcePath,
   readGltfJson,
   resourcePathsOf,
 } from './gltf-uris.js';
 import type { CliDeps } from './lifecycle.js';
+import { assertGltfOutPath, entryExists } from './paths.js';
 import { planSteps } from './pipeline.js';
+import { DOCUMENT_SCHEMA_VERSION } from './schema.js';
 import { applySteps, createIO, DRACO_INSTALL, loadDeps, requirementsOf, statsOf } from './transform.js';
 import type {
   AgentDocument,
@@ -65,7 +66,7 @@ export async function optimizeAsset(
   const file = resolve(input.file);
   if (!existsSync(file) || !statSync(file).isFile()) throw new UsageError(`file not found: ${input.file}`);
   const out = resolve(input.out ?? defaultOutputPath(file));
-  if (!/\.(glb|gltf)$/i.test(out)) throw new UsageError(`--out must end in .glb or .gltf (got ${input.out ?? out})`);
+  assertGltfOutPath(out, '--out', input.out ?? out);
   if (sameFile(out, file)) throw new UsageError('--out must not be the input file');
   const steps = planSteps(input);
   // glTF-Transform reads every external image and buffer wherever its URI points; refuse the file before it does.
@@ -112,7 +113,7 @@ export async function optimizeAsset(
   const verify = verified?.verify ?? null;
   const verdict = judgeOptimize(before, after, verify, input.budget, verified?.pageErrors);
   return {
-    schemaVersion: 2,
+    schemaVersion: DOCUMENT_SCHEMA_VERSION,
     tool: 'threeforge',
     version: VERSION,
     command: 'optimize',

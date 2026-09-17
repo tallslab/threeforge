@@ -261,7 +261,7 @@ once `render()` has finished is `js.ledgerMs`. In a steady scene that path alloc
 submission count: a pooled record's `flags` array is rewritten in place (`flagsInto`; emptying and re-pushing it, as
 an earlier 0.9.0 build did, cost about 40 bytes per submission per frame), two record buffers alternate so a read
 between frames or from a hook sees whole frames (`frame({ items: true })` returns copies), material hashes come from
-`registry.hashesOf()` at most once per material per frame and again after `invalidate()` or `forget()`, material
+`registry.keys()` at most once per material per frame and again after `invalidate()` or `forget()`, material
 uses resolve each drawn material to its canonical once per frame on the same revision, display names come from a
 cache checked against the live graph on every read (a sibling index is trusted only while
 `parent.children[index] === object`, so `children.indexOf` is never called), one ancestor walk per submission finds
@@ -363,9 +363,9 @@ per-instance colour), `uniform-variant` (the same `programKey`, another `variant
 `programKey`), `unsupported` (`ShaderMaterial` and `RawShaderMaterial` do not render on `WebGPURenderer`),
 `unregistered`. `describe(material)` gives the hashes, `colorHex`, `colorKey` and outcome; `canonicalOf`, `keys` and
 `stats()` (`registered, canonical, merged, unsupported, programs, byProgram[]`) complete the read API.
-`hashesOf(material)` returns `{ programHash, variantHash, description, unsupported }` straight from the key cache,
+`keys(material)` returns `{ programHash, variantHash, description, unsupported }` straight from the key cache,
 allocating and recomputing nothing: it is the cache entry itself, which `invalidate()` and `forget()` replace rather
-than change, and `keysRevision` moves whenever either drops cached keys so a caller that memoizes `hashesOf()` (the
+than change, and `keysRevision` moves whenever either drops cached keys so a caller that memoizes `keys()` (the
 ledger, per frame) knows to read again. `programs` is checked against `renderer.info.memory.programs` in the tests;
 the count can exceed what three compiles when materials run different function objects or classes whose code
 compiles to the same shader (closures from one factory with the same source text, or a subclass that overrides

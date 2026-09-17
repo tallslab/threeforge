@@ -3,8 +3,9 @@ import { BoxGeometry, Color, type Material, Mesh, MeshStandardMaterial, Scene } 
 import * as WEBGPU from 'three/webgpu';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { describe, expect, it, vi } from 'vitest';
-import { hasOwnFunctions, isBuiltInMaterial } from '../../src/compiler/batchStatics.js';
+import { hasOwnFunctions } from '../../src/compiler/materialCode.js';
 import { World } from '../../src/compiler/World.js';
+import { isBuiltInMaterial } from '../../src/registry/builtInMaterials.js';
 import { tag } from '../../src/tags.js';
 
 /** three r186's material classes, from `src/materials/Materials.js` and `src/materials/nodes/NodeMaterials.js`. */

@@ -1,4 +1,4 @@
-import type { Object3D } from 'three';
+import type { Light, Object3D } from 'three';
 import type { LightingSnapshot, SkinningSnapshot, SubmissionRecord } from './snapshot.js';
 
 /** What the lighting section needs to know about one light of the frame. */
@@ -61,11 +61,21 @@ export function skinningOf(items: SubmissionRecord[]): SkinningSnapshot {
   return { submissions, vertices, bones, skeletons: skeletons.size, maxBones, morphTargets, vatInstances, vatVertices };
 }
 
-/** The world-visible lights under `scene`: three's render lists skip a hidden object's whole subtree, lights included. */
+/**
+ * Calls `visit` for every world-visible light under `scene`, in traversal order: three's render lists skip a hidden
+ * object's whole subtree, lights included. One traversal; `scanLights` and the ledger's per-frame walk share it.
+ */
+export function visitLights(scene: Object3D, visit: (light: Light) => void): void {
+  scene.traverseVisible((o) => {
+    if ((o as { isLight?: boolean }).isLight) visit(o as Light);
+  });
+}
+
+/** The world-visible lights under `scene` (`visitLights`), as the lighting section sees them. */
 export function scanLights(scene: Object3D): LightInfo[] {
   const out: LightInfo[] = [];
-  scene.traverseVisible((o) => {
-    if ((o as { isLight?: boolean }).isLight) out.push(lightInfoOf(o));
+  visitLights(scene, (light) => {
+    out.push(lightInfoOf(light));
   });
   return out;
 }

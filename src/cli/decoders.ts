@@ -8,7 +8,10 @@ export function threeLibsDir(): string {
   return join(dirname(require.resolve('three')), '..', 'examples', 'jsm', 'libs');
 }
 
-/** Copies the Draco glTF decoder and the Basis transcoder into `<dir>/draco` and `<dir>/basis` for `createLoader`. */
+/**
+ * Copies the Draco glTF decoder and the Basis transcoder into `<dir>/draco` and `<dir>/basis` for `createLoader`.
+ * `scripts/copy-decoders.mjs` is its build-time twin (plain ESM, no build step to import this from); keep them in step.
+ */
 export function copyDecoders(dir: string, libs: string = threeLibsDir()): { draco: string; basis: string } {
   const draco = join(dir, 'draco');
   const basis = join(dir, 'basis');

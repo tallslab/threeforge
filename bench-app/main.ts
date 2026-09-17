@@ -1,3 +1,4 @@
+import { describeError } from 'threeforge';
 import { type BenchMetrics, SCENE_IDS, type SceneId } from '../test/app/benchMetrics.js';
 import { createHost, type Host, runBench } from './runner.js';
 import { type DeviceResult, issueBody, issueUrl } from './submit.js';
@@ -28,7 +29,6 @@ const setProgress = (text: string): void => {
   window.__bench.progress = text;
   $('progress').textContent = text;
 };
-const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 async function start(host: Host): Promise<void> {
   $('run').setAttribute('disabled', '');
@@ -70,8 +70,8 @@ async function start(host: Host): Promise<void> {
       `done · ${ids.length || SCENE_IDS.length} scenes on ${host.backend} · ${result.env.gpu}${result.env.fillRateGPix === null ? '' : ` · fill ${result.env.fillRateGPix.toFixed(1)} GPix/s`}`,
     );
   } catch (error) {
-    window.__bench.error = error instanceof Error ? (error.stack ?? error.message) : String(error);
-    setProgress(`failed: ${describe(error)}`);
+    window.__bench.error = describeError(error, 'stack');
+    setProgress(`failed: ${describeError(error)}`);
   } finally {
     window.__bench.done = true;
     $('run').removeAttribute('disabled');
@@ -112,7 +112,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  window.__bench.error = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  window.__bench.error = describeError(error, 'stack');
   window.__bench.done = true;
-  setProgress(`failed: ${describe(error)}`);
+  setProgress(`failed: ${describeError(error)}`);
 });

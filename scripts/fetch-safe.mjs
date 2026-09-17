@@ -5,6 +5,8 @@
  * without rejecting `..` or absolute paths; a compromised upstream (a sample repo, the Poly Haven API, or a hostile
  * zip entry) could otherwise write a file outside `test/assets/files/`, e.g. `../../../scripts/copy-decoders.mjs`.
  */
+// `SCHEME`, `checkPathText` and `isInside` mirror `src/cli/paths.ts`, and `nearestExistingAncestor` its `realPathOf`
+// walk: node runs this script without a build, so it cannot import the TypeScript module. Change both together.
 import { existsSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join, posix, relative, resolve, sep, win32 } from 'node:path';
 

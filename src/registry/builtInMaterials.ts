@@ -42,7 +42,7 @@ import {
  * three r186's own material classes: the 18 classic ones of `src/materials/Materials.js` and the 17 node ones of
  * `src/materials/nodes/NodeMaterials.js`.
  */
-export const BUILT_IN_MATERIAL_PROTOTYPES: ReadonlySet<object> = new Set<object>(
+const BUILT_IN_MATERIAL_PROTOTYPES: ReadonlySet<object> = new Set<object>(
   [
     LineBasicMaterial,
     LineDashedMaterial,

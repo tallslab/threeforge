@@ -2,18 +2,16 @@ import { existsSync, statSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pngjs from 'pngjs';
-import type { BakeSummary } from '../compiler/World.js';
-import { VERSION } from '../version.js';
 import { DEFAULT_PARITY } from './args.js';
-import { launchBrowser, type PlaywrightPage, type PlaywrightRoute } from './browser.js';
+import type { PlaywrightPage, PlaywrightRoute } from './browser.js';
+import { buildDocument, compileAndRemeasure, openPage } from './document.js';
 import { PageError, UsageError } from './errors.js';
 import { assertConfinedUris, readGltfJson } from './gltf-uris.js';
-import { type CliDeps, Resources, withTimeout } from './lifecycle.js';
-import { compileViaHook, evaluateWithin, measureViaHook, screenshotWithin, waitFor } from './measure.js';
+import { type CliDeps, Resources } from './lifecycle.js';
+import { evaluateWithin, measureViaHook, screenshotWithin, waitFor } from './measure.js';
 import { serveStatic } from './server.js';
 import type { AgentDocument, AnalyzeInput, AssetFacts, CliCompileReport, Parity } from './types.js';
 import { formatPageErrors } from './untrusted.js';
-import { verdictOf } from './verdict.js';
 
 /** The shipped harness page lives next to this module's directory: dist/cli/analyze.js -> dist/cli-app. */
 function cliAppDir(): string {
@@ -26,7 +24,7 @@ function cliAppDir(): string {
 }
 
 /** What a view comparison found: the exact count as well as the percent the report rounds. */
-export interface PixelComparison {
+interface PixelComparison {
   /** Pixels where any of R, G, B differs by more than 24. Exact, so `0` means "no pixel moved", with no rounding. */
   changedPixels: number;
   /** Pixels compared: the image's pixels, or the larger image's when the sizes differ. */
@@ -63,10 +61,6 @@ export function comparePixels(a: Buffer, b: Buffer): PixelComparison {
     if (d > 24) differing++;
   }
   return { changedPixels: differing, comparedPixels: n, diffPct: (100 * differing) / Math.max(1, n) };
-}
-
-export function pixelDiffPct(a: Buffer, b: Buffer): number {
-  return comparePixels(a, b).diffPct;
 }
 
 /**
@@ -114,16 +108,6 @@ async function captureViews(
   return shots;
 }
 
-/**
- * The progress line of a compile that baked: faces each rule removed, coincident faces the seam guard kept, duplicate
- * faces the duplicate rule kept, vertices welded, and meshes batched instead of baked (`unbakeableEntries`: a node, an
- * instance function, a subclass or a `displacementMap` in their material, or an attribute the bake drops). A report from
- * an older threeforge lacks `keptCoincidentFaces`, `keptDuplicateFaces` or `unbakeableEntries`: each prints 0.
- */
-export function bakeProgressLine(bake: BakeSummary): string {
-  return `bake: ${bake.inputTriangles} -> ${bake.triangles} triangles (${bake.contactFaces} seam, ${bake.duplicateFaces} duplicate, ${bake.buriedFaces} buried faces removed; ${bake.keptCoincidentFaces ?? 0} coincident and ${bake.keptDuplicateFaces ?? 0} duplicate faces kept; ${bake.weldedVertices} vertices welded; ${bake.unbakeableEntries ?? 0} meshes batched, not baked: a node, instance function, subclass or displacementMap in their material, or an attribute the bake drops)`;
-}
-
 async function waitReady(page: PlaywrightPage, timeout: number): Promise<AssetFacts> {
   await waitFor(
     page,
@@ -141,7 +125,7 @@ async function waitReady(page: PlaywrightPage, timeout: number): Promise<AssetFa
   return facts.asset;
 }
 
-export interface AnalysisWithShots {
+interface AnalysisWithShots {
   doc: AgentDocument;
   /** PNGs of the naive render: `default` plus `orbit-<i>` for each extra view (empty unless requested or compiled). */
   shots: Array<{ view: string; png: Buffer }>;
@@ -210,14 +194,9 @@ export async function analyzeAssetWithShots(
       { prefix: '/asset/', dir: dirname(file) },
     ]);
     resources.add('the static server', () => server.close());
-    const browser = await (deps.launch ?? launchBrowser)(input.backend, input.headed);
-    resources.add('the browser', () => browser.close());
-    // Bounded like every other page step: an unbounded `newPage()` is a wait `--timeout` cannot shorten (M2).
-    const page = await withTimeout('opening a browser page', input.timeout, () => browser.newPage());
+    const { page, pageErrors } = await openPage(resources, input, deps);
     const blocked = routeGuard(server.url);
     await page.route('**/*', blocked.handler);
-    const pageErrors: string[] = [];
-    page.on('pageerror', (error) => pageErrors.push(error.message));
     const q = new URLSearchParams({
       file: `/asset/${basename(file)}`,
       backend: input.backend,
@@ -234,18 +213,7 @@ export async function analyzeAssetWithShots(
     let compile: CliCompileReport | null = null;
     let parity: Parity | null = null;
     if (input.compile) {
-      compile = await compileViaHook(page, input.timeout);
-      log(
-        `compiled: ${compile.after.batches} batches, ${compile.after.instanced} instanced, ${compile.after.baked} baked, ${compile.skippedCount} skipped; measuring again`,
-      );
-      if (compile.bake) log(bakeProgressLine(compile.bake));
-      await evaluateWithin(
-        page,
-        'rendering 3 frames after compile',
-        input.timeout,
-        `(async () => { for (let i = 0; i < 3; i++) await window.__threeforge.frameAsync(); })()`,
-      );
-      after = (await measureViaHook(page, input.frames, input.timeout)).snapshot;
+      ({ compile, after } = await compileAndRemeasure(page, input, log));
       const shotsAfter = await captureViews(page, input.views, input.timeout);
       const views = shotsBefore.map((shot, i) => {
         const diff = comparePixels(shot.png, shotsAfter[i]!.png);
@@ -262,24 +230,17 @@ export async function analyzeAssetWithShots(
     if (blocked.count() > 0)
       log(`blocked ${blocked.count()} request(s) the page made outside ${server.url}: ${blocked.sample().join(', ')}`);
     if (pageErrors.length) log(`page errors: ${formatPageErrors(pageErrors)}`);
-    const hints = (after ?? before.snapshot).hints;
-    const verdict = verdictOf(after, before.snapshot, input.budget, parity, pageErrors);
-    const doc: AgentDocument = {
-      schemaVersion: 2,
-      tool: 'threeforge',
-      version: VERSION,
+    const doc = buildDocument({
       command: 'analyze',
       input: { ...input, parity: threshold },
-      env: before.snapshot.env,
       asset,
       before: before.snapshot,
       after,
       compile,
       parity,
-      hints,
-      verdict,
-      timings: { totalMs: Date.now() - started },
-    };
+      pageErrors,
+      started,
+    });
     return { doc, shots: shotsBefore, pageErrors };
   });
 }

@@ -10,13 +10,16 @@ export function emptyResourceSets(): ResourceSets {
   return { geometries: new Set(), materials: new Set(), textures: new Set() };
 }
 
+/** Adds `value` when it is a texture: material properties, a scene's background and a mesh's internal maps all arrive untyped. */
+function addTexture(value: unknown, into: Set<Texture>): void {
+  if ((value as Texture | null)?.isTexture) into.add(value as Texture);
+}
+
 function texturesOf(material: Material, into: Set<Texture>): void {
-  for (const value of Object.values(material as unknown as Record<string, unknown>)) {
-    if ((value as Texture | null)?.isTexture) into.add(value as Texture);
-  }
+  for (const value of Object.values(material)) addTexture(value, into);
   // Node materials sample textures through TSL nodes the properties do not show; modules list them here (AnimatedInstances does).
   const extra = material.userData.forgeTextures as unknown;
-  if (Array.isArray(extra)) for (const t of extra) if ((t as Texture | null)?.isTexture) into.add(t as Texture);
+  if (Array.isArray(extra)) for (const t of extra) addTexture(t, into);
 }
 
 /**
@@ -47,8 +50,8 @@ export function collectResources(root: Object3D, into: ResourceSets = emptyResou
     };
     if (mesh.geometry) into.geometries.add(mesh.geometry);
     if (mesh.isBatchedMesh)
-      for (const t of [mesh._matricesTexture, mesh._indirectTexture, mesh._colorsTexture]) if (t) into.textures.add(t);
-    if (mesh.isSkinnedMesh && mesh.skeleton?.boneTexture) into.textures.add(mesh.skeleton.boneTexture);
+      for (const t of [mesh._matricesTexture, mesh._indirectTexture, mesh._colorsTexture]) addTexture(t, into.textures);
+    if (mesh.isSkinnedMesh) addTexture(mesh.skeleton?.boneTexture, into.textures);
     const material = mesh.material;
     if (Array.isArray(material)) {
       for (const m of material) addMaterial(m);
@@ -57,10 +60,7 @@ export function collectResources(root: Object3D, into: ResourceSets = emptyResou
     }
   });
   const scene = root as Object3D & { isScene?: boolean; background?: unknown; environment?: unknown };
-  if (scene.isScene) {
-    for (const value of [scene.background, scene.environment])
-      if ((value as Texture | null)?.isTexture) into.textures.add(value as Texture);
-  }
+  if (scene.isScene) for (const value of [scene.background, scene.environment]) addTexture(value, into.textures);
   return into;
 }
 

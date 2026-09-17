@@ -1,4 +1,5 @@
-import { DoubleSide, type Material, type Object3D } from 'three';
+import type { Material, Object3D } from 'three';
+import { FORGE_HOOK_KEY } from '../compiler/materialCode.js';
 import { FORGE_TAG_KEY, type ForgeTag, tag } from '../tags.js';
 
 /**
@@ -75,12 +76,9 @@ export function effectiveTag(object: Object3D): ForgeTag | undefined {
   return undefined;
 }
 
-export function isDoubleSidedTransparent(material: Material): boolean {
-  return material.transparent && material.side === DoubleSide && !material.forceSinglePass;
-}
-
 const OWN = Object.prototype.hasOwnProperty;
-const FORGE_HOOK = Symbol.for('threeforge.hook');
+/** The same symbol as culling.ts's `FORGE_HOOK`, made here so the ledger does not import the compiler's culling module. */
+const FORGE_HOOK = Symbol.for(FORGE_HOOK_KEY);
 
 function isUserHook(object: Object3D, name: 'onBeforeRender' | 'onAfterRender'): boolean {
   if (!OWN.call(object, name)) return false;

@@ -1,5 +1,6 @@
 import type { CompileReport } from '../compiler/World.js';
 import type { FrameEnv, FrameSnapshot, Hint, Tier } from '../ledger/snapshot.js';
+import type { DOCUMENT_SCHEMA_VERSION } from './schema.js';
 
 export type Backend = 'webgl2' | 'webgpu';
 export type TierChoice = Tier | 'auto';
@@ -81,7 +82,7 @@ export type CliCompileReport = CompileReport & { skippedCount: number; groupCoun
 
 /** The one document `analyze` and `inspect` print (and the MCP tools return). */
 export interface AgentDocument {
-  schemaVersion: 2;
+  schemaVersion: typeof DOCUMENT_SCHEMA_VERSION;
   tool: 'threeforge';
   version: string;
   command: 'analyze' | 'inspect';
@@ -208,7 +209,7 @@ export interface OptimizeVerify {
 }
 
 export interface OptimizeDocument {
-  schemaVersion: 2;
+  schemaVersion: typeof DOCUMENT_SCHEMA_VERSION;
   tool: 'threeforge';
   version: string;
   command: 'optimize';

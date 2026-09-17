@@ -8,6 +8,16 @@ export function pageErrorsReason(errors: readonly string[]): string {
 }
 
 /**
+ * The largest `changedPixels` over the views (0 without views): the exact count the verdict reason and the summaries
+ * print beside the rounded percent, which reads `0.00` for a view that really did move a few pixels.
+ */
+export function worstChangedPixels(views: Parity['views']): number {
+  let worst = 0;
+  for (const view of views) worst = Math.max(worst, view.changedPixels);
+  return worst;
+}
+
+/**
  * A run passes when it is within the budget, has no error-severity hint, (if measured) kept pixel parity and raised no
  * page error. `pageErrors` are the uncaught exceptions of the page that rendered the asset (`analyze`, and `optimize`
  * for each verified render); `inspect` passes none, its page being the user's own app. The reason quotes them cleaned
@@ -37,8 +47,7 @@ export function verdictOf(
   if (parity && !parity.pass) {
     // The percentage is rounded, so at `--parity 0` a real failure reads `pixel parity 0.00% > 0%` and looks like a
     // passing run. The exact count is what proves a pixel moved, and it sat only in the adjacent log line.
-    let worst = 0;
-    for (const view of parity.views) worst = Math.max(worst, view.changedPixels);
+    const worst = worstChangedPixels(parity.views);
     const count = parity.views.length > 0 ? ` (${worst} changed pixel${worst === 1 ? '' : 's'} in the worst view)` : '';
     reasons.push(`pixel parity ${parity.diffPct.toFixed(2)}% > ${parity.threshold}%${count}`);
   }

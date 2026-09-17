@@ -45,7 +45,7 @@ export interface RegistryStats {
   byProgram: ProgramStats[];
 }
 
-/** The part of a material's cached keys the ledger reads for every submission (`hashesOf`). */
+/** The part of a material's cached keys the ledger reads for every submission (`keys`). */
 export interface MaterialHashes {
   readonly programHash: string;
   readonly variantHash: string;
@@ -84,14 +84,11 @@ export class MaterialRegistry {
   private readonly records = new Map<Material, { outcome: RegisterOutcome; canonical: Material | null }>();
   private readonly canonicalByFullKey = new Map<string, Material>();
   private readonly programs = new Map<string, ProgramEntry>();
-  private registered = 0;
-  private merged = 0;
-  private unsupported = 0;
   private revision = 0;
 
   /**
    * Moves whenever `invalidate()` or `forget()` drops a material's cached keys, and at no other time. A caller that
-   * memoizes `hashesOf()` results (the ledger does, per frame) reads again when it changes.
+   * memoizes `keys()` results (the ledger does, per frame) reads again when it changes.
    */
   get keysRevision(): number {
     return this.revision;
@@ -100,13 +97,9 @@ export class MaterialRegistry {
   register(material: Material): Material {
     const existing = this.records.get(material);
     if (existing) return existing.canonical ?? material;
-    // A live count of registered materials, not of calls: a repeat registration is not counted, so one `forget()`
-    // undoes one material whatever number of times it was registered.
-    this.registered++;
 
     const keys = this.keys(material);
     if (keys.unsupported) {
-      this.unsupported++;
       this.records.set(material, { outcome: 'unsupported', canonical: null });
       return material;
     }
@@ -117,7 +110,6 @@ export class MaterialRegistry {
     program.materials++;
 
     if (canonical) {
-      this.merged++;
       this.records.set(material, { outcome: 'merged', canonical });
       return canonical;
     }
@@ -143,18 +135,6 @@ export class MaterialRegistry {
       unsupported: keys.unsupported,
       canonical: record?.canonical ?? null,
     };
-  }
-
-  /**
-   * The hashes, description and `unsupported` flag `describe()` reports, read straight from the key cache:
-   * nothing is allocated and no key or hash is recomputed once the material has been keyed (an unregistered material
-   * is keyed and cached on first use, as `describe()` does). The result is the cache entry itself. `invalidate()` and
-   * `forget()` replace an entry rather than change it, so a result held from before keeps its old values; after
-   * either, `hashesOf()` returns the re-keyed hashes and `keysRevision` has moved. For per-submission callers such as
-   * the ledger; `describe()` adds the outcome, colours and canonical.
-   */
-  hashesOf(material: Material): MaterialHashes {
-    return this.keys(material);
   }
 
   /** The material `register()` would return for this one, without registering it. */
@@ -212,15 +192,12 @@ export class MaterialRegistry {
     this.deindex(material, oldKeys, wasCanonical);
     const newKeys = this.keys(material);
 
-    // `stats().merged` is a live count of currently-merged materials (like `registered`, shrunk by `forget()`), not a
-    // call counter, so it moves whenever re-filing changes `material`'s own canonical/merged status.
     const fullKey = fullKeyOf(newKeys);
     const existingCanonical = this.canonicalByFullKey.get(fullKey);
     const program = this.ensureProgram(newKeys, material);
     program.materials++;
 
     if (existingCanonical && existingCanonical !== material) {
-      if (wasCanonical) this.merged++; // was the canonical itself, now merges into someone else's
       this.records.set(material, { outcome: 'merged', canonical: existingCanonical });
       return;
     }
@@ -229,13 +206,7 @@ export class MaterialRegistry {
     // the canonical keeps the outcome recorded at registration (classifying it again would read its own entries, still
     // in `program.canonicals`/`variants`). One promoted from merged back to canonical was never classified, so it is
     // classified as a fresh registration would be, before it joins the sets below.
-    let outcome: RegisterOutcome;
-    if (wasCanonical) {
-      outcome = record.outcome;
-    } else {
-      this.merged--; // was merged into another canonical, now (re)becomes one itself
-      outcome = this.outcomeFor(program, newKeys.variantKey);
-    }
+    const outcome = wasCanonical ? record.outcome : this.outcomeFor(program, newKeys.variantKey);
 
     program.variants.add(newKeys.variantKey);
     program.canonicals.add(material);
@@ -245,8 +216,8 @@ export class MaterialRegistry {
 
   /**
    * Removes `material` from the registry as if it had never been registered: its cached keys and record are dropped,
-   * the `registered`/`merged`/`unsupported` counters and its program's bookkeeping are unwound, and a canonical's
-   * `canonicalByFullKey` and program entries are cleared (`deindex()`, shared with `invalidate()`). `World.decompile()`
+   * its program's bookkeeping is unwound, and a canonical's `canonicalByFullKey` and program entries are cleared
+   * (`deindex()`, shared with `invalidate()`). `World.decompile()`
    * and `ResourceTracker.release()` call it for the materials they release. Forgetting an unknown material is a no-op.
    *
    * Dependents are neither tracked nor released. Materials merged into `material` keep resolving to this exact object
@@ -265,14 +236,7 @@ export class MaterialRegistry {
     const keys = this.keys(material);
     this.keyCache.delete(material);
     this.records.delete(material);
-    this.registered--;
-
-    if (record.outcome === 'unsupported') {
-      this.unsupported--;
-      return;
-    }
-
-    if (record.canonical !== material) this.merged--;
+    if (record.outcome === 'unsupported') return; // never indexed; nothing to deindex
     this.deindex(material, keys, record.canonical === material);
   }
 
@@ -315,8 +279,8 @@ export class MaterialRegistry {
    * its program's `canonicals` set, and — when no other remaining canonical in that program still needs it —
    * its program's `variants` entry. Either way, the program's `materials` tally is decremented (the program
    * entry itself is dropped once it reaches zero). Only touches `programs`/`canonicalByFullKey`; the caller owns
-   * `records`, `keyCache`, and the `registered`/`merged`/`unsupported` counters. Shared by `forget()` (removing a
-   * material for good) and `invalidate()` (removing it from its old keys before re-filing it under new ones).
+   * `records` and `keyCache`. Shared by `forget()` (removing a material for good) and `invalidate()` (removing it
+   * from its old keys before re-filing it under new ones).
    */
   private deindex(material: Material, keys: CachedKeys, wasCanonical: boolean): void {
     const program = this.programs.get(keys.programHash);
@@ -334,7 +298,19 @@ export class MaterialRegistry {
     if (program.materials <= 0) this.programs.delete(keys.programHash);
   }
 
+  /**
+   * `registered`, `merged` and `unsupported` are read off `records` here, in one pass like `dependentsOf()`: a
+   * material is registered once however many times `register()` saw it, merged while its record resolves to another
+   * material, unsupported while its record says so. Not a per-frame call, so nothing keeps counters in step through
+   * `register()`, `invalidate()` and `forget()`.
+   */
   stats(): RegistryStats {
+    let merged = 0;
+    let unsupported = 0;
+    for (const record of this.records.values()) {
+      if (record.outcome === 'merged') merged++;
+      else if (record.outcome === 'unsupported') unsupported++;
+    }
     const byProgram: ProgramStats[] = [...this.programs.entries()]
       .map(([programHash, p]) => ({
         programHash,
@@ -346,16 +322,24 @@ export class MaterialRegistry {
       }))
       .sort((a, b) => b.materials - a.materials || a.programHash.localeCompare(b.programHash));
     return {
-      registered: this.registered,
+      registered: this.records.size,
       canonical: this.canonicalByFullKey.size,
-      merged: this.merged,
-      unsupported: this.unsupported,
+      merged,
+      unsupported,
       programs: this.programs.size,
       byProgram,
     };
   }
 
-  /** The raw keys for a material, plus their `programHash`/`variantHash` (computed once and cached). */
+  /**
+   * The raw keys for a material, plus their `programHash`/`variantHash`, computed once and cached: the hashes,
+   * description and `unsupported` flag `describe()` reports, read straight from the key cache. Nothing is allocated
+   * and no key or hash is recomputed once the material has been keyed (an unregistered material is keyed and cached
+   * on first use, as `describe()` does). The result is the cache entry itself. `invalidate()` and `forget()` replace
+   * an entry rather than change it, so a result held from before keeps its old values; after either, `keys()` returns
+   * the re-keyed entry and `keysRevision` has moved. For per-submission callers such as the ledger (`MaterialHashes`
+   * is the slice it reads); `describe()` adds the outcome, colours and canonical.
+   */
   keys(material: Material): CachedKeys {
     let keys = this.keyCache.get(material);
     if (!keys) {

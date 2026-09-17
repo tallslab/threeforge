@@ -1,12 +1,13 @@
 /** Programmatic access to the CLI's operations: `import { analyzeAsset, inspectApp, explain } from 'threeforge/cli'`. */
-export { analyzeAsset, analyzeAssetWithShots, pixelDiffPct } from './analyze.js';
-export { COMMANDS, type Command, parseArgs, UsageError } from './args.js';
-export { EnvironmentError, launchBrowser } from './browser.js';
+export { analyzeAsset, analyzeAssetWithShots } from './analyze.js';
+export { COMMANDS, type Command, parseArgs } from './args.js';
+export { launchBrowser } from './browser.js';
+export { EnvironmentError, PageError, UsageError } from './errors.js';
 export { explain, REMEDIES, type Remedy } from './explain.js';
 export { summarize, summarizeOptimize } from './format.js';
 export { inspectApp } from './inspect.js';
 export type { CliDeps } from './lifecycle.js';
-export { measureViaHook, PageError } from './measure.js';
+export { measureViaHook } from './measure.js';
 export { defaultOutputPath, optimizeAsset } from './optimize.js';
 export { PRESETS, planSteps, STEP_NAMES, type Step, type StepOptions } from './pipeline.js';
 export { ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA, SNAPSHOT_SCHEMA } from './schema.js';

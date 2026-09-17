@@ -2,9 +2,9 @@
 
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync } from 'node:fs';
-import { baselinePath, resultPath } from './bench-gate.mjs';
+import { backendsFromArgv, baselinePath, resultPath } from './bench-common.mjs';
 
-const backends = process.argv[2] ? [process.argv[2]] : ['webgl2', 'webgpu'];
+const backends = backendsFromArgv();
 for (const backend of backends) {
   if (!existsSync(resultPath(backend))) {
     console.error(`no results for ${backend}; run pnpm bench ${backend} first`);

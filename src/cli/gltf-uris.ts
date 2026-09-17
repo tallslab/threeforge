@@ -1,6 +1,7 @@
-import { closeSync, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs';
-import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep, win32 } from 'node:path';
+import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { UsageError } from './errors.js';
+import { checkPathText, isInside, realPathOf } from './paths.js';
 import { cleanText } from './untrusted.js';
 
 /**
@@ -18,8 +19,6 @@ const GLB_VERSION = 2;
 const CHUNK_JSON = 0x4e4f534a; // 'JSON'
 /** How much of a URI an error message quotes. */
 const URI_QUOTE_MAX = 200;
-/** `file:`, `http:`, `data:` (checked separately), and a Windows drive letter (`C:`). */
-const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 
 function messageOf(error: unknown): string {
   return cleanText(error instanceof Error ? error.message : String(error), 300);
@@ -153,48 +152,4 @@ export function assertConfinedUri(uri: unknown, where: string, baseDir: string):
   const realBase = realPathOf(base);
   if (realBase === null || !isInside(realBase, realTarget as string))
     refuse(`resolves outside ${baseDir} through a symlink`);
-}
-
-function checkPathText(text: string, refuse: (problem: string) => never): void {
-  if (text.includes('\0')) refuse('contains a NUL character');
-  if (text.includes('\\')) refuse('contains a backslash');
-  if (SCHEME.test(text)) refuse('has a URI scheme (only data: URIs are allowed)');
-  if (posix.isAbsolute(text) || win32.isAbsolute(text)) refuse('is an absolute path');
-}
-
-/** `target` is `base` or nested inside it. */
-function isInside(base: string, target: string): boolean {
-  const rel = relative(base, target);
-  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
-}
-
-/**
- * The real path of `target`, every symlink followed. A path that does not exist yet (a resource a `.gltf` write will
- * create) resolves through its nearest existing ancestor with the missing segments appended; nothing exists at them,
- * so none is a symlink. `null` when an entry exists but cannot be resolved (a dangling or looping symlink).
- */
-function realPathOf(target: string): string | null {
-  const missing: string[] = [];
-  let current = target;
-  for (;;) {
-    try {
-      return join(realpathSync(current), ...missing);
-    } catch {
-      if (entryExists(current)) return null;
-      const parent = dirname(current);
-      if (parent === current) return null;
-      missing.unshift(basename(current));
-      current = parent;
-    }
-  }
-}
-
-/** Something is at `path`, a symlink included (dangling or not): `lstat`, which, unlike `existsSync`, never follows the final link. */
-export function entryExists(path: string): boolean {
-  try {
-    lstatSync(path);
-    return true;
-  } catch {
-    return false;
-  }
 }

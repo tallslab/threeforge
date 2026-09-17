@@ -4,7 +4,6 @@
  * (asset facts, readiness). No animation loop: the CLI renders frames through the hook.
  */
 
-import { MeshoptDecoder } from 'meshoptimizer/decoder';
 import {
   AmbientLight,
   type AnimationClip,
@@ -19,15 +18,15 @@ import {
   Vector3,
 } from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { PMREMGenerator, WebGPURenderer } from 'three/webgpu';
 import {
+  createLoader,
   DrawCallLedger,
+  describeError,
   detectTier,
   disposeLoader,
   exposeToAgents,
+  gpuName,
   MaterialRegistry,
   type Tier,
   tierInputFromNavigator,
@@ -73,37 +72,13 @@ try {
   const ledger = new DrawCallLedger({ registry });
   ledger.attach(renderer);
 
-  const gpuName = (): string => {
-    type AdapterInfo = { description?: string; device?: string; vendor?: string; architecture?: string };
-    const b = renderer.backend as {
-      isWebGPUBackend?: boolean;
-      device?: { adapterInfo?: AdapterInfo };
-      gl?: WebGL2RenderingContext;
-    };
-    if (b.isWebGPUBackend) {
-      const info = b.device?.adapterInfo;
-      return (
-        info?.description || info?.device || [info?.vendor, info?.architecture].filter(Boolean).join(' ') || 'webgpu'
-      );
-    }
-    const ext = b.gl?.getExtension('WEBGL_debug_renderer_info');
-    return ext && b.gl ? String(b.gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : 'webgl2';
-  };
-  const gpu = gpuName();
+  const gpu = gpuName(renderer);
   const requested = params.get('tier');
   const tier: Tier =
     requested && requested !== 'auto' ? (requested as Tier) : detectTier(tierInputFromNavigator(gpu, navigator));
   ledger.setEnvironment({ tier, gpu, dpr: 1, viewport: [800, 600] });
 
-  const loader = new GLTFLoader();
-  const draco = new DRACOLoader();
-  draco.setDecoderPath('./_decoders/draco/');
-  loader.setDRACOLoader(draco);
-  const ktx2 = new KTX2Loader();
-  ktx2.setTranscoderPath('./_decoders/basis/');
-  ktx2.detectSupport(renderer);
-  loader.setKTX2Loader(ktx2);
-  loader.setMeshoptDecoder(MeshoptDecoder);
+  const loader = await createLoader(renderer, { decoders: './_decoders/' });
 
   const t0 = performance.now();
   const gltf = await loader.loadAsync(file);
@@ -201,7 +176,7 @@ try {
 } catch (error) {
   window.__threeforgeCli = {
     ready: false,
-    error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+    error: describeError(error, 'stack'),
   };
   throw error;
 }

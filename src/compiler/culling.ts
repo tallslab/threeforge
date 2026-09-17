@@ -22,10 +22,11 @@ import {
   Vector3,
   WebGLCoordinateSystem,
 } from 'three';
+import { FORGE_HOOK_KEY } from './materialCode.js';
 import type { PassTracker } from './passTracker.js';
 
 /** Functions threeforge installs as own-property hooks carry this marker so the ledger does not flag them. */
-export const FORGE_HOOK: unique symbol = Symbol.for('threeforge.hook');
+export const FORGE_HOOK: unique symbol = Symbol.for(FORGE_HOOK_KEY);
 
 export interface CullingLod {
   /** Distance thresholds; level i is used from distances[i-1] onward. */

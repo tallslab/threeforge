@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { BACKENDS, backendsFromArgv, baselinePath, readBaseline, resultPath } from '../../scripts/bench-common.mjs';
 import { compare, DETERMINISTIC, TIMING } from '../../scripts/bench-gate.mjs';
 
 const metrics = (over: Record<string, number> = {}) => ({
@@ -150,5 +151,22 @@ describe('bench gate', () => {
     delete (baseline.scenes.village as Record<string, unknown>).optimized;
     delete (result.scenes.village as Record<string, unknown>).optimized;
     expect(compare(baseline, result, { gateTiming: false, tolerance: 0.1 }).failures).toEqual([]);
+  });
+});
+
+describe('bench-common', () => {
+  it('names both backends, or the one on the command line', () => {
+    expect(BACKENDS).toEqual(['webgl2', 'webgpu']);
+    expect(backendsFromArgv(['node', 'script'])).toEqual(['webgl2', 'webgpu']);
+    expect(backendsFromArgv(['node', 'script', 'webgpu'])).toEqual(['webgpu']);
+  });
+
+  it('places results and baselines where the gate reads them', () => {
+    expect(resultPath('webgpu')).toBe('bench/results/local.webgpu.json');
+    expect(baselinePath('webgl2')).toBe('bench/baselines/webgl2.json');
+  });
+
+  it('returns null for a backend without a committed baseline', () => {
+    expect(readBaseline('no-such-backend')).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import type { Document, NodeIO } from '@gltf-transform/core';
-import { EnvironmentError } from './browser.js';
+import { EnvironmentError } from './errors.js';
 import type { Step } from './pipeline.js';
 import type { AssetStats, Counts, Requirement, StepReport, TextureFormat } from './types.js';
 

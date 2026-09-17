@@ -42,7 +42,7 @@ import {
 import { color, mix, positionLocal } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
-import { hasNodeSlot } from '../../src/compiler/sprites.js';
+import { hasNodeSlot } from '../../src/compiler/materialCode.js';
 import { World, type WorldOptions } from '../../src/compiler/World.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import type { SubmissionRecord } from '../../src/ledger/snapshot.js';

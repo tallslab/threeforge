@@ -1,8 +1,6 @@
 import { EnvironmentError } from './errors.js';
 import type { Backend } from './types.js';
 
-export { EnvironmentError };
-
 export interface BrowserHandle {
   newPage(): Promise<PlaywrightPage>;
   close(): Promise<void>;

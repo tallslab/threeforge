@@ -290,6 +290,50 @@ describe('MaterialRegistry caching', () => {
     expect(registry.stats()).toMatchObject({ registered: 0, canonical: 0, merged: 0, unsupported: 0 });
   });
 
+  it('stats() registered, merged and unsupported follow the records through register, merge, invalidate and forget', () => {
+    const registry = new MaterialRegistry();
+    const counts = () => {
+      const { registered, canonical, merged, unsupported } = registry.stats();
+      return { registered, canonical, merged, unsupported };
+    };
+    const a = new MeshStandardMaterial({ roughness: 0.2 });
+    const b = new MeshStandardMaterial({ roughness: 0.2 });
+    const c = new MeshStandardMaterial({ roughness: 0.9 });
+    const shader = new ShaderMaterial();
+    expect(registry.register(a)).toBe(a);
+    expect(counts()).toEqual({ registered: 1, canonical: 1, merged: 0, unsupported: 0 });
+    expect(registry.register(b)).toBe(a); // merged into a
+    registry.register(c);
+    registry.register(shader);
+    expect(counts()).toEqual({ registered: 4, canonical: 2, merged: 1, unsupported: 1 });
+
+    // invalidate: a canonical demoted into another (c now matches a), a merged one promoted (b no longer matches a).
+    c.roughness = 0.2;
+    registry.invalidate(c);
+    expect(counts()).toEqual({ registered: 4, canonical: 1, merged: 2, unsupported: 1 });
+    b.roughness = 0.5;
+    registry.invalidate(b);
+    expect(counts()).toEqual({ registered: 4, canonical: 2, merged: 1, unsupported: 1 });
+    // invalidate of a canonical that stays one, of an unsupported material and of an unregistered one: nothing moves.
+    a.roughness = 0.3;
+    registry.invalidate(a);
+    registry.invalidate(shader);
+    registry.invalidate(new MeshStandardMaterial());
+    expect(counts()).toEqual({ registered: 4, canonical: 2, merged: 1, unsupported: 1 });
+
+    // forget: a merged record, an unsupported one, a canonical; an unknown material is a no-op.
+    registry.forget(c);
+    expect(counts()).toEqual({ registered: 3, canonical: 2, merged: 0, unsupported: 1 });
+    registry.forget(shader);
+    expect(counts()).toEqual({ registered: 2, canonical: 2, merged: 0, unsupported: 0 });
+    registry.forget(a);
+    registry.forget(new MeshStandardMaterial());
+    expect(counts()).toEqual({ registered: 1, canonical: 1, merged: 0, unsupported: 0 });
+    // Re-registering a forgotten material counts it again.
+    registry.register(a);
+    expect(counts()).toEqual({ registered: 2, canonical: 2, merged: 0, unsupported: 0 });
+  });
+
   it('stats().registered does not grow across compile and decompile cycles of one World', () => {
     const registry = new MaterialRegistry();
     const scene = new Scene();
@@ -331,7 +375,7 @@ describe('MaterialRegistry caching', () => {
   });
 });
 
-describe('MaterialRegistry.hashesOf', () => {
+describe('MaterialRegistry.keys', () => {
   it('returns the hashes describe() reports from the key cache: the same object on every call, no key or hash recomputed', () => {
     const registry = new MaterialRegistry();
     const computeSpy = vi.spyOn(materialKeyModule, 'computeMaterialKeys');
@@ -340,8 +384,8 @@ describe('MaterialRegistry.hashesOf', () => {
     registry.register(material);
     const computed = computeSpy.mock.calls.length;
     const hashed = hashSpy.mock.calls.length;
-    const first = registry.hashesOf(material);
-    for (let i = 0; i < 5; i++) expect(registry.hashesOf(material)).toBe(first);
+    const first = registry.keys(material);
+    for (let i = 0; i < 5; i++) expect(registry.keys(material)).toBe(first);
     const described = registry.describe(material);
     expect(computeSpy.mock.calls.length).toBe(computed);
     expect(hashSpy.mock.calls.length).toBe(hashed);
@@ -359,20 +403,20 @@ describe('MaterialRegistry.hashesOf', () => {
       unsupported: false,
     });
     const shader = new ShaderMaterial();
-    expect(registry.hashesOf(shader).unsupported).toBe(true);
-    expect(registry.hashesOf(shader).programHash).toBe(registry.describe(shader).programHash);
+    expect(registry.keys(shader).unsupported).toBe(true);
+    expect(registry.keys(shader).programHash).toBe(registry.describe(shader).programHash);
   });
 
   it('returns the re-filed hashes after invalidate(), and leaves a result held from before unchanged', () => {
     const registry = new MaterialRegistry();
     const material = new MeshStandardMaterial({ roughness: 0.2 });
     registry.register(material);
-    const before = registry.hashesOf(material);
+    const before = registry.keys(material);
     const beforeProgram = before.programHash;
     material.flatShading = true; // mutation outside the immutable-once-registered contract
-    expect(registry.hashesOf(material).programHash).toBe(beforeProgram);
+    expect(registry.keys(material).programHash).toBe(beforeProgram);
     registry.invalidate(material);
-    const after = registry.hashesOf(material);
+    const after = registry.keys(material);
     const fresh = materialKeyModule.computeMaterialKeys(material);
     expect(after.programHash).toBe(materialKeyModule.hashKey(fresh.programKey));
     expect(after.variantHash).toBe(materialKeyModule.hashKey(fresh.variantKey));
@@ -380,7 +424,7 @@ describe('MaterialRegistry.hashesOf', () => {
     expect(after.programHash).not.toBe(beforeProgram);
     expect(registry.describe(material).programHash).toBe(after.programHash);
     expect(before.programHash).toBe(beforeProgram);
-    expect(registry.hashesOf(material)).toBe(after);
+    expect(registry.keys(material)).toBe(after);
   });
 
   it('keysRevision moves whenever invalidate() or forget() drops cached keys, and only then', () => {
@@ -389,7 +433,7 @@ describe('MaterialRegistry.hashesOf', () => {
     const b = new MeshStandardMaterial({ roughness: 0.7 });
     const start = registry.keysRevision;
     registry.register(a);
-    registry.hashesOf(b);
+    registry.keys(b);
     registry.describe(a);
     registry.stats();
     expect(registry.keysRevision).toBe(start);

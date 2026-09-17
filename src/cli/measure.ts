@@ -1,11 +1,9 @@
-import type { FrameSnapshot } from '../ledger/snapshot.js';
+import { type FrameSnapshot, SNAPSHOT_SCHEMA_VERSION } from '../ledger/snapshot.js';
 import type { PlaywrightPage } from './browser.js';
 import { PageError } from './errors.js';
 import { withTimeout } from './lifecycle.js';
 import type { CliCompileReport } from './types.js';
 import { cleanText, sanitizeDeep } from './untrusted.js';
-
-export { PageError };
 
 /**
  * `page.evaluate` of an expression, bounded by `timeout` ms. A resolved value goes through `sanitizeDeep`: `inspect`'s
@@ -46,20 +44,17 @@ export function compileViaHook(page: PlaywrightPage, timeout: number): Promise<C
   );
 }
 
-export interface Measurement {
+interface Measurement {
   snapshot: FrameSnapshot;
   renderMs: number;
   ledgerMs: number;
   frameMs: number;
 }
 
-/** The frame snapshot `schemaVersion` this CLI reads from `window.__threeforge` (what `exposeToAgents` publishes). */
-export const HOOK_SCHEMA_VERSION = 3;
-
 // Split so the in-page check below (measureViaHook) can build the identical message from `hook.schemaVersion`, known
 // only inside the page, without re-typing the wording or reaching for a placeholder-and-replace trick.
 const UNSUPPORTED_PREFIX = 'window.__threeforge has unsupported schemaVersion ';
-const UNSUPPORTED_SUFFIX = `: this threeforge CLI reads schemaVersion ${HOOK_SCHEMA_VERSION}; upgrade threeforge in the app (exposeToAgents)`;
+const UNSUPPORTED_SUFFIX = `: this threeforge CLI reads schemaVersion ${SNAPSHOT_SCHEMA_VERSION}; upgrade threeforge in the app (exposeToAgents)`;
 const unsupported = (version: string): string => `${UNSUPPORTED_PREFIX}${version}${UNSUPPORTED_SUFFIX}`;
 
 /**
@@ -96,7 +91,7 @@ export async function assertHookVersion(page: PlaywrightPage, timeout: number): 
     timeout,
     `window.__threeforge.schemaVersion`,
   );
-  if (version !== HOOK_SCHEMA_VERSION) throw new PageError(unsupported(JSON.stringify(version) ?? 'undefined'));
+  if (version !== SNAPSHOT_SCHEMA_VERSION) throw new PageError(unsupported(JSON.stringify(version) ?? 'undefined'));
 }
 
 /**
@@ -114,7 +109,7 @@ export async function measureViaHook(page: PlaywrightPage, frames: number, timeo
     `(async () => {
       const hook = window.__threeforge;
       if (!hook) return { error: 'window.__threeforge is missing: call exposeToAgents({ ledger, world, renderer, scene, camera }) in the app' };
-      if (hook.schemaVersion !== ${HOOK_SCHEMA_VERSION}) return { error: ${JSON.stringify(UNSUPPORTED_PREFIX)} + JSON.stringify(hook.schemaVersion) + ${JSON.stringify(UNSUPPORTED_SUFFIX)} };
+      if (hook.schemaVersion !== ${SNAPSHOT_SCHEMA_VERSION}) return { error: ${JSON.stringify(UNSUPPORTED_PREFIX)} + JSON.stringify(hook.schemaVersion) + ${JSON.stringify(UNSUPPORTED_SUFFIX)} };
       const render = []; const ledger = []; const intervals = []; let last = performance.now();
       for (let i = 0; i < ${count}; i++) {
         const f = await hook.frameAsync();
@@ -130,7 +125,7 @@ export async function measureViaHook(page: PlaywrightPage, frames: number, timeo
   if ('error' in result) throw new PageError(result.error);
   // The hook said 3; this is the frame it actually returned (L3).
   const frameVersion = (result.snapshot as { schemaVersion?: unknown } | null | undefined)?.schemaVersion;
-  if (frameVersion !== HOOK_SCHEMA_VERSION)
+  if (frameVersion !== SNAPSHOT_SCHEMA_VERSION)
     throw new PageError(unsupportedFrame(JSON.stringify(frameVersion) ?? 'undefined'));
   result.snapshot.js.renderMs = result.renderMs;
   result.snapshot.js.ledgerMs = result.ledgerMs;

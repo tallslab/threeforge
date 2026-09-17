@@ -1,7 +1,7 @@
 import type { Camera, Scene } from 'three';
 import type { CompileReport, World } from '../compiler/World.js';
 import type { DrawCallLedger, LedgerRenderer } from '../ledger/DrawCallLedger.js';
-import type { FrameSnapshot, Hint, MemorySnapshot } from '../ledger/snapshot.js';
+import { type FrameSnapshot, type Hint, type MemorySnapshot, SNAPSHOT_SCHEMA_VERSION } from '../ledger/snapshot.js';
 import { VERSION } from '../version.js';
 
 /**
@@ -10,8 +10,8 @@ import { VERSION } from '../version.js';
  */
 export interface AgentHook {
   version: string;
-  /** Frame snapshot schema version (`ledger.frame().schemaVersion`); `threeforge inspect` requires 3. */
-  schemaVersion: 3;
+  /** Frame snapshot schema version (`ledger.frame().schemaVersion`); `threeforge inspect` requires this one. */
+  schemaVersion: typeof SNAPSHOT_SCHEMA_VERSION;
   /** The last frame's snapshot; does not render. */
   frame(): FrameSnapshot;
   /** Waits one animation frame (shadow maps update once per tick), renders if it can, returns the snapshot. Rejects when the render throws. */
@@ -56,7 +56,7 @@ export function exposeToAgents(options: ExposeOptions): () => void {
   const canRender = Boolean(renderer && scene && camera);
   const hook: AgentHook = {
     version: VERSION,
-    schemaVersion: 3,
+    schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     frame: () => ledger.frame(),
     frameAsync: () =>
       new Promise((resolve, reject) => {

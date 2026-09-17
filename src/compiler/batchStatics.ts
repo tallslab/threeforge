@@ -22,6 +22,7 @@ import { type BakeEntry, type BakeOptions, type BakeReport, bakeGeometries, unba
 import type { NestedPassPolicy } from './culling.js';
 import { attributeSignature, ensureIndexed } from './geometryCompat.js';
 import { createCulledInstancedMesh } from './instancing.js';
+import { hasNoNodes, hasOwnFunctions, MATERIAL_DEFINES } from './materialCode.js';
 import type { PassTracker } from './passTracker.js';
 import { SceneSpace } from './space.js';
 
@@ -382,8 +383,6 @@ export function batchStatics(
   return result;
 }
 
-export { isBuiltInMaterial };
-
 /**
  * Whether the bake can prove a material draws its merged, scene-space geometry as it drew each module: an allowlist of
  * what reads the geometry. Three's own code alone: one of three's material classes (`isBuiltInMaterial`; a subclass can
@@ -400,16 +399,6 @@ export { isBuiltInMaterial };
 function bakeProvesReads(material: Material): boolean {
   const displacementMap = (material as Material & { displacementMap?: unknown }).displacementMap ?? null;
   return isBuiltInMaterial(material) && !hasOwnFunctions(material) && hasNoNodes(material) && displacementMap === null;
-}
-
-/**
- * Whether code is assigned to the material instance: any own property holding a function (an instance
- * `onBeforeCompile`, `customProgramCacheKey`, `onBeforeRender`, `setup`, `setupOutput` …). A fresh three material has
- * none.
- */
-export function hasOwnFunctions(material: Material): boolean {
-  const record = material as unknown as Record<string, unknown>;
-  return Object.getOwnPropertyNames(material).some((key) => typeof record[key] === 'function');
 }
 
 /**
@@ -462,24 +451,6 @@ export function cloneMaterial<T extends Material>(source: T): T {
     to[key] = from[key];
   }
   return copy;
-}
-
-/** The `defines` three's own mesh materials set: `MeshStandardMaterial`, `MeshPhysicalMaterial`, `MeshToonMaterial`, `MeshMatcapMaterial`. */
-const MATERIAL_DEFINES = new Set(['STANDARD', 'PHYSICAL', 'TOON', 'MATCAP']);
-
-/**
- * No node slot is set: no non-null own `*Node` property (three r186's `NodeMaterial` declares its slots that way and
- * subclasses add more) and no other own property holding a node (`NodeMaterial._getNodeChildren` reads them all).
- * Any of them can carry `Discard()` (`nodes/utils/Discard.js`).
- */
-function hasNoNodes(material: Material): boolean {
-  for (const key of Object.getOwnPropertyNames(material)) {
-    if (key.startsWith('_')) continue;
-    const value = (material as unknown as Record<string, unknown>)[key];
-    if (value === null || value === undefined) continue;
-    if (key.endsWith('Node') || (value as { isNode?: boolean }).isNode === true) return false;
-  }
-  return true;
 }
 
 /**

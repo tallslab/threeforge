@@ -33,3 +33,21 @@ export function capName(name: string): string {
 export function capMessage(message: string): string {
   return capCodePoints(message, MAX_MESSAGE_LENGTH);
 }
+
+/** A count for a panel or table: `120k`, `6.4k`, `1.0M`; below a thousand the rounded integer. */
+export function formatCount(n: number): string {
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  return String(Math.round(n));
+}
+
+/** Bytes as whole MiB with no unit, so a row of values can name `MB` once. */
+export function formatBytes(bytes: number): string {
+  return String(Math.round(bytes / (1024 * 1024)));
+}
+
+/** `error` as one line for a status field: its message, or with `'stack'` its stack trace when it has one. */
+export function describeError(error: unknown, detail: 'message' | 'stack' = 'message'): string {
+  if (!(error instanceof Error)) return String(error);
+  return detail === 'stack' ? (error.stack ?? error.message) : error.message;
+}

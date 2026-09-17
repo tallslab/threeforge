@@ -9,7 +9,7 @@ import {
   SpriteMaterial,
 } from 'three';
 import { SpriteNodeMaterial } from 'three/webgpu';
-import { hasOwnFunctions } from './batchStatics.js';
+import { hasNodeSlot, hasOwnFunctions } from './materialCode.js';
 import type { SceneSpace } from './space.js';
 
 /** Sprites that share a material (by registry keys, not instance) and become one instanced billboard draw. */
@@ -71,8 +71,8 @@ export function ancestorExclusionRule(object: Object3D, root: Object3D): string 
 
 /**
  * The two material classes a sprite batch reproduces: `buildSpriteBatch` builds a plain `SpriteNodeMaterial` and copies the
- * source's fields into it. `isBuiltInMaterial` (`src/registry/builtInMaterials.ts`, which `batchStatics.ts` only
- * re-exports) accepts every three material type, so it does not fit.
+ * source's fields into it. `isBuiltInMaterial` (`src/registry/builtInMaterials.ts`) accepts every three material type,
+ * so it does not fit.
  */
 const SPRITE_PROTOTYPES = new Set<object>([SpriteMaterial.prototype, SpriteNodeMaterial.prototype]);
 
@@ -84,27 +84,6 @@ const SPRITE_PROTOTYPES = new Set<object>([SpriteMaterial.prototype, SpriteNodeM
  */
 function isCustomSpriteMaterial(material: Material): boolean {
   return !SPRITE_PROTOTYPES.has(Object.getPrototypeOf(material) as object) || hasOwnFunctions(material);
-}
-
-/**
- * A node material with any node slot set. three r186's `NodeMaterial` declares its slots as `*Node` instance properties
- * (`NodeMaterial.js` ~103-390: `lightsNode`, `envNode`, `aoNode`, `colorNode`, `normalNode`, `opacityNode`,
- * `backdropNode`, `backdropAlphaNode`, `alphaTestNode`, `maskNode`, `maskShadowNode`, `positionNode`, `geometryNode`,
- * `depthNode`, `receivedShadowPositionNode`, `castShadowPositionNode`, `receivedShadowNode`, `castShadowNode`,
- * `outputNode`, `mrtNode`, `fragmentNode`, `vertexNode`, `contextNode`); `SpriteNodeMaterial` adds `rotationNode` and
- * `scaleNode` (`SpriteNodeMaterial.js` ~63-86). Every own property ending in `Node` is read, so a subclass's slots count.
- * It cannot see into a node, so a constant counts too (a fresh `MeshSSSNodeMaterial` sets five `thickness*Node` slots to
- * `float()` constants in its constructor). `spriteRule` (`sprite-node-material`) and the ledger's `batch-local-space`
- * hint share this test.
- */
-export function hasNodeSlot(material: Material): boolean {
-  if ((material as { isNodeMaterial?: boolean }).isNodeMaterial !== true) return false;
-  for (const key of Object.keys(material)) {
-    if (!key.endsWith('Node')) continue;
-    const value = (material as unknown as Record<string, unknown>)[key];
-    if (value !== null && value !== undefined) return true;
-  }
-  return false;
 }
 
 /**

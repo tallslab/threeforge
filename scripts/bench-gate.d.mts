@@ -24,5 +24,3 @@ export function compare(
   options: { gateTiming: boolean; tolerance: number },
 ): { rows: CompareRow[]; failures: string[] };
 export function table(result: BenchFile): string;
-export function resultPath(backend: string): string;
-export function baselinePath(backend: string): string;

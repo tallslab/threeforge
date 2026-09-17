@@ -1,7 +1,10 @@
 import { PNG } from 'pngjs';
 import { describe, expect, it } from 'vitest';
-import { comparePixels, pixelDiffPct } from '../../src/cli/analyze.js';
+import { comparePixels } from '../../src/cli/analyze.js';
 import { differingPixels, pixelDiff } from '../e2e/pixels.js';
+
+/** The percent alone, as `analyze` and `optimize` round and compare it (`comparePixels(...).diffPct`). */
+const pixelDiffPct = (a: Buffer, b: Buffer): number => comparePixels(a, b).diffPct;
 
 /** Encodes a flat RGBA pixel grid (row-major, 4 bytes per pixel) as a PNG buffer. */
 function png(width: number, height: number, pixels: number[][]): Buffer {
@@ -93,7 +96,7 @@ describe('pixelDiff', () => {
 });
 
 /**
- * `pixelDiffPct` (`src/cli/analyze.ts`) is the tolerance the shipped CLI judges renders with: `analyze`'s compile
+ * `comparePixels(...).diffPct` (`src/cli/analyze.ts`) is the tolerance the shipped CLI judges renders with: `analyze`'s compile
  * parity and `optimize --parity` both count a pixel as changed when any of R, G, B differs by **more than 24**, and
  * report the count as a percent of the pixels compared. So `--parity 0` means "no pixel moved by more than 24 on any
  * channel in any view", not "the two PNGs are byte-identical": a run reported as 0 can still differ by 24 everywhere.

@@ -1,19 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { bakeProgressLine, failingViews, parityOf } from '../../src/cli/analyze.js';
-import {
-  COMMAND_SPECS,
-  COMMANDS,
-  formatUsage,
-  parseArgs,
-  RANGES,
-  UsageError,
-  validateInput,
-} from '../../src/cli/args.js';
+import { failingViews, parityOf } from '../../src/cli/analyze.js';
+import { COMMAND_SPECS, COMMANDS, formatUsage, parseArgs, RANGES, validateInput } from '../../src/cli/args.js';
+import { bakeProgressLine } from '../../src/cli/document.js';
+import { UsageError } from '../../src/cli/errors.js';
 import { explain, REMEDIES } from '../../src/cli/explain.js';
 import { printDocument, summarize, summarizeOptimize } from '../../src/cli/format.js';
 import { ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA, SNAPSHOT_SCHEMA } from '../../src/cli/schema.js';
 import type { AgentDocument, AnalyzeInput, OptimizeDocument, OptimizeInput } from '../../src/cli/types.js';
-import { exitCodeOf, verdictOf } from '../../src/cli/verdict.js';
+import { exitCodeOf, verdictOf, worstChangedPixels } from '../../src/cli/verdict.js';
 import { budgetsFor } from '../../src/ledger/budgets.js';
 import { hintsFor } from '../../src/ledger/hints.js';
 import { emptyFrame } from '../../src/ledger/snapshot.js';
@@ -168,6 +162,17 @@ describe('verdict', () => {
       'pixel parity 0.00% > 0% (3 changed pixels in the worst view)',
     );
     expect(exitCodeOf(verdictOf(clean, clean, null, null))).toBe(0);
+  });
+
+  it('worstChangedPixels is the largest changedPixels over the views, 0 without views (verdict and summaries share it)', () => {
+    expect(worstChangedPixels([])).toBe(0);
+    expect(
+      worstChangedPixels([
+        { view: 'default', diffPct: 0, changedPixels: 3 },
+        { view: 'orbit-0', diffPct: 0.1, changedPixels: 7 },
+        { view: 'orbit-1', diffPct: 0, changedPixels: 1 },
+      ]),
+    ).toBe(7);
   });
 
   /**

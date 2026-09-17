@@ -2,9 +2,9 @@
 
 import { spawnSync } from 'node:child_process';
 import { rmSync } from 'node:fs';
-import { resultPath } from './bench-gate.mjs';
+import { backendsFromArgv, resultPath } from './bench-common.mjs';
 
-const backends = process.argv[2] ? [process.argv[2]] : ['webgl2', 'webgpu'];
+const backends = backendsFromArgv();
 let failed = false;
 for (const backend of backends) {
   rmSync(resultPath(backend), { force: true });

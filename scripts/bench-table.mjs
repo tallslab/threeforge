@@ -1,12 +1,13 @@
 // Renders docs/bench.md from the committed baselines and refreshes the one-line summary docs/threeforge.md quotes
 // between its bench markers.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { baselinePath, table } from './bench-gate.mjs';
+import { BACKENDS, readBaseline } from './bench-common.mjs';
+import { table } from './bench-gate.mjs';
 
 const sections = [];
-for (const backend of ['webgl2', 'webgpu']) {
-  if (!existsSync(baselinePath(backend))) continue;
-  const b = JSON.parse(readFileSync(baselinePath(backend), 'utf8'));
+for (const backend of BACKENDS) {
+  const b = readBaseline(backend);
+  if (!b) continue;
   sections.push(
     `### ${backend}\n\n${b.env?.gpu ?? 'unknown GPU'} · tier ${b.env?.tier ?? '?'} · three ${b.env?.three ?? '?'}\n\n${table(b)}`,
   );
@@ -44,9 +45,9 @@ function splice(path, text) {
 // drift the way the hand-typed list did: it still read bossfight 424, daynight 55 and zen 125 long after the
 // baselines said 370, 28 and 88. Both backends agree on sceneSubmissions, so the first one present wins.
 function summaryLine() {
-  for (const backend of ['webgl2', 'webgpu']) {
-    if (!existsSync(baselinePath(backend))) continue;
-    const b = JSON.parse(readFileSync(baselinePath(backend), 'utf8'));
+  for (const backend of BACKENDS) {
+    const b = readBaseline(backend);
+    if (!b) continue;
     const scenes = Object.entries(b.scenes ?? {}).filter(([, v]) => v?.naive && v?.optimized);
     if (scenes.length === 0) continue;
     const parts = scenes.map(([scene, v]) => `${scene} ${v.naive.sceneSubmissions} → ${v.optimized.sceneSubmissions}`);

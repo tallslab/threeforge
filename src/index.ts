@@ -81,6 +81,7 @@ export {
   tierInputFromNavigator,
 } from './ledger/budgets.js';
 export { DrawCallLedger, type DrawCallLedgerOptions, type LedgerRenderer } from './ledger/DrawCallLedger.js';
+export { type GpuRenderer, gpuName } from './ledger/gpu.js';
 export { type HintContext, type HintItem, hintsFor, type MainPassObjects } from './ledger/hints.js';
 export {
   type AllowedRenderTarget,
@@ -99,6 +100,7 @@ export {
   overdrawTargetOf,
 } from './ledger/overdraw.js';
 export type { Flag, Reason, SubmissionKind } from './ledger/reasons.js';
+export { formatCostRows, formatHints } from './ledger/report.js';
 export {
   type LightInfo,
   lightingOf,
@@ -127,6 +129,7 @@ export type {
   SubmissionRecord,
   Tier,
 } from './ledger/snapshot.js';
+export { describeError, formatBytes, formatCount } from './ledger/text.js';
 export {
   DayNight,
   type DayNightColors,
@@ -162,7 +165,7 @@ export {
   type ParticleSystemReport,
 } from './overdraw/ParticleBudget.js';
 export { ResolutionScaler, type ResolutionScalerOptions, type ScalerRenderer } from './overdraw/ResolutionScaler.js';
-export { formatCostRows, formatHints, formatOverlay } from './overlay/index.js';
+export { formatOverlay } from './overlay/index.js';
 export {
   type MaterialDescription,
   type MaterialHashes,

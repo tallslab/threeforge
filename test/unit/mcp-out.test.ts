@@ -40,6 +40,13 @@ describe('resolveOptimizeOut (optimize_asset.out confinement and overwrite rules
     );
   });
 
+  it('accepts an out in a child directory whose name begins with two dots (..cache is not a parent reference)', () => {
+    expect(resolveOptimizeOut(file, '..cache/out.glb', false, cwd, never)).toBe('/repo/..cache/out.glb');
+    expect(resolveOptimizeOut(file, '/repo/assets/Fox/..tmp/out.glb', false, cwd, never)).toBe(
+      '/repo/assets/Fox/..tmp/out.glb',
+    );
+  });
+
   it('rejects an out outside both the input directory and the working directory', () => {
     expect(() => resolveOptimizeOut(file, '/tmp/x.glb', false, cwd, never)).toThrow(UsageError);
     expect(() => resolveOptimizeOut(file, '/tmp/x.glb', false, cwd, never)).toThrow(

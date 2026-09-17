@@ -8,9 +8,7 @@ import {
   type Scene,
   Vector2,
 } from 'three';
-import { hasOwnFunctions } from '../compiler/batchStatics.js';
-import { hasNodeSlot } from '../compiler/sprites.js';
-import { formatCostRows, formatHints } from '../overlay/index.js';
+import { hasNodeSlot, hasOwnFunctions } from '../compiler/materialCode.js';
 import { isBuiltInMaterial } from '../registry/builtInMaterials.js';
 import { type MaterialHashes, MaterialRegistry } from '../registry/MaterialRegistry.js';
 import { FORGE_TAG_KEY } from '../tags.js';
@@ -24,6 +22,7 @@ import {
 } from './expectedDraws.js';
 import { type HintContext, hintsFor, type MainPassObjects } from './hints.js';
 import { MaterialUses } from './materialUses.js';
+import { PerFrameMemo } from './memo.js';
 import { type AllowedRenderTarget, estimateMemory } from './memory.js';
 import { DisplayNames, type PathCache } from './names.js';
 import {
@@ -34,7 +33,8 @@ import {
   overdrawTargetOf,
 } from './overdraw.js';
 import { flagsInto, isVsmBlur, kindOf, type Reason, reasonOf } from './reasons.js';
-import { type LightInfo, lightInfoOf } from './sections.js';
+import { formatCostRows, formatHints } from './report.js';
+import { type LightInfo, lightInfoOf, visitLights } from './sections.js';
 import { shadowPassIds } from './shadowPasses.js';
 import {
   type BudgetResult,
@@ -133,28 +133,34 @@ interface ShadowPass {
   id: string;
 }
 
+/** A pooled record: the snapshot's `SubmissionRecord` plus what the ledger keeps per item and `frame()` leaves out. */
+interface PooledRecord extends SubmissionRecord {
+  /**
+   * three drew it as the back-side half of a double pass (`passId` `'backSide'`, Renderer._renderTransparents): the
+   * second main-pass record of an object already filed once.
+   */
+  backSide: boolean;
+}
+
 /**
  * Submission records, reused frame after frame. The ledger keeps two: the frame in progress writes one while the last
  * completed frame's items stay intact in the other, so a read between or inside frames never sees a half-written frame.
  */
 interface RecordBuffer {
   /** Every record this buffer has created, in acquisition order; never shrinks. */
-  records: SubmissionRecord[];
+  records: PooledRecord[];
   /** The records filed this frame, in filing order (a pass nested inside a draw files before that draw). */
-  items: SubmissionRecord[];
+  items: PooledRecord[];
   acquired: number;
-  /**
-   * Per filed item, in filing order: 1 when three drew it as the back-side half of a double pass (`passId`
-   * `'backSide'`, Renderer._renderTransparents), the second main-pass record of an object already filed once.
-   * Grows by doubling, so a steady frame allocates nothing.
-   */
-  backSide: Uint8Array;
 }
 
 interface FrameState {
   mainScene: Object3D | null;
   buffer: RecordBuffer;
-  /** Items filed into `buffer.items` so far. */
+  /**
+   * Items filed into `buffer.items` so far. Not `items.length`: the frame overwrites the array in place and `exit()`
+   * truncates it once, since setting `length = 0` at the start of every frame would release its backing store.
+   */
   count: number;
   /** programHash → the type and description of the first item filed with it. */
   descriptions: Map<string, { type: string; description: string }>;
@@ -184,8 +190,8 @@ interface FrameState {
   startedAt: number;
 }
 
-/** A blank record; the property order is `SubmissionRecord`'s, which `frame({ items: true })` copies. */
-function newRecord(): SubmissionRecord {
+/** A blank record: `SubmissionRecord`'s properties in its order (what `snapshotRecord` copies), then the ledger's own. */
+function newRecord(): PooledRecord {
   return {
     name: '',
     kind: 'other',
@@ -204,12 +210,20 @@ function newRecord(): SubmissionRecord {
     bones: 0,
     skeleton: null,
     morphTargets: 0,
+    backSide: false,
   };
 }
 
-function acquire(buffer: RecordBuffer): SubmissionRecord {
+function acquire(buffer: RecordBuffer): PooledRecord {
   if (buffer.acquired === buffer.records.length) buffer.records.push(newRecord());
   return buffer.records[buffer.acquired++]!;
+}
+
+/** A copy of a pooled record for `frame({ items: true })`: the `SubmissionRecord` fields, with a flags array of its own. */
+function snapshotRecord(record: PooledRecord): SubmissionRecord {
+  const { backSide: _backSide, ...copy } = record;
+  copy.flags = [...record.flags];
+  return copy;
 }
 
 /**
@@ -231,19 +245,16 @@ export class DrawCallLedger {
   private current: FrameState | null = null;
   private readonly contexts: RenderContext[] = [];
   private last: FrameSnapshot;
-  private lastItems: SubmissionRecord[] = [];
+  private lastItems: PooledRecord[] = [];
   private readonly buffers: [RecordBuffer, RecordBuffer] = [
-    { records: [], items: [], acquired: 0, backSide: new Uint8Array(256) },
-    { records: [], items: [], acquired: 0, backSide: new Uint8Array(256) },
+    { records: [], items: [], acquired: 0 },
+    { records: [], items: [], acquired: 0 },
   ];
   /** The buffer the next frame writes: never the one holding `lastItems`. */
   private write = 0;
   private readonly names = new DisplayNames();
-  /** This frame's registry reads, by material; cleared at frame boundaries and whenever `registry.keysRevision` moves. */
-  private readonly hashes = new Map<Material, MaterialHashes>();
-  private hashesRevision = -1;
-  private lastMaterial: Material | null = null;
-  private lastHashes: MaterialHashes | null = null;
+  /** This frame's registry reads, by material: at most one `registry.keys()` per material per frame (`PerFrameMemo`). */
+  private readonly hashes: PerFrameMemo<MaterialHashes>;
   private readonly annotations = new WeakMap<Object3D, Reason>();
   /** Frames entered: the marks below compare against it, so nothing is cleared between frames. */
   private frameStamp = 0;
@@ -266,12 +277,8 @@ export class DrawCallLedger {
   private readonly frameStarts: number[] = [];
   private framesSeen = 0;
   private lastScene: Object3D | null = null;
-  private graphStats: { objects: number; autoUpdatedMatrices: number; hiddenOriginals: number; at: number } = {
-    objects: 0,
-    autoUpdatedMatrices: 0,
-    hiddenOriginals: 0,
-    at: -1,
-  };
+  /** `framesSeen` at the last `rescan()`, or -1: the scene-graph statistics it wrote live in `last.js`. */
+  private rescannedAt = -1;
   private scheduler: { skippedRecently(): number } | null = null;
   private streamer: { stats(): { chunks: number; resident: number } } | null = null;
   private memoryStats: MemorySnapshot = emptySections().memory;
@@ -318,6 +325,7 @@ export class DrawCallLedger {
 
   constructor(options: DrawCallLedgerOptions = {}) {
     this.registry = options.registry ?? new MaterialRegistry();
+    this.hashes = new PerFrameMemo(this.registry, (material) => this.registry.keys(material));
     this.uses = new MaterialUses(this.registry);
     this.now = options.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
     this.budgetOverrides = options.budgets ?? {};
@@ -336,6 +344,8 @@ export class DrawCallLedger {
     this.renderer = renderer;
     this.backendInfo = detectBackend(renderer);
     this.last = emptyFrame(this.env());
+    // The blank snapshot holds no scene-graph statistics: the first frame recounts them.
+    this.rescannedAt = -1;
     // A detach() from inside a draw leaves the running render wrapper's exit() to take depth below 0; a re-attached
     // ledger must start from 0.
     this.depth = 0;
@@ -359,7 +369,7 @@ export class DrawCallLedger {
       // Paused: an overdraw count render, possibly inside a draw of the open frame (a measurement from a render hook).
       if (ledger.depth === 0 || ledger.current === null || ledger.paused)
         return originals.renderObject.apply(this, arguments as unknown as unknown[]);
-      const hashes = ledger.hashesOf(material);
+      const hashes = ledger.hashes.get(material);
       // Read before the call: three puts the override material's side back as renderObject returns.
       const sides = sideFactor(material, scene);
       const record = ledger.begin(object, material, group, hashes, sides, lightsNode);
@@ -498,13 +508,7 @@ export class DrawCallLedger {
         ctx.localSpaceDraws.push({ object: this.names.of(o, scene, paths), material: reader.name || reader.type });
     });
     this.hintContext = ctx;
-    // The scene object itself is not part of the count.
-    this.graphStats = {
-      objects: objects - 1,
-      autoUpdatedMatrices: auto - 1,
-      hiddenOriginals: hidden,
-      at: this.framesSeen,
-    };
+    this.rescannedAt = this.framesSeen;
     const memory = this.renderer?.info.memory;
     const info = {
       textures: memory?.textures ?? 0,
@@ -534,14 +538,10 @@ export class DrawCallLedger {
       shadowMapType: this.renderer?.shadowMap?.type,
       ...(frameBuffers ? { frameBufferTargets: frameBuffers } : {}),
     });
+    // The scene object itself is not part of the count.
     this.last = {
       ...this.last,
-      js: {
-        ...this.last.js,
-        objects: this.graphStats.objects,
-        autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices,
-        hiddenOriginals: this.graphStats.hiddenOriginals,
-      },
+      js: { ...this.last.js, objects: objects - 1, autoUpdatedMatrices: auto - 1, hiddenOriginals: hidden },
       memory: this.memoryNow(),
     };
     this.last = {
@@ -624,9 +624,7 @@ export class DrawCallLedger {
 
   /** The last completed frame. `items: true` adds copies of its records: they stay valid however long they are held. */
   frame(options: { items?: boolean } = {}): FrameSnapshot {
-    return options.items
-      ? { ...this.last, items: this.lastItems.map((i) => ({ ...i, flags: [...i.flags] })) }
-      : this.last;
+    return options.items ? { ...this.last, items: this.lastItems.map(snapshotRecord) } : this.last;
   }
 
   budget(options: { maxSubmissions: number }): BudgetResult {
@@ -765,7 +763,6 @@ export class DrawCallLedger {
     let particles = 0;
     const objects = this.mainObjects;
     objects.untagged = objects['unique-material'] = objects['static-unbatched'] = objects.sprite = 0;
-    const backSide = state.buffer.backSide;
     // An index loop, deliberately, not `for…of`: this walks every submission of every frame, on the same V8
     // iterator-elision boundary a sibling walk fell off (a 40-byte iterator result per submission: 0.80 -> 1.20 MB per
     // frame at 10k). See `skinningOf` in sections.ts; test/unit/ledger-hot-path.test.ts guards every such walk.
@@ -778,7 +775,7 @@ export class DrawCallLedger {
       // Objects, not submissions, for the draw-call hints: a shadow map or a nested pass draws an object again, and three's
       // back-side pass of a double-sided transmissive material draws it twice in the main pass itself.
       if (
-        backSide[k] === 0 &&
+        !i.backSide &&
         (i.reason === 'untagged' ||
           i.reason === 'unique-material' ||
           i.reason === 'static-unbatched' ||
@@ -794,18 +791,20 @@ export class DrawCallLedger {
     this.clearHashes();
     this.framesSeen++;
     this.lastScene = state.mainScene;
-    if (this.graphStats.at < 0 || this.framesSeen - this.graphStats.at >= RESCAN_EVERY) this.rescan();
+    if (this.rescannedAt < 0 || this.framesSeen - this.rescannedAt >= RESCAN_EVERY) this.rescan();
     const intervals: number[] = [];
     for (let i = 1; i < this.frameStarts.length; i++) intervals.push(this.frameStarts[i]! - this.frameStarts[i - 1]!);
     intervals.sort((a, b) => a - b);
     const frameMs = intervals.length ? intervals[Math.floor(intervals.length / 2)]! : 0;
+    // The scene-graph statistics are the last rescan's (this frame's, when it rescanned above).
+    const graph = this.last.js;
     const js: JsSnapshot = {
       renderMs: renderEnd - state.startedAt,
       ledgerMs: 0,
       frameMs,
-      objects: this.graphStats.objects,
-      autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices,
-      hiddenOriginals: this.graphStats.hiddenOriginals,
+      objects: graph.objects,
+      autoUpdatedMatrices: graph.autoUpdatedMatrices,
+      hiddenOriginals: graph.hiddenOriginals,
       skipped: this.scheduler?.skippedRecently() ?? 0,
     };
     this.last = buildFrame({
@@ -857,9 +856,8 @@ export class DrawCallLedger {
     // walked is the one the main pass draws, so its lights replace theirs instead of adding to them.
     if (main) state.visibleLights.length = 0;
     let casting: WalkedLight[] | null = null;
-    scene.traverseVisible((o) => {
+    visitLights(scene, (o) => {
       const light = o as WalkedLight;
-      if (!light.isLight) return;
       if (main) state.visibleLights.push(light);
       if (light.castShadow && light.shadow?.camera) (casting ??= []).push(light);
     });
@@ -888,31 +886,9 @@ export class DrawCallLedger {
     state.lights = infos;
   }
 
-  /** The registry's cached hashes for `material`, read at most once per material per frame (`hashesOf`). */
-  private hashesOf(material: Material): MaterialHashes {
-    const revision = this.registry.keysRevision;
-    if (revision !== this.hashesRevision) {
-      // invalidate() or forget() dropped cached keys: read every material again, even mid-frame.
-      this.clearHashes();
-      this.hashesRevision = revision;
-    } else if (material === this.lastMaterial) {
-      return this.lastHashes!;
-    }
-    let hashes = this.hashes.get(material);
-    if (hashes === undefined) {
-      hashes = this.registry.hashesOf(material);
-      this.hashes.set(material, hashes);
-    }
-    this.lastMaterial = material;
-    this.lastHashes = hashes;
-    return hashes;
-  }
-
   /** Between frames nothing here holds a material: neither the hash memo nor the uses' resolved canonicals. */
   private clearHashes(): void {
     this.hashes.clear();
-    this.lastMaterial = null;
-    this.lastHashes = null;
     this.uses.clear();
   }
 
@@ -924,7 +900,7 @@ export class DrawCallLedger {
     hashes: MaterialHashes,
     sides: number,
     lightsNode: unknown,
-  ): SubmissionRecord {
+  ): PooledRecord {
     const state = this.current!;
     const context = this.contexts[this.contexts.length - 1]!;
     const reason = reasonOf(object, material, group, context.root, hashes.unsupported, this.annotations.get(object));
@@ -1016,7 +992,7 @@ export class DrawCallLedger {
 
   /** Snapshots the draw state into the record once the renderer returned, then files it as this frame's next item. */
   private file(
-    record: SubmissionRecord,
+    record: PooledRecord,
     object: Object3D,
     material: Material,
     group: DrawGroup | null,
@@ -1026,16 +1002,10 @@ export class DrawCallLedger {
   ): void {
     record.expectedGpuDraws = expectedGpuDraws(object, sides, this.backendInfo, material, group);
     writeInstanceCounts(object, record, material, group);
+    record.backSide = backSide;
     const state = this.current;
     if (state === null) return; // detached inside the draw
-    const buffer = state.buffer;
-    if (state.count >= buffer.backSide.length) {
-      const grown = new Uint8Array(buffer.backSide.length * 2);
-      grown.set(buffer.backSide);
-      buffer.backSide = grown;
-    }
-    buffer.backSide[state.count] = backSide ? 1 : 0;
-    buffer.items[state.count++] = record;
+    state.buffer.items[state.count++] = record;
     if (!state.descriptions.has(record.programHash))
       state.descriptions.set(record.programHash, { type: record.materialType, description: hashes.description });
   }

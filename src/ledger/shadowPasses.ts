@@ -5,7 +5,7 @@
  */
 
 /** What a shadow pass id is built from: the light's name, else its type. */
-export interface ShadowPassLight {
+interface ShadowPassLight {
   name: string;
   type: string;
 }

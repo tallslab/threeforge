@@ -1,4 +1,6 @@
 /** JSON Schemas (draft 2020-12) for the data an agent sees: the snapshot and the analyze/inspect documents. */
+import { SNAPSHOT_SCHEMA_VERSION } from '../ledger/snapshot.js';
+
 type Schema = Record<string, unknown>;
 /**
  * An object schema with named properties. `Schema` itself is `Record<string, unknown>`, and spreading that into
@@ -56,7 +58,7 @@ const materialIndex: Schema = {
 };
 
 const snapshotProperties: Record<string, Schema> = {
-  schemaVersion: { const: 3 },
+  schemaVersion: { const: SNAPSHOT_SCHEMA_VERSION },
   env: obj({
     three: string,
     backend: { enum: ['webgl2', 'webgpu', 'unknown'] },
@@ -197,9 +199,10 @@ export const SNAPSHOT_SCHEMA = {
 
 /**
  * The `schemaVersion` of the analyze, inspect and optimize documents. Their `$id` and title are built from it, so a
- * consumer caching schemas by `$id` never validates a v2 document against the v1 schema.
+ * consumer caching schemas by `$id` never validates a v2 document against the v1 schema. `analyze`, `inspect` and
+ * `optimize` stamp their documents with it (`AgentDocument`, `OptimizeDocument`).
  */
-const DOCUMENT_SCHEMA_VERSION = 2;
+export const DOCUMENT_SCHEMA_VERSION = 2 as const;
 
 const runInput = (first: Record<string, Schema>): Schema =>
   obj({

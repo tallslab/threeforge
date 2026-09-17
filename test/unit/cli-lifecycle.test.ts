@@ -3,16 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { analyzeAssetWithShots } from '../../src/cli/analyze.js';
-import { UsageError as ArgsUsageError } from '../../src/cli/args.js';
-import {
-  EnvironmentError as BrowserEnvironmentError,
-  type BrowserHandle,
-  type PlaywrightPage,
-} from '../../src/cli/browser.js';
+import type { BrowserHandle, PlaywrightPage } from '../../src/cli/browser.js';
 import { EnvironmentError, exitCodeFor, PageError, UsageError } from '../../src/cli/errors.js';
 import { inspectApp } from '../../src/cli/inspect.js';
 import { armExitWatchdog, Resources, withTimeout } from '../../src/cli/lifecycle.js';
-import { PageError as MeasurePageError } from '../../src/cli/measure.js';
 import { type StaticRoot, serveStatic } from '../../src/cli/server.js';
 import type { AnalyzeInput, InspectInput } from '../../src/cli/types.js';
 import { emptyFrame } from '../../src/ledger/snapshot.js';
@@ -35,12 +29,6 @@ describe('errors', () => {
     expect(exitCodeFor(new PageError('x'))).toBe(4);
     expect(exitCodeFor(new TypeError('x'))).toBe(4);
     expect(exitCodeFor('a string')).toBe(4);
-  });
-
-  it('keeps the classes importable from their old modules', () => {
-    expect(ArgsUsageError).toBe(UsageError);
-    expect(BrowserEnvironmentError).toBe(EnvironmentError);
-    expect(MeasurePageError).toBe(PageError);
   });
 });
 

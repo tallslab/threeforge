@@ -12,9 +12,7 @@ import type {
   TierChoice,
 } from './types.js';
 
-export { UsageError };
-
-export type SchemaChoice = 'snapshot' | 'analyze' | 'inspect' | 'optimize' | 'all';
+type SchemaChoice = 'snapshot' | 'analyze' | 'inspect' | 'optimize' | 'all';
 
 export type Command =
   | { name: 'help' }
@@ -27,9 +25,9 @@ export type Command =
   | { name: 'decoders'; dir: string };
 
 export const COMMANDS = ['analyze', 'inspect', 'optimize', 'explain', 'schema', 'mcp', 'decoders'] as const;
-export type CommandName = (typeof COMMANDS)[number];
+type CommandName = (typeof COMMANDS)[number];
 /** The commands that render and take a run input (`validateInput`). */
-export type RunCommandName = 'analyze' | 'inspect' | 'optimize';
+type RunCommandName = 'analyze' | 'inspect' | 'optimize';
 
 const BACKENDS: readonly Backend[] = ['webgl2', 'webgpu'];
 const TIERS: readonly TierChoice[] = ['auto', 'desktop', 'phone-mid', 'phone-low'];
@@ -50,14 +48,14 @@ export const CHOICES = {
 } as const;
 
 /** A numeric input bound. `min` is inclusive unless `minExclusive`; `max` is inclusive and absent when unbounded. */
-export interface NumberRange {
+interface NumberRange {
   readonly min: number;
   readonly minExclusive?: boolean;
   readonly max?: number;
   readonly integer: boolean;
 }
 
-export type RangeField =
+type RangeField =
   | 'budget'
   | 'frames'
   | 'timeout'
@@ -96,10 +94,10 @@ export const RANGES: Readonly<Record<RangeField, NumberRange>> = {
   textureQuality: { min: 1, max: 100, integer: true },
 };
 
-export type FlagKind = 'boolean' | 'value' | 'optional-value';
+type FlagKind = 'boolean' | 'value' | 'optional-value';
 
 /** One `--flag` of a command. */
-export interface FlagSpec {
+interface FlagSpec {
   /** Without the leading dashes. */
   readonly name: string;
   /** `boolean` never takes a value; `value` always does (`--f v` or `--f=v`); `optional-value` takes one only after `=` or when the next argument is a valid value. */
@@ -119,14 +117,14 @@ export interface FlagSpec {
   readonly description: string;
 }
 
-export interface PositionalSpec {
+interface PositionalSpec {
   readonly name: string;
   /** As printed in the usage: `<file.glb|.gltf>`. */
   readonly usage: string;
   readonly required: boolean;
 }
 
-export interface CommandSpec {
+interface CommandSpec {
   readonly name: CommandName;
   readonly positionals: readonly PositionalSpec[];
   readonly flags: readonly FlagSpec[];
@@ -395,7 +393,7 @@ export const COMMAND_SPECS: Readonly<Record<CommandName, CommandSpec>> = {
 };
 
 /** The flag as the usage shows it: `--no-compile`, `--frames N`, `--simplify [ratio]`. */
-export function flagUsage(flag: FlagSpec): string {
+function flagUsage(flag: FlagSpec): string {
   const name = flag.negatable && flag.defaultOn ? `--no-${flag.name}` : `--${flag.name}`;
   if (flag.kind === 'boolean') return name;
   return flag.kind === 'value' ? `${name} ${flag.value}` : `${name} [${flag.value}]`;
@@ -571,11 +569,8 @@ function scan(spec: CommandSpec, argv: readonly string[]): Scanned {
   return { positionals, values };
 }
 
-const show = (value: unknown): string => {
-  const text =
-    typeof value === 'string' ? JSON.stringify(value.length > 60 ? `${value.slice(0, 60)}…` : value) : String(value);
-  return text;
-};
+const show = (value: unknown): string =>
+  typeof value === 'string' ? JSON.stringify(value.length > 60 ? `${value.slice(0, 60)}…` : value) : String(value);
 
 function badValue(flag: FlagSpec, raw: string): UsageError {
   if (flag.choices)
@@ -754,13 +749,13 @@ export function parseArgs(argv: string[]): Command {
 }
 
 /** `an integer ≥ 1`, `a number from 0 to 100`, `a number in (0, 1]`. */
-export function describeRange(range: NumberRange): string {
+function describeRange(range: NumberRange): string {
   const kind = range.integer ? 'an integer' : 'a number';
   if (range.max === undefined) return `${kind} ${range.minExclusive ? '>' : '≥'} ${range.min}`;
   return range.minExclusive ? `${kind} in (${range.min}, ${range.max}]` : `${kind} from ${range.min} to ${range.max}`;
 }
 
-export interface ValidateOptions {
+interface ValidateOptions {
   /** Name fields in messages as input keys (`frames`, the default, for MCP and programmatic callers) or as CLI flags (`--frames`). */
   readonly names?: 'fields' | 'flags';
 }

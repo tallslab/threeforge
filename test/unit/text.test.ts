@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { budgetsFor } from '../../src/ledger/budgets.js';
 import { hintsFor } from '../../src/ledger/hints.js';
 import { buildFrame, emptyFrame, type SubmissionRecord } from '../../src/ledger/snapshot.js';
-import { capMessage, capName, MAX_MESSAGE_LENGTH, MAX_NAME_LENGTH } from '../../src/ledger/text.js';
+import {
+  capMessage,
+  capName,
+  describeError,
+  formatBytes,
+  formatCount,
+  MAX_MESSAGE_LENGTH,
+  MAX_NAME_LENGTH,
+} from '../../src/ledger/text.js';
 
 const env = {
   three: '0.186.0',
@@ -119,5 +127,36 @@ describe('hints.ts caps names and messages coming from HintContext', () => {
       message: '7 untagged meshes: tag.static() or tag.dynamic() them',
       objects: ['crate', 'barrel'],
     });
+  });
+});
+
+describe('formatCount / formatBytes', () => {
+  it('formats counts as the overlay always has: k below a million (no trailing .0), M above, integers below 1000', () => {
+    expect(formatCount(27)).toBe('27');
+    expect(formatCount(999)).toBe('999');
+    expect(formatCount(120_000)).toBe('120k');
+    expect(formatCount(6_400)).toBe('6.4k');
+    expect(formatCount(1_000_000)).toBe('1.0M');
+    expect(formatCount(2_345_678)).toBe('2.3M');
+    expect(formatCount(0)).toBe('0');
+    expect(formatCount(12.6)).toBe('13');
+  });
+
+  it('formats bytes as whole MiB without a unit', () => {
+    expect(formatBytes(28 * 1024 * 1024)).toBe('28');
+    expect(formatBytes(0)).toBe('0');
+    expect(formatBytes(3.6 * 1024 * 1024)).toBe('4');
+  });
+});
+
+describe('describeError', () => {
+  it('gives the message by default and the stack trace on request, and stringifies non-errors', () => {
+    const error = new Error('boom');
+    expect(describeError(error)).toBe('boom');
+    expect(describeError(error, 'stack')).toBe(error.stack);
+    error.stack = undefined;
+    expect(describeError(error, 'stack')).toBe('boom');
+    expect(describeError('plain')).toBe('plain');
+    expect(describeError(42, 'stack')).toBe('42');
   });
 });

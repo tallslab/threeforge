@@ -2,6 +2,7 @@
 // Usage: node scripts/bench-gate.mjs [webgl2|webgpu]   (FORGE_GPU=native also gates timing metrics)
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { baselinePath, readBaseline, resultPath } from './bench-common.mjs';
 
 /** Why a gated value is unusable: absent, or present but not a finite number. Shared so the two sites cannot drift. */
 const unusable = (value) => (value === undefined ? 'missing from results' : `${String(value)} is not a finite number`);
@@ -100,13 +101,6 @@ export function table(result) {
   return lines.join('\n');
 }
 
-export function resultPath(backend) {
-  return `bench/results/local.${backend}.json`;
-}
-export function baselinePath(backend) {
-  return `bench/baselines/${backend}.json`;
-}
-
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const backend = process.argv[2] ?? 'webgl2';
   if (!existsSync(resultPath(backend))) {
@@ -118,15 +112,13 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const result = JSON.parse(readFileSync(resultPath(backend), 'utf8'));
   console.log(`bench ${backend} · ${result.env?.gpu ?? '?'} · tier ${result.env?.tier ?? '?'}`);
   console.log(table(result));
-  if (!existsSync(baselinePath(backend))) {
+  const baseline = readBaseline(backend);
+  if (!baseline) {
     console.log(`no baseline at ${baselinePath(backend)}; run: pnpm bench:baseline ${backend}`);
     process.exit(0);
   }
   const gateTiming = process.env.FORGE_GPU === 'native';
-  const { failures } = compare(JSON.parse(readFileSync(baselinePath(backend), 'utf8')), result, {
-    gateTiming,
-    tolerance: 0.1,
-  });
+  const { failures } = compare(baseline, result, { gateTiming, tolerance: 0.1 });
   if (failures.length) {
     console.error(`REGRESSION (${failures.length}):\n  ${failures.join('\n  ')}`);
     process.exit(1);

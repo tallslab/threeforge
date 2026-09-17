@@ -1,7 +1,17 @@
-import { type Material, type Mesh, type Object3D, PerspectiveCamera, REVISION, type Texture } from 'three';
+import { type Object3D, PerspectiveCamera, REVISION } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
-import { DrawCallLedger, detectTier, MaterialRegistry, type Tier, tierInputFromNavigator, World } from 'threeforge';
-import { type BenchMetrics, MEASURED, metricsOf, type SceneId, WARM } from '../test/app/benchMetrics.js';
+import {
+  collectResources,
+  createLoader,
+  DrawCallLedger,
+  detectTier,
+  gpuName,
+  MaterialRegistry,
+  type Tier,
+  tierInputFromNavigator,
+  World,
+} from 'threeforge';
+import { type BenchMetrics, metricsOf, type SceneId, WARM } from '../test/app/benchMetrics.js';
 import { BENCH_SCENES } from '../test/app/scenes/index.js';
 import { probeFillRate } from './probe.js';
 import { type Backend, type DeviceEnv, type DeviceResult, normalizeEnvString, resultId } from './submit.js';
@@ -47,24 +57,11 @@ export async function createHost(want: Backend | 'auto', mount: HTMLElement): Pr
       renderer.setPixelRatio(1);
       renderer.setSize(800, 600, false);
       mount.replaceChildren(canvas);
-      const b = renderer.backend as {
-        isWebGPUBackend?: boolean;
-        device?: { adapterInfo?: { description?: string; device?: string; vendor?: string; architecture?: string } };
-        gl?: WebGL2RenderingContext;
-        hasFeature?: (n: string) => boolean;
-      };
-      let gpu: string = backend;
-      if (b.isWebGPUBackend) {
-        const info = b.device?.adapterInfo;
-        gpu =
-          info?.description || info?.device || [info?.vendor, info?.architecture].filter(Boolean).join(' ') || 'webgpu';
-      } else if (b.gl) {
-        const ext = b.gl.getExtension('WEBGL_debug_renderer_info');
-        gpu = ext ? String(b.gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : 'webgl2';
-      }
+      const gpu = gpuName(renderer);
+      const { hasFeature } = renderer.backend as { hasFeature?: (n: string) => boolean };
       const multiDraw =
-        backend === 'webgl2' && typeof b.hasFeature === 'function'
-          ? b.hasFeature.call(renderer.backend, 'WEBGL_multi_draw')
+        backend === 'webgl2' && typeof hasFeature === 'function'
+          ? hasFeature.call(renderer.backend, 'WEBGL_multi_draw')
           : false;
       const tier = detectTier(tierInputFromNavigator(gpu, navigator));
       return { renderer, canvas, backend, gpu, multiDraw, tier };
@@ -76,21 +73,11 @@ export async function createHost(want: Backend | 'auto', mount: HTMLElement): Pr
   throw new Error(`no usable backend: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
 }
 
-/** Frees every geometry, material and texture reachable from a finished scene (phones have little GPU memory). */
+/** Frees every geometry, material and texture reachable from a finished scene, its environment included (phones have little GPU memory). */
 function disposeScene(root: Object3D): void {
-  const textures = new Set<Texture>();
-  const materials = new Set<Material>();
-  root.traverse((o) => {
-    const m = o as Partial<Mesh>;
-    m.geometry?.dispose();
-    const mats = Array.isArray(m.material) ? m.material : m.material ? [m.material] : [];
-    for (const mat of mats) materials.add(mat);
-  });
-  for (const mat of materials) {
-    for (const value of Object.values(mat as unknown as Record<string, unknown>))
-      if ((value as Texture | null)?.isTexture) textures.add(value as Texture);
-    mat.dispose();
-  }
+  const { geometries, materials, textures } = collectResources(root);
+  for (const g of geometries) g.dispose();
+  for (const m of materials) m.dispose();
   for (const t of textures) t.dispose();
 }
 
@@ -98,25 +85,6 @@ const median = (a: number[]): number => {
   const s = [...a].sort((x, y) => x - y);
   return s[Math.floor(s.length / 2)] ?? 0;
 };
-
-async function makeLoader(renderer: WebGPURenderer) {
-  const [{ GLTFLoader }, { DRACOLoader }, { KTX2Loader }, { MeshoptDecoder }] = await Promise.all([
-    import('three/addons/loaders/GLTFLoader.js'),
-    import('three/addons/loaders/DRACOLoader.js'),
-    import('three/addons/loaders/KTX2Loader.js'),
-    import('meshoptimizer/decoder'),
-  ]);
-  const loader = new GLTFLoader();
-  const draco = new DRACOLoader();
-  draco.setDecoderPath(url('_decoders/draco/'));
-  loader.setDRACOLoader(draco);
-  const ktx2 = new KTX2Loader();
-  ktx2.setTranscoderPath(url('_decoders/basis/'));
-  ktx2.detectSupport(renderer);
-  loader.setKTX2Loader(ktx2);
-  loader.setMeshoptDecoder(MeshoptDecoder);
-  return loader;
-}
 
 /** One scene, one variant: build, (optimized: prepare, compile, after, warmup), warm frames, measured frames, overdraw. */
 async function runOne(
@@ -138,7 +106,7 @@ async function runOne(
     renderer,
     camera,
     params: new URLSearchParams(),
-    loader: () => makeLoader(renderer),
+    loader: () => createLoader(renderer, { decoders: url('_decoders/') }),
     url,
     tier: host.tier,
   });
@@ -206,7 +174,6 @@ async function runOne(
   } finally {
     world.decompile();
     disposeScene(scene);
-    scene.environment?.dispose();
     ledger.detach();
     renderer.setSize(800, 600, false);
   }
@@ -250,5 +217,3 @@ export async function runBench(host: Host, options: RunOptions): Promise<DeviceR
   const now = new Date();
   return { schemaVersion: 1, kind: 'device', id: resultId(env, now), createdAt: now.toISOString(), env, scenes };
 }
-
-export { MEASURED };

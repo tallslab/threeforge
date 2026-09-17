@@ -1,14 +1,13 @@
-import { realpathSync } from 'node:fs';
-import { basename, dirname, isAbsolute, relative, resolve as resolvePath } from 'node:path';
+import { dirname, resolve as resolvePath } from 'node:path';
 import { VERSION } from '../version.js';
 import { analyzeAsset } from './analyze.js';
 import { DEFAULT_PARITY, validateInput } from './args.js';
 import { EnvironmentError, exitCodeFor, UsageError } from './errors.js';
 import { explain, REMEDIES } from './explain.js';
-import { entryExists } from './gltf-uris.js';
 import { inspectApp } from './inspect.js';
 import { type CliDeps, Resources } from './lifecycle.js';
 import { defaultOutputPath, optimizeAsset } from './optimize.js';
+import { assertGltfOutPath, entryExists, isInside, realPathOf } from './paths.js';
 import type { AnalyzeInput, InspectInput, OptimizeInput } from './types.js';
 import { cleanText } from './untrusted.js';
 
@@ -61,13 +60,6 @@ export const fail = (error: unknown, note?: string): ToolResult => {
   return { isError: true, content };
 };
 
-/** `target` is `base` itself or nested inside it: no `..` escape, and not a different absolute root. Callers pass
- *  already-canonicalised (`realish`) paths so a symlink cannot make this lie. */
-function isInside(base: string, target: string): boolean {
-  const rel = relative(base, target);
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-}
-
 /** A filesystem root (POSIX `/`, a Windows drive root like `C:\`): every absolute path is trivially "inside" it,
  *  so it cannot serve as a confinement boundary — unlike, say, the user's home directory, which is still a bounded,
  *  user-specific location and is not special-cased here. */
@@ -76,31 +68,9 @@ function isFsRoot(path: string): boolean {
 }
 
 /**
- * `realpathSync` for a `target` that may not exist yet: the nearest existing ancestor is canonicalised and the missing
- * segments appended (nothing exists at them, so none is a symlink). `null` when an entry exists but cannot be resolved,
- * a dangling or looping symlink a write would follow. The same rule as `realPathOf` in `gltf-uris.ts`.
- */
-function realish(target: string): string | null {
-  const pending: string[] = [];
-  let current = target;
-  for (;;) {
-    try {
-      const real = realpathSync(current);
-      return pending.length ? resolvePath(real, ...pending) : real;
-    } catch {
-      if (entryExists(current)) return null;
-      const parent = dirname(current);
-      if (parent === current) return null;
-      pending.unshift(basename(current));
-      current = parent;
-    }
-  }
-}
-
-/**
  * The MCP-only rule for `optimize_asset.out` (the CLI's `--out` is a local user's and trusted; an agent's is not).
  * Throws `UsageError` when `out` does not end in `.glb`/`.gltf`, sits outside both the input file's directory and the
- * working directory, or already exists without `overwrite: true`. Confinement is checked on `realish` paths, so a
+ * working directory, or already exists without `overwrite: true`. Confinement is checked on `realPathOf` paths, so a
  * symlink that leads outside a root is refused even when lexically contained, and a dangling symlink is refused
  * outright; the filesystem root never counts as a working directory (`isFsRoot`). `cwd` and `exists` are injectable.
  */
@@ -113,15 +83,15 @@ export function resolveOptimizeOut(
 ): string {
   const resolvedFile = resolvePath(cwd, file);
   const target = resolvePath(cwd, out ?? defaultOutputPath(resolvedFile));
-  if (!/\.(glb|gltf)$/i.test(target)) throw new UsageError(`out must end in .glb or .gltf (got ${out ?? target})`);
+  assertGltfOutPath(target, 'out', out ?? target);
   const fileDir = dirname(resolvedFile);
   const workingDir = resolvePath(cwd);
   const workingDirAllowed = !isFsRoot(workingDir);
-  const realTarget = realish(target);
+  const realTarget = realPathOf(target);
   if (realTarget === null)
     throw new UsageError(`out is a symlink that cannot be resolved, which a write would follow (got ${target})`);
   const insideRoot = (root: string): boolean => {
-    const realRoot = realish(root);
+    const realRoot = realPathOf(root);
     return realRoot !== null && isInside(realRoot, realTarget);
   };
   const insideFileDir = insideRoot(fileDir);

@@ -1,10 +1,11 @@
-import { formatCostRows, formatHints } from '../overlay/index.js';
+import { formatCostRows, formatHints } from '../ledger/report.js';
 import { describeChange } from './transform.js';
 import type { AgentDocument, OptimizeDocument } from './types.js';
 import { cleanLines, cleanText } from './untrusted.js';
+import { worstChangedPixels } from './verdict.js';
 
 /** Where a command prints: `process` in the CLI, anything with the two `write` methods in tests. */
-export interface OutputStreams {
+interface OutputStreams {
   readonly stdout: { write(chunk: string): unknown };
   readonly stderr: { write(chunk: string): unknown };
 }
@@ -57,7 +58,7 @@ export function summarize(doc: AgentDocument): string {
   // for a view that really did move a few pixels.
   if (doc.parity)
     lines.push(
-      `parity ${doc.parity.diffPct.toFixed(2)}% pixels changed over ${doc.parity.views.length} view${doc.parity.views.length === 1 ? '' : 's'} (threshold ${doc.parity.threshold}%) · ${doc.parity.views.reduce((most, v) => Math.max(most, v.changedPixels), 0)} changed pixels in the worst view`,
+      `parity ${doc.parity.diffPct.toFixed(2)}% pixels changed over ${doc.parity.views.length} view${doc.parity.views.length === 1 ? '' : 's'} (threshold ${doc.parity.threshold}%) · ${worstChangedPixels(doc.parity.views)} changed pixels in the worst view`,
     );
   if (doc.compile?.bake)
     lines.push(
@@ -96,7 +97,7 @@ export function summarizeOptimize(doc: OptimizeDocument): string {
         ? `, compiled ${v.original.after.totals.sceneSubmissions} → ${v.optimized.after.totals.sceneSubmissions}`
         : '';
     lines.push(
-      `verify (${v.backend}): parity ${v.parity.diffPct.toFixed(2)} % over ${v.parity.views.length} view${v.parity.views.length === 1 ? '' : 's'} (threshold ${v.parity.threshold} %) · ${v.parity.views.reduce((most, view) => Math.max(most, view.changedPixels), 0)} changed pixels in the worst view · submissions naive ${naive}${compiled} · load ${v.original.asset?.loadMs.toFixed(0)} → ${v.optimized.asset?.loadMs.toFixed(0)} ms`,
+      `verify (${v.backend}): parity ${v.parity.diffPct.toFixed(2)} % over ${v.parity.views.length} view${v.parity.views.length === 1 ? '' : 's'} (threshold ${v.parity.threshold} %) · ${worstChangedPixels(v.parity.views)} changed pixels in the worst view · submissions naive ${naive}${compiled} · load ${v.original.asset?.loadMs.toFixed(0)} → ${v.optimized.asset?.loadMs.toFixed(0)} ms`,
     );
     if (v.optimized.parity)
       lines.push(`optimized file compiled with parity ${v.optimized.parity.diffPct.toFixed(2)} %`);

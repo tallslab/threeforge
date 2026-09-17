@@ -1,7 +1,8 @@
 import { createReadStream, realpathSync, type Stats, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { extname, join, resolve, sep } from 'node:path';
+import { extname, join, resolve } from 'node:path';
 import { EnvironmentError } from './errors.js';
+import { isInside, realPathOf } from './paths.js';
 
 export interface StaticRoot {
   /** URL prefix, e.g. `/` or `/asset/`. Longest match wins. */
@@ -45,7 +46,7 @@ type Resolution = { status: 200; file: string; size: number } | { status: 403 | 
  */
 function resolveInRoot(root: ResolvedRoot, rel: string): Resolution {
   const file = resolve(join(root.base, rel));
-  if (file !== root.base && !file.startsWith(root.base + sep)) return { status: 403 };
+  if (!isInside(root.base, file)) return { status: 403 };
   let stats: Stats;
   try {
     stats = statSync(file);
@@ -53,13 +54,9 @@ function resolveInRoot(root: ResolvedRoot, rel: string): Resolution {
     return { status: 404 };
   }
   if (!stats.isFile()) return { status: 404 };
-  let real: string;
-  try {
-    real = realpathSync(file);
-  } catch {
-    return { status: 404 };
-  }
-  if (real !== root.baseReal && !real.startsWith(root.baseReal + sep)) return { status: 403 };
+  const real = realPathOf(file);
+  if (real === null) return { status: 404 };
+  if (!isInside(root.baseReal, real)) return { status: 403 };
   return { status: 200, file, size: stats.size };
 }
 
