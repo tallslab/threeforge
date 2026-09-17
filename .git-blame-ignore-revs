@@ -1,0 +1,3 @@
+# git blame --ignore-revs-file .git-blame-ignore-revs
+# Biome format pass
+f62e011277d9b693e79e7593bd0d7a95bf452fd3

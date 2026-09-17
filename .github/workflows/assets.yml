@@ -1,6 +1,6 @@
 name: assets
 # The weekly full-corpus run: everything `ci.yml` drops. `ci.yml`'s e2e job deliberately downloads nothing and so
-# excludes the 148 @corpus tests per project (296 across both backends, measured at 5bf1fdf) — the CLI and MCP agent surface on real
+# excludes the 148 @corpus tests per project (296 across both backends, measured at ec09216) — the CLI and MCP agent surface on real
 # models, ParticleBudget and the boss-fight half of ShadowBudget, the arena/biome/crowd/vat/warmup scenes, and
 # `assets.spec.ts` itself. They are covered here and nowhere else, so a red run here is a real regression even
 # though every pull request was green.
