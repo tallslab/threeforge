@@ -123,56 +123,30 @@ function markRows(attribute: BufferAttribute, start: number, count: number, mode
 }
 
 /**
- * Hardware instancing for geometry repeated many times, with per-instance frustum culling that `InstancedMesh` lacks:
+ * Hardware instancing for geometry repeated many times, with the per-instance frustum culling `InstancedMesh` lacks:
  * a BVH over instance boxes selects the visible set, which is copied to the front of `instanceMatrix` /
  * `instanceColor` and `count` is set. A row is written only when the instance it holds changes.
  *
- * **Nested passes keep a stable prefix.** Shadow maps and reflections render from inside a pass that has already
- * drawn the mesh (a shadow map from the first `receiveShadow` object's draw). In three r186:
- * - Above the uniform-buffer limit (`count * 64 > getUniformBufferLimit()`) the matrices live in one
- *   `InstancedInterleavedBuffer` shared by every render object of the mesh, and colours always in one attribute;
- *   their version and update ranges are copied by an `OnBeforeFrameUpdate` event once per frame per node builder
- *   (`nodes/accessors/Instance.js` ~41-69, ~175-199). A queued WebGPU write lands at once while a pass is submitted
- *   when it ends, so a nested pass that rewrote the rows an open pass drew would corrupt that pass.
- * - `Geometries.updateAttribute` (`renderers/common/Geometries.js` ~300-334) checks such a buffer for upload at most
- *   once per `info.render.calls`, which every `render()` advances, nested ones included, and nothing restores: a draw
- *   in the enclosing pass after a nested render that checked the buffer cannot upload rows written since.
- * So, per call at `PassTracker` depth d:
- * - d <= 1 (an outermost render, or no tracker): compact for the camera, skipped while the camera and the rows are
- *   unchanged (the main key, kept apart from the nested passes' key).
- * - d >= 2, the outermost render has not compacted the mesh yet: compact it for the main camera first (under either
- *   `nestedPasses` policy), so no later write in this frame rewrites rows a pass has uploaded.
- * - A shadow pass (`scene.overrideMaterial.isShadowPassMaterial`) keeps the enclosing pass's rows `[0, n)` and appends
- *   the instances **its own light** reaches: a directional or spot light's frustum after `shadow.updateMatrices(light)`,
- *   a point light's cube of half-size `light.distance || shadow.camera.far` (the six faces of `PointShadowNode`; its
- *   filter shadows up to that distance along the dominant axis). Every light of the frame is queried once, at the
- *   first shadow pass (rebuilt only when a light, its view or the instances changed: the nested key), into one
- *   deduplicated list in which each entry records the lights that reach it (`casterLightBits`, one bit per shadow camera of
- *   the frame; a camera past the 32nd carries no bit and its pass appends the whole list, a correct superset).
- *   A pass then appends its own light's entries **in that list's order**, so a light whose casters are the rows the
- *   tail already holds writes nothing — a point light's six faces always do, and so does any light whose set is a
- *   prefix of the pass before it. `writeRows` marks only rows that change, so the upload cost is one bounded write
- *   per shadow pass whose casters differ from the tail, and none otherwise.
- *   Per-light selection has to rewrite the tail because an `InstancedMesh` draws one contiguous range `[0, count)`:
- *   three r186's `RenderObject.getDrawParameters` takes `instanceCount` from `object.count` and leaves `firstInstance`
- *   at 0, which nothing else ever writes (`renderers/common/RenderObject.js` ~603-626), and neither backend offers a
- *   base instance. So a pass cannot skip an interior appended row the way a BatchedMesh zeroes a multi-draw slot.
- * - Update ranges. An outermost compaction (with a tracker) marks only the rows it changed (`addUpdateRange`). A write
- *   in a nested pass marks the whole matrix and colour buffers. A receiver's render object runs the instance
- *   `OnBeforeFrameUpdate` event before its `ShadowNode`: the event sits in the position stack, which
- *   `NodeBuilder.build` flows before its fragment/vertex loop (`NodeBuilder.js` ~3193), and `Node.build` registers
- *   update nodes in its setup branch. So the main pass's ranges are already synced into the shared buffer when the
- *   shadow render object's event replaces them with its own and uploads (`Instance.js:180-196`); back in the main pass
- *   the buffer is not checked again in that render call, and rows `[0, count)` would stay stale on the GPU. Colours
- *   always use a shared attribute synced the same way; matrices on the uniform-buffer path carry no ranges.
- * - Any other nested pass (a reflection) draws the enclosing pass's rows and appends nothing: instances outside the
- *   main camera's frustum are missing from reflections.
- * - `count` and `visibleIds` go back to the enclosing length when the nested render ends (a `PassTracker.atEnd`
- *   callback, or the tracker's reset after a render that threw), never in the mesh's own `onAfterRender`, which three
- *   calls before the ledger reads the draw.
- * `matrices` are in the space of the parent the level meshes are added to (`World` adds them to the scene and passes
- * scene-space matrices). The bounds cover every instance; `handle.refreshBounds()` recomputes them after moves.
- * The culling hook is the level meshes' own `onBeforeRender` (marked `FORGE_HOOK`; `InstancedMesh` has none to compose).
+ * Nested passes keep a stable prefix. In three r186 the matrices above the uniform-buffer limit and the colours live
+ * in buffers shared by every render object of the mesh, synced once per frame (`nodes/accessors/Instance.js` ~41-69,
+ * ~175-199) and checked for upload at most once per `info.render.calls` (`renderers/common/Geometries.js` ~300-334),
+ * and a queued WebGPU write lands while an open pass is still being submitted. So rows a pass has drawn are never
+ * rewritten while it is open. Per call at `PassTracker` depth d:
+ * - d <= 1 (an outermost render, or no tracker): compact rows `[0, n)` for the camera, skipped while the camera and
+ *   the rows are unchanged. Only these calls mark update ranges; a nested write marks the whole buffers, because a
+ *   nested render object's sync replaces the ranges the main pass has not uploaded yet (`Instance.js:180-196`).
+ * - d >= 2 before the outermost render compacted the mesh: compact for the main camera first, under either policy.
+ * - A shadow pass (`scene.overrideMaterial.isShadowPassMaterial`) keeps the enclosing rows and appends the casters
+ *   its own light reaches, from the frame's caster pool (see `ensureCasterPool`), in the pool's order so a tail that
+ *   already holds them is left alone. The tail has to hold exactly that light's casters: an `InstancedMesh` draws one
+ *   range `[0, count)` and nothing sets `firstInstance` (`renderers/common/RenderObject.js` ~603-626).
+ * - Any other nested pass (a reflection) draws the enclosing rows and appends nothing: instances outside the main
+ *   camera's frustum are missing from reflections.
+ * - `count` and `visibleIds` go back to the enclosing length when the nested render ends (`PassTracker.atEnd`), never
+ *   in the mesh's own `onAfterRender`, which three calls before the ledger reads the draw.
+ * `matrices` are in the space of the parent the level meshes are added to (`World`: the scene). The bounds cover every
+ * instance; `handle.refreshBounds()` recomputes them after moves. The culling hook is the level meshes' own
+ * `onBeforeRender` (marked `FORGE_HOOK`; `InstancedMesh` has none to compose).
  */
 export function createCulledInstancedMesh(
   geometry: BufferGeometry,
@@ -245,7 +219,6 @@ export function createCulledInstancedMesh(
 
   const visibleMask = new Uint8Array(n).fill(1);
 
-  // ---- rows: what the instance buffers hold ----
   /** Per level: the instance row k holds, -1 when unknown (level 0 starts with every instance in order). */
   const rowIds = levels.map((_, L) => {
     const rows = new Int32Array(n).fill(-1);
@@ -296,7 +269,6 @@ export function createCulledInstancedMesh(
     if (mesh.instanceColor) markRows(mesh.instanceColor, first * 3, (last - first + 1) * 3, colorMark);
   };
 
-  // ---- compaction for a camera ----
   let useLod = false;
   /** Where LOD distances are measured from, in the group's frame. */
   const eye = new Vector3();
@@ -353,12 +325,11 @@ export function createCulledInstancedMesh(
     }
   };
 
-  // ---- the frame's shadow casters ----
-  // The caster pool: every instance any shadow-casting light of the frame reaches, deduplicated, built once per frame
-  // at the first shadow pass. It is not a draw list -- no pass draws the pool itself. Each pass appends only the
-  // entries its own light reaches, which `casterLightBits` records as one bit per shadow camera (see `appendCasters`).
-  // These names were `union*` while every pass did append the whole set; they are the caster pool and its per-light
-  // bits now.
+  // The caster pool: every instance any shadow-casting light of the frame reaches (a directional or spot light's
+  // frustum, a point light's cube of half-size `light.distance || shadow.camera.far`, the six faces of
+  // `PointShadowNode`), deduplicated, built once per frame at the first shadow pass and rebuilt only when a light, its
+  // view or the instances changed. No pass draws the pool itself: each appends the entries its own light reaches,
+  // which `casterLightBits` records as one bit per shadow camera (see `appendCasters`).
   /** Every instance a shadow-casting light of the frame reaches, each once, in query order. */
   const casterIds = new Int32Array(n);
   let casterCount = 0;
@@ -486,8 +457,7 @@ export function createCulledInstancedMesh(
       for (let i = 0; i < used; i++) shadowCameras.push((poolLights[i] as ShadowLight).shadow!.camera);
     }
     // Identity, not equality: two lights sharing one `LightShadow.camera` object would give the second the first's
-    // bit and lose its own casters. three's own API never shares a shadow camera (`Light.copy` clones the shadow), so
-    // this is theoretical -- but it was harmless before each pass appended only its own light's entries, and is not now.
+    // bit and lose its own casters. three's own API never shares a shadow camera (`Light.copy` clones the shadow).
     let index = shadowCameras.indexOf(camera);
     if (index < 0) {
       // A shadow camera no listed light owns (or a renderer without `lighting`): cover it too, and rebuild next frame.
@@ -532,7 +502,6 @@ export function createCulledInstancedMesh(
     for (let L = 0; L < levelCount; L++) writeRows(L, layerBase[at + L]!);
   };
 
-  // ---- open passes ----
   /** Per layer and level: the length the layer kept (-1 on level 0 for a compaction) and the length it left. */
   const layerBase: number[] = [];
   const layerCount: number[] = [];
@@ -580,8 +549,7 @@ export function createCulledInstancedMesh(
     const at = layers.push(depth) * levelCount;
     for (let L = 0; L < levelCount; L++) layerBase[at + L] = layerCount[from + L]!;
     if (scene !== null && (scene.overrideMaterial as { isShadowPassMaterial?: boolean } | null)?.isShadowPassMaterial === true) {
-      // `ensureCasterPool` brings the pool up to date and must run before `appendCasters` reads it; hoisted so the
-      // order is visible instead of resting on arguments being evaluated first.
+      // `ensureCasterPool` must run before `appendCasters` reads the pool.
       const index = ensureCasterPool(renderer as RendererLike, scene, camera, this);
       appendCasters(at, this, camera, index);
     } else {

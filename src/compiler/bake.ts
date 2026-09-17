@@ -122,16 +122,10 @@ const CARRIED: Record<string, readonly number[]> = { position: [3], normal: [3],
 /**
  * The first attribute of `geometry` the bake does not carry faithfully, or null: one outside `position`, `normal`,
  * `tangent` (three or four components), `uv` to `uv3` (two) and `color` (three), or one of those with another item
- * size. The bake writes colour as three components, so a four-component colour (glTF's RGBA `COLOR_0`) loses its alpha,
- * which three multiplies into the diffuse colour (NodeMaterial.setupDiffuseColor reads `vertexColor()` as a vec4). Any
- * other attribute (a custom one a node material reads with `attribute()`, feature ids) is dropped.
- *
- * `vertexColors` is the material's flag (default true). With it false the bake drops `color` altogether, which is
- * faithful only when nothing reads it: `builtInReads` says three's own code is all that reads the geometry (a built-in
- * material class with no instance function and no node in any slot; `readsOnlyBuiltInAttributes` in batchStatics.ts),
- * and then the flag decides (setupDiffuseColor, NodeMaterial.js:839, is three r186's only reader). Otherwise a
- * `colorNode = vertexColor()`, an `attribute('color')` or an overridden method may read it, so `color` counts, of any
- * size. Default false: an allowlist, since a colour dropped under a reader is visible and a group left to batching is not.
+ * size. A four-component colour (glTF's RGBA `COLOR_0`) would lose the alpha three multiplies into the diffuse colour
+ * (NodeMaterial.setupDiffuseColor reads `vertexColor()` as a vec4). With `vertexColors` false the bake drops `color`,
+ * which is faithful only when `builtInReads` says three's own code is all that reads the geometry (`bakeProvesReads`;
+ * NodeMaterial.js:839 is three r186's only reader); otherwise a node or an overridden method may read it, so it counts.
  */
 export function unbakeableAttribute(geometry: BufferGeometry, vertexColors = true, builtInReads = false): string | null {
   for (const name of Object.keys(geometry.attributes)) {
@@ -449,22 +443,12 @@ function trianglesOverlap(xy: Float64Array, i: number, j: number, tolerance: num
 
 /**
  * Coplanar contact: triangles are grouped by plane, split into the two facing sides, and each side is merged into
- * islands (polygons) along shared edges. An island is paired only when it covers its region exactly once, so that its
- * outline (the edges used once, sorted) bounds exactly that region:
- * - an island with an edge used three or more times is skipped: that edge drops out of the outline, so a doubled box
- *   beside a longer one could share an outline with the longer one's top;
- * - an island without outline edges is skipped: a region covered twice with different triangulations fuses into one
- *   island whose every edge is used twice, and its empty outline would match any other such region's;
- * - a pair whose islands have overlapping triangles (`coversOnce`) is kept: overlapping triangles can share every edge
- *   at most twice and still double an area behind a matching outline.
- * With every edge used at most twice the once-used edges are the region's boundary, and without overlaps two islands
- * with the same boundary cover the same region, whatever their triangulations. Equal non-empty outlines on the same
- * side would be duplicates (one stays, only among `removable` entries), but islands sharing outline edges fuse into one,
- * so that check only guards the invariant; exact duplicates are removed before this pass. An island whose outline
- * equals an island's on the other side is a coincident, opposite pair. It is a seam (both go) only when the two
- * islands' entries are disjoint, `seamSafe` holds for every entry involved (closed, manifold, outward, front-side,
- * opaque, casting no shadow) and both islands cover their region once; otherwise both are `kept`. With `seamSafe` null
- * (contact removal off) no pair is judged. Partial overlaps are left alone (invisible cost, never a visible hole).
+ * islands along shared edges. An island's outline (its edges used exactly once, sorted) bounds its region only when no
+ * edge is used three or more times and some edge is used once, and two islands with equal outlines cover the same
+ * region only when neither overlaps itself (`coversOnce`); an island failing either is left alone. Equal outlines on
+ * the same side are duplicates (one stays, among `removable` entries only); equal outlines on opposite sides are a
+ * seam, and both go only when the islands' entries are disjoint, `seamSafe` holds for every entry involved and both
+ * cover once, else both are `kept`. With `seamSafe` null no pair is judged. Partial overlaps are left alone.
  */
 function coincidentIslands(
   g: Gathered,
@@ -692,7 +676,7 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
   let kept: number[] = [];
   let keptDuplicates: number[] = [];
 
-  // 1. Position identity: vertices within `tolerance` share a place (`placeIds`, locked vertices included) and a posId
+  // Position identity: vertices within `tolerance` share a place (`placeIds`, locked vertices included) and a posId
   // (locked vertices keep their own, so no rule joins or removes their triangles).
   const inv = 1 / opts.tolerance;
   const placeIds = new Uint32Array(vertexCount);
@@ -733,7 +717,7 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
     return true;
   };
 
-  // 2. Contact seams and duplicates on coplanar islands (see coincidentIslands).
+  // Contact seams and duplicates on coplanar islands (see coincidentIslands).
   const removedTriangle = new Uint8Array(triangleCount);
   const triangleLocked = (t: number): boolean => g.locked[g.index[t * 3]!] === 1;
   // Triangles on the same three places, in index order, whatever their winding or entry (locked ones included).
@@ -823,7 +807,7 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
     }
   }
 
-  // 3. Buried faces (opt-in): every ray from the face's front, over the hemisphere, hits opaque geometry within
+  // Buried faces (opt-in): every ray from the face's front, over the hemisphere, hits opaque geometry within
   // `distance`. Only faces of `occludes` entries block, only on their back side (see the raycast), and only faces of
   // `removable` entries are removed.
   if (buried) {
@@ -843,8 +827,7 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
       const n = new Vector3();
       const t1 = new Vector3();
       const t2 = new Vector3();
-      // Scratch for the per-candidate second edge and ray origin: the loop below runs once per surviving face of every
-      // opaque front-side entry, so a `clone()` there is one allocation per face.
+      // Scratch for the per-candidate edge and ray origin: the loop below runs once per surviving face.
       const edge = new Vector3();
       const origin = new Vector3();
       const eps = Math.max(opts.tolerance * 10, 1e-5);
@@ -877,7 +860,7 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
         b.fromArray(g.position, g.index[t * 3 + 1]! * 3);
         c.fromArray(g.position, g.index[t * 3 + 2]! * 3);
         n.copy(b).sub(a).cross(edge.copy(c).sub(a)).normalize();
-        // The centroid, lifted `eps` along the face normal: the same value the two clones built, in one vector.
+        // The centroid, lifted `eps` along the face normal.
         origin.copy(a).add(b).add(c).multiplyScalar(1 / 3).addScaledVector(n, eps);
         if (!blocked(origin, n)) continue;
         removedTriangle[t] = 1;
@@ -892,7 +875,7 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
   for (const t of keptDuplicates) if (!removedTriangle[t]) report.keptDuplicateFaces++;
   keptDuplicates = [];
 
-  // 4. Weld: same posId, normals and tangent directions within normalAngle, identical tangent w and uv, colours within colorTolerance.
+  // Weld: same posId, normals and tangent directions within normalAngle, identical tangent w and uv, colours within colorTolerance.
   const remap = new Int32Array(vertexCount).fill(-1);
   const buckets = new Map<number, number[]>(); // posId -> output vertex ids
   const outPosition: number[] = [];

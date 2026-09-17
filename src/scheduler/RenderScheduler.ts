@@ -14,12 +14,10 @@ export interface SchedulerMixer {
 }
 
 /**
- * Reflects three r186's private `AnimationMixer`/`AnimationAction` fields (not part of three's public types, so
- * they are read through an `unknown` cast rather than declared on `SchedulerMixer`): `AnimationMixer.js` ~201-202
- * (`_actions`, active actions stored first then inactive ones; `_nActiveActions`, ~271's `_isActiveAction` checks
- * an action's cache index against it). `AnimationAction.js`'s `_startTime` is set by `startAt()` (~246) and
- * cleared at construction (~73) and by `reset()` (~209, called from `play()`). Pinned by the canary test in
- * test/unit/render-scheduler.test.ts.
+ * three r186's private `AnimationMixer`/`AnimationAction` fields, read through an `unknown` cast: `_actions` stores
+ * the active actions first and `_nActiveActions` counts them (`AnimationMixer.js` ~201-202); `_startTime` is set by
+ * `startAt()` and cleared by `reset()` (`AnimationAction.js` ~246, ~209). A canary test in
+ * test/unit/render-scheduler.test.ts pins them.
  */
 interface MixerInternals {
   _actions: ActionInternals[];
@@ -33,21 +31,12 @@ interface ActionInternals {
 }
 
 /**
- * A mixer is animating when an active action (`_actions[0.._nActiveActions)`) is actually running
- * (`isRunning()`), or is scheduled to start later (`_startTime !== null`). `AnimationMixer.js` ~233's
- * `stats.actions.inUse` getter returns `_nActiveActions` directly with no filtering, so it keeps counting a
- * finished `LoopOnce` action that stays active — `clampWhenFinished` pauses it (`AnimationAction.js` ~771),
- * without clamping it is only disabled (~772), and neither removes it from `_actions`. `isRunning()` (~220)
- * requires enabled, not paused, `timeScale !== 0` and `_startTime === null`, so it is false in both cases: that
- * is the bug this replaces. Falls back to `stats.actions.inUse` when `_actions` / `_nActiveActions` are absent
- * (mixer-like test doubles that do not model three's internals). `isRunning()` does not consult `weight`, so an
- * active, enabled, unpaused action with `weight === 0` still counts as running here — intentional, not a gap:
- * `fadeIn()` starts its target action at weight 0, and skipping a tick would miss the start of the fade.
- *
- * An enabled action with a weight fade under way (`_weightInterpolant !== null`) counts too, paused or not:
- * `_updateWeight` (~638) evaluates the interpolant whenever the action is enabled, so a clamped (paused) clip given
- * `fadeOut()` blends its pose back over the fade although `isRunning()` is false. A time-scale fade on a paused action
- * does not count: `_updateTimeScale` (~675) returns 0 without evaluating it.
+ * A mixer is animating when an active action (`_actions[0.._nActiveActions)`) is running (`isRunning()`), scheduled
+ * to start (`_startTime !== null`), or enabled with a weight fade under way (`_weightInterpolant !== null`: a clamped
+ * clip given `fadeOut()` still blends although `isRunning()` is false). `stats.actions.inUse` keeps counting a
+ * finished `LoopOnce` action, which stays in `_actions` paused or disabled, so it is only the fallback for mixer-like
+ * doubles without three's internals. An action at `weight === 0` still counts: `fadeIn()` starts its target there, and
+ * skipping that tick would miss the start of the fade. A time-scale fade on a paused action does not count.
  */
 function isMixerAnimating(mixer: SchedulerMixer): boolean {
   const internals = mixer as unknown as Partial<MixerInternals>;
@@ -185,7 +174,7 @@ export class RenderScheduler {
     this.lastReason = reason;
     this.onRender?.(delta);
     this.renderer.render(this.scene, this.camera);
-    // Rendering can change what we compare (three updates the camera's matrices and, on its first WebGPU frame,
+    // Rendering can change what is compared (three updates the camera's matrices and, on its first WebGPU frame,
     // its projection): re-baseline on the state the frame was drawn with.
     this.cameraChanged();
     this.watchedChanged();

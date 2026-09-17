@@ -71,13 +71,8 @@ export function failingViews(views: Parity['views'], threshold: number): Parity[
 }
 
 /**
- * The parity verdict for a set of views.
- *
- * A threshold of 0 means exactly that, and is judged on `changedPixels` rather than on the percentage: `diffPct` is
- * rounded to three decimals, so at the harness's 1280x720 canvas it reads `0.000` for anything up to 4 changed
- * pixels of 921,600. Comparing the rounded percentage let `--parity 0` report `pass: true` and exit 0 while pixels
- * moved — the tool has to mean zero when it says zero, because agents act on this number. A non-zero
- * threshold is a percentage and is still compared as one.
+ * The parity verdict for a set of views. A threshold of 0 is judged on `changedPixels`, not on `diffPct`, which is
+ * rounded to three decimals and reads `0.000` for up to 4 changed pixels of 921,600: zero must mean zero pixels changed.
  */
 export function parityOf(views: Parity['views'], threshold: number): Parity {
   const diffPct = views.length ? Math.max(...views.map((v) => v.diffPct)) : 0;

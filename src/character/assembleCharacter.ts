@@ -114,9 +114,9 @@ function readTexels(texture: Texture | null | undefined, fallback: Color | undef
 }
 
 /**
- * The PolyMorph lesson: merge equipped gear onto the shared skeleton so a character is one skinned mesh with one
- * material and one atlas. Equipping changes the vertex buffer, never the draw count. Parts are matched to the
- * rig by bone name, so each part may come from its own export with its own bone order.
+ * Merge equipped gear onto the shared skeleton so a character is one skinned mesh with one material and one atlas.
+ * Equipping changes the vertex buffer, never the draw count. Parts are matched to the rig by bone name, so each part
+ * may come from its own export with its own bone order.
  */
 export function assembleCharacter(options: AssembleOptions): AssembledCharacter {
   const { skeleton, wardrobe } = options;

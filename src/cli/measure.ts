@@ -8,14 +8,10 @@ import { cleanText, sanitizeDeep } from './untrusted.js';
 export { PageError };
 
 /**
- * `page.evaluate` of an expression, bounded by `timeout` ms: a page that never answers becomes a PageError naming
- * `what`. A *resolved* value goes through `sanitizeDeep` before it reaches the caller: `inspect`'s target is any
- * page, not necessarily one that used threeforge's own name/message caps (`src/ledger/text.ts`), so this is the
- * one place every value a page hands back to the CLI is bounded and cleaned before it can reach a document or the
- * terminal. A *rejected* `page.evaluate` (a `window.__threeforge` hook that throws inside `compile()` or
- * `frameAsync()`) carries the same untrusted page text through its error message instead of a return value —
- * that message is cleaned the same way and re-thrown as a `PageError`, so this function has exactly one way to
- * fail and it is always safe to print or return.
+ * `page.evaluate` of an expression, bounded by `timeout` ms. A resolved value goes through `sanitizeDeep`: `inspect`'s
+ * target is any page, so this is the one place every value a page hands back is bounded and cleaned. A rejected
+ * `page.evaluate` carries page text in its message, which is cleaned and re-thrown as a `PageError`, so the only
+ * failure is one that is safe to print or return.
  */
 export function evaluateWithin<R>(page: PlaywrightPage, what: string, timeout: number, expression: string): Promise<R> {
   return withTimeout(what, timeout, async () => {
@@ -136,10 +132,8 @@ export async function measureViaHook(page: PlaywrightPage, frames: number, timeo
 }
 
 /**
- * Wait for an expression (a string Playwright evaluates in the page until truthy); a timeout becomes a PageError
- * with `what`. The predicate can also throw mid-evaluation — e.g. a page that defines a getter on the property
- * being checked — so the detail is cleaned the same way as a rejected `page.evaluate` (`evaluateWithin`) before
- * it is embedded in the `PageError`.
+ * `page.waitForFunction` of `predicate`; a timeout becomes a `PageError` naming `what`. The predicate can throw
+ * mid-evaluation (a getter on the checked property, say), so the detail is cleaned like a rejected `page.evaluate`.
  */
 export async function waitFor(page: PlaywrightPage, predicate: string, timeout: number, what: string): Promise<void> {
   try {

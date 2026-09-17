@@ -2,19 +2,10 @@ import { MAX_MESSAGE_LENGTH } from '../ledger/text.js';
 import { EnvironmentError, PageError, UsageError } from './errors.js';
 
 /**
- * Cleans text that came from a glTF asset or a page the CLI does not control before it reaches a terminal or an
- * agent's JSON document. A page can return a hint message hundreds of kilobytes long (an "IGNORE ALL PREVIOUS
- * INSTRUCTIONS" text, say); it is bounded and cleaned before it reaches the document or the terminal.
- *
- * `cleanText` handles one string: a name, a stderr line, a page error. `sanitizeDeep` walks an arbitrary
- * `page.evaluate` result that *resolved* (the whole thing is untrusted for `inspect`, whose target is any page,
- * not necessarily one using threeforge's own capping in `src/ledger/text.ts`). `describeError` covers the other
- * half of that same threat model: a `page.evaluate` (or `waitForFunction`) that *rejects* — a hook that throws
- * inside `compile()`/`frameAsync()`, or a getter that throws when read — carries page text through an exception,
- * not a resolved value, so it needs its own cleaning at every sink that prints or returns an error.
- *
- * Neither function is a substitute for treating the values as data: see the MCP "data, not instructions" note in
- * `src/cli/mcp.ts`.
+ * Cleans text from a glTF asset or a page the CLI does not control before it reaches a terminal or an agent's JSON
+ * document: a page can hand back a hint message hundreds of kilobytes long, escape codes, or invisible characters.
+ * `cleanText` handles one string, `sanitizeDeep` a resolved `page.evaluate` value, `describeError` a rejected one
+ * (page text carried through an exception). None of this makes the values instructions: see the note in `mcp.ts`.
  */
 
 /** CSI (`ESC [ params intermediate final`), OSC (`ESC ] ... BEL` or `ESC ] ... ESC \`), and other Fe escape sequences. */
@@ -82,16 +73,10 @@ export interface SanitizeOptions {
 const SANITIZE_DEFAULTS: Required<SanitizeOptions> = { maxString: MAX_MESSAGE_LENGTH, maxArray: 256, maxDepth: 16 };
 
 /**
- * Recursively cleans a value that came from `page.evaluate`: every string through `cleanText`, every non-finite
- * number (`NaN`, `Infinity`, `-Infinity`, none of which JSON can represent) replaced with `0`, arrays and plain
- * objects capped in length/depth, and circular references broken instead of recursing forever. Functions, symbols
- * and `bigint` become `undefined` (dropped by `JSON.stringify`, same as today). Booleans, `null` and finite
- * numbers pass through unchanged.
- *
- * `0`, not `null`, for a non-finite number: `SNAPSHOT_SCHEMA` (`src/cli/schema.ts`) declares fields such as
- * `totals.sceneSubmissions`, `js.renderMs` and `js.frameMs` as non-nullable numbers, and this value can reach one
- * of them directly (`measure.ts` assigns `result.snapshot.js.renderMs = result.renderMs`) — `null` there would be
- * schema-invalid.
+ * Recursively cleans a `page.evaluate` result: strings through `cleanText`, non-finite numbers to `0`, arrays and
+ * objects capped in length and depth, circular references broken; functions, symbols and `bigint` become `undefined`.
+ * `0` rather than `null` because `SNAPSHOT_SCHEMA` declares fields such as `totals.sceneSubmissions` and `js.renderMs`
+ * as non-nullable numbers and a sanitized value can reach them directly.
  */
 export function sanitizeDeep(value: unknown, options: SanitizeOptions = {}): unknown {
   const opts: Required<SanitizeOptions> = { ...SANITIZE_DEFAULTS, ...options };
@@ -131,12 +116,8 @@ export function formatPageErrors(errors: readonly string[]): string {
 }
 
 /**
- * The line a CLI command's top-level catch writes to stderr (`index.ts`) for a failed run, and what `mcp.ts`'s
- * `fail()` puts in its JSON `error` field — cleaned and capped the same way as everything else here. A page's
- * text can reach an error message not only through a *resolved* `page.evaluate` value (which `sanitizeDeep`
- * already covers end to end) but through a *rejected* one — `evaluateWithin` and `waitFor` (`measure.ts`) both
- * wrap that rejection in a `PageError` with a cleaned message, but describing it for a human or an agent is a
- * second, separate formatting step that must not skip the cleaning too.
+ * The line a command's top-level catch writes to stderr and the `error` field of an MCP failure. A page's text can
+ * arrive through a rejected `page.evaluate` as well as a resolved one, so the message is cleaned here too.
  */
 export function describeError(error: unknown): string {
   const message = cleanText(error instanceof Error ? error.message : String(error));

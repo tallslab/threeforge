@@ -191,7 +191,7 @@ export interface SpriteFillOptions {
 
 /** The sprites to write, in draw order. */
 let order: Uint32Array = new Uint32Array(0);
-/** The sort key beside each entry of `order`. Float32, as the depths always were, so the same pairs still tie. */
+/** The sort key beside each entry of `order` (Float32, so equal depths still tie). */
 let keys: Float32Array = new Float32Array(0);
 let orderBuffer: Uint32Array = new Uint32Array(0);
 let keyBuffer: Float32Array = new Float32Array(0);
@@ -213,7 +213,7 @@ function insideSidePlanes(frustum: Frustum, sphere: Sphere): boolean {
  * Sorts `keys[0, n)` and the sprite indices beside them in `order` from the largest key down, leaving entries with
  * equal keys in the order they came in. A bottom-up merge through the scratch pair: it allocates nothing and calls
  * no comparator, where `%TypedArray%.prototype.sort(comparator)` copies the array into a JS array, sorts that and
- * copies it back. Stable, like the sort it replaces, so equal depths keep drawing in the same order.
+ * copies it back. Stable, so equal depths keep drawing in the same order.
  */
 function sortByDepth(n: number): void {
   let fromKeys = keys;

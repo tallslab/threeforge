@@ -103,8 +103,8 @@ export function lightingOf(lights: LightInfo[], items: SubmissionRecord[], shado
   }
   const passes = new Set<string>();
   let shadowSubmissions = 0;
-  // An index loop: see the note in `skinningOf` above. This is the walk that actually regressed — shrinking it
-  // stopped V8 eliding the iterator, and the frame started allocating one iterator result per submission.
+  // An index loop, as in `skinningOf` above: V8 elides the iterator here only some of the time; keep it a plain
+  // indexed loop.
   for (let i = 0; i < items.length; i++) {
     const item = items[i]!;
     if (item.reason === 'renderer-internal' || !item.pass.startsWith('shadow:')) continue;

@@ -5,18 +5,12 @@ import { cleanText } from './untrusted.js';
 
 /**
  * glTF-Transform's `NodeIO` (4.5) resolves every `images[].uri` and `buffers[].uri` against the input's directory
- * with `path.resolve(dir, decodeURIComponent(uri))` and no confinement, and writes a `.gltf` output's resources to
- * `path.join(dirname(out), decodeURIComponent(uri))` after `mkdir -p`. A `uri` of `../../.ssh/id_ed25519` embeds
- * that file into `<name>.forge.glb`. There is no pre-read hook, so `optimize` reads the JSON itself (`readGltfJson`)
- * and checks the URIs (`assertConfinedUris`) before `io.read`, and checks the URIs the writer will use before
- * `io.write` of a `.gltf` (`src/cli/optimize.ts`).
- *
- * `analyze` needs it too. The static server
- * (`src/cli/server.ts`) does confine every request to its roots by real path, but three's `LoaderUtils.resolveURL`
- * (r186, `node_modules/three/src/loaders/LoaderUtils.js`) returns an absolute `http(s)://` or protocol-relative
- * `//host/` URI *unchanged*, so `GLTFLoader` fetches it from the page and never reaches that server at all. So
- * `analyze` (and the MCP `analyze_asset`) runs the same `assertConfinedUris` before it opens a browser, and confines
- * the page to the served origin with a catch-all route as well (`routeGuard`, `src/cli/analyze.ts`).
+ * with no confinement, and writes a `.gltf` output's resources the same way after `mkdir -p`; a `uri` of
+ * `../../.ssh/id_ed25519` embeds that file into the output. There is no pre-read hook, so `optimize` reads the JSON
+ * itself (`readGltfJson`) and runs `assertConfinedUris` before `io.read` and before a `.gltf` `io.write`. `analyze`
+ * runs it too, before opening a browser: three's `LoaderUtils.resolveURL` (r186) returns an absolute `http(s)://` or
+ * `//host/` URI unchanged, so `GLTFLoader` would fetch it past the static server's confinement; `routeGuard`
+ * (`analyze.ts`) also pins the page to the served origin.
  */
 
 const GLB_MAGIC = 0x46546c67; // 'glTF'

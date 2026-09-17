@@ -53,7 +53,7 @@ export interface MainPassObjects {
 
 const mb = (n: number): string => `${(n / (1024 * 1024)).toFixed(0)} MB`;
 
-/** The base rules: what the six sections already know how to say. Later modules add their own. */
+/** The base hint rules, from what the six sections already report. Later modules add their own. */
 export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): Hint[] {
   const hints: Hint[] = [];
   // `message` may already embed an untrusted name (e.g. a point light's), and `objects` may carry one directly
@@ -73,7 +73,7 @@ export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): H
   const unique = f.byReason['unique-material'];
   const uniqueObjects = objectsOf('unique-material');
   if (unique && uniqueObjects > 20) push('drawCalls', 'info', 'unique-materials', `${uniqueObjects} meshes each with a material used once: share materials through the registry`, unique.top);
-  // The statics `unique-materials` used to count although another draw shares their material: the same threshold.
+  // Statics whose material another draw shares; the same threshold as `unique-materials`.
   const unbatched = f.byReason['static-unbatched'];
   const unbatchedObjects = objectsOf('static-unbatched');
   if (unbatched && unbatchedObjects > 20) push('drawCalls', 'info', 'static-unbatched', `${unbatchedObjects} static meshes draw one by one although other draws share their material: batch them with World (the draw that shares it may be one nothing can batch with: skinned, dynamic or already batched)`, unbatched.top);
@@ -89,11 +89,9 @@ export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): H
   if (f.skinning.bones > b.bones) push('skinning', 'warn', 'bones-over-budget', `${f.skinning.bones} skeleton bones updated on the CPU every frame, budget ${b.bones} for this tier`);
   if (f.skinning.submissions >= 50) push('skinning', 'info', 'skinned-crowd', `${f.skinning.submissions} skinned draws: bake the clips to an animation texture and instance the characters (AnimatedInstances)`);
   const shadowLights = ctx.pointShadowLights ?? [];
-  // One hint per code, not one per object: both this and transmissive scale with the scene (every visible
-  // shadow-casting point light, every transmissive mesh), and a large scene used to mean a large number of
-  // near-identical hints — and, before sanitizeDeep's array-cap fix, risked the (+N more) string marker landing
-  // in an array the JSON schema requires to be Hint objects. The message states the true count; objects holds
-  // only the first 5 names (capped as every other hint's objects already are, via push()).
+  // One hint per code, not one per object: shadow-casting point lights and transmissive meshes scale with the scene,
+  // and the JSON schema requires every entry of `hints` to be a Hint object. The message states the true count;
+  // `objects` holds the first 5 names (capped like every other hint's, via push()).
   if (shadowLights.length > 0) {
     const n = shadowLights.length;
     const message = n === 1 ? `1 point light renders 6 shadow faces per frame: use a spot light or freeze its map` : `${n} point lights render 6 shadow faces per frame: use spot lights or freeze their maps`;

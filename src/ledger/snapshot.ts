@@ -164,7 +164,6 @@ export interface MeasuredMemory {
   textures: { count: number; bytes: number };
   /** `geometries`, and `attributesSize + indexAttributesSize`: the vertex and index buffers three uploaded. */
   geometries: { count: number; bytes: number };
-  /** `renderTargets`. */
   renderTargets: { count: number };
   /** `total`: textures, every attribute buffer, uniform and read-back buffers, and program source lengths. */
   bytes: number;

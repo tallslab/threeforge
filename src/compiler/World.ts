@@ -45,31 +45,25 @@ export interface WorldOptions {
    */
   lod?: { distances: number[] };
   /**
-   * Occlusion culling per batch / instanced group through three's occlusion queries: an invisible proxy box per
-   * target carries `occlusionTest`; a target whose proxy was reported fully occluded (two or more renders late) is
-   * skipped. Only the outermost render of the scene decides, and a proxy the camera is inside of, or whose box the near
-   * plane reaches into, issues no query and shows its target; so does `warmup()`'s scissored frame. A batch or instanced
-   * group holding batch-synced movers gets no proxy (`report.occlusion.skippedSynced`). One outermost camera per frame
-   * is assumed. Costs one cheap submission per target. Needs a renderer with `isOccluded()` (WebGPURenderer, either
-   * backend).
+   * Occlusion culling per batch and instanced group through three's occlusion queries: an invisible proxy box per
+   * target carries `occlusionTest`, and a target whose proxy was reported fully occluded (two or more renders late) is
+   * skipped. Only the outermost render decides; a proxy the camera is inside of, or that the near plane reaches into,
+   * issues no query, and neither does `warmup()`'s scissored frame. Targets holding batch-synced movers get no proxy
+   * (`report.occlusion.skippedSynced`). One outermost camera per frame is assumed. Costs one cheap submission per
+   * target; needs a renderer with `isOccluded()` (WebGPURenderer, either backend).
    *
-   * A skipped target is skipped in *every* pass of that frame, so it also disappears from shadow maps and reflections:
-   * a batch hidden behind a wall stops casting its shadow and stops appearing in a mirror, which is visible whenever
-   * the light or the mirror sees what the camera cannot. Leave `occlusion` off where those matter
-   * (`docs/threeforge.md`, "Occlusion").
+   * A skipped target is skipped in every pass of that frame, so it also leaves shadow maps and reflections: leave
+   * `occlusion` off where a light or a mirror sees what the camera cannot (`docs/threeforge.md`, "Occlusion").
    */
   occlusion?: boolean;
   /** Clips that will drive this scene (e.g. `gltf.animations`), or `{ root, clips }` per animated character. */
   animations?: AnimationSource[];
   /**
-   * Culling of batches in render passes nested in another render of the scene (shadow maps, reflections, portals).
-   * A batch an enclosing pass has already culled keeps that pass's index rows as a stable prefix under either policy:
-   * the nested pass zeroes the rows its camera does not need and appends the ones it lacks (see `attachBvhCulling`).
-   * The policy decides a batch no enclosing pass has culled yet: `per-pass` culls it for the nested camera,
-   * `reuse-main` keeps the rows of its last outermost-render cull and appends. Compacted instanced meshes keep a
-   * stable prefix too, the same under both policies: shadow passes append every shadow light's casters, other nested
-   * passes draw the main camera's list (see `createCulledInstancedMesh`). `auto` (default) is `per-pass` on both
-   * backends.
+   * Culling of batches in passes nested in another render of the scene (shadow maps, reflections, portals). A batch an
+   * enclosing pass has culled keeps that pass's rows as a stable prefix under either policy (see `attachBvhCulling`);
+   * the policy decides a batch no enclosing pass has culled yet: `per-pass` culls it for the nested camera, `reuse-main`
+   * keeps its last outermost cull and appends. Compacted instanced meshes behave the same under both (see
+   * `createCulledInstancedMesh`). `auto` (default) is `per-pass` on both backends.
    */
   nestedPasses?: NestedPassPolicy | 'auto';
   /** `canonical` (default): meshes left unbatched get the registry's canonical material; `keep`: materials are left alone. */
@@ -680,18 +674,12 @@ export class World {
   }
 
   /**
-   * Move a frozen static (or a whole subtree) on demand: recomposes every local matrix under `object`, recomputes
-   * the world matrices, and pushes every batched original in the subtree into its batch in the scene's space
-   * (BatchedMesh matrix and BVH leaf, InstancedMesh through its culling handle, baked groups by rebaking once). Then
-   * recomputes the bounds of each touched batch and instanced group once, so three's whole-object frustum test keeps a
-   * moved instance, and fits their occlusion proxies to the new bounds. Sprite batches follow on their own. Returns the
-   * number of batched instances updated.
-   *
-   * With `originals: 'detach'`, a detached original has no parent, so `updateMatrixWorld` alone would give its local
-   * matrix, not its former scene-relative one: its world matrix is instead composed from its former parent's current
-   * one (read, not recomputed here — `markDirty` on that parent, or an ancestor reached through the still-attached
-   * graph, refreshes it) and the original's own freshly recomposed local matrix. `markDirty` on a former parent
-   * reaches its detached descendants too, even though they are no longer its children.
+   * Move a frozen static (or a whole subtree) on demand: recomposes the matrices under `object` and pushes every
+   * batched original in the subtree into its batch in the scene's space (BatchedMesh matrix and BVH leaf, InstancedMesh
+   * through its culling handle, baked groups by one rebake), then recomputes each touched batch's bounds and refits its
+   * occlusion proxy. Returns the number of instances updated. With `originals: 'detach'` a detached original's world
+   * matrix is composed from its former parent's current one (refreshed by `markDirty` on that parent or an ancestor)
+   * and its own recomposed local matrix, so `markDirty` on a former parent reaches its detached descendants.
    */
   markDirty(object: Object3D): number {
     this.assertLive();
@@ -992,12 +980,9 @@ export class World {
   }
 
   /**
-   * Tears the World down for good. Decompiles first when compiled (listeners still hear `decompile`): that uninstalls the
-   * pass tracker's scene hooks, removes and disposes the occlusion proxies (a re-enable a depth-0 render queued finds no
-   * proxy) and disposes what the World created, never a material the app registered. Then every `onDirty` listener is
-   * dropped. The registry and the ledger stay the app's. Calling `dispose()` again, or `decompile()`, does nothing;
-   * `compile`, `markDirty`, `setVisible`, `onDirty` and `warmup` throw, already while `dispose()` runs (a `decompile`
-   * listener that recompiles is refused), and the World ends disposed even when a listener throws.
+   * Tears the World down for good: decompiles first when compiled (listeners still hear `decompile`), then drops every
+   * `onDirty` listener. The registry and the ledger stay the app's. `dispose()` and `decompile()` then do nothing, the
+   * other methods throw, already while `dispose()` runs, and the World ends disposed even when a listener throws.
    */
   dispose(): void {
     if (this.disposed || this.disposing) return;

@@ -42,21 +42,19 @@ export interface TierInput {
   /** Real touch capability (`navigator.maxTouchPoints > 0`). Not a mobile/phone signal by itself — see `mobile`. */
   touch?: boolean;
   /**
-   * Whether the OS/browser itself reports this as a mobile device (`navigator.userAgentData.mobile`, or a
-   * user agent sniff — see `tierInputFromNavigator`). `undefined` when neither signal is available, in
-   * which case `detectTier` falls back to `touch` alone (step 6). Distinct from `touch`: a touch-capable
-   * desktop reports `touch: true, mobile: false`.
+   * Whether the OS/browser itself reports this as a mobile device (`navigator.userAgentData.mobile`, or a user agent
+   * sniff, see `tierInputFromNavigator`). `undefined` when neither signal is available, in which case `detectTier`
+   * falls back to `touch` alone. Distinct from `touch`: a touch-capable desktop reports `touch: true, mobile: false`.
    */
   mobile?: boolean;
   /**
    * The operating system the browser reports, as it reports it (`navigator.userAgentData.platform`, else a parse of
-   * `navigator.platform` or the user agent string — see `tierInputFromNavigator`): `Windows`, `Win32`, `macOS`,
-   * `MacIntel`, `Linux x86_64`, `Chrome OS`, `Android`, `iOS` and so on. Matched case-insensitively by family, so any
-   * of those spellings works.
+   * `navigator.platform` or the user agent string, see `tierInputFromNavigator`): `Windows`, `Win32`, `macOS`,
+   * `MacIntel`, `Linux x86_64`, `Chrome OS`, `Android`, `iOS` and so on. Matched case-insensitively by family.
    *
-   * It is the only signal that separates a Windows-on-ARM laptop from an Android tablet **under WebGPU**, where the
-   * `gpu` string is built from `adapter.info` and names no graphics API for `DESKTOP_DRIVER` to match. `undefined`
-   * when the browser reports nothing usable, in which case `detectTier` falls back to the GPU family name.
+   * The only signal that separates a Windows-on-ARM laptop from an Android tablet under WebGPU, where the `gpu`
+   * string is built from `adapter.info` and names no graphics API for `DESKTOP_DRIVER` to match. `undefined` when
+   * the browser reports nothing usable, in which case `detectTier` falls back to the GPU family name.
    */
   platform?: string;
   dpr?: number;
@@ -66,14 +64,10 @@ export interface TierInput {
 const LOW_END = /\badreno[^0-9]*(?:[1-5]\d\d|6[0-3]\d)\b|\bmali-g[1-5]\d\b|\bmali-t|\bmali-4|\bsgx\b|\bvideocore\b/i;
 
 /**
- * Mobile/tablet GPUs not already caught by LOW_END: higher-end Adreno/Mali, PowerVR, Xclipse, Qualcomm,
- * Apple A-series. VideoCore is deliberately not repeated here: every VideoCore string LOW_END recognises
- * already matches unconditionally there, so a VideoCore branch here could never fire.
- *
- * This is a weak signal — these families also ship in laptops (Snapdragon X) — so it decides after
- * `DESKTOP_GPU` and `DESKTOP_DRIVER`, and a desktop `platform` overrides it. It still outranks an explicit
- * `mobile === false`, because Chrome reports an Android tablet as not mobile: with neither a desktop graphics API
- * nor a desktop platform beside the GPU, the family name is the better guess.
+ * Mobile/tablet GPUs not already caught by LOW_END: higher-end Adreno/Mali, PowerVR, Xclipse, Qualcomm, Apple
+ * A-series (VideoCore is not repeated: every string LOW_END recognises matches there first). A weak signal, since
+ * these families also ship in laptops (Snapdragon X): it decides after `DESKTOP_GPU` and `DESKTOP_DRIVER`, and a
+ * desktop `platform` overrides it. It still outranks `mobile === false`, which Chrome reports for an Android tablet.
  */
 const MOBILE_GPU = /\badreno\b|\bmali\b|\bpowervr\b|\bxclipse\b|\bqualcomm\b|\bapple a\d/i;
 
@@ -81,30 +75,23 @@ const MOBILE_GPU = /\badreno\b|\bmali\b|\bpowervr\b|\bxclipse\b|\bqualcomm\b|\ba
 const DESKTOP_GPU = /\bnvidia\b|\bgeforce\b|\bradeon\b|\bamd\b|\bintel\b|\biris\b|\barc\b|\bapple m\d|\bswiftshader\b/i;
 
 /**
- * Renderer strings only a desktop/laptop driver stack produces: ANGLE's Direct3D backends and any string
- * naming Windows. Decisive against `MOBILE_GPU`, because Windows-on-ARM laptops (Snapdragon X and 8cx)
- * carry Adreno GPUs and report both brands through ANGLE, e.g.
- * `ANGLE (Qualcomm, Adreno (TM) X1-85 (0x00043050), D3D11)`. Android's ANGLE strings name OpenGL ES or
- * Vulkan instead, so they never match here.
- *
- * **This is a WebGL2/ANGLE convention only.** A WebGPU `gpu` string comes from `adapter.info` (description, else
- * device, else vendor plus architecture) and never names an API — this repository's own recorded WebGPU value is
- * `apple metal-3` — so on WebGPU the same laptop reaches `MOBILE_GPU` with nothing here to rescue it. `TierInput`'s
- * `platform` is what decides that case (step 5); this regex is the WebGL2 shortcut that answers before it.
+ * Renderer strings only a desktop/laptop driver stack produces: ANGLE's Direct3D backends and any string naming
+ * Windows. Decisive against `MOBILE_GPU`: Windows-on-ARM laptops (Snapdragon X and 8cx) carry Adreno GPUs and report
+ * both through ANGLE, e.g. `ANGLE (Qualcomm, Adreno (TM) X1-85 (0x00043050), D3D11)`, while Android's ANGLE strings
+ * name OpenGL ES or Vulkan. A WebGL2 convention only: a WebGPU `gpu` string comes from `adapter.info` and never names
+ * an API (the recorded WebGPU value here is `apple metal-3`), so on WebGPU `TierInput.platform` decides that case.
  */
 const DESKTOP_DRIVER = /\bd3d(?:9|11|12)?\b|\bdirect3d\d*\b|\bwindows\b/i;
 
 /**
- * Platforms that are phones or tablets, in every spelling a browser uses: `navigator.userAgentData.platform`
- * (`Android`, `iOS`), `navigator.platform` (`iPhone`, `iPad`, `Linux armv8l` — which is why this is tested first and
- * the user agent decides Android before `DESKTOP_PLATFORM` can read its `Linux`) and user agent strings.
+ * Platforms that are phones or tablets, in every spelling a browser uses (`Android`, `iOS`, `iPhone`, `iPad`). Tested
+ * before `DESKTOP_PLATFORM`, because Android reports `Linux armv8l` as `navigator.platform`.
  */
 const MOBILE_PLATFORM = /\bandroid\b|\bios\b|\biphone\b|\bipad\b|\bipod\b/i;
 
 /**
- * Platforms no phone or tablet runs: Windows (`Windows`, `Win32`, `Win64`, `WinCE` excluded by the digits), macOS
- * (`macOS`, `MacIntel`, `Mac OS X`, `Darwin`), Linux (`Linux`, `X11`) and ChromeOS (`Chrome OS`, `CrOS`). Checked
- * after `MOBILE_PLATFORM`, because Android reports `Linux armv8l` as `navigator.platform`.
+ * Platforms no phone or tablet runs: Windows (`Windows`, `Win32`, `Win64`; `WinCE` excluded by the digits), macOS
+ * (`macOS`, `MacIntel`, `Mac OS X`, `Darwin`), Linux (`Linux`, `X11`) and ChromeOS (`Chrome OS`, `CrOS`).
  */
 const DESKTOP_PLATFORM = /\bwin(?:dows|32|64)\b|\bmac(?:os|intel)?\b|\bdarwin\b|\blinux\b|\bx11\b|\bcros\b|\bchrome ?os\b/i;
 
@@ -115,31 +102,12 @@ function isDesktopPlatform(platform: string | undefined): boolean {
 }
 
 /**
- * A coarse device tier: budgets and later modules key off it.
- *
- * GPU-first decision order, so a touch-capable desktop (a Windows laptop with a discrete GPU and a
- * touchscreen) is not mistaken for a phone. All seven steps live here (`tierInputFromNavigator` only
- * resolves `mobile`/`touch`, it does not itself decide a tier), so
- * `detectTier` never disagrees with what the helper feeds it. A mobile GPU *family name* is the weakest
- * of the signals, so it decides only after the three that contradict it directly:
- *   1. `LOW_END` matches -> `phone-low`. These families ship in no laptop, so nothing outranks them.
- *   2. Any "Apple" name with `touch` -> `phone-mid`, or `phone-low` under `deviceMemory <= 2`.
- *      Before step 3, because an M-series with a touchscreen is an iPad, not a Mac.
- *   3. `DESKTOP_GPU` matches -> `desktop`, whatever `touch`/`mobile` say.
- *   4. `DESKTOP_DRIVER` matches (an ANGLE Direct3D or Windows renderer string) -> `desktop`. A
- *      Windows-on-ARM laptop reports a mobile GPU family (Adreno, Qualcomm) and is not mobile.
- *   5. `MOBILE_GPU` matches -> `desktop` when `platform` names an OS no phone or tablet runs (Windows, macOS,
- *      Linux, ChromeOS), else `phone-mid`, or `phone-low` when `deviceMemory <= 2`. Before the
- *      `mobile` step, because Chrome reports an Android **tablet** as `userAgentData.mobile: false`: taking
- *      that as "desktop" gave a Mali tablet desktop budgets. What tells the tablet from the Windows-on-ARM
- *      laptop is the graphics API in the renderer string on WebGL2 (steps 3-4 have already had their say on
- *      it) and `platform` on WebGPU, where the adapter string names no API at all. With neither — no platform
- *      reported — the GPU family name decides, as it did before `platform` existed.
- *   6. `mobile`, when defined (set by `tierInputFromNavigator` from `userAgentData.mobile` or a user agent
- *      sniff): `true` -> `phone-mid` (or `phone-low` under `deviceMemory <= 2`); `false` ->
- *      `desktop`. For a GPU string none of steps 1-5 recognised, the browser's own answer is the best signal.
- *   7. Otherwise the old touch-only rule: no `touch` -> `desktop`; `touch` and `deviceMemory <= 2` ->
- *      `phone-low`; `touch` otherwise -> `phone-mid`.
+ * A coarse device tier: budgets and later modules key off it. Signals decide in order of trust: a low-end mobile GPU
+ * family (ships in no laptop), an Apple GPU with touch (an iPad, not a Mac), a desktop GPU or desktop driver string,
+ * a mobile GPU family, the browser's own `mobile` answer, then touch alone. A mobile GPU family is weak (Adreno ships
+ * in Windows-on-ARM laptops), so a desktop `platform` overrides it; on WebGPU the adapter string names no graphics
+ * API, and `platform` is all that tells such a laptop from an Android tablet, which Chrome reports as not `mobile`.
+ * Every rule lives here: `tierInputFromNavigator` only gathers the inputs.
  */
 export function detectTier({ gpu = '', deviceMemory, touch = false, mobile, platform }: TierInput): Tier {
   const lowMemory = deviceMemory !== undefined && deviceMemory <= 2;
@@ -195,15 +163,9 @@ function platformOf(nav: TierNavigator): string | undefined {
 
 /**
  * Builds a `TierInput` from a GPU name and `navigator`, so `test/app/main.ts`, `cli-app/main.ts` and
- * `bench-app/runner.ts` all assemble tier detection input the same way.
- *
- * `touch` is the real touch capability (`maxTouchPoints > 0`) and nothing else. `mobile` (step 6 of
- * `detectTier`) is resolved separately, in order: `userAgentData.mobile` (Chromium, most reliable — a
- * touch-capable desktop reports `false`), then a "Mobi" sniff of the user agent string (non-Chromium
- * browsers), else left `undefined` when neither is available (so `detectTier` falls back to `touch` alone).
- * `platform` (step 5, `platformOf`) is resolved the same way from `userAgentData.platform`, the user agent
- * string and `navigator.platform`; it is what decides a mobile GPU family on WebGPU, where the adapter string
- * names no graphics API.
+ * `bench-app/runner.ts` assemble tier detection input the same way. `touch` is real touch capability
+ * (`maxTouchPoints > 0`). `mobile` is `userAgentData.mobile` (Chromium; a touch-capable desktop reports `false`), else
+ * a "Mobi" sniff of the user agent, else `undefined` so `detectTier` falls back to touch. `platform` is `platformOf`.
  */
 export function tierInputFromNavigator(gpu: string, nav: TierNavigator): TierInput {
   const touchPoints = nav.maxTouchPoints ?? 0;

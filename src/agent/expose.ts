@@ -9,7 +9,6 @@ import { VERSION } from '../version.js';
  * renders unless the app handed over renderer, scene and camera (then `frameAsync` renders one frame).
  */
 export interface AgentHook {
-  /** threeforge version. */
   version: string;
   /** Frame snapshot schema version (`ledger.frame().schemaVersion`); `threeforge inspect` requires 3. */
   schemaVersion: 3;

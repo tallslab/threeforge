@@ -73,11 +73,11 @@ function fullKeyOf(keys: Pick<CachedKeys, 'variantKey' | 'colorKey'>): string {
  * Every material passes through here. Identical-by-value materials collapse to one canonical instance;
  * everything else is recorded as a colour, uniform or shader variant so the ledger can attribute cost.
  *
- * A material is immutable once registered: `register()` and `describe()` compute its keys once and cache them
- * (this class never re-reads a material's properties after that first pass). Mutating a registered material's
- * properties afterwards is outside the contract — anything already built from its old keys (a BatchedMesh, a
- * sprite batch) stays built from them. `invalidate()` and `forget()` are the two ways to react to it, and
- * `dependentsOf()` supports using `forget()` safely around disposal: see their doc comments.
+ * A material is immutable once registered: `register()` and `describe()` compute its keys once and cache them, and
+ * nothing here re-reads a material's properties after that first pass. Mutating a registered material afterwards is
+ * outside the contract: anything already built from its old keys (a BatchedMesh, a sprite batch) stays built from
+ * them. `invalidate()` and `forget()` are the two ways to react to it, and `dependentsOf()` supports using `forget()`
+ * safely around disposal.
  */
 export class MaterialRegistry {
   private readonly keyCache = new WeakMap<Material, CachedKeys>();
@@ -181,31 +181,19 @@ export class MaterialRegistry {
   }
 
   /**
-   * Re-keys `material` after it was mutated outside the immutable-once-registered contract: current property
-   * values are read again, and the result replaces both the cached keys (so `describe()` reports them) and every
-   * index entry `register()` filed under the *old* keys, which is what closes the defect this method exists to
-   * fix — see the "stale index entries" history in `docs/threeforge.md` section 5 / the commit that added this
-   * comment for the trace. Concretely:
+   * Re-keys `material` after it was mutated outside the immutable-once-registered contract: its current properties
+   * are read again, the cached keys are replaced, and every index entry filed under the old keys moves with them.
+   * The old entries are removed before the new keys are computed: a stale `canonicalByFullKey` entry would otherwise
+   * let an unrelated material built later with `material`'s old property values merge into it and render with its
+   * mutated state.
    *
-   * 1. If `material` was itself the canonical for its old key, that old `canonicalByFullKey` entry and its
-   *    program's `canonicals`/`variants` bookkeeping are removed first (shared with `forget()`'s removal via
-   *    `deindex()`) — otherwise a *different*, unrelated material built later with `material`'s old property
-   *    values would still find the stale entry and merge into `material`, rendering with its new, mutated state.
-   * 2. Its keys are recomputed from its current properties and cached.
-   * 3. It is re-filed under the new key: if no other canonical already holds that key, `material` stays (or
-   *    becomes) the canonical for it, added back to `canonicalByFullKey` and its (possibly different) program.
-   *    If another canonical already holds the new key, `material`'s own record is demoted to
-   *    `{ outcome: 'merged', canonical: <that other material> }` instead — the same outcome a fresh material
-   *    with those exact properties would get from `register()`.
+   * Re-filing follows `register()`: `material` stays (or becomes) the canonical when no other canonical holds the
+   * new key, else its record is demoted to `{ outcome: 'merged', canonical: <that material> }`. Materials already
+   * merged into `material` keep their records untouched and keep resolving to it; re-keying the dependents of a
+   * mutated shared material is the app's job (`dependentsOf(material)` counts them).
    *
-   * A material already merged into `material` before this call keeps its own record — `{ outcome: 'merged',
-   * canonical: material }` — completely untouched, so it keeps resolving to `material` (a live, valid `Material`
-   * object) even though `material`'s properties have since changed. Re-keying the canonical after the app
-   * mutates a shared material is the app's choice; `invalidate` does not chase down and re-key every dependent to
-   * match (`dependentsOf(material)` tells you how many there are, if you need to decide).
-   *
-   * A no-op for a material that was never registered, or one recorded `unsupported` (never indexed by key here;
-   * `describe()` will recompute its keys lazily on the next call regardless, same as before).
+   * A no-op for a material never registered, or recorded `unsupported` (never indexed by key); `describe()`
+   * recomputes its keys lazily on the next call either way.
    */
   invalidate(material: Material): void {
     this.revision++;
@@ -221,17 +209,11 @@ export class MaterialRegistry {
     if (record.outcome === 'unsupported') return; // never indexed; nothing to move
 
     const wasCanonical = record.canonical === material;
-
-    // Step 1: remove whatever `material` held under its old keys (nothing, if it was a merged duplicate — it was
-    // never itself indexed — but its program.materials tally still needs to move off the old program).
     this.deindex(material, oldKeys, wasCanonical);
-
-    // Step 2: recompute and cache the new keys.
     const newKeys = this.keys(material);
 
-    // Step 3: re-file under the new key. `stats().merged` (like `stats().registered`, shrunk by `forget()`) is a
-    // live count of currently-merged materials, not a cumulative call counter, so it moves here too whenever
-    // re-filing changes `material`'s own canonical/merged status.
+    // `stats().merged` is a live count of currently-merged materials (like `registered`, shrunk by `forget()`), not a
+    // call counter, so it moves whenever re-filing changes `material`'s own canonical/merged status.
     const fullKey = fullKeyOf(newKeys);
     const existingCanonical = this.canonicalByFullKey.get(fullKey);
     const program = this.ensureProgram(newKeys, material);
@@ -243,14 +225,10 @@ export class MaterialRegistry {
       return;
     }
 
-    // The new/color-variant/uniform-variant/shader-variant classification `register()` computes (below the
-    // `program.canonicals.size === 0` check) is inherently about registration order and first-seen state; when
-    // `material` was already the canonical, re-running it on every `invalidate()` call would be both wrong (its
-    // own prior entries are still in `program.canonicals`/`variants` until the two lines after this) and
-    // pointless (it wasn't a fresh registration), so that case keeps the outcome recorded at original
-    // registration. But a material *promoted* from merged back to canonical here was never classified before —
-    // its stale `outcome: 'merged'` would be actively wrong — so that case runs the same classification
-    // `register()` would for a brand new canonical, in the same order (before adding it to the sets below).
+    // The outcome `register()` computes is about registration order and first-seen state. A material that was already
+    // the canonical keeps the outcome recorded at registration (classifying it again would read its own entries, still
+    // in `program.canonicals`/`variants`). One promoted from merged back to canonical was never classified, so it is
+    // classified as a fresh registration would be, before it joins the sets below.
     let outcome: RegisterOutcome;
     if (wasCanonical) {
       outcome = record.outcome;
@@ -266,23 +244,15 @@ export class MaterialRegistry {
   }
 
   /**
-   * Removes `material` from the registry entirely, as if it had never been registered: its cached keys and
-   * registration record are dropped, `registered`/`merged`/`unsupported` and its program's bookkeeping are
-   * unwound, and — when it was itself a canonical — its entry in `canonicalByFullKey` and its program's
-   * `canonicals`/`variants` sets are cleared too (shared with `invalidate()`'s removal step via `deindex()`).
-   * `World.decompile()` and `ResourceTracker.release()` call it for the materials they release. Forgetting an unknown
-   * material is a no-op.
+   * Removes `material` from the registry as if it had never been registered: its cached keys and record are dropped,
+   * the `registered`/`merged`/`unsupported` counters and its program's bookkeeping are unwound, and a canonical's
+   * `canonicalByFullKey` and program entries are cleared (`deindex()`, shared with `invalidate()`). `World.decompile()`
+   * and `ResourceTracker.release()` call it for the materials they release. Forgetting an unknown material is a no-op.
    *
-   * **`forget` does not track or release dependents, and this is a real disposal hazard, not just bookkeeping.**
-   * If `material` was a canonical that other registered materials were merged into (`dependentsOf(material) > 0`
-   * beforehand), those materials' own records still point at this exact `Material` object and keep resolving to
-   * it via `register()`/`canonicalOf()` after `forget()` — that part stays correct, nothing crashes. But
-   * `forget()` returning is **not** a signal that `material`'s GPU resources are now safe to release: every one
-   * of those dependents is still relying on this *exact* object rendering correctly (a `BatchedMesh`, a mesh's
-   * `material` reference, anything built while it was the canonical). Calling `material.dispose()` (or disposing
-   * its textures) right after `forget()` breaks every mesh still drawn with one of those merged materials — the
-   * registry no longer stops you, and nothing else in this class will. Check `dependentsOf(material) === 0`
-   * before disposing, or `forget()` (and, separately, arrange disposal for) every dependent first.
+   * Dependents are neither tracked nor released. Materials merged into `material` keep resolving to this exact object
+   * through `register()`/`canonicalOf()`, and every mesh built while it was the canonical still draws with it, so
+   * `forget()` returning does not make its GPU resources safe to dispose: check `dependentsOf(material) === 0` first,
+   * or forget (and arrange disposal for) every dependent.
    */
   forget(material: Material): void {
     this.revision++;
@@ -310,7 +280,7 @@ export class MaterialRegistry {
    * How a material that is becoming a canonical is labelled: the first canonical of the first program is `new`, the
    * first of any later program a `shader-variant`, and inside a program a repeat of a known `variantKey` is a
    * `color-variant` while a new one is a `uniform-variant`. Reads `program`'s state as it is, so callers must ask
-   * *before* adding the material to `canonicals`/`variants`. Shared by `register()` and `invalidate()`'s promotion
+   * before adding the material to `canonicals`/`variants`. Shared by `register()` and `invalidate()`'s promotion
    * branch, which has to classify a material promoted from merged exactly as a fresh registration would.
    */
   private outcomeFor(program: ProgramEntry, variantKey: string): RegisterOutcome {

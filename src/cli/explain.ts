@@ -4,13 +4,9 @@ export interface Remedy {
   code: string;
   category: HintCategory;
   severity: 'info' | 'warn' | 'error';
-  /** What the hint means. */
   meaning: string;
-  /** What to change, imperative and concrete. */
   fix: string;
-  /** The threeforge or three.js API to reach for. */
   api: string;
-  /** Where to read more in the repository. */
   docs: string;
 }
 

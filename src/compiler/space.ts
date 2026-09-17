@@ -35,7 +35,6 @@ export class SceneSpace {
     this.root = root;
   }
 
-  /** Increases every time `update()` finds the root's world matrix changed and derives the inverse again. */
   get version(): number {
     return this.derivations;
   }
@@ -48,12 +47,10 @@ export class SceneSpace {
     return this.negative;
   }
 
-  /** The length of the root world matrix's first column (its x scale) as of the last `update()`. */
   get scaleX(): number {
     return this.columnX;
   }
 
-  /** The length of the root world matrix's second column (its y scale) as of the last `update()`. */
   get scaleY(): number {
     return this.columnY;
   }

@@ -102,36 +102,26 @@ const _size = new Vector2();
 const _black = new Color(0, 0, 0);
 
 /**
- * Fragments per pixel, measured rather than estimated: the scene is rendered twice into a small half-float target, once
- * for the opaque render list and once for the transparent lists, then each render is read back and averaged.
+ * Fragments per pixel, measured rather than estimated: the scene renders twice into a small half-float target, once for
+ * the opaque render list and once for the transparent lists, and each render is read back and averaged. A fragment
+ * adds exactly 1: the count material's `outputNode` is a constant replacing the diffuse result (NodeMaterial.setup),
+ * blended One/One with no depth test or write, so no colour can scale the count. Each object draws with its own
+ * material's `side`, `map`, `opacity`, `alphaHash`, `opacityNode`, `alphaTestNode` and `maskNode` (three's override
+ * copies `alphaTest`, `alphaMap` and `positionNode`), so cutouts count their kept texels and an AnimatedInstances pose
+ * its animated vertices; a sprite material draws with a `SpriteNodeMaterial` count material carrying its `rotation`,
+ * `sizeAttenuation`, `scaleNode` and `rotationNode`, so it counts its billboards. Not carried: `colorNode` alpha,
+ * vertex-colour alpha, and vertices a material builds in its class or `vertexNode`. Not counted: the background (the
+ * target clears to 0), materials with `allowOverride = false`, and materials with `colorWrite = false` (World's
+ * occlusion proxies).
  *
- * - **What a fragment adds:** exactly 1. The count material's `outputNode` is a constant, which replaces the diffuse
- *   result (NodeMaterial.setup), so material, map, vertex, instance and batch colours cannot scale the count; blending
- *   is One/One with no depth test or write, in one pass.
- * - **Which fragments:** each object is drawn with its own material's `side`, `map`, `opacity`, `alphaHash`,
- *   `opacityNode`, `alphaTestNode` and `maskNode`, and three's override copies `alphaTest`, `alphaMap` and `positionNode`.
- *   Closed meshes count their front faces, cutouts count their kept texels, and a position node (AnimatedInstances)
- *   counts the animated pose. Sprite materials (a `Sprite`, a World sprite batch) are drawn with a `SpriteNodeMaterial`
- *   count material carrying their `rotation`, `sizeAttenuation`, `scaleNode` and `rotationNode`: they count their billboards.
- * - **Not carried:** `colorNode` alpha, vertex-colour alpha, and vertices a material builds in its class or `vertexNode`
- *   (a `PointsNodeMaterial` on a non-`Points` object, Line2-style materials): those count what the count material
- *   rasterises from the geometry and `positionNode`.
- * - **Not counted:** the background (colour, texture or node: the target clears to 0), materials with
- *   `allowOverride = false` (they would draw themselves), and materials that write no colour (`colorWrite = false`,
- *   World's occlusion proxies).
- * - **State:** both counts render and every scene and renderer setting is restored synchronously, before the returned
- *   promise first awaits (the read-backs). An app render during the wait sees the app's own state.
- * - **Re-entrancy:** a call made while this renderer's count renders are running (an `onBeforeRender` or another hook
- *   the count render calls again, as a measuring hook is) returns the measurement in progress and renders nothing: it
- *   ignores its own `scene`, `camera` and `options.scale`, and resolves with the outer measurement's result even for
- *   another scene. A call made once the counts have rendered, while the read-backs are pending, is a measurement of its
- *   own. `disposeOverdraw(renderer)` called while the count renders run releases once they end.
- * - **Nested renders:** a scene rendered inside a count draw with its own override material, or none (a render-to-texture
- *   hook), passes straight through. A same-scene render inside a count draw (a reflector's `updateBefore`) is counted,
- *   and every slot its draws change on the count material is put back for the draw around it.
- * - **Lifetime:** the target and the count materials are kept per renderer; `disposeOverdraw(renderer)` releases them.
- *
- * Costs two low-resolution renders: call it on demand, not every frame.
+ * Every scene and renderer setting is restored synchronously, before the returned promise first awaits the read-backs.
+ * A call made while this renderer's count renders are running (from a hook they call, as a measuring hook is) returns
+ * the measurement in progress and renders nothing, whatever scene, camera or scale it passed; a call made while only
+ * the read-backs are pending is a measurement of its own. A same-scene render inside a count draw (a reflector's
+ * `updateBefore`) is counted and puts the count material's slots back for the draw around it; a render with another
+ * override, or none, passes straight through. The target and count materials are kept per renderer until
+ * `disposeOverdraw(renderer)`, which waits for running count renders to end. Two low-resolution renders: call it on
+ * demand, not every frame.
  */
 export function measureOverdraw(renderer: OverdrawRenderer, scene: Scene, camera: Camera, options: OverdrawOptions = {}): Promise<OverdrawResult> {
   let state: CountState;

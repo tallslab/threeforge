@@ -88,10 +88,8 @@ const compileReport: Schema = {
     skippedCount: { type: 'integer', minimum: 0, description: 'How many objects compile() skipped; `skipped` lists at most 256 of them.' },
     groupCount: { type: 'integer', minimum: 0, description: 'How many groups compile() built; `groups` lists at most 256 of them.' },
   },
-  // These two joined v2's `required` list after v2 had already been minted — the exact "required field added
-  // without a bump" pattern the bump exists to prevent. No bump is needed and
-  // none was made: document schema v2 first *ships* in 0.9.0, and 0.8.0 emitted v1, so no consumer ever saw a v2
-  // document without them. Adding a required field to v2 after 0.9.0 is out would need a bump to v3.
+  // Adding a required field to a document schema version that has shipped needs a bump; these two joined v2 before
+  // 0.9.0 first shipped it.
   required: ['skippedCount', 'groupCount'],
   additionalProperties: true,
 };

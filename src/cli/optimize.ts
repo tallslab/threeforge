@@ -118,22 +118,13 @@ function assertNotClobbering(path: string, overwrite: boolean): void {
 }
 
 /**
- * `io.write` picks GLB only for a lower-case `.glb` and writes anything else as `.gltf` plus resource files, so every
- * `.glb` (any case) goes through `writeBinary` here. For a `.gltf`, glTF-Transform names each resource after its
- * existing URI (`createURI` returns `getURI()`, so a `.gltf` input's `scene.bin` stays `scene.bin`) or after the
- * output's base name (`..%2F..%2Fx.gltf` → `..%2F..%2Fx.bin`), and `NodeIO._writeGLTF` writes it to
- * `path.join(dirname(out), decodeURIComponent(uri))` after `mkdir -p`. So this serializes once with `writeJSON`, checks
- * every resource target (inside the output's directory, and not the input file or one of its resources, by path or by
- * device and inode), and only then writes the same JSON and resources itself, the way `_writeGLTF` does. Its skip of
- * `http:` resource URIs never applies: `assertConfinedUri` refuses any scheme first.
- *
- * `overwrite` is checked last, after the input-clash checks above and before any write, for `out`
- * itself and every resource target: an unrelated pre-existing file whose name happens to match a resource this run
- * would write (resource names derive from the out basename, e.g. a single buffer becomes `<basename>.bin`) is
- * refused exactly like `out` already existing, not silently replaced. `resolveOptimizeOut` (`src/cli/mcp.ts`)
- * already refuses an existing `out` early, before any of this runs, for the MCP caller; this is the one place that
- * rule is enforced for every caller (including a direct `optimizeAsset` call with no MCP layer in front of it) and
- * the only place resource targets are checked at all.
+ * `io.write` picks GLB only for a lower-case `.glb`, so every `.glb` (any case) goes through `writeBinary` here. For a
+ * `.gltf`, glTF-Transform names each resource after its existing URI or the output's base name and writes it to
+ * `path.join(dirname(out), decodeURIComponent(uri))` after `mkdir -p`, so this serializes once with `writeJSON`, checks
+ * every resource target (inside the output's directory, not the input file or one of its resources by path or by
+ * device and inode, and not an existing file unless `overwrite`), and only then writes the JSON and resources itself.
+ * `resolveOptimizeOut` (`mcp.ts`) refuses an existing `out` early for the MCP caller; this is where the rule holds
+ * for every caller and the only place resource targets are checked.
  */
 async function writeOutput(io: NodeIO, out: string, doc: Document, input: InputFiles, overwrite: boolean = true): Promise<void> {
   // Without `overwrite`, every write is `wx` (`O_CREAT | O_EXCL`): it fails on anything already at the path, a symlink
@@ -178,21 +169,9 @@ function writeExclusive(path: string, data: string | Uint8Array, flag: 'w' | 'wx
 }
 
 /**
- * The input each of the two files is analyzed with. `input.parity` is the threshold between the two *files* and stays
- * there; each file's own compile check is a **different question** and keeps the `analyze` default.
- *
- * This is deliberate, and settled against a measurement. Carrying a
- * stricter `--parity` into the inner checks (`Math.min`) looks like a free tightening and is not: `--parity 0` asks
- * "is the optimized asset exactly the original?", and for the Buggy the answer is yes — `verify.parity` is 0 changed
- * pixels in every view on both backends — while compiling *either* file moves 1 px (webgl2) or 2 px (webgpu) of
- * 921,600, identically, because that is what threeforge's batching does to that asset. Bounding the inner checks made
- * the run answer "no" to a question whose answer is yes, on one of the two assets `safe` is held pixel-identical
- * on (`test/e2e/cli.spec.ts`). The drift
- * is not hidden by keeping the default: it is reported in `verify.optimized.parity`, which an agent needing compile
- * exactness reads, and `analyze --parity 0` asks that question directly.
- *
- * Exported because it is the decision this function exists to make, and a unit test pins it
- * (`test/unit/optimize-inputs.test.ts`) rather than re-deriving it; `cli.spec.ts`'s Buggy case pins the consequence.
+ * `input.parity` is the threshold between the two files; each file's compile check keeps the `analyze` default, because
+ * a stricter `--parity` passed inward fails a correct run: the Buggy's optimized file is pixel-identical to the original,
+ * yet compiling either moves 1 px (webgl2) or 2 px (webgpu) of 921,600. `verify.optimized.parity` still reports the drift.
  */
 export function verifyAnalyzeInput(input: OptimizeInput): Omit<AnalyzeInput, 'file'> {
   return { backend: input.backend, tier: input.tier, budget: null, frames: input.frames, compile: input.compile, bake: 'off', views: input.views, parity: DEFAULT_PARITY, timeout: input.timeout, headed: input.headed };

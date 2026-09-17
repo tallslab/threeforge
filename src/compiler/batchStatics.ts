@@ -358,26 +358,17 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
 export { isBuiltInMaterial };
 
 /**
- * Whether the bake can prove that a material draws its merged, scene-space geometry as it drew each module: an allowlist
- * of what reads the geometry.
- * - Three's own code alone: exactly one of three's material classes (`isBuiltInMaterial`: a subclass can override
- *   `setupPosition`, `setupDiffuseColor` or any other `setup*`), no function assigned to the instance
- *   (`hasOwnFunctions`) and no node in any slot (`hasNoNodes`). A node graph can read `positionLocal`, `normalLocal`,
- *   `positionGeometry` or `color` inside a `Fn` closure nothing can inspect before it builds: a `colorNode =
- *   vertexColor()` reads `color` whatever `vertexColors` says, and a colour or position from local coordinates changes
- *   once the bake writes them in scene space.
- * - Reads the move into scene space keeps. three r186's node-free mesh materials read position through the model-view
- *   matrix and normals through the normal matrix, which the baked geometry already carries, except a `displacementMap`:
- *   `setupPosition` displaces along the local normal in local units (NodeMaterial.js:788), so a scaled module's
- *   displacement changes size once baked. A batch displaces before its own transform, and keeps it.
- *   Two built-in reads of mesh-local space are not in this list because the bake does not cause their change: `alphaHash`
- *   hashes `positionLocal` (NodeMaterial.js:893) and an object-space normal map goes through the draw's model normal
- *   matrix (NormalMapNode.js:120-122), and both change the same once batched or instanced (`batch()` and `instance()`
- *   move `positionLocal`; neither gives the map each module's matrix). Batching them changes the picture whichever way
- *   the group is compiled, so leaving the bake would not restore a pixel: `test/e2e/local-space.spec.ts` measures the
- *   change on transformed statics with `bake` off and records the share of its own frame (scene-dependent) as an
- *   annotation. The ledger's `batch-local-space` hint names such draws.
- * Only then does `vertexColors: false` prove the `color` attribute unread (`unbakeableAttribute`'s `builtInReads`).
+ * Whether the bake can prove a material draws its merged, scene-space geometry as it drew each module: an allowlist of
+ * what reads the geometry. Three's own code alone: one of three's material classes (`isBuiltInMaterial`; a subclass can
+ * override any `setup*`), no function on the instance (`hasOwnFunctions`) and no node in any slot (`hasNoNodes`; a
+ * `Fn` closure can read `positionLocal` or `color` where nothing can inspect it). And reads the move into scene space
+ * keeps: three r186's node-free mesh materials read position and normals through the model-view and normal matrices,
+ * except `displacementMap`, which `setupPosition` applies along the local normal in local units (NodeMaterial.js:788),
+ * so a scaled module's displacement changes size once baked. `alphaHash` (`positionLocal`, NodeMaterial.js:893) and an
+ * object-space normal map (NormalMapNode.js:120-122) are not in the list: batching changes them the same way, so
+ * leaving the bake would not restore a pixel (`test/e2e/local-space.spec.ts` measures it; the ledger's
+ * `batch-local-space` hint names such draws). Only then does `vertexColors: false` prove the `color` attribute unread
+ * (`unbakeableAttribute`'s `builtInReads`).
  */
 function bakeProvesReads(material: Material): boolean {
   const displacementMap = (material as Material & { displacementMap?: unknown }).displacementMap ?? null;
@@ -395,31 +386,17 @@ export function hasOwnFunctions(material: Material): boolean {
 }
 
 /**
- * `material.clone()` plus what `clone()` (`new constructor().copy(source)`) does not carry and still changes how the
- * material draws, so a tinted group's clone renders like its source:
- * - `Material.copy` (`Material.js:1119-1199`) copies a fixed list of fields, and the subclass `copy` methods set
- *   `defines` back to the class default (`MeshStandardMaterial.js:412`, `MeshPhysicalMaterial.js:552`,
- *   `MeshMatcapMaterial.js:235`, `MeshToonMaterial`): an instance `onBeforeCompile`, `customProgramCacheKey`,
- *   `onBeforeRender` or any other own function, and custom `defines`, are lost;
- * - `NodeMaterial.copy` (`NodeMaterial.js:1321-1376`) copies the setters of the concrete class prototype and the
- *   properties a fresh instance already has: `alphaTest` (an accessor on `Material.prototype`, backed by `_alphaTest`)
- *   and every instance function (`setup`, `setupOutput` …) are lost;
- * - neither copies an own property a user added (data a hook reads through `this`, such as `this.extra.uTint`), so a
- *   hook on the copy reads `undefined` and throws while three builds the program;
- * - both end with `this.userData = JSON.parse(JSON.stringify(source.userData))` (`Material.js:1195`,
- *   `NodeMaterial.js:1372`): it throws on a circular or BigInt value, and a uniform kept there becomes a copy that
- *   updates made through the source never reach (a node uniform becomes a plain object).
- *
- * So `source.userData` is swapped for an empty object around `clone()` (put back in `finally`), and the copy shares the
- * source's `userData` object. No threeforge code writes a batched source's or its clone's `userData`: `materialKey.ts`
- * reads `forgeKey` and `collectResources` reads `forgeTextures`. Restored on the copy: every own function-valued property
- * (the same function, as the source's meshes share it), a copy of `defines`, every accessor on the prototype chain whose
- * primitive value the copy lost (`alphaTest`), and, by reference, every own enumerable property the fresh copy leaves
- * undefined. The one exception is EventDispatcher's `_listeners`, created lazily by the first `addEventListener`
- * (`EventDispatcher.js:33`): the renderers register `dispose` listeners on every material they draw (`WebGLRenderer.js:2216`,
- * `RenderObject.js:359`), so a shared `_listeners` would run the source's listeners when the clone is disposed, and
- * WebGLRenderer's `onMaterialDispose` (`:1151-1157`) would remove its listener from the source. The registry's material
- * keys and grouping do not change.
+ * `material.clone()` plus what `clone()` drops and still changes how the material draws, so a tinted group's clone
+ * renders like its source. `Material.copy` (`Material.js:1119-1199`) copies a fixed field list and the subclass `copy`
+ * methods reset `defines` (`MeshStandardMaterial.js:412`, `MeshPhysicalMaterial.js:552`); `NodeMaterial.copy`
+ * (`NodeMaterial.js:1321-1376`) copies the prototype setters and the properties a fresh instance has, losing `alphaTest`
+ * (an accessor backed by `_alphaTest`); neither copies an own function or a user-added property a hook reads through
+ * `this`; and both deep-copy `userData` (`Material.js:1195`, `NodeMaterial.js:1372`), which throws on a circular value
+ * and turns a uniform kept there into a plain object. So `userData` is swapped out around `clone()` and shared by
+ * reference (no threeforge code writes it), and the copy gets every own function, a copy of `defines`, every primitive
+ * accessor value it lost, and by reference every own enumerable property it leaves undefined. `_listeners` is skipped:
+ * the renderers register `dispose` listeners per material (`WebGLRenderer.js:2216`, `RenderObject.js:359`), so a shared
+ * list would run the source's listeners when the clone is disposed.
  */
 export function cloneMaterial<T extends Material>(source: T): T {
   const userData = source.userData;
@@ -458,13 +435,9 @@ export function cloneMaterial<T extends Material>(source: T): T {
 const MATERIAL_DEFINES = new Set(['STANDARD', 'PHYSICAL', 'TOON', 'MATCAP']);
 
 /**
- * No node slot is set. three r186's `NodeMaterial` declares its slots as `*Node` properties (`lightsNode`, `envNode`,
- * `aoNode`, `colorNode`, `normalNode`, `opacityNode`, `backdropNode`, `backdropAlphaNode`, `alphaTestNode`, `maskNode`,
- * `maskShadowNode`, `positionNode`, `geometryNode`, `depthNode`, `receivedShadowPositionNode`, `castShadowPositionNode`,
- * `receivedShadowNode`, `castShadowNode`, `outputNode`, `mrtNode`, `fragmentNode`, `vertexNode`, `contextNode`;
- * subclasses add `emissiveNode`, `metalnessNode`, `roughnessNode` and more) and reads every own property holding a node
- * as a child (`NodeMaterial._getNodeChildren`). Any of them can carry `Discard()` (`nodes/utils/Discard.js`), so any
- * non-null `*Node` property, or any other own property holding a node, fails.
+ * No node slot is set: no non-null own `*Node` property (three r186's `NodeMaterial` declares its slots that way and
+ * subclasses add more) and no other own property holding a node (`NodeMaterial._getNodeChildren` reads them all).
+ * Any of them can carry `Discard()` (`nodes/utils/Discard.js`).
  */
 function hasNoNodes(material: Material): boolean {
   for (const key of Object.getOwnPropertyNames(material)) {
@@ -477,20 +450,13 @@ function hasNoNodes(material: Material): boolean {
 }
 
 /**
- * Whether the bake may treat a material as opaque: an allowlist of three's default material hooks, so a hook this code
- * does not know about keeps faces instead of deleting them. The material must:
- * - be three's own code: exactly one of three's material classes (`isBuiltInMaterial`: no subclass, whose overridden
- *   methods such as a node material's `setup*` can discard) with no function assigned to the instance
- *   (`hasOwnFunctions`: no instance `onBeforeRender`, `setup`, `setupOutput` …);
- * - not blend: not transparent, normal or no blending, no transmission;
- * - discard nothing: no `alphaTest`, `alphaHash` or `alphaToCoverage`, not a `ShaderMaterial`, no node in any slot
- *   (`hasNoNodes`), no material `clippingPlanes`, no `stencilWrite` (the stencil test);
- * - run three's own shader: `onBeforeCompile` is `Material`'s, `customProgramCacheKey` is `Material`'s (`NodeMaterial`'s
- *   for a node material), `defines` holds only three's material defines;
- * - draw its triangles where the geometry puts them, at their own depth: no `displacementMap`, `polygonOffset` or
- *   `wireframe`; depth write on; the depth test on with three's default `LessEqualDepth`.
- * The side (`BakeEntry.side`) and shadow casting (`BakeEntry.castShadow`) are judged separately, and renderer-level
- * clipping planes are outside what a material shows. Node-material statics authored with custom nodes keep all faces.
+ * Whether the bake may treat a material as opaque: an allowlist of three's default material hooks, so an unknown hook
+ * keeps faces. Three's own code (`isBuiltInMaterial`, `hasOwnFunctions`, `hasNoNodes`, not a `ShaderMaterial`,
+ * `Material`'s own `onBeforeCompile` and `customProgramCacheKey`, only three's material `defines`); no blending (not
+ * transparent, normal or no blending, no transmission); nothing discarded (no `alphaTest`, `alphaHash`,
+ * `alphaToCoverage`, material `clippingPlanes` or `stencilWrite`); triangles at their own depth (no `displacementMap`,
+ * `polygonOffset` or `wireframe`; depth write and test on with `LessEqualDepth`). Side and shadow casting are judged by
+ * `BakeEntry.side` and `BakeEntry.castShadow`; renderer-level clipping planes are outside what a material shows.
  */
 function isOpaque(material: Material): boolean {
   const m = material as Material & { transmission?: number; displacementMap?: unknown; wireframe?: boolean; isShaderMaterial?: boolean; isNodeMaterial?: boolean; defines?: Record<string, unknown> | null };

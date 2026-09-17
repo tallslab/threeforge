@@ -251,9 +251,6 @@ export class DrawCallLedger {
    * `destroyTexture` (calling three's own with the same `this` and arguments) to count three's `DFG_LUT` texture for the
    * memory section: three r186 creates it the first time a lit Standard or Physical material builds and holds it with
    * nothing in the scene reaching it. A LUT three created before `attach()` is not seen. `detach()` restores all four.
-   *
-   * Also resets the render depth to 0: a `detach()` from inside a draw leaves the running render wrapper's `exit()`
-   * to take `depth` below 0, and without this reset the next render on a re-attached ledger threw.
    */
   attach(renderer: LedgerRenderer): void {
     if (this.renderer) this.detach();
@@ -261,7 +258,8 @@ export class DrawCallLedger {
     this.renderer = renderer;
     this.backendInfo = detectBackend(renderer);
     this.last = emptyFrame(this.env());
-    // A detach() from inside a draw leaves the running render wrapper's exit() to take depth below 0.
+    // A detach() from inside a draw leaves the running render wrapper's exit() to take depth below 0; a re-attached
+    // ledger must start from 0.
     this.depth = 0;
     const originals = { render: renderer.render, renderObject: renderer.renderObject };
     this.originals = originals;
@@ -898,23 +896,16 @@ function frameBufferTargetsOf(renderer: LedgerRenderer | null): AllowedRenderTar
 }
 
 /**
- * The material of a draw `World.compile()` made, when it reads mesh-local space: a node in any slot (`hasNodeSlot`, the
- * test `spriteRule`'s `sprite-node-material` uses), code the hint cannot read (a class that is not one of three's own,
- * or an own function — what `spriteRule` names `sprite-custom-material` before it looks at node slots, and what
- * `bakeProvesReads` refuses for the same reason), `alphaHash`, or a `normalMap` with `normalMapType:
- * ObjectSpaceNormalMap`; else null. The code test is the second half of `spriteRule`'s: a subclass overriding
- * `setupPosition` (or any other `setup*`) reads `positionLocal` with no `*Node` property to see, so `hasNodeSlot`
- * alone would leave the one documented mitigation for this change silently inapplicable. World's draws: a `forge:batch:` BatchedMesh, the base level of a `forge:instanced:`
- * group (its LOD levels share the group's material) and a baked mesh (`userData.forge.kind` `bake`, as `reasonOf` reads
- * it). three r186 gives a batched or instanced draw `positionLocal` multiplied by its instance matrix (`Batch.js:148`,
- * `Instance.js:206-207`), which World writes in the scene's space, and a baked mesh's positions are written there too;
- * `positionLocal` is a varying (`Position.js:45`), a node may read it in either stage, and `alphaHash` hashes it
- * (`NodeMaterial.js:893`). An object-space normal map's normals go through the draw's `modelNormalMatrix`
- * (`NormalMapNode.js:120-122`, `Normal.js:183-197`), the batch's or baked mesh's, not each mesh's: a rotated module
- * shades as if unrotated (`test/e2e/local-space.spec.ts` measures the change on both backends and annotates the share
- * of its own frame, which is scene-dependent). A tangent-space map
- * follows the batched normal and tangent, and changes nothing. The `batch-local-space` hint names these draws.
- * `userData` is guarded as in `reasonOf`: app code and loaders may null it.
+ * The material of a draw `World.compile()` made (a `forge:batch:` BatchedMesh, the base level of a `forge:instanced:`
+ * group, a baked mesh) when it may read mesh-local space, else null: a node in any slot (`hasNodeSlot`), code the hint
+ * cannot read (a class that is not three's own, or an own function: a `setupPosition` override reads `positionLocal`
+ * with no `*Node` property to see, the same test `spriteRule` and `bakeProvesReads` apply), `alphaHash`, or an
+ * object-space normal map. three r186 gives such a draw `positionLocal` multiplied by its instance matrix
+ * (`Batch.js:148`, `Instance.js:206-207`), the scene's space for World's draws; a node may read it in either stage
+ * (`Position.js:45`) and `alphaHash` hashes it (`NodeMaterial.js:893`). An object-space normal map goes through the
+ * draw's `modelNormalMatrix` (`NormalMapNode.js:120-122`, `Normal.js:183-197`), so a rotated module shades as if
+ * unrotated; a tangent-space map follows the batched normal and tangent and changes nothing.
+ * `test/e2e/local-space.spec.ts` measures the change on both backends. `userData` is guarded as in `reasonOf`.
  */
 function compiledLocalSpaceReader(object: Object3D): Material | null {
   const o = object as Object3D & { isBatchedMesh?: boolean; isInstancedMesh?: boolean; material?: Material | Material[] };
@@ -928,12 +919,10 @@ function compiledLocalSpaceReader(object: Object3D): Material | null {
 }
 
 /**
- * A pass id no other pass of this frame has, and the frame's record that it is taken. The first pass of a name keeps
- * the bare id; a later one of the same name gets `#2`, `#3` and so on, so two reflectors whose render targets are both
- * named `reflection` are `nested:reflection` and `nested:reflection#2` instead of one row summing both. This is
- * `shadowPassIds`' rule (`shadowPasses.ts`) over the same frame-wide set, which is why the set
- * holds every kind of id. The fixed ids — `main`, `override`, `fullscreen` and a VSM blur's `:vsm` — deliberately do
- * not go through it: several post-processing quads share `fullscreen` by design.
+ * A pass id no other pass of this frame has: the first pass of a name keeps the bare id, later ones get `#2`, `#3`
+ * and so on, so two reflectors whose targets are both named `reflection` are two rows, not one sum. The same rule as
+ * `shadowPassIds` over the same frame-wide set. The fixed ids (`main`, `override`, `fullscreen`, `:vsm`) skip it:
+ * several post-processing quads share `fullscreen` by design.
  */
 function uniquePassId(base: string, taken: Set<string>): string {
   if (!taken.has(base)) {

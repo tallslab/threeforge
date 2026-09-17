@@ -26,12 +26,10 @@ function capCodePoints(s: string, max: number): string {
   return chars.slice(0, Math.max(0, max - 1)).join('') + '…';
 }
 
-/** Caps a name at `MAX_NAME_LENGTH` characters. */
 export function capName(name: string): string {
   return capCodePoints(name, MAX_NAME_LENGTH);
 }
 
-/** Caps a message at `MAX_MESSAGE_LENGTH` characters. */
 export function capMessage(message: string): string {
   return capCodePoints(message, MAX_MESSAGE_LENGTH);
 }

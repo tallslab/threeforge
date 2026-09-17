@@ -43,12 +43,9 @@ export const ok = (value: unknown, note?: string): ToolResult => {
 };
 
 /**
- * `error` is cleaned before it goes into the JSON: most errors here are our own (`UsageError` on bad input), but
- * a `PageError` reaches this from a *rejected* `page.evaluate`/`waitForFunction` (`measure.ts`) whose message can
- * carry page text — the same threat `sanitizeDeep` handles for a resolved value, reached through an exception
- * instead. Deliberately unprefixed (no `page:`/`environment:`), matching the format this has always returned. `note`
- * (`ERROR_NOTE` for the run tools) becomes a second block, as in `ok`; `explain_hint`'s error quotes only the agent's
- * own input and carries none.
+ * `error` is cleaned before it goes into the JSON: a `PageError` from a rejected `page.evaluate` can carry page text.
+ * Unprefixed (no `page:`/`environment:`) to keep the format the tool has always returned. `note` (`ERROR_NOTE` for
+ * the run tools) becomes a second block, as in `ok`.
  */
 export const fail = (error: unknown, note?: string): ToolResult => {
   const content: ToolResult['content'] = [{ type: 'text', text: JSON.stringify({ error: cleanText(error instanceof Error ? error.message : String(error)), code: exitCodeFor(error) }) }];
@@ -71,13 +68,9 @@ function isFsRoot(path: string): boolean {
 }
 
 /**
- * `realpathSync(target)`, resolving every symlink on the way — but `target` (an `optimize_asset.out`) may not
- * exist yet, since the write happens after this check, and `realpathSync` throws on a path that doesn't exist. So
- * this walks up to the nearest existing ancestor, canonicalises *that*, and appends the remaining, not-yet-existing
- * segments lexically (nothing exists at them, so none is a symlink). `null` when an entry exists but cannot be
- * resolved: a dangling or looping symlink, which `realpathSync` rejects exactly like a missing path, but which a
- * write would follow to wherever it points (`<name>.forge.glb -> ~/.ssh/authorized_keys`). The
- * same rule as `realPathOf` in `src/cli/gltf-uris.ts`.
+ * `realpathSync` for a `target` that may not exist yet: the nearest existing ancestor is canonicalised and the missing
+ * segments appended (nothing exists at them, so none is a symlink). `null` when an entry exists but cannot be resolved,
+ * a dangling or looping symlink a write would follow. The same rule as `realPathOf` in `gltf-uris.ts`.
  */
 function realish(target: string): string | null {
   const pending: string[] = [];
@@ -97,16 +90,11 @@ function realish(target: string): string | null {
 }
 
 /**
- * The MCP-only rule for `optimize_asset.out` (the CLI's `--out` has none of this: a local user typing a path is
- * trusted, an agent's is not). Resolves `out` (or the default `<name>.forge.glb` next to the input) to an absolute
- * path and throws `UsageError` (exit code 2) when it does not end in `.glb`/`.gltf`, sits outside both the input
- * file's directory and the working directory, or already exists without `overwrite: true`. The confinement check is
- * done on `realish`-canonicalised paths, so a symlink under either root that leads outside it is refused even
- * though it looks lexically contained (matching `src/cli/server.ts`'s `realpathSync` defense against the same
- * class of escape), and a dangling symlink anywhere on the path is refused outright (see `realish`). The filesystem
- * root is never treated as an allowed working directory (see `isFsRoot`), since every path is trivially "inside" it.
- * `exists` defaults to an `lstat` check, so a symlink at `out` counts as existing. `cwd` and `exists` are injected so
- * the logic is unit-testable.
+ * The MCP-only rule for `optimize_asset.out` (the CLI's `--out` is a local user's and trusted; an agent's is not).
+ * Throws `UsageError` when `out` does not end in `.glb`/`.gltf`, sits outside both the input file's directory and the
+ * working directory, or already exists without `overwrite: true`. Confinement is checked on `realish` paths, so a
+ * symlink that leads outside a root is refused even when lexically contained, and a dangling symlink is refused
+ * outright; the filesystem root never counts as a working directory (`isFsRoot`). `cwd` and `exists` are injectable.
  */
 export function resolveOptimizeOut(file: string, out: string | null, overwrite: boolean, cwd: string = process.cwd(), exists: (path: string) => boolean = entryExists): string {
   const resolvedFile = resolvePath(cwd, file);
@@ -151,7 +139,7 @@ export interface McpDeps extends Pick<CliDeps, 'launch' | 'serve' | 'appDir'> {
 export async function serveMcp(deps: McpDeps = {}): Promise<void> {
   const stdin = deps.stdin ?? (process.stdin as unknown as StdinLike);
   const stdout = deps.stdout ?? process.stdout;
-  // Attached before any await, so a stdin that ends the instant it is handed to us is still observed. The SDK 1.30
+  // Attached before any await, so a stdin that ends the instant it is handed over is still observed. The SDK 1.30
   // stdio transport (node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js) only listens for 'data' and
   // 'error' on stdin, never 'end' — without this a disconnected client left the process listening forever and any
   // resource it opened (here: the MCP connection itself) never closed.

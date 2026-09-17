@@ -23,17 +23,10 @@ export type NestedPassPolicy = 'per-pass' | 'reuse-main';
 
 export interface CullingOptions {
   /**
-   * Box margin for instances that move; 0 (default) is fastest for statics, and `World` always uses 0.
-   *
-   * Leaf boxes are built and refitted this much larger, so `move` can leave a leaf alone while the instance's new box
-   * still fits inside it. **It changes which instances are drawn.** The BVH prefilters candidates by their box, and
-   * only the candidates it offers go on to three's bounding-sphere test (`sphereMeets`); since a bounding sphere
-   * circumscribes its box, that prefilter is strictly the tighter of the two. Enlarging the boxes loosens it, so an
-   * instance whose sphere meets the frustum while its exact box does not is now offered, passes the sphere test and
-   * is drawn — costing a draw call and its triangles, all of them clipped. A margin also rebuilds the tree
-   * differently, so the traversal order changes, which can flip depth tie-breaks between coincident surfaces.
-   * Measured on the bossfight bench scene: +2 draw calls and +24 triangles per frame in a point light's shadow pass,
-   * and 1-4 pixels of 480000. Use it only where a refit saving is measured and both effects are acceptable.
+   * Box margin for instances that move (default 0, and `World` always uses 0): leaves are built and refitted this much
+   * larger, so `move` can leave one alone while the new box still fits. It changes what is drawn: the BVH's exact-box
+   * prefilter is tighter than three's sphere test after it, so a looser box admits instances the exact box rejects.
+   * Measured on the bossfight bench: +2 draw calls, +24 triangles in a point light's shadow pass, 1-4 pixels of 480000.
    */
   margin?: number;
   /** Pick a coarser geometry range for distant instances (batches only). */
@@ -189,35 +182,21 @@ function pushItem(start: number, count: number, z: number, index: number): void 
 }
 
 /**
- * Replaces a BatchedMesh's linear per-instance frustum scan with a BVH query (O(log n + visible)).
- * Mirrors three r186's `BatchedMesh.onBeforeRender` in what it writes: `_multiDrawStarts`, `_multiDrawCounts`,
- * `_multiDrawCount`, the indirect texture and `_multiDrawBytesPerElement`. Candidates from the BVH still pass three's
- * own bounding-sphere test, so the result is a subset of what the linear scan would draw, never a superset — and at
- * the default `margin` of 0 it is a strict subset, because the tree's exact boxes reject instances whose
- * circumscribing sphere would meet the frustum. A non-zero `margin` gives some of those back (see
- * `CullingOptions.margin`). Array cameras, reversed depth and `perObjectFrustumCulled = false` use three's own scan.
+ * Replaces a BatchedMesh's linear per-instance frustum scan with a BVH query (O(log n + visible)), writing what three
+ * r186's `BatchedMesh.onBeforeRender` writes: `_multiDrawStarts`, `_multiDrawCounts`, `_multiDrawCount`, the indirect
+ * texture and `_multiDrawBytesPerElement`. Candidates still pass three's bounding-sphere test, so the result is a
+ * subset of the linear scan's (a strict one at `margin` 0, see `CullingOptions.margin`). Array cameras, reversed depth
+ * and `perObjectFrustumCulled = false` use three's own scan.
  *
- * **Nested passes keep a stable prefix.** Every material of a batch reads the same `_indirectTexture` (three r186
- * `nodes/accessors/Batch.js:130`). Renders nest: a shadow map renders from inside the first `receiveShadow` object's
- * draw (`AnalyticLightNode.js:261`, via `Renderer._renderObjectDirect` -> `NodeManager.updateBefore`, after
- * `object.onBeforeRender`), a reflector from inside its own. On WebGPU a texture upload (`queue.writeTexture`,
- * `WebGPUTextureUtils.js:1106`) lands at once while a pass's commands are submitted in `finishRender`
- * (`WebGPUBackend.js` ~1396), so rewriting rows an enclosing pass has recorded corrupts that pass; on WebGL the
- * receiving batch whose draw triggered the shadow render draws right after it returns, with whatever the arrays hold.
- * So while a pass that culled this batch is still open (`options.passes` knows), a nested pass:
- * - leaves the rows `[0, n)` that enclosing pass left untouched, and zeroes the counts of those its camera does not need;
- * - appends the ids its camera needs that those rows lack (LOD level by the main camera's distance; sorted for the
- *   nested camera when the batch sorts, the kept rows keep their order);
- * - sets `_multiDrawCount = n + k` and marks the texture for upload only when an appended row differs from what the
- *   texture holds (never for k = 0);
- * - puts the counts and `_multiDrawCount` back when the nested render ends (a `PassTracker.atEnd` callback, run from the
- *   scene's marked `onAfterRender` hook, or when the tracker heals after a render that threw). Not in the batch's own
- *   `onAfterRender`: the ledger reads `_multiDrawCount` after `renderObject` returns, which is after that hook.
- * The WebGPU multi-draw loop reads `_multiDrawCounts` and `_multiDrawCount` when the draw is recorded
- * (`WebGPUBackend.js` ~2127-2135), WebGL when it draws, so each pass draws its own list from rows that stay valid until
- * its submission. The cost: a nested pass issues `n + k` draw commands on WebGPU (zero-count ones included).
- *
- * The culling hook is the batch's own `onBeforeRender` (it replaces three's linear scan, so it cannot compose with it).
+ * Nested passes keep a stable prefix. Every material of a batch reads the same `_indirectTexture` (`Batch.js:130`), a
+ * shadow map renders from inside the first `receiveShadow` object's draw (`AnalyticLightNode.js:261`), and a WebGPU
+ * texture upload (`WebGPUTextureUtils.js:1106`) lands while the enclosing pass is still being recorded
+ * (`WebGPUBackend.js` ~1396): rewriting rows an open pass recorded would corrupt it. So while a pass that culled this
+ * batch is open, a nested pass keeps its rows `[0, n)`, zeroes the counts its camera does not need, appends what they
+ * lack (texture marked only when an appended row changed) and restores the counts when the nested render ends
+ * (`PassTracker.atEnd`; the batch's own `onAfterRender` runs before the ledger reads `_multiDrawCount`). The cost: a
+ * nested pass issues `n + k` draw commands on WebGPU, zero-count ones included.
+ * The hook is the batch's own `onBeforeRender`: it replaces three's scan, so it cannot compose with it.
  */
 export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: CoordinateSystem, options: CullingOptions = {}): CullingHandle {
   const target = batch as Internals;
@@ -253,7 +232,7 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
 
   const prototypeHook = Object.getPrototypeOf(batch).onBeforeRender as BatchedMesh['onBeforeRender'];
 
-  // ---- scratch of the running cull, read by visitors created once per batch (a cull allocates nothing) ----
+  // Scratch of the running cull; the visitors below are created once per batch, so a cull allocates nothing.
   let count = 0;
   let bytesPerElement = 1;
   let multiplier = 1;
@@ -262,7 +241,7 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
   /** Where LOD distances are measured from, in the batch's frame. */
   let eye = _cameraPos;
 
-  // ---- nested-pass state, sized by the slot capacity (`_multiDrawCounts.length`, which is also the id bound) ----
+  // Nested-pass state, sized to `_multiDrawCounts.length` (also the id bound) by `ensureCapacity`.
   let capacity = 0;
   /** Per slot: the index count the slot draws when a nested pass has not zeroed it. */
   let fullCounts = new Int32Array(0);
@@ -428,9 +407,9 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
     mark += 2;
     const covered = mark + 1;
 
-    // 1. The ids the camera needs, by the rules of three's BatchedMesh.onBeforeRender: every visible instance without
-    //    perObjectFrustumCulled; three's frustum and scan for an ArrayCamera (FrustumArray, spheres in the batch's frame,
-    //    as three tests them) or reversed depth; the BVH otherwise.
+    // The ids the camera needs, by the rules of three's BatchedMesh.onBeforeRender: every visible instance without
+    // perObjectFrustumCulled; three's frustum and scan for an ArrayCamera (FrustumArray, spheres in the batch's frame,
+    // as three tests them) or reversed depth; the BVH otherwise.
     neededCount = 0;
     if (!target.perObjectFrustumCulled) {
       for (let id = 0; id < info.length; id++) if (info[id]!.visible && info[id]!.active) needed[neededCount++] = id;
@@ -456,8 +435,8 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
     }
     for (let j = 0; j < neededCount; j++) marks[needed[j]!] = mark;
 
-    // 2. The kept rows: a slot the camera needs draws its full count (an enclosing nested pass may have zeroed it), the
-    //    rest draw nothing. The counts are saved first; the end of this pass puts them back.
+    // The kept rows: a slot the camera needs draws its full count (an enclosing nested pass may have zeroed it), the
+    // rest draw nothing. The counts are saved first; the end of this pass puts them back.
     let snapshot = saved[layer];
     if (snapshot === undefined || snapshot.length < base) saved[layer] = snapshot = new Int32Array(capacity);
     for (let i = 0; i < base; i++) {
@@ -471,7 +450,7 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
       }
     }
 
-    // 3. Append what the kept rows lack.
+    // Append what the kept rows lack.
     setUnits(geometry, material);
     sorted = target.sortObjects;
     if (lod || sorted) cameraInBatchFrame(camera);

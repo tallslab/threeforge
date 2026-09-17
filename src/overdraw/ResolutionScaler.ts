@@ -52,7 +52,6 @@ export class ResolutionScaler {
     return this.current;
   }
 
-  /** Records one frame time; returns the scale in force after this frame. */
   update(frameMs: number): number {
     this.samples.push(frameMs);
     if (this.samples.length < this.window) return this.current;
@@ -64,7 +63,6 @@ export class ResolutionScaler {
     return this.current;
   }
 
-  /** Applies a scale (clamped to [min, max]) to the renderer's pixel ratio now. */
   set(scale: number): void {
     const next = Number(Math.min(this.max, Math.max(this.min, scale)).toFixed(4));
     if (next === this.current) return;
@@ -73,7 +71,6 @@ export class ResolutionScaler {
     this.ledger?.setEnvironment({ dpr: this.base * next });
   }
 
-  /** Restores the base pixel ratio. */
   dispose(): void {
     this.current = 1;
     this.samples = [];

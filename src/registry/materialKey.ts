@@ -105,12 +105,12 @@ function textureKind(texture: Texture): string {
  * (non-cyclic) reference is walked each time it is reached, so two values with the same data match however they share
  * it. `#`, `^` and a trailing `n` cannot form a JSON value, so no marker collides with plain data.
  *
- * `memo` holds the string of every sub-object already keyed **in this one computation**, so a shared acyclic
- * sub-object reached through many paths is walked once instead of once per path (its string is the same however it
- * was reached, and it is emitted at each occurrence all the same, so the key does not change). A subtree that wrote a
- * `^d` is never memoised: `d` is the ancestor's *absolute* depth on the path the subtree was reached by, so the same
- * object keys differently at another depth. The memo lasts one `computeMaterialKeys` call, never longer, so a value
- * mutated between two calls is read again (`invalidate()` re-keys through the same path).
+ * `memo` holds the string of every sub-object already keyed in this one computation, so a shared acyclic sub-object
+ * reached through many paths is walked once instead of once per path (its string is the same however it was reached,
+ * and it is emitted at each occurrence all the same, so the key does not change). A subtree that wrote a `^d` is never
+ * memoised: `d` is the ancestor's absolute depth on the path the subtree was reached by, so the same object keys
+ * differently at another depth. The memo lasts one `computeMaterialKeys` call, never longer, so a value mutated
+ * between two calls is read again (`invalidate()` re-keys through the same path).
  */
 function stableJson(value: unknown, path: object[], memo: Map<object, string>): string {
   if (typeof value === 'function') return `#${identityOf(value)}`;
