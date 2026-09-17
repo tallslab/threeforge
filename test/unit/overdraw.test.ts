@@ -1,34 +1,44 @@
-import { describe, expect, it } from 'vitest';
 import {
   AddEquation,
   BackSide,
   BoxGeometry,
+  type Camera,
   Color,
   CustomBlending,
   DataTexture,
   FrontSide,
   HalfFloatType,
+  type Material,
   Mesh,
   MeshBasicMaterial,
+  type Object3D,
   OneFactor,
   PlaneGeometry,
   Points,
   RenderTarget,
+  type Scene,
   Sprite,
   SpriteMaterial,
-  type Camera,
-  type Material,
-  type Object3D,
-  type Scene,
   type Texture,
 } from 'three';
 import { float } from 'three/tsl';
 import { MeshBasicNodeMaterial, PointsNodeMaterial, SpriteNodeMaterial } from 'three/webgpu';
+import { describe, expect, it } from 'vitest';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { disposeOverdraw, measureOverdraw, overdrawTargetOf } from '../../src/ledger/overdraw.js';
 import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
 
-type RenderObjectFn = (object: Object3D, scene: Scene, camera: Camera, geometry: unknown, material: Material, group: unknown, lightsNode: unknown, clippingContext: unknown, passId: unknown) => void;
+type RenderObjectFn = (
+  object: Object3D,
+  scene: Scene,
+  camera: Camera,
+  geometry: unknown,
+  material: Material,
+  group: unknown,
+  lightsNode: unknown,
+  clippingContext: unknown,
+  passId: unknown,
+) => void;
 type CountMaterial = Material & {
   isNodeMaterial?: boolean;
   outputNode?: { node?: { value?: { toArray(): number[] } } } | null;
@@ -200,8 +210,15 @@ function installAppState(scene: Scene, renderer: Protocol): () => void {
     expect([renderer.getActiveCubeFace(), renderer.getActiveMipmapLevel()]).toEqual([3, 2]);
     expect(renderer.getMRT()).toBe(APP_MRT);
     expect(renderer.getRenderObjectFunction()).toBe(appRenderObject);
-    expect([renderer.clearColor.r, renderer.clearColor.g, renderer.clearColor.b, renderer.clearAlpha]).toEqual([0.2, 0.4, 0.6, 1]);
-    expect([renderer.autoClear, renderer.autoClearColor, renderer.opaque, renderer.transparent]).toEqual([false, false, false, true]);
+    expect([renderer.clearColor.r, renderer.clearColor.g, renderer.clearColor.b, renderer.clearAlpha]).toEqual([
+      0.2, 0.4, 0.6, 1,
+    ]);
+    expect([renderer.autoClear, renderer.autoClearColor, renderer.opaque, renderer.transparent]).toEqual([
+      false,
+      false,
+      false,
+      true,
+    ]);
   };
 }
 
@@ -211,7 +228,12 @@ function expectCountSettings(m: CountMaterial): void {
   // NodeMaterial.setup (three r186 ~547-549): a non-null outputNode replaces the diffuse result, so instance, batch and
   // vertex colours no longer scale the count, while setupDiffuseColor still runs its alphaTest and alphaHash discards.
   expect(m.outputNode?.node?.value?.toArray()).toEqual([1, 0, 0, 1]); // TSL's vec4(1, 0, 0, 1): a VarNode over a ConstNode
-  expect([m.blending, m.blendSrc, m.blendDst, m.blendEquation]).toEqual([CustomBlending, OneFactor, OneFactor, AddEquation]);
+  expect([m.blending, m.blendSrc, m.blendDst, m.blendEquation]).toEqual([
+    CustomBlending,
+    OneFactor,
+    OneFactor,
+    AddEquation,
+  ]);
   expect([m.depthTest, m.depthWrite, m.transparent, m.forceSinglePass]).toEqual([false, false, true, true]);
   expect([m.lights, m.fog, m.toneMapped]).toEqual([false, false, false]);
 }
@@ -222,7 +244,8 @@ function drawEach(renderer: Protocol, camera: Camera, objects: Object3D[]): void
   renderer.render = function (this: Protocol, scene: NodeScene) {
     record.call(this, scene, camera);
     const fn = this.getRenderObjectFunction()!;
-    for (const o of objects) fn.call(this, o, scene, camera, (o as Mesh).geometry, (o as Mesh).material as Material, null, null, null, null);
+    for (const o of objects)
+      fn.call(this, o, scene, camera, (o as Mesh).geometry, (o as Mesh).material as Material, null, null, null, null);
   };
 }
 
@@ -285,7 +308,10 @@ describe('measureOverdraw', () => {
     const renderer = protocolRenderer([]);
     const positionNode = float(1);
     const displacementMap = new DataTexture(new Uint8Array(4), 1, 1);
-    const animated = new Mesh(new PlaneGeometry(), Object.assign(new MeshBasicNodeMaterial(), { positionNode, displacementMap }));
+    const animated = new Mesh(
+      new PlaneGeometry(),
+      Object.assign(new MeshBasicNodeMaterial(), { positionNode, displacementMap }),
+    );
     drawEach(renderer, camera, [animated]);
     // Renderer.renderObject copies both onto the override (Renderer.js ~3744-3752) and puts them back after the draw
     // (~3805-3809), outside any finally: a draw that throws in between leaves the copies on the count material.
@@ -328,7 +354,16 @@ describe('measureOverdraw', () => {
     const renderer = protocolRenderer([0, 0]);
     const map = new DataTexture(new Uint8Array(4), 1, 1);
     const geometry = new PlaneGeometry();
-    const cutout = new Mesh(geometry, new MeshBasicMaterial({ map, alphaMap: new DataTexture(new Uint8Array(4), 1, 1), opacity: 0.25, alphaHash: true, side: BackSide }));
+    const cutout = new Mesh(
+      geometry,
+      new MeshBasicMaterial({
+        map,
+        alphaMap: new DataTexture(new Uint8Array(4), 1, 1),
+        opacity: 0.25,
+        alphaHash: true,
+        side: BackSide,
+      }),
+    );
     const plain = new Mesh(geometry, new MeshBasicMaterial());
     const noOverride = new Mesh(geometry, Object.assign(new MeshBasicMaterial(), { allowOverride: false }));
     const noColour = new Mesh(geometry, new MeshBasicMaterial({ colorWrite: false }));
@@ -371,7 +406,10 @@ describe('measureOverdraw', () => {
     const { scene, camera } = sceneWithCamera();
     const renderer = protocolRenderer([0, 0]);
     const [opacityNode, alphaTestNode, maskNode] = [float(0.5), float(0.25), float(1)];
-    const cutout = new Mesh(new PlaneGeometry(), Object.assign(new MeshBasicNodeMaterial(), { opacityNode, alphaTestNode, maskNode }));
+    const cutout = new Mesh(
+      new PlaneGeometry(),
+      Object.assign(new MeshBasicNodeMaterial(), { opacityNode, alphaTestNode, maskNode }),
+    );
     const plain = new Mesh(new PlaneGeometry(), new MeshBasicMaterial());
     drawEach(renderer, camera, [cutout, plain]);
 
@@ -395,7 +433,10 @@ describe('measureOverdraw', () => {
     // whose SpriteNodeMaterial places each instance with position and scale nodes. PointsNodeMaterial extends
     // SpriteNodeMaterial, but a Points object draws points (PointsNodeMaterial.setupVertex), so it keeps the mesh count.
     const sprite = new Sprite(new SpriteMaterial({ map, rotation: 0.5, sizeAttenuation: false, opacity: 0.5 }));
-    const batch = new Mesh(new PlaneGeometry(), Object.assign(new SpriteNodeMaterial(), { scaleNode, rotationNode, side: BackSide }));
+    const batch = new Mesh(
+      new PlaneGeometry(),
+      Object.assign(new SpriteNodeMaterial(), { scaleNode, rotationNode, side: BackSide }),
+    );
     const points = new Points(new PlaneGeometry(), new PointsNodeMaterial());
     const mesh = new Mesh(new PlaneGeometry(), new MeshBasicMaterial());
     drawEach(renderer, camera, [sprite, batch, points, mesh]);
@@ -403,7 +444,12 @@ describe('measureOverdraw', () => {
     await measureOverdraw(renderer as never, scene, camera);
 
     const [onSprite, onBatch, onPoints, onMesh] = renderer.objectCalls;
-    expect([onSprite, onBatch, onPoints, onMesh].map((c) => c!.override.type)).toEqual(['SpriteNodeMaterial', 'SpriteNodeMaterial', 'MeshBasicNodeMaterial', 'MeshBasicNodeMaterial']);
+    expect([onSprite, onBatch, onPoints, onMesh].map((c) => c!.override.type)).toEqual([
+      'SpriteNodeMaterial',
+      'SpriteNodeMaterial',
+      'MeshBasicNodeMaterial',
+      'MeshBasicNodeMaterial',
+    ]);
     expect(onBatch!.override).toBe(onSprite!.override);
     // The scene's count material is back after each sprite draw.
     expect(onPoints!.override).toBe(renderer.calls[0]!.override);
@@ -418,7 +464,12 @@ describe('measureOverdraw', () => {
 
     const spriteCount = onSprite!.override;
     expectCountSettings(spriteCount);
-    expect([spriteCount.map, spriteCount.alphaMap, spriteCount.scaleNode, spriteCount.rotationNode]).toEqual([null, null, null, null]);
+    expect([spriteCount.map, spriteCount.alphaMap, spriteCount.scaleNode, spriteCount.rotationNode]).toEqual([
+      null,
+      null,
+      null,
+      null,
+    ]);
     let disposed = false;
     spriteCount.addEventListener('dispose', () => {
       disposed = true;
@@ -662,16 +713,23 @@ describe('measureOverdraw: renders inside a count draw, a throwing count render,
     const renderer = protocolRenderer([]);
     const outerMap = new DataTexture(new Uint8Array(4), 1, 1);
     const opacityNode = float(0.5);
-    const outer = new Mesh(new PlaneGeometry(), Object.assign(new MeshBasicNodeMaterial({ map: outerMap, opacity: 0.25 }), { opacityNode }));
+    const outer = new Mesh(
+      new PlaneGeometry(),
+      Object.assign(new MeshBasicNodeMaterial({ map: outerMap, opacity: 0.25 }), { opacityNode }),
+    );
     const nested = sceneWithCamera().scene;
     nested.overrideMaterial = new MeshBasicMaterial(); // the app's own override for its render-to-texture
-    const nestedMesh = new Mesh(new PlaneGeometry(), new MeshBasicMaterial({ map: new DataTexture(new Uint8Array(4), 1, 1), opacity: 0.75 }));
+    const nestedMesh = new Mesh(
+      new PlaneGeometry(),
+      new MeshBasicMaterial({ map: new DataTexture(new Uint8Array(4), 1, 1), opacity: 0.75 }),
+    );
     const noColour = new Mesh(new PlaneGeometry(), new MeshBasicMaterial({ colorWrite: false })); // a count skip rule, not the app's
     const drawnInNested: Object3D[] = [];
     let seenByOuter: unknown[] | null = null;
     renderer.render = function (this: Protocol, s: NodeScene) {
       const fn = this.getRenderObjectFunction()!;
-      for (const o of s === nested ? [nestedMesh, noColour] : [outer]) fn.call(this, o, s, camera, o.geometry, o.material as Material, null, null, null, null);
+      for (const o of s === nested ? [nestedMesh, noColour] : [outer])
+        fn.call(this, o, s, camera, o.geometry, o.material as Material, null, null, null, null);
     };
     renderer.renderObject = function (this: Protocol, object: Object3D, s: Scene) {
       if (s === nested) {
@@ -695,18 +753,32 @@ describe('measureOverdraw: renders inside a count draw, a throwing count render,
     const renderer = protocolRenderer([]);
     const outerPosition = float(1);
     const outerDisplacement = new DataTexture(new Uint8Array(4), 1, 1);
-    const outer = new Mesh(new PlaneGeometry(), Object.assign(new MeshBasicNodeMaterial(), { positionNode: outerPosition, displacementMap: outerDisplacement }));
-    const reflected = new Mesh(new PlaneGeometry(), Object.assign(new MeshBasicNodeMaterial(), { positionNode: float(2) }));
+    const outer = new Mesh(
+      new PlaneGeometry(),
+      Object.assign(new MeshBasicNodeMaterial(), { positionNode: outerPosition, displacementMap: outerDisplacement }),
+    );
+    const reflected = new Mesh(
+      new PlaneGeometry(),
+      Object.assign(new MeshBasicNodeMaterial(), { positionNode: float(2) }),
+    );
     let reflecting = false;
     let seenAfterReflection: unknown[] | null = null;
     let countMaterial: CountMaterial | null = null;
     renderer.render = function (this: Protocol, s: NodeScene) {
       const fn = this.getRenderObjectFunction()!;
-      for (const o of reflecting ? [reflected] : [outer]) fn.call(this, o, s, camera, o.geometry, o.material as Material, null, null, null, null);
+      for (const o of reflecting ? [reflected] : [outer])
+        fn.call(this, o, s, camera, o.geometry, o.material as Material, null, null, null, null);
     };
     // Renderer.renderObject's override path: copy (~3744-3752), then the draw, whose updateBefore nodes render first
     // (~3875), then the restore (~3805-3809).
-    renderer.renderObject = function (this: Protocol, object: Object3D, s: Scene, _camera: Camera, _geometry: unknown, material: Material) {
+    renderer.renderObject = function (
+      this: Protocol,
+      object: Object3D,
+      s: Scene,
+      _camera: Camera,
+      _geometry: unknown,
+      material: Material,
+    ) {
       const count = s.overrideMaterial as CountMaterial;
       countMaterial = count;
       const [position, displacement] = [count.positionNode, count.displacementMap ?? null];

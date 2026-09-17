@@ -6,7 +6,9 @@ test('attributes every draw of the naive scene and reconciles with renderer.info
     const f = window.__forge;
     const frame = f.frame();
     const naive = f.naive!;
-    const transparentStatic = naive.props.filter((p) => p.userData.forge === 'static' && !Array.isArray(p.material) && p.material.transparent).length;
+    const transparentStatic = naive.props.filter(
+      (p) => p.userData.forge === 'static' && !Array.isArray(p.material) && p.material.transparent,
+    ).length;
     return { frame, transparentStatic, report: f.ledger.report() };
   });
   console.log(report);
@@ -22,17 +24,29 @@ test('attributes every draw of the naive scene and reconciles with renderer.info
     transparent: { submissions: transparentStatic },
     'unique-material': { submissions: 491 - transparentStatic },
   });
-  expect(Object.keys(frame.byReason).sort()).toEqual(['dynamic', 'renderer-internal', 'skinned', 'transparent', 'unique-material']);
+  expect(Object.keys(frame.byReason).sort()).toEqual([
+    'dynamic',
+    'renderer-internal',
+    'skinned',
+    'transparent',
+    'unique-material',
+  ]);
   expect(typeof frame.totals.programs).toBe('number');
 });
 
-test('renders the same number of programs as distinct registry programs (shader variants are real)', async ({ forge }) => {
+test('renders the same number of programs as distinct registry programs (shader variants are real)', async ({
+  forge,
+}) => {
   await forge.open('naive');
   const { programs, registryPrograms, memoryPrograms } = await forge.page.evaluate(() => {
     const f = window.__forge;
     for (const p of f.naive!.props) f.registry.register(p.material as never);
     const frame = f.frame();
-    return { programs: Object.keys(frame.programs).length, registryPrograms: f.registry.stats().programs, memoryPrograms: f.renderer.info.memory.programs };
+    return {
+      programs: Object.keys(frame.programs).length,
+      registryPrograms: f.registry.stats().programs,
+      memoryPrograms: f.renderer.info.memory.programs,
+    };
   });
   console.log(JSON.stringify({ programs, registryPrograms, memoryPrograms }));
   // Ground and the skinned dummies use plain MeshStandardMaterial, so they share the solid-colour program key,

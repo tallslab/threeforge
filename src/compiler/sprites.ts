@@ -1,4 +1,13 @@
-import { Matrix4, Sphere, SpriteMaterial, type Camera, type Frustum, type Material, type Object3D, type Sprite } from 'three';
+import {
+  type Camera,
+  type Frustum,
+  type Material,
+  Matrix4,
+  type Object3D,
+  Sphere,
+  type Sprite,
+  SpriteMaterial,
+} from 'three';
 import { SpriteNodeMaterial } from 'three/webgpu';
 import { hasOwnFunctions } from './batchStatics.js';
 import type { SceneSpace } from './space.js';
@@ -129,7 +138,12 @@ export function spriteRule(sprite: Sprite, root?: Object3D): string | null {
 }
 
 /** Groups sprites by material keys; groups under `threshold` are skipped with `sprite-threshold`. Order is first-seen. */
-export function groupSprites(sprites: Sprite[], threshold: number, describe: (material: Material) => SpriteKeys, root?: Object3D): { groups: SpriteGroup[]; skipped: SpriteSkip[] } {
+export function groupSprites(
+  sprites: Sprite[],
+  threshold: number,
+  describe: (material: Material) => SpriteKeys,
+  root?: Object3D,
+): { groups: SpriteGroup[]; skipped: SpriteSkip[] } {
   const byKey = new Map<string, SpriteGroup>();
   const skipped: SpriteSkip[] = [];
   for (const sprite of sprites) {
@@ -255,7 +269,12 @@ function sortByDepth(n: number): void {
  * culled against `frustum` when given, optionally sorted back to front for `camera`, capped to `cap`. Returns the
  * instance count written.
  */
-export function fillSpriteInstances(sprites: Sprite[], centers: Float32Array, scales: Float32Array, options: SpriteFillOptions): number {
+export function fillSpriteInstances(
+  sprites: Sprite[],
+  centers: Float32Array,
+  scales: Float32Array,
+  options: SpriteFillOptions,
+): number {
   const total = sprites.length;
   if (order.length < total) {
     order = new Uint32Array(total);
@@ -329,7 +348,8 @@ export function fillSpriteInstances(sprites: Sprite[], centers: Float32Array, sc
     if (isVisibleInGraph(sprite, options.root)) {
       // The column lengths again: the batch's (the space's) divide out, and the cull pass above already took them.
       scales[s] = (frustum ? columns[index * 2]! : Math.sqrt(m[0]! * m[0]! + m[1]! * m[1]! + m[2]! * m[2]!)) / scaleX;
-      scales[s + 1] = (frustum ? columns[index * 2 + 1]! : Math.sqrt(m[4]! * m[4]! + m[5]! * m[5]! + m[6]! * m[6]!)) / scaleY;
+      scales[s + 1] =
+        (frustum ? columns[index * 2 + 1]! : Math.sqrt(m[4]! * m[4]! + m[5]! * m[5]! + m[6]! * m[6]!)) / scaleY;
     } else {
       scales[s] = 0;
       scales[s + 1] = 0;

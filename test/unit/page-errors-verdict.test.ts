@@ -12,15 +12,35 @@ import { emptyFrame } from '../../src/ledger/snapshot.js';
 import { glbBytes } from './helpers/gltf-files.js';
 
 /** Page errors (uncaught exceptions in the harness page) fail `analyze` and `optimize` verdicts; `inspect` only logs them. */
-const env = { three: '186', backend: 'webgl2' as const, multiDraw: true, tier: 'phone-low' as const, gpu: 'x', dpr: 1, viewport: [800, 600] as [number, number] };
-const asset: AssetFacts = { meshes: 1, materials: 1, vertices: 3, triangles: 1, animations: 0, skinned: 0, morph: 0, loadMs: 1 };
+const env = {
+  three: '186',
+  backend: 'webgl2' as const,
+  multiDraw: true,
+  tier: 'phone-low' as const,
+  gpu: 'x',
+  dpr: 1,
+  viewport: [800, 600] as [number, number],
+};
+const asset: AssetFacts = {
+  meshes: 1,
+  materials: 1,
+  vertices: 3,
+  triangles: 1,
+  animations: 0,
+  skinned: 0,
+  morph: 0,
+  loadMs: 1,
+};
 
 /** A harness page that loads and measures cleanly but raises `messages` as uncaught page errors. */
 function pageRaising(messages: string[]): PlaywrightPage {
   const page = {
     goto: async () => null,
     waitForFunction: async () => true,
-    evaluate: async (expression: unknown) => (String(expression).includes('__threeforgeCli') ? { ready: true, asset } : { snapshot: emptyFrame(env), renderMs: 1, frameMs: 16 }),
+    evaluate: async (expression: unknown) =>
+      String(expression).includes('__threeforgeCli')
+        ? { ready: true, asset }
+        : { snapshot: emptyFrame(env), renderMs: 1, frameMs: 16 },
     route: async () => {},
     screenshot: async () => Buffer.alloc(0),
     on: (event: string, listener: (error: Error) => void) => {
@@ -41,7 +61,10 @@ describe('page errors fail the analyze verdict', () => {
       const command = parseArgs(['analyze', file, '--no-compile']);
       if (command.name !== 'analyze') throw new Error(`parsed as ${command.name}`);
       const run = async (messages: string[]) => {
-        const launch = async (): Promise<BrowserHandle> => ({ newPage: async () => pageRaising(messages), close: async () => {} });
+        const launch = async (): Promise<BrowserHandle> => ({
+          newPage: async () => pageRaising(messages),
+          close: async () => {},
+        });
         return (await analyzeAssetWithShots(command.input, undefined, false, { launch, appDir: dir })).doc.verdict;
       };
       expect(await run([])).toEqual({ pass: true, budget: null, errors: [], reasons: [] });
@@ -70,7 +93,12 @@ describe('analyze --parity judges the compile parity like optimize', () => {
   };
   function comparingPage(shots: Buffer[]): PlaywrightPage {
     let shot = 0;
-    const report = { after: { batches: 0, instanced: 0, baked: 0, spriteBatches: 0, frozen: 0, meshes: 0 }, skipped: [], groups: [], bake: null };
+    const report = {
+      after: { batches: 0, instanced: 0, baked: 0, spriteBatches: 0, frozen: 0, meshes: 0 },
+      skipped: [],
+      groups: [],
+      bake: null,
+    };
     const page = {
       goto: async () => null,
       waitForFunction: async () => true,
@@ -78,12 +106,13 @@ describe('analyze --parity judges the compile parity like optimize', () => {
         const text = String(expression);
         if (text.includes('setView') || text.includes('rendering')) return undefined;
         if (text.includes('.compile()')) return { ...report, skippedCount: 0, groupCount: 0 };
-        if (text.includes('const hook = window.__threeforge')) return { snapshot: emptyFrame(env), renderMs: 1, ledgerMs: 0, frameMs: 16 };
+        if (text.includes('const hook = window.__threeforge'))
+          return { snapshot: emptyFrame(env), renderMs: 1, ledgerMs: 0, frameMs: 16 };
         if (text.includes('__threeforgeCli')) return { ready: true, asset };
         return undefined;
       },
       route: async () => {},
-    screenshot: async () => shots[shot++]!,
+      screenshot: async () => shots[shot++]!,
       on: () => page,
       close: async () => {},
     };
@@ -96,7 +125,10 @@ describe('analyze --parity judges the compile parity like optimize', () => {
       writeFileSync(file, glbBytes({ asset: { version: '2.0' } }));
       const command = parseArgs(['analyze', file, ...args]);
       if (command.name !== 'analyze') throw new Error(`parsed as ${command.name}`);
-      const launch = async (): Promise<BrowserHandle> => ({ newPage: async () => comparingPage(shots), close: async () => {} });
+      const launch = async (): Promise<BrowserHandle> => ({
+        newPage: async () => comparingPage(shots),
+        close: async () => {},
+      });
       return (await analyzeAssetWithShots(command.input, undefined, false, { launch, appDir: dir })).doc;
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -107,7 +139,12 @@ describe('analyze --parity judges the compile parity like optimize', () => {
   it('passes one changed pixel at the default 0.5 %, and records the threshold it used', async () => {
     const doc = await analyzeWith([], onePixel);
     expect(doc.input).toMatchObject({ parity: 0.5 });
-    expect(doc.parity).toMatchObject({ threshold: 0.5, pass: true, diffPct: 0.25, views: [{ view: 'default', diffPct: 0.25, changedPixels: 1 }] });
+    expect(doc.parity).toMatchObject({
+      threshold: 0.5,
+      pass: true,
+      diffPct: 0.25,
+      views: [{ view: 'default', diffPct: 0.25, changedPixels: 1 }],
+    });
     expect(doc.verdict.pass).toBe(true);
   });
 
@@ -116,7 +153,10 @@ describe('analyze --parity judges the compile parity like optimize', () => {
     expect(doc.parity).toMatchObject({ threshold: 0, pass: false });
     expect(doc.verdict.pass).toBe(false);
     expect(doc.verdict.reasons).toContain('pixel parity 0.25% > 0% (1 changed pixel in the worst view)');
-    expect(await analyzeWith(['--parity', '0'], [png(false), png(false)])).toMatchObject({ parity: { threshold: 0, pass: true }, verdict: { pass: true } });
+    expect(await analyzeWith(['--parity', '0'], [png(false), png(false)])).toMatchObject({
+      parity: { threshold: 0, pass: true },
+      verdict: { pass: true },
+    });
   });
 
   /**
@@ -133,7 +173,12 @@ describe('analyze --parity judges the compile parity like optimize', () => {
       return pngjs.PNG.sync.write(image);
     };
     const doc = await analyzeWith(['--parity', '0'], [large(false), large(true)]);
-    expect(doc.parity).toMatchObject({ threshold: 0, diffPct: 0, pass: false, views: [{ view: 'default', diffPct: 0, changedPixels: 1 }] });
+    expect(doc.parity).toMatchObject({
+      threshold: 0,
+      diffPct: 0,
+      pass: false,
+      views: [{ view: 'default', diffPct: 0, changedPixels: 1 }],
+    });
     expect(doc.verdict.pass).toBe(false);
     expect(doc.verdict.reasons).toContain('pixel parity 0.00% > 0% (1 changed pixel in the worst view)');
   });
@@ -144,11 +189,41 @@ describe('analyze --parity judges the compile parity like optimize', () => {
   });
 });
 
-const stats: AssetStats = { nodes: 1, meshes: 1, primitives: 1, materials: 1, textures: 0, textureBytes: 0, accessors: 1, vertices: 3, triangles: 1, bytes: 10, animations: 0, skins: 0, morphTargets: 0, extensions: [] };
+const stats: AssetStats = {
+  nodes: 1,
+  meshes: 1,
+  primitives: 1,
+  materials: 1,
+  textures: 0,
+  textureBytes: 0,
+  accessors: 1,
+  vertices: 3,
+  triangles: 1,
+  bytes: 10,
+  animations: 0,
+  skins: 0,
+  morphTargets: 0,
+  extensions: [],
+};
 
 function analyzed(): AgentDocument {
   const frame = emptyFrame(env);
-  return { schemaVersion: 2, tool: 'threeforge', version: 'test', command: 'analyze', input: {} as AnalyzeInput, env, asset, before: frame, after: frame, compile: null, parity: null, hints: [], verdict: { pass: true, budget: null, errors: [], reasons: [] }, timings: { totalMs: 1 } };
+  return {
+    schemaVersion: 2,
+    tool: 'threeforge',
+    version: 'test',
+    command: 'analyze',
+    input: {} as AnalyzeInput,
+    env,
+    asset,
+    before: frame,
+    after: frame,
+    compile: null,
+    parity: null,
+    hints: [],
+    verdict: { pass: true, budget: null, errors: [], reasons: [] },
+    timings: { totalMs: 1 },
+  };
 }
 
 const verify = (): OptimizeVerify => ({
@@ -156,12 +231,25 @@ const verify = (): OptimizeVerify => ({
   parity: { diffPct: 0, threshold: 0.5, pass: true, views: [] },
   original: analyzed(),
   optimized: analyzed(),
-  delta: { bytes: 0, materials: 0, vertices: 0, triangles: 0, sceneSubmissions: { naive: 0, compiled: 0 }, loadMs: 0, memoryBytes: 0 },
+  delta: {
+    bytes: 0,
+    materials: 0,
+    vertices: 0,
+    triangles: 0,
+    sceneSubmissions: { naive: 0, compiled: 0 },
+    loadMs: 0,
+    memoryBytes: 0,
+  },
 });
 
 describe('page errors fail the optimize verdict', () => {
   it('passes when neither render raised a page error', () => {
-    expect(judgeOptimize(stats, stats, verify(), null, { original: [], optimized: [] })).toEqual({ pass: true, budget: null, errors: [], reasons: [] });
+    expect(judgeOptimize(stats, stats, verify(), null, { original: [], optimized: [] })).toEqual({
+      pass: true,
+      budget: null,
+      errors: [],
+      reasons: [],
+    });
   });
 
   it('fails on a page error in either render and says which one', () => {

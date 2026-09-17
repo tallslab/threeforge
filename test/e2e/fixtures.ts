@@ -25,7 +25,11 @@ export const test = base.extend<ForgeOptions & { forge: ForgePage }>({
     const open = async (scene: string, query: Record<string, string> = {}) => {
       const q = new URLSearchParams({ scene, backend, ...query });
       await page.goto(`/?${q.toString()}`);
-      await page.waitForFunction(() => window.__forge?.ready === true || typeof window.__forge?.error === 'string', undefined, { timeout: 60_000 });
+      await page.waitForFunction(
+        () => window.__forge?.ready === true || typeof window.__forge?.error === 'string',
+        undefined,
+        { timeout: 60_000 },
+      );
       const error = await page.evaluate(() => window.__forge.error);
       if (error) throw new Error(`harness failed to start: ${error}`);
       const actual = await page.evaluate(() => window.__forge.backend);
@@ -34,7 +38,9 @@ export const test = base.extend<ForgeOptions & { forge: ForgePage }>({
         // A machine with no adapter skips, which keeps a local run useful. A job that exists to cover WebGPU must not
         // report green because every one of its tests skipped, so FORGE_REQUIRE_WEBGPU=1 turns the skip into a failure.
         if (process.env.FORGE_REQUIRE_WEBGPU === '1') {
-          throw new Error(`FORGE_REQUIRE_WEBGPU=1, but this browser reported no WebGPU adapter (it ran as ${actual}; adapter setting: ${webgpuAdapter})`);
+          throw new Error(
+            `FORGE_REQUIRE_WEBGPU=1, but this browser reported no WebGPU adapter (it ran as ${actual}; adapter setting: ${webgpuAdapter})`,
+          );
         }
         test.skip(true, 'no WebGPU adapter in this browser');
       }

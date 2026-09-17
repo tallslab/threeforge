@@ -5,7 +5,14 @@ import { expect, test } from './fixtures.js';
  * exact numbers live in bench/baselines and are gated by `pnpm bench`.
  */
 /** `tag: '@corpus'` marks a scene that cannot build without downloaded content, so a corpus-less CI must skip it. */
-const scenes: Array<{ id: string; naiveMin: number; optimizedMax: number; counts: Record<string, number>; timeout?: number; tag?: string }> = [
+const scenes: Array<{
+  id: string;
+  naiveMin: number;
+  optimizedMax: number;
+  counts: Record<string, number>;
+  timeout?: number;
+  tag?: string;
+}> = [
   { id: 'village', naiveMin: 300, optimizedMax: 40, counts: { props: 300, materials: 40 } },
   { id: 'forest', naiveMin: 5000, optimizedMax: 16, counts: { trees: 5000, grass: 2000 } },
   // Skinned meshes are not batched (that is VAT's job): the optimized crowd only bounds the count.
@@ -15,7 +22,14 @@ const scenes: Array<{ id: string; naiveMin: number; optimizedMax: number; counts
   // blocky-character, arena and blaster GLBs. A missing kit does not throw: `if (!proto) continue` leaves
   // counts.fighters and counts.blocky at 0 and attaches no sprites, so the counts and naiveMin below would fail
   // rather than skip on a kit-less runner. Found by following the delegation, not by grepping this scene: @corpus.
-  { id: 'bossfight', naiveMin: 2000, optimizedMax: 480, counts: { effects: 30, fighters: 12 }, timeout: 240_000, tag: '@corpus' },
+  {
+    id: 'bossfight',
+    naiveMin: 2000,
+    optimizedMax: 480,
+    counts: { effects: 30, fighters: 12 },
+    timeout: 240_000,
+    tag: '@corpus',
+  },
   // Sprites are not batched and the water reflection renders them twice: the lake's optimized bound is loose on purpose.
   // The water loads waternormals.jpg from the downloaded content (test/app/scenes/lake.ts), so: @corpus.
   { id: 'lake', naiveMin: 1900, optimizedMax: 4200, counts: { rain: 2000 }, tag: '@corpus' },
@@ -27,7 +41,9 @@ const scenes: Array<{ id: string; naiveMin: number; optimizedMax: number; counts
 ];
 
 for (const s of scenes) {
-  test(`${s.id}: naive and optimized variants render with every draw attributed`, { tag: s.tag ?? [] }, async ({ forge }) => {
+  test(`${s.id}: naive and optimized variants render with every draw attributed`, { tag: s.tag ?? [] }, async ({
+    forge,
+  }) => {
     if (s.timeout) test.setTimeout(s.timeout);
     await forge.open(s.id, { variant: 'naive' });
     // Measured snapshots come from frameAsync(): shadow maps re-render only once per animation-frame tick.

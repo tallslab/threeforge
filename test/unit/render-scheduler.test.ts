@@ -1,7 +1,19 @@
+import {
+  AnimationClip,
+  AnimationMixer,
+  BoxGeometry,
+  LoopOnce,
+  Mesh,
+  MeshStandardMaterial,
+  Object3D,
+  PerspectiveCamera,
+  Scene,
+  Vector2,
+  VectorKeyframeTrack,
+} from 'three';
 import { describe, expect, it } from 'vitest';
-import { AnimationClip, AnimationMixer, BoxGeometry, LoopOnce, Mesh, MeshStandardMaterial, Object3D, PerspectiveCamera, Scene, Vector2, VectorKeyframeTrack } from 'three';
-import { RenderScheduler } from '../../src/scheduler/RenderScheduler.js';
 import { World } from '../../src/compiler/World.js';
+import { RenderScheduler } from '../../src/scheduler/RenderScheduler.js';
 import { tag } from '../../src/tags.js';
 
 function fakeRenderer(width = 800, height = 600) {
@@ -22,7 +34,13 @@ function fakeRenderer(width = 800, height = 600) {
   return r;
 }
 function fakeMixer(inUse: number) {
-  const m = { deltas: [] as number[], stats: { actions: { inUse } }, update(dt: number) { m.deltas.push(dt); } };
+  const m = {
+    deltas: [] as number[],
+    stats: { actions: { inUse } },
+    update(dt: number) {
+      m.deltas.push(dt);
+    },
+  };
   return m;
 }
 function setup(extra: Record<string, unknown> = {}) {
@@ -93,7 +111,14 @@ describe('RenderScheduler', () => {
     const attached: unknown[] = [];
     const ledger = { attachScheduler: (s: unknown) => attached.push(s) };
     let listener: (() => void) | null = null;
-    const world = { onDirty: (l: () => void) => { listener = l; return () => { listener = null; }; } };
+    const world = {
+      onDirty: (l: () => void) => {
+        listener = l;
+        return () => {
+          listener = null;
+        };
+      },
+    };
     const { renderer, scheduler } = setup({ ledger, world });
     expect(attached).toEqual([scheduler]);
     scheduler.start();
@@ -307,7 +332,13 @@ describe('RenderScheduler running-mixer rule (real AnimationMixer)', () => {
   });
 
   it('falls back to stats.actions.inUse when a mixer-like object has no private _actions/_nActiveActions fields', () => {
-    const fake = { deltas: [] as number[], stats: { actions: { inUse: 0 } }, update(dt: number) { fake.deltas.push(dt); } };
+    const fake = {
+      deltas: [] as number[],
+      stats: { actions: { inUse: 0 } },
+      update(dt: number) {
+        fake.deltas.push(dt);
+      },
+    };
     const { scheduler } = setup({ mixers: [fake] });
     expect(scheduler.tick(0)).toBe(true);
     expect(scheduler.tick(16)).toBe(false); // inUse stays 0: not animating
@@ -342,7 +373,7 @@ describe('RenderScheduler matrix updates', () => {
 });
 
 describe('RenderScheduler and a disposed World', () => {
-  it('throws at construction against an already-disposed World (World.onDirty\'s own fail-fast, not new scheduler code)', () => {
+  it("throws at construction against an already-disposed World (World.onDirty's own fail-fast, not new scheduler code)", () => {
     const world = new World(new Scene());
     world.dispose();
     expect(() => setup({ world })).toThrow(/disposed/i);

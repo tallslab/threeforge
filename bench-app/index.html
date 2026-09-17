@@ -32,7 +32,7 @@
       <p id="device" class="muted">detecting the GPU…</p>
       <div class="row">
         <label>backend <select id="backend"><option value="auto">auto (WebGPU, else WebGL2)</option><option value="webgpu">webgpu</option><option value="webgl2">webgl2</option></select></label>
-        <button id="run" class="primary">Run the benchmark</button>
+        <button id="run" type="button" class="primary">Run the benchmark</button>
         <span id="progress" class="muted">idle</span>
       </div>
       <div id="canvasMount"></div>
@@ -47,9 +47,9 @@
         <h2>Submit to the public table</h2>
         <p class="muted">The result opens as a GitHub issue; a workflow validates it and adds this device to the table below. Nothing but the JSON shown here is sent.</p>
         <div class="row">
-          <a id="issue" class="button" target="_blank" rel="noopener" hidden>Open the prefilled issue</a>
-          <span id="manual" hidden>Copy the JSON and paste it into <a id="template" href="#" target="_blank" rel="noopener">a new bench-result issue</a>.</span>
-          <button id="copy">Copy JSON</button>
+          <a id="issue" class="button" href="https://github.com/" target="_blank" rel="noopener" hidden>Open the prefilled issue</a>
+          <span id="manual" hidden>Copy the JSON and paste it into <a id="template" href="https://github.com/" target="_blank" rel="noopener">a new bench-result issue</a>.</span>
+          <button id="copy" type="button">Copy JSON</button>
         </div>
         <pre id="json"></pre>
       </section>
@@ -60,7 +60,7 @@
           <tbody id="devicesBody"></tbody>
         </table>
       </div>
-      <p class="muted">Cells are naive → optimized scene submissions and median frame ms. Source and methodology: <code>docs/bench.md</code> and <code>docs/devices.md</code><a id="repoLink" href="#" rel="noopener" hidden>, the repository on GitHub</a>.</p>
+      <p class="muted">Cells are naive → optimized scene submissions and median frame ms. Source and methodology: <code>docs/bench.md</code> and <code>docs/devices.md</code><a id="repoLink" href="https://github.com/" rel="noopener" hidden>, the repository on GitHub</a>.</p>
     </main>
     <script type="module" src="./main.ts"></script>
   </body>

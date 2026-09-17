@@ -1,7 +1,6 @@
-import { describe, expect, it } from 'vitest';
 import {
   AnimationClip,
-  BatchedMesh,
+  type BatchedMesh,
   Bone,
   BoxGeometry,
   BufferGeometry,
@@ -19,6 +18,7 @@ import {
   SpriteMaterial,
   VectorKeyframeTrack,
 } from 'three';
+import { describe, expect, it } from 'vitest';
 import { classify } from '../../src/compiler/classify.js';
 import { World } from '../../src/compiler/World.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
@@ -37,7 +37,11 @@ describe('game content rules', () => {
     const sword = tag.static(new Mesh(box, solid(1)));
     hand.add(sword);
     scene.add(root);
-    expect(classify(scene, { policy: 'auto' })[0]).toMatchObject({ object: sword, kind: 'dynamic', rule: 'bone-parented' });
+    expect(classify(scene, { policy: 'auto' })[0]).toMatchObject({
+      object: sword,
+      kind: 'dynamic',
+      rule: 'bone-parented',
+    });
   });
 
   it('never batches a geometry whose attributes are marked for dynamic or stream updates (trails, ribbons)', () => {
@@ -67,15 +71,29 @@ describe('game content rules', () => {
     };
     const a = makeFighter('a');
     const b = makeFighter('b');
-    const clip = new AnimationClip('attack', 1, [new VectorKeyframeTrack('torso.position', [0, 1], [0, 0, 0, 0, 1, 0])]);
+    const clip = new AnimationClip('attack', 1, [
+      new VectorKeyframeTrack('torso.position', [0, 1], [0, 0, 0, 0, 1, 0]),
+    ]);
     // Scene-wide resolution would find only the first 'torso'.
     const sceneWide = classify(scene, { policy: 'auto', animations: [clip] });
     expect(sceneWide.find((c) => c.object === a.part)?.kind).toBe('dynamic');
     expect(sceneWide.find((c) => c.object === b.part)?.kind).toBe('static');
-    const perRoot = classify(scene, { policy: 'auto', animations: [{ root: a.fighter, clips: [clip] }, { root: b.fighter, clips: [clip] }] });
+    const perRoot = classify(scene, {
+      policy: 'auto',
+      animations: [
+        { root: a.fighter, clips: [clip] },
+        { root: b.fighter, clips: [clip] },
+      ],
+    });
     expect(perRoot.find((c) => c.object === a.part)).toMatchObject({ kind: 'dynamic', rule: 'animated' });
     expect(perRoot.find((c) => c.object === b.part)).toMatchObject({ kind: 'dynamic', rule: 'animated' });
-    const report = new World(scene, { policy: 'auto', animations: [{ root: a.fighter, clips: [clip] }, { root: b.fighter, clips: [clip] }] }).compile();
+    const report = new World(scene, {
+      policy: 'auto',
+      animations: [
+        { root: a.fighter, clips: [clip] },
+        { root: b.fighter, clips: [clip] },
+      ],
+    }).compile();
     expect(report.after.meshes).toBe(2);
   });
 
@@ -96,18 +114,28 @@ describe('game content rules', () => {
 
   it('gives points, sprites and lines their own ledger reasons', () => {
     const { scene, camera } = sceneWithCamera();
-    const points = new Points(new BufferGeometry().setAttribute('position', new Float32BufferAttribute([0, 0, 0], 3)), new PointsMaterial());
+    const points = new Points(
+      new BufferGeometry().setAttribute('position', new Float32BufferAttribute([0, 0, 0], 3)),
+      new PointsMaterial(),
+    );
     points.name = 'sparks';
     const sprite = new Sprite(new SpriteMaterial());
     sprite.name = 'health';
-    const line = new Line(new BufferGeometry().setAttribute('position', new Float32BufferAttribute([0, 0, 0, 1, 1, 1], 3)), new LineBasicMaterial());
+    const line = new Line(
+      new BufferGeometry().setAttribute('position', new Float32BufferAttribute([0, 0, 0, 1, 1, 1], 3)),
+      new LineBasicMaterial(),
+    );
     line.name = 'beam';
     scene.add(points, sprite, line);
     const renderer = new FakeRenderer();
     const ledger = new DrawCallLedger();
     ledger.attach(renderer as never);
     renderer.render(scene, camera);
-    const reasons = Object.fromEntries((ledger.frame({ items: true }).items ?? []).filter((i) => i.reason !== 'renderer-internal').map((i) => [i.name, i.reason]));
+    const reasons = Object.fromEntries(
+      (ledger.frame({ items: true }).items ?? [])
+        .filter((i) => i.reason !== 'renderer-internal')
+        .map((i) => [i.name, i.reason]),
+    );
     expect(reasons).toEqual({ sparks: 'points', health: 'sprite', beam: 'line' });
   });
 
@@ -128,6 +156,10 @@ describe('game content rules', () => {
     new World(coloured).compile();
     const cb = coloured.children.find((o) => (o as BatchedMesh).isBatchedMesh) as BatchedMesh;
     expect((cb.material as MeshStandardMaterial).color.getHex()).toBe(0xffffff);
-    expect(coloured.children.filter((o) => !(o as BatchedMesh).isBatchedMesh).some((o) => (o as Mesh).material === cb.material)).toBe(false);
+    expect(
+      coloured.children
+        .filter((o) => !(o as BatchedMesh).isBatchedMesh)
+        .some((o) => (o as Mesh).material === cb.material),
+    ).toBe(false);
   });
 });

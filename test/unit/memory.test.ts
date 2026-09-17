@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest';
 import {
   BoxGeometry,
   CompressedCubeTexture,
@@ -12,6 +11,7 @@ import {
   DirectionalLight,
   FloatType,
   HalfFloatType,
+  type Light,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -27,9 +27,9 @@ import {
   UnsignedIntType,
   VideoTexture,
   VSMShadowMap,
-  type Light,
 } from 'three';
 import Renderer from 'three/src/renderers/common/Renderer.js';
+import { describe, expect, it } from 'vitest';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { estimateMemory, geometryBytes, textureBytes } from '../../src/ledger/memory.js';
 import { disposeOverdraw, measureOverdraw, overdrawTargetOf } from '../../src/ledger/overdraw.js';
@@ -65,7 +65,14 @@ describe('memory estimate', () => {
     cube.image = Array(6).fill({ width: 8, height: 8 });
     cube.generateMipmaps = false;
     expect(textureBytes(cube)).toBe(8 * 8 * 4 * 6);
-    const compressed = new CompressedTexture([{ data: new Uint8Array(100), width: 8, height: 8 }, { data: new Uint8Array(25), width: 4, height: 4 }] as never, 8, 8);
+    const compressed = new CompressedTexture(
+      [
+        { data: new Uint8Array(100), width: 8, height: 8 },
+        { data: new Uint8Array(25), width: 4, height: 4 },
+      ] as never,
+      8,
+      8,
+    );
     expect(textureBytes(compressed)).toBe(125);
   });
 
@@ -103,7 +110,14 @@ describe('memory estimate', () => {
   });
 
   it('sums the mip data of all six faces of a compressed cube', () => {
-    const face = { width: 8, height: 8, mipmaps: [{ data: new Uint8Array(100), width: 8, height: 8 }, { data: new Uint8Array(25), width: 4, height: 4 }] };
+    const face = {
+      width: 8,
+      height: 8,
+      mipmaps: [
+        { data: new Uint8Array(100), width: 8, height: 8 },
+        { data: new Uint8Array(25), width: 4, height: 4 },
+      ],
+    };
     expect(textureBytes(new CompressedCubeTexture(Array(6).fill(face) as never))).toBe(125 * 6);
   });
 
@@ -114,7 +128,8 @@ describe('memory estimate', () => {
 
   it('sizes geometries from attribute and index buffers', () => {
     const box = new BoxGeometry();
-    const expected = Object.values(box.attributes).reduce((n, a) => n + a.array.byteLength, 0) + box.index!.array.byteLength;
+    const expected =
+      Object.values(box.attributes).reduce((n, a) => n + a.array.byteLength, 0) + box.index!.array.byteLength;
     expect(geometryBytes(box)).toBe(expected);
   });
 
@@ -133,7 +148,10 @@ describe('memory estimate', () => {
     expect(m.unreferenced).toEqual({ geometries: 0, textures: 0 });
     expect(m.chunks).toEqual({ total: 0, resident: 0 });
     // The renderer holds 6 geometries and 9 textures; the scene reaches 1 and 1; three itself holds 1 geometry, 2 frame-buffer textures and 2 for the shadow map.
-    expect(estimateMemory(scene, { textures: 9, geometries: 6 }, [800, 600]).unreferenced).toEqual({ geometries: 4, textures: 4 });
+    expect(estimateMemory(scene, { textures: 9, geometries: 6 }, [800, 600]).unreferenced).toEqual({
+      geometries: 4,
+      textures: 4,
+    });
   });
 
   it('one shadow light with a [0, 0] viewport reports no unreferenced textures: the allowance does not depend on the viewport', () => {
@@ -169,7 +187,9 @@ describe('memory estimate', () => {
     const withDepth = new RenderTarget(16, 16);
     const info = { textures: 1 + 2 + 1 + 2, geometries: 2 };
     expect(estimateMemory(scene, info, [800, 600]).unreferenced.textures).toBe(3);
-    expect(estimateMemory(scene, info, [800, 600], { renderTargets: [colourOnly, withDepth] }).unreferenced.textures).toBe(0);
+    expect(
+      estimateMemory(scene, info, [800, 600], { renderTargets: [colourOnly, withDepth] }).unreferenced.textures,
+    ).toBe(0);
     expect(estimateMemory(scene, info, [800, 600], { renderTargets: [null] }).unreferenced.textures).toBe(3);
   });
 
@@ -194,9 +214,16 @@ describe('memory estimate', () => {
     const tiles = new DirectionalLight();
     tiles.castShadow = true;
     const blur = { format: RGFormat, type: HalfFloatType, depthBuffer: false };
-    Object.assign(allocateShadowMap(tiles, 256), { _vsmShadowMapVertical: new RenderTarget(256, 256, blur), _vsmShadowMapHorizontal: new RenderTarget(256, 256, blur) });
+    Object.assign(allocateShadowMap(tiles, 256), {
+      _vsmShadowMapVertical: new RenderTarget(256, 256, blur),
+      _vsmShadowMapHorizontal: new RenderTarget(256, 256, blur),
+    });
     arrayScene.add(tiles);
-    expect(estimateMemory(arrayScene, { textures: 1 + 2 + 2 + 2, geometries: 2 }, [800, 600], { shadowMapType: VSMShadowMap }).unreferenced.textures).toBe(0);
+    expect(
+      estimateMemory(arrayScene, { textures: 1 + 2 + 2 + 2, geometries: 2 }, [800, 600], {
+        shadowMapType: VSMShadowMap,
+      }).unreferenced.textures,
+    ).toBe(0);
   });
 
   it('counts the two blur targets of each built non-point VSM map in renderTargets, from the shadow node and from an array map', () => {
@@ -212,19 +239,31 @@ describe('memory estimate', () => {
     scene.add(sun, point);
     const info = { textures: 1 + 2 + 2 + 2 + 2, geometries: 2 };
     const maps = 256 * 256 * 4 + 256 * 256 * 4 * 6;
-    expect(estimateMemory(scene, info, [0, 0]).renderTargets, 'no VSM: the two maps only').toEqual({ count: 2, bytes: maps });
+    expect(estimateMemory(scene, info, [0, 0]).renderTargets, 'no VSM: the two maps only').toEqual({
+      count: 2,
+      bytes: maps,
+    });
     // Plus the sun's two RG half-float blur targets (ShadowNode.js ~409-410): 2 channels x 2 bytes a texel.
-    expect(estimateMemory(scene, info, [0, 0], { shadowMapType: VSMShadowMap }).renderTargets).toEqual({ count: 4, bytes: maps + 2 * 256 * 256 * 4 });
+    expect(estimateMemory(scene, info, [0, 0], { shadowMapType: VSMShadowMap }).renderTargets).toEqual({
+      count: 4,
+      bytes: maps + 2 * 256 * 256 * 4,
+    });
     // An array map carries its blur targets itself (ShadowNode.js ~389-403): counted from them, once.
     const { scene: arrayScene } = sceneWithMap();
     const tiles = new DirectionalLight();
     tiles.castShadow = true;
     tiles.shadow.mapSize.set(256, 256);
     const blur = { format: RGFormat, type: HalfFloatType, depthBuffer: false };
-    Object.assign(allocateShadowMap(tiles, 256), { _vsmShadowMapVertical: new RenderTarget(256, 256, blur), _vsmShadowMapHorizontal: new RenderTarget(256, 256, blur) });
+    Object.assign(allocateShadowMap(tiles, 256), {
+      _vsmShadowMapVertical: new RenderTarget(256, 256, blur),
+      _vsmShadowMapHorizontal: new RenderTarget(256, 256, blur),
+    });
     arrayScene.add(tiles);
     const arrayInfo = { textures: 1 + 2 + 2 + 2, geometries: 2 };
-    expect(estimateMemory(arrayScene, arrayInfo, [0, 0], { shadowMapType: VSMShadowMap }).renderTargets).toEqual({ count: 3, bytes: 256 * 256 * 4 + 2 * 256 * 256 * 4 });
+    expect(estimateMemory(arrayScene, arrayInfo, [0, 0], { shadowMapType: VSMShadowMap }).renderTargets).toEqual({
+      count: 3,
+      bytes: 256 * 256 * 4 + 2 * 256 * 256 * 4,
+    });
   });
 
   it("sizes a point light's shadow target by its map width on every face, agreeing with lighting.shadowTexels", () => {
@@ -237,7 +276,10 @@ describe('memory estimate', () => {
     // three renders all six faces at 512 x 512 (PointShadowNode.js:227, :254), so the target is width x width x 6,
     // which is exactly the texel count `lighting.shadowTexels` reports for this light, at 4 bytes a texel.
     const texels = 512 * 512 * 6;
-    expect(estimateMemory(scene, { textures: 1 + 2 + 2, geometries: 2 }, [0, 0]).renderTargets).toEqual({ count: 1, bytes: texels * 4 });
+    expect(estimateMemory(scene, { textures: 1 + 2 + 2, geometries: 2 }, [0, 0]).renderTargets).toEqual({
+      count: 1,
+      bytes: texels * 4,
+    });
   });
 
   it('allows the textures the caller counts for the renderer itself (options.internalTextures)', () => {
@@ -254,9 +296,13 @@ describe('memory estimate', () => {
     const sphere = new BoxGeometry();
     const info = { textures: 1 + 2, geometries: 1 + 1 + 3 };
     expect(estimateMemory(scene, info, [0, 0]).unreferenced.geometries).toBe(3);
-    expect(estimateMemory(scene, info, [0, 0], { internalGeometries: [...planes, sphere] }).unreferenced.geometries).toBe(0);
+    expect(
+      estimateMemory(scene, info, [0, 0], { internalGeometries: [...planes, sphere] }).unreferenced.geometries,
+    ).toBe(0);
     // One listed that the scene reaches as well is one geometry: the allowance adds only the others.
-    expect(estimateMemory(scene, info, [0, 0], { internalGeometries: [...planes, geometry] }).unreferenced.geometries).toBe(1);
+    expect(
+      estimateMemory(scene, info, [0, 0], { internalGeometries: [...planes, geometry] }).unreferenced.geometries,
+    ).toBe(1);
   });
 
   it('allows the textures the renderer created for itself by identity (options.rendererTextures), once when the scene reaches one', () => {
@@ -268,10 +314,13 @@ describe('memory estimate', () => {
     // The app's own pmrem.fromScene() output set as scene.environment is reachable: it is not allowed twice, so a texture
     // removed without dispose() beside it still counts (allowing it twice would hide that one).
     scene.environment = pmrem[1]!;
-    expect(estimateMemory(scene, { ...info, textures: info.textures + 1 }, [0, 0], { rendererTextures: pmrem }).unreferenced.textures).toBe(1);
+    expect(
+      estimateMemory(scene, { ...info, textures: info.textures + 1 }, [0, 0], { rendererTextures: pmrem }).unreferenced
+        .textures,
+    ).toBe(1);
   });
 
-  it("allows one morph texture per reachable geometry with morph attributes (three r186 Morph.js ~93, keyed by geometry)", () => {
+  it('allows one morph texture per reachable geometry with morph attributes (three r186 Morph.js ~93, keyed by geometry)', () => {
     const { scene } = sceneWithMap();
     const morphed = new BoxGeometry();
     morphed.morphAttributes.position = [morphed.attributes.position!.clone()];
@@ -282,19 +331,35 @@ describe('memory estimate', () => {
     expect(estimateMemory(scene, { ...info, textures: info.textures + 1 }, [0, 0]).unreferenced.textures).toBe(1);
   });
 
-  it('counts a held render target\'s colour texture once when a material reaches it (options.renderTargets)', () => {
+  it("counts a held render target's colour texture once when a material reaches it (options.renderTargets)", () => {
     const { scene } = sceneWithMap();
     const mirror = new RenderTarget(64, 64); // colour and depth
     scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial({ map: mirror.texture })));
     const info = { textures: 1 + 2 + 2, geometries: 3 };
     expect(estimateMemory(scene, info, [0, 0], { renderTargets: [mirror] }).unreferenced.textures).toBe(0);
-    expect(estimateMemory(scene, { ...info, textures: info.textures + 1 }, [0, 0], { renderTargets: [mirror] }).unreferenced.textures).toBe(1);
+    expect(
+      estimateMemory(scene, { ...info, textures: info.textures + 1 }, [0, 0], { renderTargets: [mirror] }).unreferenced
+        .textures,
+    ).toBe(1);
   });
 
   it("memory.measured copies renderer.info.memory's counts and byte sizes, and is null without them", () => {
     const { scene } = sceneWithMap();
-    const info = { textures: 9, geometries: 6, texturesSize: 4096, attributesSize: 3000, indexAttributesSize: 500, renderTargets: 2, total: 9000 };
-    expect(estimateMemory(scene, info, [800, 600]).measured).toEqual({ textures: { count: 9, bytes: 4096 }, geometries: { count: 6, bytes: 3500 }, renderTargets: { count: 2 }, bytes: 9000 });
+    const info = {
+      textures: 9,
+      geometries: 6,
+      texturesSize: 4096,
+      attributesSize: 3000,
+      indexAttributesSize: 500,
+      renderTargets: 2,
+      total: 9000,
+    };
+    expect(estimateMemory(scene, info, [800, 600]).measured).toEqual({
+      textures: { count: 9, bytes: 4096 },
+      geometries: { count: 6, bytes: 3500 },
+      renderTargets: { count: 2 },
+      bytes: 9000,
+    });
     expect(estimateMemory(scene, { textures: 9, geometries: 6 }, [800, 600]).measured).toBeNull();
   });
 });
@@ -303,10 +368,15 @@ describe('memory estimate', () => {
 // ~1561-1601). It exercises three's own Renderer, constructed in node with a backend that only supplies a canvas. If it
 // fails, three renamed or reshaped the field, and `frameBufferTargetsOf` in DrawCallLedger.ts must change with it; until
 // then the ledger falls back to its fixed allowance of a colour and a depth texture (see the test after this one).
-describe("three r186 renderer internals the memory section reads (canary)", () => {
+describe('three r186 renderer internals the memory section reads (canary)', () => {
   it('pins Renderer._frameBufferTargets: a Map of the RenderTargets _getFrameBufferTarget() creates, marked isPostProcessingRenderTarget', () => {
     const backend = { getDomElement: () => ({ width: 300, height: 150, style: {} }) };
-    const renderer = new Renderer(backend as never) as unknown as { _frameBufferTargets: unknown; _getFrameBufferTarget(): unknown; needsFrameBufferTarget: boolean; depth: boolean };
+    const renderer = new Renderer(backend as never) as unknown as {
+      _frameBufferTargets: unknown;
+      _getFrameBufferTarget(): unknown;
+      needsFrameBufferTarget: boolean;
+      depth: boolean;
+    };
     expect(renderer._frameBufferTargets).toBeInstanceOf(Map);
     const targets = renderer._frameBufferTargets as Map<unknown, unknown>;
     expect(targets.size, 'none until a frame needs one').toBe(0);
@@ -319,7 +389,10 @@ describe("three r186 renderer internals the memory section reads (canary)", () =
     expect(target.depthBuffer).toBe(renderer.depth);
     // What the estimate allows for it: its colour texture and the depth texture three creates for its depth buffer.
     const { scene } = sceneWithMap();
-    expect(estimateMemory(scene, { textures: 1 + 2, geometries: 2 }, [0, 0], { frameBufferTargets: [target] }).unreferenced.textures).toBe(0);
+    expect(
+      estimateMemory(scene, { textures: 1 + 2, geometries: 2 }, [0, 0], { frameBufferTargets: [target] }).unreferenced
+        .textures,
+    ).toBe(0);
   });
 });
 
@@ -340,7 +413,9 @@ describe('the ledger memory section', () => {
       return textures;
     };
     const withDepth = Object.assign(new RenderTarget(8, 8), { isPostProcessingRenderTarget: true });
-    const colourOnly = Object.assign(new RenderTarget(8, 8, { depthBuffer: false }), { isPostProcessingRenderTarget: true });
+    const colourOnly = Object.assign(new RenderTarget(8, 8, { depthBuffer: false }), {
+      isPostProcessingRenderTarget: true,
+    });
     expect(measure(undefined), 'absent: the fixed allowance').toBe(0);
     expect(measure(new Map([['canvas', withDepth]])), 'a colour and a depth target').toBe(0);
     expect(measure(new Map([['canvas', colourOnly]])), 'a colour-only target').toBe(1);
@@ -351,7 +426,6 @@ describe('the ledger memory section', () => {
     expect(measure(new Map([['canvas', { target: withDepth }]])), 'values that are not render targets').toBe(0);
     expect(measure(null), 'null').toBe(0);
   });
-
 
   it('a ledger that measured overdraw reports no unreferenced textures on a scene with nothing else unreferenced', async () => {
     const renderer = new FakeRenderer();
@@ -431,7 +505,18 @@ describe('the ledger memory section', () => {
     const sphere = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
     sphere.name = 'Background.mesh';
     const map = new Mesh(new BoxGeometry(), new MeshBasicMaterial({ map: new DataTexture(new Uint8Array(4), 1, 1) }));
-    map.onBeforeRender = (r) => void (r as unknown as FakeRenderer).renderObject(sphere, scene, camera, sphere.geometry, sphere.material, null, null, null, null);
+    map.onBeforeRender = (r) =>
+      void (r as unknown as FakeRenderer).renderObject(
+        sphere,
+        scene,
+        camera,
+        sphere.geometry,
+        sphere.material,
+        null,
+        null,
+        null,
+        null,
+      );
     scene.add(map);
     scene.updateMatrixWorld();
     // PMREMGenerator (renderers/common/extras/PMREMGenerator.js): a LOD plane with an `outputDirection` attribute, rendered as
@@ -496,14 +581,19 @@ describe('the ledger memory section', () => {
     ledger.detach();
   });
 
-  it("allows the frame-buffer targets the renderer shows by identity, and none when it drew into none", () => {
+  it('allows the frame-buffer targets the renderer shows by identity, and none when it drew into none', () => {
     const { scene } = sceneWithMap();
     const info = { textures: 1 + 2, geometries: 2 };
     const frameBuffer = new RenderTarget(800, 600); // colour, and the depth texture three creates for its depth buffer
-    expect(estimateMemory(scene, info, [800, 600], { frameBufferTargets: [frameBuffer] }).unreferenced.textures).toBe(0);
+    expect(estimateMemory(scene, info, [800, 600], { frameBufferTargets: [frameBuffer] }).unreferenced.textures).toBe(
+      0,
+    );
     // A RenderPipeline rendering the output itself: three draws into no frame-buffer target, so nothing is allowed for one.
     expect(estimateMemory(scene, info, [800, 600], { frameBufferTargets: [] }).unreferenced.textures).toBe(2);
-    expect(estimateMemory(scene, info, [800, 600]).unreferenced.textures, 'without the map: the usual colour and depth').toBe(0);
+    expect(
+      estimateMemory(scene, info, [800, 600]).unreferenced.textures,
+      'without the map: the usual colour and depth',
+    ).toBe(0);
   });
 
   it("allows three's DFG_LUT when info's texture hooks are prototype methods, and detach() makes the prototype's own visible again", () => {
@@ -526,12 +616,15 @@ describe('the ledger memory section', () => {
     };
     Object.setPrototypeOf(renderer.info, proto);
     const info = renderer.info as typeof renderer.info & typeof proto;
-    const owns = (key: string): boolean => Object.prototype.hasOwnProperty.call(info, key);
+    const owns = (key: string): boolean => Object.hasOwn(info, key);
     expect([owns('createTexture'), owns('destroyTexture')], 'the hooks start on the prototype').toEqual([false, false]);
 
     const ledger = new DrawCallLedger();
     ledger.attach(renderer as never);
-    expect([owns('createTexture'), owns('destroyTexture')], 'attach() wraps them as own properties').toEqual([true, true]);
+    expect([owns('createTexture'), owns('destroyTexture')], 'attach() wraps them as own properties').toEqual([
+      true,
+      true,
+    ]);
     expect(info.createTexture).not.toBe(proto.createTexture);
 
     const { scene, camera } = sceneWithCamera();

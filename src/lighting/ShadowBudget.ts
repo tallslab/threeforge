@@ -30,7 +30,14 @@ export interface ShadowBudgetReport {
   lights: ShadowLightReport[];
 }
 
-type ShadowLight = Light & { isPointLight?: boolean; shadow?: { mapSize: { x: number; y: number; set(x: number, y: number): unknown }; autoUpdate: boolean; needsUpdate: boolean } };
+type ShadowLight = Light & {
+  isPointLight?: boolean;
+  shadow?: {
+    mapSize: { x: number; y: number; set(x: number, y: number): unknown };
+    autoUpdate: boolean;
+    needsUpdate: boolean;
+  };
+};
 type Restore = () => void;
 
 /**
@@ -64,8 +71,17 @@ export class ShadowBudget {
     const faces = (l: ShadowLight): number => (l.isPointLight ? 6 : 1);
     // three renders each of a point light's six cube faces at the map's width and never reads its height (three r186,
     // nodes/lighting/PointShadowNode.js:227 and :254); every other map costs width x height.
-    const texels = (l: ShadowLight): number => (l.castShadow ? (l.isPointLight ? l.shadow!.mapSize.x * l.shadow!.mapSize.x * 6 : l.shadow!.mapSize.x * l.shadow!.mapSize.y) : 0);
-    const entries = lights.map((light) => ({ light, from: [light.shadow!.mapSize.x, light.shadow!.mapSize.y] as [number, number], castShadow: true }));
+    const texels = (l: ShadowLight): number =>
+      l.castShadow
+        ? l.isPointLight
+          ? l.shadow!.mapSize.x * l.shadow!.mapSize.x * 6
+          : l.shadow!.mapSize.x * l.shadow!.mapSize.y
+        : 0;
+    const entries = lights.map((light) => ({
+      light,
+      from: [light.shadow!.mapSize.x, light.shadow!.mapSize.y] as [number, number],
+      castShadow: true,
+    }));
     const before = lights.reduce((sum, l) => sum + texels(l), 0);
     const disable = (light: ShadowLight): void => {
       light.castShadow = false;
@@ -79,7 +95,9 @@ export class ShadowBudget {
     let total = lights.reduce((sum, l) => sum + texels(l), 0);
     for (let guard = 0; total > this.budget && guard < 64; guard++) {
       let largest: ShadowLight | null = null;
-      for (const l of lights) if (l.castShadow && l.shadow!.mapSize.x > this.minMapSize && (!largest || texels(l) > texels(largest))) largest = l;
+      for (const l of lights)
+        if (l.castShadow && l.shadow!.mapSize.x > this.minMapSize && (!largest || texels(l) > texels(largest)))
+          largest = l;
       if (!largest) break;
       const { x, y } = largest.shadow!.mapSize;
       const nx = Math.max(this.minMapSize, x >> 1);
@@ -96,7 +114,14 @@ export class ShadowBudget {
       budget: this.budget,
       before,
       after: total,
-      lights: entries.map(({ light, from }) => ({ name: light.name, type: light.type, faces: faces(light), from, to: [light.shadow!.mapSize.x, light.shadow!.mapSize.y], castShadow: light.castShadow })),
+      lights: entries.map(({ light, from }) => ({
+        name: light.name,
+        type: light.type,
+        faces: faces(light),
+        from,
+        to: [light.shadow!.mapSize.x, light.shadow!.mapSize.y],
+        castShadow: light.castShadow,
+      })),
     };
   }
 

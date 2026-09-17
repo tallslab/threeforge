@@ -1,5 +1,5 @@
 import { MeshoptSimplifier } from 'meshoptimizer/simplifier';
-import { BufferAttribute, BufferGeometry, type Object3D, type Mesh } from 'three';
+import { BufferAttribute, BufferGeometry, type Mesh, type Object3D } from 'three';
 import { ensureIndexed } from '../compiler/geometryCompat.js';
 
 export interface LodOptions {
@@ -48,10 +48,14 @@ export async function generateLods(geometry: BufferGeometry, options: LodOptions
 
   const source = ensureIndexed(geometry);
   const position = source.attributes.position as BufferAttribute;
-  const positions = position.array instanceof Float32Array ? position.array : Float32Array.from(position.array as ArrayLike<number>);
+  const positions =
+    position.array instanceof Float32Array ? position.array : Float32Array.from(position.array as ArrayLike<number>);
   const stride = position.itemSize;
   const sourceIndex = source.index!;
-  const original = sourceIndex.array instanceof Uint32Array ? sourceIndex.array : Uint32Array.from(sourceIndex.array as ArrayLike<number>);
+  const original =
+    sourceIndex.array instanceof Uint32Array
+      ? sourceIndex.array
+      : Uint32Array.from(sourceIndex.array as ArrayLike<number>);
   // Weld vertices that share a position so seams and non-indexed triangle soups get real topology to collapse.
   const positionRemap = MeshoptSimplifier.generatePositionRemap(positions, stride);
   let indices: Uint32Array = new Uint32Array(original.length);
@@ -64,7 +68,14 @@ export async function generateLods(geometry: BufferGeometry, options: LodOptions
     const target = Math.min(indices.length, Math.max(3, Math.floor((sourceIndex.count * ratio) / 3) * 3));
     let simplified: Uint32Array = indices;
     if (indices.length > target) {
-      simplified = MeshoptSimplifier.simplify(indices, positions, stride, target, error, flags ? [...flags] : undefined)[0];
+      simplified = MeshoptSimplifier.simplify(
+        indices,
+        positions,
+        stride,
+        target,
+        error,
+        flags ? [...flags] : undefined,
+      )[0];
       // Low-poly meshes hit the error budget long before the target; distant LODs can trade quality for count.
       if (simplified.length > target * 1.25) {
         const sloppy = MeshoptSimplifier.simplifySloppy(indices, positions, stride, null, target, 1e30)[0];

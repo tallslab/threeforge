@@ -37,37 +37,47 @@
 import {
   BackSide,
   BatchedMesh,
+  type BufferAttribute,
   BufferGeometry,
+  type Camera,
   Color,
+  type CoordinateSystem,
   DepthTexture,
   DoubleSide,
   Float32BufferAttribute,
   FrontSide,
   Group,
+  type Light,
+  type LightShadow,
   Material,
-  Matrix4,
+  type Matrix4,
   Mesh,
   MeshDepthMaterial,
-  Object3D,
+  type Object3D,
   OrthographicCamera,
   PCFShadowMap,
   PerspectiveCamera,
   RenderTarget,
   Scene,
+  type ShadowMapType,
+  type Side,
   Vector2,
   Vector3,
   VSMShadowMap,
   WebGLCoordinateSystem,
   WebGPUCoordinateSystem,
-  type BufferAttribute,
-  type Camera,
-  type CoordinateSystem,
-  type Light,
-  type LightShadow,
-  type ShadowMapType,
-  type Side,
 } from 'three';
-import { CUBE_FACES_WEBGL, CUBE_FACES_WEBGPU, drawParameters, isTransparentItem, needsDoublePass, overrideTransparent, shadowPassSide, slotIds, trianglesOf } from './fakeRendererRules.js';
+import {
+  CUBE_FACES_WEBGL,
+  CUBE_FACES_WEBGPU,
+  drawParameters,
+  isTransparentItem,
+  needsDoublePass,
+  overrideTransparent,
+  shadowPassSide,
+  slotIds,
+  trianglesOf,
+} from './fakeRendererRules.js';
 
 export interface FakeRendererOptions {
   webgpu?: boolean;
@@ -177,7 +187,12 @@ class FakeLightsNode {
 type ShadowLight = Light & { shadow: LightShadow; isPointLight?: boolean; distance?: number };
 type DrawGroup = { start: number; count: number; materialIndex?: number };
 type IndexTexture = { version: number; image: { data: Uint32Array } };
-type Batch = Object3D & { isBatchedMesh?: boolean; _multiDrawCount: number; _multiDrawCounts: Int32Array; _indirectTexture: IndexTexture };
+type Batch = Object3D & {
+  isBatchedMesh?: boolean;
+  _multiDrawCount: number;
+  _multiDrawCounts: Int32Array;
+  _indirectTexture: IndexTexture;
+};
 type RenderObjectFunction = (
   object: Object3D,
   scene: Scene,
@@ -205,7 +220,12 @@ interface RenderCall {
   /** WebGPU instanced draws whose rows resolve when the call ends. */
   pendingInstances: Array<{ draw: FakeDraw; read: InstanceReads; count: number }>;
 }
-type Instanced = Object3D & { isInstancedMesh?: boolean; count: number; instanceMatrix: BufferAttribute; instanceColor: BufferAttribute | null };
+type Instanced = Object3D & {
+  isInstancedMesh?: boolean;
+  count: number;
+  instanceMatrix: BufferAttribute;
+  instanceColor: BufferAttribute | null;
+};
 /** How to read the matrix rows and colour rows a draw binds, at draw time (WebGL) or when its render() call ends (WebGPU). */
 interface InstanceReads {
   rows: () => Float32Array;
@@ -240,7 +260,11 @@ const _target = new Vector3();
 
 export class FakeRenderer {
   readonly info = { render: { drawCalls: 0, triangles: 0, calls: 0, frameCalls: 0 }, memory: { programs: 0 } };
-  readonly backend: { isWebGPUBackend?: boolean; hasFeature(name: string): boolean; capabilities: { getUniformBufferLimit(): number } };
+  readonly backend: {
+    isWebGPUBackend?: boolean;
+    hasFeature(name: string): boolean;
+    capabilities: { getUniformBufferLimit(): number };
+  };
   readonly coordinateSystem: CoordinateSystem = WebGLCoordinateSystem;
   readonly outputQuad: Mesh;
   /** `enabled` starts true when `shadowLight` or `shadowLights` is set (three's own default is false). */
@@ -265,7 +289,9 @@ export class FakeRenderer {
    */
   readonly frameBufferTarget = { isPostProcessingRenderTarget: true };
   /** Renderer.lighting: `getNode(scene)` is the lights node of that root (Lighting.getNode), holding the lights of its current render. */
-  readonly lighting: { getNode(scene: Object3D): { getLights(): Light[] } } = { getNode: (scene) => this.lightsNodeFor(scene) };
+  readonly lighting: { getNode(scene: Object3D): { getLights(): Light[] } } = {
+    getNode: (scene) => this.lightsNodeFor(scene),
+  };
 
   private readonly options: FakeRendererOptions;
   private readonly instanceObjects = new Map<string, InstanceRenderObject>();
@@ -363,7 +389,13 @@ export class FakeRenderer {
   }
 
   /** Renderer.readRenderTargetPixelsAsync on a half-float target: raw halves, all zero (the fake draws no pixels). */
-  async readRenderTargetPixelsAsync(_target: object, _x: number, _y: number, width: number, height: number): Promise<Uint16Array> {
+  async readRenderTargetPixelsAsync(
+    _target: object,
+    _x: number,
+    _y: number,
+    width: number,
+    height: number,
+  ): Promise<Uint16Array> {
     return new Uint16Array(width * height * 4);
   }
 
@@ -419,7 +451,8 @@ export class FakeRenderer {
       this.passes.push(call.pass);
     }
     this.calls.push(call);
-    if (this.options.sceneHooks) (sceneRef.onBeforeRender as (...args: unknown[]) => void)(this, scene, camera, hookTarget);
+    if (this.options.sceneHooks)
+      (sceneRef.onBeforeRender as (...args: unknown[]) => void)(this, scene, camera, hookTarget);
 
     // Renderer._projectObject into the render list: a hidden object returns before its children, so it hides its whole
     // subtree; the camera's layers gate the object itself only, and its children are still projected.
@@ -441,7 +474,19 @@ export class FakeRenderer {
     const renderList = (items: RenderItem[], passId: string | null) => {
       for (const { object, geometry, material, group } of items) {
         // Renderer._renderObjects calls it as a renderer method (`this._currentRenderObjectFunction( ... )`).
-        if (renderObjectFunction) renderObjectFunction.call(this, object, sceneRef, camera, geometry, material, group, lightsNode, null, passId);
+        if (renderObjectFunction)
+          renderObjectFunction.call(
+            this,
+            object,
+            sceneRef,
+            camera,
+            geometry,
+            material,
+            group,
+            lightsNode,
+            null,
+            passId,
+          );
         else this.renderObject(object, sceneRef, camera, geometry, material, group, lightsNode, null, passId);
       }
     };
@@ -464,12 +509,23 @@ export class FakeRenderer {
       // target off for that call, it draws no output quad of its own.
       const override = sceneRef.overrideMaterial;
       sceneRef.overrideMaterial = null;
-      this.renderObject(this.outputQuad, sceneRef, camera, this.outputQuad.geometry, this.outputQuad.material as Material, null, this.defaultLights, null, null);
+      this.renderObject(
+        this.outputQuad,
+        sceneRef,
+        camera,
+        this.outputQuad.geometry,
+        this.outputQuad.material as Material,
+        null,
+        this.defaultLights,
+        null,
+        null,
+      );
       sceneRef.overrideMaterial = override;
     }
 
     // Backend.finishRender: WebGPU submits the pass now, so its batch draws read the index textures as uploaded by now.
-    for (const { draw, texture, counts } of call.pending) draw.batchIds = slotIds(counts, this.uploads.get(texture)!.data);
+    for (const { draw, texture, counts } of call.pending)
+      draw.batchIds = slotIds(counts, this.uploads.get(texture)!.data);
     for (const { draw, read, count } of call.pendingInstances) {
       draw.instanceRows = read.rows().slice(0, count * 16);
       if (read.colors !== null) draw.instanceColorRows = read.colors().slice(0, count * 3);
@@ -515,10 +571,20 @@ export class FakeRenderer {
   }
 
   /** Renderer._renderObjectDirect and the backend's draw: the shadow maps a receiver needs, uploads, then the draw. */
-  private drawObject(object: Object3D, material: Material, scene: Scene, camera: Camera, lightsNode: FakeLightsNode | null, group: DrawGroup | null): void {
+  private drawObject(
+    object: Object3D,
+    material: Material,
+    scene: Scene,
+    camera: Camera,
+    lightsNode: FakeLightsNode | null,
+    group: DrawGroup | null,
+  ): void {
     const call = this.calls[this.calls.length - 1];
     // NodeMaterialObserver.needsRefresh decides the refresh before any updateBefore node runs.
-    const instances = this.options.record && (object as Instanced).isInstancedMesh === true && call ? this.instanceRenderObject(object as Instanced, material, call) : null;
+    const instances =
+      this.options.record && (object as Instanced).isInstancedMesh === true && call
+        ? this.instanceRenderObject(object as Instanced, material, call)
+        : null;
     // NodeManager.updateBefore runs the render object's updateBeforeNodes in order. The instance OnBeforeFrameUpdate event
     // sits in the position stack, which NodeBuilder.build flows before its fragment/vertex loop (NodeBuilder.js ~3193)
     // and Node.build registers in the setup branch, so it runs before a receiver's ShadowNode (dumped from three r186 on
@@ -541,19 +607,34 @@ export class FakeRenderer {
       counts = Array.from(batch._multiDrawCounts.subarray(0, batch._multiDrawCount));
       const multiDraw = !this.backend.isWebGPUBackend && this.backend.hasFeature('WEBGL_multi_draw');
       drawCalls = multiDraw ? Math.min(counts.length, 1) : counts.length;
-      triangles = trianglesOf(object, counts.reduce((sum, c) => sum + c, 0), 1);
+      triangles = trianglesOf(
+        object,
+        counts.reduce((sum, c) => sum + c, 0),
+        1,
+      );
     }
     this.info.render.drawCalls += drawCalls;
     this.info.render.triangles += triangles;
     if (!call?.pass) return;
-    const draw: FakeDraw = { object, material, side: material.side, drawCalls, triangles, instanceCount: params.instanceCount, batchIds: null, instanceRows: null, instanceColorRows: null };
+    const draw: FakeDraw = {
+      object,
+      material,
+      side: material.side,
+      drawCalls,
+      triangles,
+      instanceCount: params.instanceCount,
+      batchIds: null,
+      instanceRows: null,
+      instanceColorRows: null,
+    };
     call.pass.draws.push(draw);
     if (readInstances !== null) {
       if (this.backend.isWebGPUBackend) {
         call.pendingInstances.push({ draw, read: readInstances, count: params.instanceCount });
       } else {
         draw.instanceRows = readInstances.rows().slice(0, params.instanceCount * 16);
-        if (readInstances.colors !== null) draw.instanceColorRows = readInstances.colors().slice(0, params.instanceCount * 3);
+        if (readInstances.colors !== null)
+          draw.instanceColorRows = readInstances.colors().slice(0, params.instanceCount * 3);
       }
       return;
     }
@@ -575,12 +656,17 @@ export class FakeRenderer {
    * target's attachments and the call depth); a shadow map's override material is one per light
    * (ShadowBaseNode `_shadowMaterialLib`), where the fake shares one, so the light is part of the key.
    */
-  private instanceRenderObject(mesh: Instanced, material: Material, call: RenderCall): { state: InstanceRenderObject; full: boolean } {
+  private instanceRenderObject(
+    mesh: Instanced,
+    material: Material,
+    call: RenderCall,
+  ): { state: InstanceRenderObject; full: boolean } {
     const target = this.renderTarget as { texture?: { name?: string } } | null;
     const key = `${mesh.uuid}|${material.uuid}|${call.kind.light?.uuid ?? ''}|${this.calls.length - 1}|${target?.texture?.name ?? 'default'}`;
     let state = this.instanceObjects.get(key);
     const colorVersion = mesh.instanceColor === null ? null : mesh.instanceColor.version;
-    const full = state === undefined || state.version !== mesh.instanceMatrix.version || state.colorVersion !== colorVersion;
+    const full =
+      state === undefined || state.version !== mesh.instanceMatrix.version || state.colorVersion !== colorVersion;
     if (state === undefined) {
       state = { version: 0, colorVersion: null, frame: -1, buffer: null, checked: false };
       this.instanceObjects.set(key, state);
@@ -676,14 +762,22 @@ export class FakeRenderer {
       gpu.uploaded = gpu.version;
     } else if (gpu.uploaded < gpu.version) {
       if (gpu.ranges.length === 0) gpu.data.set(array);
-      else for (const range of gpu.ranges) gpu.data.set(array.subarray(range.start, range.start + range.count), range.start);
+      else
+        for (const range of gpu.ranges)
+          gpu.data.set(array.subarray(range.start, range.start + range.count), range.start);
       gpu.ranges = [];
       gpu.uploaded = gpu.version;
     }
   }
 
   /** One visible object the camera's layers see, pushed where Renderer._projectObject puts it: a light, or render items. */
-  private projectItem(object: Object3D, lights: Light[], opaque: RenderItem[], transparent: RenderItem[], doublePass: RenderItem[]): void {
+  private projectItem(
+    object: Object3D,
+    lights: Light[],
+    opaque: RenderItem[],
+    transparent: RenderItem[],
+    doublePass: RenderItem[],
+  ): void {
     if ((object as Light).isLight) {
       lights.push(object as Light);
       return;
@@ -691,7 +785,8 @@ export class FakeRenderer {
     const mesh = object as Mesh & { isPoints?: boolean; isSprite?: boolean; isLine?: boolean };
     if (!(mesh.isMesh || mesh.isPoints || mesh.isSprite || mesh.isLine)) return;
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    const groups = mesh.isMesh && mesh.geometry.groups.length > 0 && Array.isArray(mesh.material) ? mesh.geometry.groups : [null];
+    const groups =
+      mesh.isMesh && mesh.geometry.groups.length > 0 && Array.isArray(mesh.material) ? mesh.geometry.groups : [null];
     for (const group of groups) {
       const material = group ? materials[group.materialIndex ?? 0] : materials[0];
       if (!material) continue;
@@ -748,7 +843,11 @@ export class FakeRenderer {
     const vsm = this.shadowMap.type === VSMShadowMap;
     const layerMask = shadow.camera.layers.mask;
     if ((layerMask & 0xfffffffe) === 0) shadow.camera.layers.mask = camera.layers.mask;
-    const saved = { renderTarget: this.renderTarget, overrideMaterial: scene.overrideMaterial, renderObjectFunction: this.renderObjectFunction };
+    const saved = {
+      renderTarget: this.renderTarget,
+      overrideMaterial: scene.overrideMaterial,
+      renderObjectFunction: this.renderObjectFunction,
+    };
     scene.overrideMaterial = this.shadowMaterial;
     this.renderObjectFunction = this.shadowRenderObjectFunction(shadow, vsm);
     this.renderTarget = { name: 'shadow', texture: { name: light.isPointLight ? 'PointShadowMap' : 'ShadowMap' } };
@@ -798,9 +897,25 @@ export class FakeRenderer {
       if (object.castShadow !== true && !(object.receiveShadow && vsm)) return;
       const depthMaterial = scene.overrideMaterial as Material;
       // three passes the object where @types/three declares a scene.
-      object.onBeforeShadow(this as never, object as never, camera, shadow.camera, geometry, depthMaterial, group as never);
+      object.onBeforeShadow(
+        this as never,
+        object as never,
+        camera,
+        shadow.camera,
+        geometry,
+        depthMaterial,
+        group as never,
+      );
       this.renderObject(object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId);
-      object.onAfterShadow(this as never, object as never, camera, shadow.camera, geometry, depthMaterial, group as never);
+      object.onAfterShadow(
+        this as never,
+        object as never,
+        camera,
+        shadow.camera,
+        geometry,
+        depthMaterial,
+        group as never,
+      );
     };
   }
 
@@ -822,11 +937,16 @@ export function sceneWithCamera(): { scene: Scene; camera: PerspectiveCamera } {
 }
 
 export function batchedOf(count: number, material: Material, geometry: BufferGeometry): BatchedMesh {
-  const batch = new BatchedMesh(count, geometry.attributes.position!.count * count, (geometry.index?.count ?? 0) * count, material);
+  const batch = new BatchedMesh(
+    count,
+    geometry.attributes.position!.count * count,
+    (geometry.index?.count ?? 0) * count,
+    material,
+  );
   const id = batch.addGeometry(geometry);
   for (let i = 0; i < count; i++) batch.addInstance(id);
   batch.name = `batch-${count}`;
   return batch;
 }
 
-export { Group, Scene, Mesh, Material };
+export { Group, Material, Mesh, Scene };

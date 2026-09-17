@@ -18,11 +18,12 @@ describe('AGENTS.md', () => {
     expect(text).toMatch(/`3` environment/);
   });
   it('documents every flag of every command, in each accepted form', () => {
-    const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     for (const spec of Object.values(COMMAND_SPECS)) {
       for (const flag of spec.flags) {
         const forms = [`--${flag.name}`, ...(flag.negatable ? [`--no-${flag.name}`] : [])];
-        for (const form of forms) expect(text, `${spec.name} ${form}`).toMatch(new RegExp(`${escape(form)}(?![\\w-])`));
+        for (const form of forms)
+          expect(text, `${spec.name} ${form}`).toMatch(new RegExp(`${escapeRegExp(form)}(?![\\w-])`));
       }
     }
     const inspectRow = text.split('\n').find((line) => line.startsWith('| `npx threeforge inspect'))!;

@@ -1,5 +1,5 @@
 import { DoubleSide, type Material, type Object3D } from 'three';
-import { FORGE_TAG_KEY, tag, type ForgeTag } from '../tags.js';
+import { FORGE_TAG_KEY, type ForgeTag, tag } from '../tags.js';
 
 /**
  * Why a submission exists. One primary reason per submission; `excluded:<rule>` comes from the compiler. `reasonOf` gives
@@ -30,7 +30,13 @@ export type Reason =
   | 'unclassified'
   | `excluded:${string}`;
 
-export type Flag = 'shadow-caster' | 'double-sided-transparent' | 'custom-hook' | 'render-order' | 'layers' | 'transparent';
+export type Flag =
+  | 'shadow-caster'
+  | 'double-sided-transparent'
+  | 'custom-hook'
+  | 'render-order'
+  | 'layers'
+  | 'transparent';
 
 export type SubmissionKind = 'mesh' | 'batched' | 'instanced' | 'skinned' | 'sprite' | 'line' | 'points' | 'other';
 
@@ -116,7 +122,12 @@ const VSM_BLUR_MATERIALS = new Set(['VSMVertical', 'VSMHorizontal']);
 export function isVsmBlur(object: Object3D): boolean {
   const quad = object as Object3D & { isQuadMesh?: boolean; material?: Material | Material[] };
   const material = quad.material;
-  return quad.isQuadMesh === true && material !== undefined && !Array.isArray(material) && VSM_BLUR_MATERIALS.has(material.name);
+  return (
+    quad.isQuadMesh === true &&
+    material !== undefined &&
+    !Array.isArray(material) &&
+    VSM_BLUR_MATERIALS.has(material.name)
+  );
 }
 
 /**
@@ -128,7 +139,14 @@ export function isVsmBlur(object: Object3D): boolean {
  * assign null and `Object3D.copy` propagates it to every clone, and three renders such a scene without complaint, so
  * neither read may throw on the per-submission path.
  */
-export function reasonOf(object: Object3D, material: Material, group: unknown, root: Object3D, unsupported: boolean, annotation: Reason | undefined): Reason {
+export function reasonOf(
+  object: Object3D,
+  material: Material,
+  group: unknown,
+  root: Object3D,
+  unsupported: boolean,
+  annotation: Reason | undefined,
+): Reason {
   const o = object as Flags;
   let underRoot = false;
   let nearestTag: ForgeTag | undefined;
@@ -141,7 +159,8 @@ export function reasonOf(object: Object3D, material: Material, group: unknown, r
     if (underRoot && nearestTag !== undefined) break;
   }
   if (!underRoot) return 'renderer-internal';
-  if ((root as { isScene?: boolean }).isScene !== true) return isVsmBlur(object) ? 'renderer-internal' : 'fullscreen-pass';
+  if ((root as { isScene?: boolean }).isScene !== true)
+    return isVsmBlur(object) ? 'renderer-internal' : 'fullscreen-pass';
   const forgeKind = (object.userData?.forge as { kind?: string } | undefined)?.kind;
   if (forgeKind === 'occlusion-proxy') return 'occlusion-proxy';
   if (forgeKind === 'bake') return 'baked';

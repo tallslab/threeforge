@@ -61,7 +61,11 @@ export class ParticleBudget {
   /** Applies the budget under `root` (idempotent: a second call re-derives from the original counts). */
   apply(root: Object3D): ParticleBudgetReport {
     this.release();
-    const systems: Array<{ object: PointsLike | SpriteBatchLike; kind: 'points' | 'sprites' | 'sprite'; count: number }> = [];
+    const systems: Array<{
+      object: PointsLike | SpriteBatchLike;
+      kind: 'points' | 'sprites' | 'sprite';
+      count: number;
+    }> = [];
     root.traverse((o) => {
       const p = o as PointsLike;
       if (p.isPoints) {
@@ -77,7 +81,8 @@ export class ParticleBudget {
         return;
       }
       const s = o as SpriteBatchLike;
-      if (s.userData.forge?.kind === 'sprites' && s.geometry?.isInstancedBufferGeometry) systems.push({ object: s, kind: 'sprites', count: s.geometry.instanceCount ?? 0 });
+      if (s.userData.forge?.kind === 'sprites' && s.geometry?.isInstancedBufferGeometry)
+        systems.push({ object: s, kind: 'sprites', count: s.geometry.instanceCount ?? 0 });
     });
     const before = systems.reduce((sum, s) => sum + s.count, 0);
     const fixed = systems.reduce((sum, s) => (s.kind === 'sprite' ? sum + s.count : sum), 0);

@@ -1,11 +1,11 @@
+import { EventEmitter } from 'node:events';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { EventEmitter } from 'node:events';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { serveStatic, type StaticRoot } from '../../src/cli/server.js';
+import { type StaticRoot, serveStatic } from '../../src/cli/server.js';
 
 /**
  * A raw HTTP GET using the exact `path` bytes as given, unlike `fetch` (or a `URL`), which would
@@ -42,9 +42,15 @@ describe('a listen failure is an EnvironmentError, not an uncaught exception', (
 
   /** A server double: `listen` either fails the way Node reports a failed bind (asynchronously, through `'error'`) or succeeds. */
   function serverDouble(failure: { code: string; message: string } | null) {
-    const server = new EventEmitter() as EventEmitter & { listen(port: number, host: string, ok: () => void): void; address(): { port: number } | null; close(done: () => void): void };
+    const server = new EventEmitter() as EventEmitter & {
+      listen(port: number, host: string, ok: () => void): void;
+      address(): { port: number } | null;
+      close(done: () => void): void;
+    };
     server.listen = (_port: number, _host: string, ok: () => void) =>
-      void setImmediate(() => (failure ? server.emit('error', Object.assign(new Error(failure.message), { code: failure.code })) : ok()));
+      void setImmediate(() =>
+        failure ? server.emit('error', Object.assign(new Error(failure.message), { code: failure.code })) : ok(),
+      );
     server.address = () => (failure ? null : { port: 4321 });
     server.close = (done: () => void) => done();
     return server;
@@ -55,7 +61,9 @@ describe('a listen failure is an EnvironmentError, not an uncaught exception', (
    * is a different class object from this file's static import: `instanceof` against the outer one is always false.
    * The exit code is resolved inside the same module graph, which is the behavioural claim anyway — exit 3.
    */
-  async function serveWith(failure: { code: string; message: string } | null): Promise<{ value: unknown; environment: boolean; exitCode: number }> {
+  async function serveWith(
+    failure: { code: string; message: string } | null,
+  ): Promise<{ value: unknown; environment: boolean; exitCode: number }> {
     vi.resetModules();
     vi.doMock('node:http', async () => ({
       ...(await vi.importActual<typeof import('node:http')>('node:http')),
@@ -67,7 +75,10 @@ describe('a listen failure is an EnvironmentError, not an uncaught exception', (
     try {
       const { serveStatic: mocked } = await import('../../src/cli/server.js');
       const { EnvironmentError: Fresh, exitCodeFor } = await import('../../src/cli/errors.js');
-      const value = await mocked([{ prefix: '/', dir }]).then((server) => server, (error: unknown) => error);
+      const value = await mocked([{ prefix: '/', dir }]).then(
+        (server) => server,
+        (error: unknown) => error,
+      );
       return { value, environment: value instanceof Fresh, exitCode: value instanceof Error ? exitCodeFor(value) : 0 };
     } finally {
       vi.doUnmock('node:http');

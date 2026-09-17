@@ -50,7 +50,9 @@ export function exposeToAgents(options: ExposeOptions): () => void {
   const { ledger, world, renderer, scene, camera } = options;
   const target = (options.target ?? globalThis) as Record<string, unknown>;
   const requestFrame =
-    options.requestFrame ?? ((callback: () => void) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => callback()) : queueMicrotask(callback)));
+    options.requestFrame ??
+    ((callback: () => void) =>
+      typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => callback()) : queueMicrotask(callback));
   const canRender = Boolean(renderer && scene && camera);
   const hook: AgentHook = {
     version: VERSION,
@@ -76,7 +78,9 @@ export function exposeToAgents(options: ExposeOptions): () => void {
   if (world) {
     const coordinateSystem = (renderer as { coordinateSystem?: number } | undefined)?.coordinateSystem;
     const compile = (): CompileReport => {
-      const report = world.compile(coordinateSystem !== undefined ? { coordinateSystem: coordinateSystem as never } : {});
+      const report = world.compile(
+        coordinateSystem !== undefined ? { coordinateSystem: coordinateSystem as never } : {},
+      );
       delete hook.compile;
       hook.decompile = () => {
         world.decompile();

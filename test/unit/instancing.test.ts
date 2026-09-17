@@ -1,5 +1,21 @@
+import {
+  Box3,
+  BoxGeometry,
+  type Camera,
+  Color,
+  DirectionalLight,
+  Frustum,
+  InstancedMesh,
+  Matrix4,
+  MeshBasicMaterial,
+  MeshStandardMaterial,
+  PerspectiveCamera,
+  Scene,
+  Sphere,
+  Vector3,
+  WebGLCoordinateSystem,
+} from 'three';
 import { describe, expect, it } from 'vitest';
-import { Box3, BoxGeometry, Color, DirectionalLight, Frustum, InstancedMesh, Matrix4, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, Scene, Sphere, Vector3, WebGLCoordinateSystem, type Camera } from 'three';
 import { createCulledInstancedMesh, FORGE_HOOK } from '../../src/compiler/instancing.js';
 import { PassTracker } from '../../src/compiler/passTracker.js';
 import { mulberry32 } from '../../test/scenes/naive.js';
@@ -22,7 +38,15 @@ function field(count: number, area = 2000) {
   camera.updateMatrixWorld();
   camera.updateProjectionMatrix();
   const scene = new Scene();
-  const cull = (cam = camera) => instanced.onBeforeRender({ coordinateSystem: WebGLCoordinateSystem } as never, scene, cam, instanced.geometry, instanced.material as never, null as never);
+  const cull = (cam = camera) =>
+    instanced.onBeforeRender(
+      { coordinateSystem: WebGLCoordinateSystem } as never,
+      scene,
+      cam,
+      instanced.geometry,
+      instanced.material as never,
+      null as never,
+    );
   return { instanced, matrices, colors, camera, cull };
 }
 
@@ -72,12 +96,16 @@ describe('createCulledInstancedMesh', () => {
     const f = field(2000);
     f.cull();
     const ids = new Set(f.instanced.visibleIds);
-    const frustum = new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(f.camera.projectionMatrix, f.camera.matrixWorldInverse));
+    const frustum = new Frustum().setFromProjectionMatrix(
+      new Matrix4().multiplyMatrices(f.camera.projectionMatrix, f.camera.matrixWorldInverse),
+    );
     const b = new Box3();
     let inside = 0;
     for (let i = 0; i < 2000; i++) {
       b.copy(box.boundingBox!).applyMatrix4(f.matrices[i]!);
-      const corners = [b.min.x, b.max.x].flatMap((x) => [b.min.y, b.max.y].flatMap((y) => [b.min.z, b.max.z].map((z) => new Vector3(x, y, z))));
+      const corners = [b.min.x, b.max.x].flatMap((x) =>
+        [b.min.y, b.max.y].flatMap((y) => [b.min.z, b.max.z].map((z) => new Vector3(x, y, z))),
+      );
       const fullyInside = corners.every((c) => frustum.containsPoint(c));
       if (fullyInside) {
         inside++;
@@ -100,12 +128,22 @@ describe('createCulledInstancedMesh', () => {
 
   it("refreshBounds recomputes every level's box and sphere from the master matrices, not from the compacted rows", () => {
     const matrices = [0, 1, 2, 3].map((i) => new Matrix4().makeTranslation(i * 2, 0, 0));
-    const mesh = createCulledInstancedMesh(box, new MeshBasicMaterial(), matrices, null, WebGLCoordinateSystem, { lods: [new BoxGeometry(1, 1, 1)], distances: [50] });
+    const mesh = createCulledInstancedMesh(box, new MeshBasicMaterial(), matrices, null, WebGLCoordinateSystem, {
+      lods: [new BoxGeometry(1, 1, 1)],
+      distances: [50],
+    });
     const camera = new PerspectiveCamera(20, 1, 0.1, 100);
     camera.position.set(0, 5, 0);
     camera.lookAt(0, 0, 0);
     camera.updateMatrixWorld();
-    mesh.onBeforeRender({ coordinateSystem: WebGLCoordinateSystem } as never, new Scene(), camera, mesh.geometry, mesh.material as never, null as never);
+    mesh.onBeforeRender(
+      { coordinateSystem: WebGLCoordinateSystem } as never,
+      new Scene(),
+      camera,
+      mesh.geometry,
+      mesh.material as never,
+      null as never,
+    );
     expect(mesh.levels[0]!.count + mesh.levels[1]!.count, 'the rows hold instance 0 only').toBe(1);
     mesh.forgeCulling.setMatrixAt(3, new Matrix4().makeTranslation(500, 0, 0));
     mesh.forgeCulling.refreshBounds();
@@ -130,16 +168,29 @@ describe('createCulledInstancedMesh update ranges on the vertex-buffer path', ()
       matrices.push(new Matrix4().makeTranslation(rng() * 2000 - 1000, 1, rng() * 2000 - 1000));
       colors.push(new Color(i % 2 ? 0xff0000 : 0x00ff00));
     }
-    const mesh = createCulledInstancedMesh(box, new MeshStandardMaterial(), matrices, colors, WebGLCoordinateSystem, { passes });
+    const mesh = createCulledInstancedMesh(box, new MeshStandardMaterial(), matrices, colors, WebGLCoordinateSystem, {
+      passes,
+    });
     const sun = new DirectionalLight();
     sun.castShadow = true;
     sun.position.set(0, 100, 0);
-    Object.assign(sun.shadow.camera, { left: -400, right: 400, top: 400, bottom: -400, near: 1, far: 300 }).updateProjectionMatrix();
+    Object.assign(sun.shadow.camera, {
+      left: -400,
+      right: 400,
+      top: 400,
+      bottom: -400,
+      near: 1,
+      far: 300,
+    }).updateProjectionMatrix();
     sun.updateMatrixWorld();
     sun.target.updateMatrixWorld();
     sun.shadow.updateMatrices(sun);
     // 2,000 x 64 bytes of matrices exceed 65,536: three keeps them in the shared vertex buffer.
-    const renderer = { coordinateSystem: WebGLCoordinateSystem, backend: { capabilities: { getUniformBufferLimit: () => 65536 } }, lighting: { getNode: () => ({ getLights: () => [sun] }) } };
+    const renderer = {
+      coordinateSystem: WebGLCoordinateSystem,
+      backend: { capabilities: { getUniformBufferLimit: () => 65536 } },
+      lighting: { getNode: () => ({ getLights: () => [sun] }) },
+    };
     const camera = new PerspectiveCamera(60, 1.5, 0.1, 300);
     camera.position.set(0, 2, 0);
     camera.lookAt(100, 1, 0);
@@ -147,7 +198,8 @@ describe('createCulledInstancedMesh update ranges on the vertex-buffer path', ()
     const scene = new Scene();
     const shadowScene = new Scene();
     shadowScene.overrideMaterial = Object.assign(new MeshBasicMaterial(), { isShadowPassMaterial: true });
-    const run = (c: Camera, s: Scene): void => mesh.onBeforeRender(renderer as never, s, c, mesh.geometry, mesh.material as never, null as never);
+    const run = (c: Camera, s: Scene): void =>
+      mesh.onBeforeRender(renderer as never, s, c, mesh.geometry, mesh.material as never, null as never);
     return { passes, mesh, sun, camera, scene, shadowScene, run };
   }
 
@@ -174,15 +226,25 @@ describe('createCulledInstancedMesh update ranges on the vertex-buffer path', ()
     const span = changedRows(before, f.mesh.instanceMatrix.array);
     expect(span).not.toBeNull();
     const [first, last] = span!;
-    expect(f.mesh.instanceMatrix.updateRanges, 'matrix rows of the outermost compaction').toEqual([{ start: first * 16, count: (last - first + 1) * 16 }]);
-    expect(f.mesh.instanceColor!.updateRanges, 'colour rows of the outermost compaction').toEqual([{ start: first * 3, count: (last - first + 1) * 3 }]);
+    expect(f.mesh.instanceMatrix.updateRanges, 'matrix rows of the outermost compaction').toEqual([
+      { start: first * 16, count: (last - first + 1) * 16 },
+    ]);
+    expect(f.mesh.instanceColor!.updateRanges, 'colour rows of the outermost compaction').toEqual([
+      { start: first * 3, count: (last - first + 1) * 3 },
+    ]);
     const mainCount = f.mesh.count;
     f.passes.begin(f.sun.shadow.camera);
     f.run(f.sun.shadow.camera, f.shadowScene);
     expect(f.mesh.count, 'the shadow pass appended casters').toBeGreaterThan(mainCount);
     // A sync by the shadow pass's render object replaces the ranges the main render object synced but has not uploaded.
-    expect(f.mesh.instanceMatrix.updateRanges.at(-1), 'a nested write marks the whole matrix buffer').toEqual({ start: 0, count: 2000 * 16 });
-    expect(f.mesh.instanceColor!.updateRanges.at(-1), 'and the whole colour buffer').toEqual({ start: 0, count: 2000 * 3 });
+    expect(f.mesh.instanceMatrix.updateRanges.at(-1), 'a nested write marks the whole matrix buffer').toEqual({
+      start: 0,
+      count: 2000 * 16,
+    });
+    expect(f.mesh.instanceColor!.updateRanges.at(-1), 'and the whole colour buffer').toEqual({
+      start: 0,
+      count: 2000 * 3,
+    });
     f.passes.end();
     f.passes.end();
     expect(f.mesh.count).toBe(mainCount);
@@ -200,7 +262,10 @@ describe('createCulledInstancedMesh update ranges on the vertex-buffer path', ()
       f.run(c, f.scene);
       f.passes.end();
     }
-    for (const [attribute, itemSize] of [[f.mesh.instanceMatrix, 16], [f.mesh.instanceColor!, 3]] as const) {
+    for (const [attribute, itemSize] of [
+      [f.mesh.instanceMatrix, 16],
+      [f.mesh.instanceColor!, 3],
+    ] as const) {
       expect(attribute.updateRanges.length).toBeLessThanOrEqual(32);
       expect(attribute.updateRanges.some((r) => r.start === 0 && r.count === 2000 * itemSize)).toBe(true);
     }

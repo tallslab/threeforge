@@ -1,16 +1,33 @@
+import {
+  type BatchedMesh,
+  BoxGeometry,
+  type InstancedMesh,
+  Mesh,
+  MeshStandardMaterial,
+  PerspectiveCamera,
+  Scene,
+  TorusKnotGeometry,
+  WebGLCoordinateSystem,
+} from 'three';
 import { describe, expect, it } from 'vitest';
-import { BatchedMesh, BoxGeometry, InstancedMesh, Mesh, MeshStandardMaterial, PerspectiveCamera, Scene, TorusKnotGeometry, WebGLCoordinateSystem } from 'three';
-import { World } from '../../src/compiler/World.js';
 import type { CulledInstancedMesh } from '../../src/compiler/instancing.js';
-import { lodsOf, prepareLods } from '../../src/lod/generateLods.js';
+import { World } from '../../src/compiler/World.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
+import { lodsOf, prepareLods } from '../../src/lod/generateLods.js';
 import { tag } from '../../src/tags.js';
 import { FakeRenderer } from './helpers/fakeRenderer.js';
 
 const solid = (color: number) => new MeshStandardMaterial({ color, roughness: 0.7, metalness: 0 });
 
 function cull(object: BatchedMesh | InstancedMesh, scene: Scene, camera: PerspectiveCamera) {
-  object.onBeforeRender({ coordinateSystem: WebGLCoordinateSystem } as never, scene, camera, object.geometry, object.material as never, null as never);
+  object.onBeforeRender(
+    { coordinateSystem: WebGLCoordinateSystem } as never,
+    scene,
+    camera,
+    object.geometry,
+    object.material as never,
+    null as never,
+  );
 }
 
 function cameraAtOrigin() {
@@ -40,7 +57,11 @@ describe('World lod (batched path)', () => {
     expect(report.groups[0]).toMatchObject({ kind: 'batched', lods: 2 });
     const batch = scene.children.find((o) => (o as BatchedMesh).isBatchedMesh) as BatchedMesh;
     cull(batch, scene, cameraAtOrigin());
-    const b = batch as unknown as { _multiDrawCount: number; _multiDrawCounts: Int32Array; _indirectTexture: { image: { data: Uint32Array } } };
+    const b = batch as unknown as {
+      _multiDrawCount: number;
+      _multiDrawCounts: Int32Array;
+      _indirectTexture: { image: { data: Uint32Array } };
+    };
     expect(b._multiDrawCount).toBe(3);
     const countFor = (mesh: Mesh) => {
       const id = world.slotOf(mesh)!.instanceId;
@@ -61,7 +82,9 @@ describe('World lod (batched path)', () => {
     const farBox = tag.static(new Mesh(box, solid(1)));
     farBox.position.set(3, 0, -300);
     scene.add(far, farBox);
-    knot.userData.forgeLods = await (await import('../../src/lod/generateLods.js')).generateLods(knot, { ratios: [0.2] });
+    knot.userData.forgeLods = await (await import('../../src/lod/generateLods.js')).generateLods(knot, {
+      ratios: [0.2],
+    });
     const world = new World(scene, { lod: { distances: [50] } });
     world.compile();
     const batch = scene.children.find((o) => (o as BatchedMesh).isBatchedMesh) as BatchedMesh;

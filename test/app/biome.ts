@@ -8,10 +8,10 @@ import {
   Color,
   DirectionalLight,
   Float32BufferAttribute,
-  Group,
+  type Group,
   Mesh,
   MeshStandardMaterial,
-  Object3D,
+  type Object3D,
   PlaneGeometry,
   RepeatWrapping,
   Scene,
@@ -51,10 +51,20 @@ interface KitIndex {
 
 function noise2(x: number, z: number): number {
   // Cheap deterministic value noise: a few sines at different frequencies.
-  return Math.sin(x * 0.011) * Math.cos(z * 0.013) * 0.55 + Math.sin(x * 0.037 + 1.3) * Math.cos(z * 0.029 + 0.7) * 0.3 + Math.sin(x * 0.11 + z * 0.09) * 0.15;
+  return (
+    Math.sin(x * 0.011) * Math.cos(z * 0.013) * 0.55 +
+    Math.sin(x * 0.037 + 1.3) * Math.cos(z * 0.029 + 0.7) * 0.3 +
+    Math.sin(x * 0.11 + z * 0.09) * 0.15
+  );
 }
 
-export async function buildBiome({ loader, density = 1, seed = 11, water = true, hiPoly = true }: BiomeOptions): Promise<Biome> {
+export async function buildBiome({
+  loader,
+  density = 1,
+  seed = 11,
+  water = true,
+  hiPoly = true,
+}: BiomeOptions): Promise<Biome> {
   const rng = mulberry32(seed);
   const scene = new Scene();
   scene.name = 'biome';
@@ -118,7 +128,15 @@ export async function buildBiome({ loader, density = 1, seed = 11, water = true,
   }
 
   // Kits.
-  const lists = (await Promise.all(['/index.json', '/kits-index.json'].map((u) => fetch(u).then((r) => (r.ok ? r.json() : [])).catch(() => [])))).flat() as KitIndex[];
+  const lists = (
+    await Promise.all(
+      ['/index.json', '/kits-index.json'].map((u) =>
+        fetch(u)
+          .then((r) => (r.ok ? r.json() : []))
+          .catch(() => []),
+      ),
+    )
+  ).flat() as KitIndex[];
   const kit = (name: string) => lists.find((k) => k.name === name && k.kind === 'kit' && !k.error)?.glbs ?? [];
   const pickGlbs = (glbs: string[], patterns: RegExp[], max: number) =>
     glbs.filter((g) => patterns.some((p) => p.test(g))).slice(0, max);
@@ -133,7 +151,15 @@ export async function buildBiome({ loader, density = 1, seed = 11, water = true,
       return null;
     }
   };
-  const place = (proto: Group, x: number, z: number, y: number, rot: number, scale: number, dynamic = false): Object3D => {
+  const place = (
+    proto: Group,
+    x: number,
+    z: number,
+    y: number,
+    rot: number,
+    scale: number,
+    dynamic = false,
+  ): Object3D => {
     const clone = proto.clone();
     clone.position.set(x, y, z);
     clone.rotation.y = rot;
@@ -149,7 +175,14 @@ export async function buildBiome({ loader, density = 1, seed = 11, water = true,
     scene.add(clone);
     return clone;
   };
-  const scatter = async (glbs: string[], count: number, label: string, scale: [number, number], minY = 1.5, maxY = 40): Promise<void> => {
+  const scatter = async (
+    glbs: string[],
+    count: number,
+    label: string,
+    scale: [number, number],
+    minY = 1.5,
+    maxY = 40,
+  ): Promise<void> => {
     const protos = (await Promise.all(glbs.map(load))).filter((g): g is Group => g !== null);
     if (protos.length === 0) return;
     let placed = 0;
@@ -160,7 +193,14 @@ export async function buildBiome({ loader, density = 1, seed = 11, water = true,
       const z = rng() * size - size / 2;
       const y = heightAt(x, z);
       if (y < minY || y > maxY) continue;
-      place(protos[Math.floor(rng() * protos.length)]!, x, z, y + 0.03, rng() * Math.PI * 2, scale[0] + rng() * (scale[1] - scale[0]));
+      place(
+        protos[Math.floor(rng() * protos.length)]!,
+        x,
+        z,
+        y + 0.03,
+        rng() * Math.PI * 2,
+        scale[0] + rng() * (scale[1] - scale[0]),
+      );
       placed++;
     }
     counts[label] = placed;
@@ -169,16 +209,34 @@ export async function buildBiome({ loader, density = 1, seed = 11, water = true,
   const nature = kit('kenney-nature-kit');
   await scatter(pickGlbs(nature, [/tree_/i, /Tree/], 40), Math.round(2500 * density), 'trees', [2.5, 4.5], 2, 26);
   await scatter(pickGlbs(nature, [/rock/i, /stone/i], 30), Math.round(900 * density), 'rocks', [2, 5], 0.5, 60);
-  await scatter(pickGlbs(nature, [/grass/i, /flower/i, /plant/i, /mushroom/i, /bush/i], 40), Math.round(4000 * density), 'grass', [2, 3.5], 1.5, 22);
-  await scatter(pickGlbs(nature, [/log/i, /stump/i, /fence/i, /crop/i, /cactus/i], 30), Math.round(500 * density), 'clutter', [2, 3.5], 1.5, 24);
+  await scatter(
+    pickGlbs(nature, [/grass/i, /flower/i, /plant/i, /mushroom/i, /bush/i], 40),
+    Math.round(4000 * density),
+    'grass',
+    [2, 3.5],
+    1.5,
+    22,
+  );
+  await scatter(
+    pickGlbs(nature, [/log/i, /stump/i, /fence/i, /crop/i, /cactus/i], 30),
+    Math.round(500 * density),
+    'clutter',
+    [2, 3.5],
+    1.5,
+    24,
+  );
   const survival = kit('kenney-survival-kit');
   await scatter(pickGlbs(survival, [/./], 80), Math.round(400 * density), 'props', [2, 3], 1.5, 22);
 
   // A suburban block on a flattish area near the centre-east: roads on a grid, houses beside them.
   const roads = kit('kenney-city-kit-roads');
   const suburb = kit('kenney-city-kit-suburban');
-  const roadProtos = (await Promise.all(pickGlbs(roads, [/road.*straight/i, /road-straight/i, /straight/i], 4).map(load))).filter((g): g is Group => g !== null);
-  const houseProtos = (await Promise.all(pickGlbs(suburb, [/house|building|garage|shop/i], 20).map(load))).filter((g): g is Group => g !== null);
+  const roadProtos = (
+    await Promise.all(pickGlbs(roads, [/road.*straight/i, /road-straight/i, /straight/i], 4).map(load))
+  ).filter((g): g is Group => g !== null);
+  const houseProtos = (await Promise.all(pickGlbs(suburb, [/house|building|garage|shop/i], 20).map(load))).filter(
+    (g): g is Group => g !== null,
+  );
   const cx = 150;
   const cz = 60;
   let roadCount = 0;
@@ -217,13 +275,25 @@ export async function buildBiome({ loader, density = 1, seed = 11, water = true,
 
   // Cars: Kenney cars on the roads (dynamic) and the Ferrari as a hero car.
   const cars: Object3D[] = [];
-  const carProtos = (await Promise.all(pickGlbs(kit('kenney-car-kit'), [/./], 30).map(load))).filter((g): g is Group => g !== null);
+  const carProtos = (await Promise.all(pickGlbs(kit('kenney-car-kit'), [/./], 30).map(load))).filter(
+    (g): g is Group => g !== null,
+  );
   for (let i = 0; i < Math.round(40 * density) && carProtos.length > 0; i++) {
     const along = rng() * 90 - 45;
     const onX = rng() > 0.5;
     const x = cx + (onX ? along : 2.2);
     const z = cz + (onX ? 2.2 : along);
-    cars.push(place(carProtos[Math.floor(rng() * carProtos.length)]!, x, z, heightAt(x, z) + 0.1, onX ? Math.PI / 2 : 0, 5, true));
+    cars.push(
+      place(
+        carProtos[Math.floor(rng() * carProtos.length)]!,
+        x,
+        z,
+        heightAt(x, z) + 0.1,
+        onX ? Math.PI / 2 : 0,
+        5,
+        true,
+      ),
+    );
   }
   const ferrari = await load('ferrari/ferrari.glb');
   if (ferrari) cars.push(place(ferrari, cx + 20, cz + 20, heightAt(cx + 20, cz + 20) + 0.1, 0.8, 4, true));

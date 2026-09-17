@@ -12,17 +12,20 @@
  * reference computed from the original meshes: every id whose box meets the pass's frustum is drawn, no id twice, and
  * nothing whose bounding sphere misses the frustum (so any id beyond the box reference lies outside the frustum).
  */
-import { describe, expect, it } from 'vitest';
+
 import {
   ArrayCamera,
   BatchedMesh,
   Box3,
   BoxGeometry,
+  type Camera,
   Color,
+  type CoordinateSystem,
   DirectionalLight,
   Frustum,
   FrustumArray,
-  InstancedMesh,
+  type InstancedMesh,
+  type Material,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
@@ -34,17 +37,15 @@ import {
   Vector3,
   WebGLCoordinateSystem,
   WebGPUCoordinateSystem,
-  type Camera,
-  type CoordinateSystem,
-  type Material,
 } from 'three';
+import { describe, expect, it } from 'vitest';
 import { attachBvhCulling, FORGE_HOOK, type NestedPassPolicy } from '../../src/compiler/culling.js';
 import { createCulledInstancedMesh } from '../../src/compiler/instancing.js';
 import { PassTracker } from '../../src/compiler/passTracker.js';
 import { World } from '../../src/compiler/World.js';
 import { tag } from '../../src/tags.js';
 import { mulberry32 } from '../scenes/naive.js';
-import { FakeRenderer, type FakePass } from './helpers/fakeRenderer.js';
+import { type FakePass, FakeRenderer } from './helpers/fakeRenderer.js';
 
 const box = new BoxGeometry(1, 1, 1);
 box.computeBoundingBox();
@@ -157,11 +158,20 @@ function rig(options: RigOptions) {
   const litOriginals = row(scene, 'lit', 3, options.litMaterial ?? new MeshStandardMaterial({ roughness: 0.8 }), true);
   scene.updateMatrixWorld(true);
   // threshold 1000: 101 repeats of one geometry stay a BatchedMesh (the default 64 makes an InstancedMesh).
-  const world = new World(scene, { instanceThreshold: 1000, ...(options.nested === 'auto' ? {} : { nestedPasses: options.nested }) });
+  const world = new World(scene, {
+    instanceThreshold: 1000,
+    ...(options.nested === 'auto' ? {} : { nestedPasses: options.nested }),
+  });
   const report = world.compile({ coordinateSystem: cs });
   const unlit = world.slotOf(unlitOriginals[0]!)!.batch as BatchedMesh;
   const lit = world.slotOf(litOriginals[0]!)!.batch as BatchedMesh;
-  const renderer = new FakeRenderer({ webgpu: options.webgpu, sceneHooks: true, shadowTrigger: 'first-receiver', record: true, shadowLights: suns });
+  const renderer = new FakeRenderer({
+    webgpu: options.webgpu,
+    sceneHooks: true,
+    shadowTrigger: 'first-receiver',
+    record: true,
+    shadowLights: suns,
+  });
   const originals = new Map<BatchedMesh, Mesh[]>([
     [unlit, unlitOriginals],
     [lit, litOriginals],
@@ -206,12 +216,24 @@ interface Reference {
   may: Set<number>;
 }
 
-function frustumOf(pass: { projectionMatrix: Matrix4; matrixWorldInverse: Matrix4 }, cs: CoordinateSystem, reversedDepth = false): Frustum {
-  return new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(pass.projectionMatrix, pass.matrixWorldInverse), cs, reversedDepth);
+function frustumOf(
+  pass: { projectionMatrix: Matrix4; matrixWorldInverse: Matrix4 },
+  cs: CoordinateSystem,
+  reversedDepth = false,
+): Frustum {
+  return new Frustum().setFromProjectionMatrix(
+    new Matrix4().multiplyMatrices(pass.projectionMatrix, pass.matrixWorldInverse),
+    cs,
+    reversedDepth,
+  );
 }
 
 /** From the original meshes' world matrices and geometry bounds, mapped to the batch's instance ids. */
-function reference(r: { world: World; originals: ReadonlyMap<object, Mesh[]> }, batch: object, frustum: FrustumLike): Reference {
+function reference(
+  r: { world: World; originals: ReadonlyMap<object, Mesh[]> },
+  batch: object,
+  frustum: FrustumLike,
+): Reference {
   const must: number[] = [];
   const may = new Set<number>();
   for (const mesh of r.originals.get(batch)!) {
@@ -247,7 +269,11 @@ function expectExact(label: string, ids: number[], ref: Reference): void {
 const nameOf = (r: Rig, batch: BatchedMesh): string => (batch === r.unlit ? 'unlit' : 'lit');
 
 /** Every recorded pass draws exactly what its frustum needs, for both batches. */
-function expectPassesExact(r: Rig, label: string, frustumFor: (pass: FakePass) => FrustumLike = (pass) => frustumOf(pass, r.cs)): void {
+function expectPassesExact(
+  r: Rig,
+  label: string,
+  frustumFor: (pass: FakePass) => FrustumLike = (pass) => frustumOf(pass, r.cs),
+): void {
   for (const pass of r.renderer.passes) {
     const frustum = frustumFor(pass);
     for (const batch of [r.unlit, r.lit]) {
@@ -261,7 +287,8 @@ function expectPassesExact(r: Rig, label: string, frustumFor: (pass: FakePass) =
 function listedIds(batch: BatchedMesh): number[] {
   const b = internals(batch);
   const ids: number[] = [];
-  for (let i = 0; i < b._multiDrawCount; i++) if (b._multiDrawCounts[i]! > 0) ids.push(b._indirectTexture.image.data[i]!);
+  for (let i = 0; i < b._multiDrawCount; i++)
+    if (b._multiDrawCounts[i]! > 0) ids.push(b._indirectTexture.image.data[i]!);
   return ids;
 }
 
@@ -284,7 +311,9 @@ describe.each(backends)('BatchedMesh in a shadow pass nested in the main pass (w
       const r = rig({ webgpu, nested });
       expect(r.report.nestedPasses).toBe(resolved);
       expect(r.report.after).toMatchObject({ batches: 2, instanced: 0 });
-      expect(r.scene.children.indexOf(r.unlit), 'the unlit batch is first in traversal').toBeLessThan(r.scene.children.indexOf(r.lit));
+      expect(r.scene.children.indexOf(r.unlit), 'the unlit batch is first in traversal').toBeLessThan(
+        r.scene.children.indexOf(r.lit),
+      );
       for (let frame = 1; frame <= 2; frame++) {
         r.renderer.render(r.scene, r.main);
         expect(passLabels(r.renderer)).toEqual(['render:0', 'shadow:1']);
@@ -362,17 +391,22 @@ describe.each(backends)('BatchedMesh in a shadow pass nested in the main pass (w
       insertBefore(r.scene, mirror, null);
       r.renderer.render(r.scene, r.main);
       expectPassesExact(r, 'frame 1');
-      const mainRows = [r.unlit, r.lit].map((b) => Array.from(internals(b)._indirectTexture.image.data.subarray(0, internals(b)._multiDrawCount)));
+      const mainRows = [r.unlit, r.lit].map((b) =>
+        Array.from(internals(b)._indirectTexture.image.data.subarray(0, internals(b)._multiDrawCount)),
+      );
       // The rows as they stand once the reflection is over, before the main pass reaches the batches.
       let rowsAfterReflection: number[][] = [];
       mirror.onAfterRender = () => {
-        rowsAfterReflection = [r.unlit, r.lit].map((b, i) => Array.from(internals(b)._indirectTexture.image.data.subarray(0, mainRows[i]!.length)));
+        rowsAfterReflection = [r.unlit, r.lit].map((b, i) =>
+          Array.from(internals(b)._indirectTexture.image.data.subarray(0, mainRows[i]!.length)),
+        );
       };
       r.renderer.render(r.scene, r.main);
       expect(passLabels(r.renderer)).toEqual(['render:0', 'render:1', 'shadow:2', 'shadow:1']);
       expectPassesExact(r, 'frame 2');
       // 'reuse-main' only ever appends to the last main list, so the rows change once per frame (in the main pass).
-      if (resolved === 'reuse-main') expect(rowsAfterReflection, 'the reflection kept the previous main rows').toEqual(mainRows);
+      if (resolved === 'reuse-main')
+        expect(rowsAfterReflection, 'the reflection kept the previous main rows').toEqual(mainRows);
     });
 
     it('keeps the prefix order of a sorted transparent batch and sorts the appended ids for the nested camera', () => {
@@ -387,7 +421,10 @@ describe.each(backends)('BatchedMesh in a shadow pass nested in the main pass (w
       expect(split, 'the shadow pass appends ids the main list lacks').toBeGreaterThan(0);
       const kept = shadowIds.slice(0, split);
       const appended = shadowIds.slice(split);
-      expect(appended.filter((id) => inMain.has(id)), 'appended ids are not in the main list').toEqual([]);
+      expect(
+        appended.filter((id) => inMain.has(id)),
+        'appended ids are not in the main list',
+      ).toEqual([]);
       const keptSet = new Set(kept);
       expect(kept, 'kept ids stay in the main order').toEqual(mainIds.filter((id) => keptSet.has(id)));
       // Back to front for the shadow camera: its view-space z must not increase along the appended ids.
@@ -396,7 +433,8 @@ describe.each(backends)('BatchedMesh in a shadow pass nested in the main pass (w
         return -new Vector3().setFromMatrixPosition(mesh.matrixWorld).applyMatrix4(shadow.matrixWorldInverse).z;
       };
       expect(appended.length).toBeGreaterThan(5);
-      for (let i = 1; i < appended.length; i++) expect(depth(appended[i]!), `appended[${i}]`).toBeLessThanOrEqual(depth(appended[i - 1]!) + 1e-6);
+      for (let i = 1; i < appended.length; i++)
+        expect(depth(appended[i]!), `appended[${i}]`).toBeLessThanOrEqual(depth(appended[i - 1]!) + 1e-6);
     });
 
     it('uploads the index texture again only when a nested pass appends rows the texture does not hold yet', () => {
@@ -405,7 +443,10 @@ describe.each(backends)('BatchedMesh in a shadow pass nested in the main pass (w
       const inside = rig({ webgpu, nested, suns: (cs) => [sunLight('sun', 0, cs, 8)] });
       const v0 = [inside.unlit, inside.lit].map(version);
       inside.renderer.render(inside.scene, inside.main);
-      expect([inside.unlit, inside.lit].map((b, i) => version(b) - v0[i]!), 'the main cull only').toEqual([1, 1]);
+      expect(
+        [inside.unlit, inside.lit].map((b, i) => version(b) - v0[i]!),
+        'the main cull only',
+      ).toEqual([1, 1]);
       expectPassesExact(inside, 'sun inside the view');
 
       const outside = rig({ webgpu, nested });
@@ -415,7 +456,10 @@ describe.each(backends)('BatchedMesh in a shadow pass nested in the main pass (w
         return [outside.unlit, outside.lit].map((b, i) => version(b) - before[i]!);
       };
       const frame = (): void => outside.renderer.render(outside.scene, outside.main);
-      expect(deltas(frame), 'frame 1: the main cull and one append (the shadow pass culls twice, the rows change once)').toEqual([2, 2]);
+      expect(
+        deltas(frame),
+        'frame 1: the main cull and one append (the shadow pass culls twice, the rows change once)',
+      ).toEqual([2, 2]);
       expect(deltas(frame), 'frame 2: the appended rows are already in the texture').toEqual([1, 1]);
       for (const light of outside.suns as DirectionalLight[]) {
         light.position.x = -50; // the sun moves to the other side: a different appended set
@@ -436,7 +480,8 @@ describe.each(backends)('BatchedMesh in a shadow pass nested in the main pass (w
       const v0 = internals(r.unlit)._indirectTexture.version;
       r.renderer.render(r.scene, r.main);
       const all = Array.from({ length: 101 }, (_, i) => i);
-      for (const pass of r.renderer.passes) expect([...drawnIds(pass, r.unlit, pass.kind)].sort((a, b) => a - b)).toEqual(all);
+      for (const pass of r.renderer.passes)
+        expect([...drawnIds(pass, r.unlit, pass.kind)].sort((a, b) => a - b)).toEqual(all);
       // An opaque batch does not sort (batchStatics), so three's own hook skips an unchanged list; the nested pass appends nothing.
       expect(internals(r.unlit)._indirectTexture.version - v0, 'no upload on the second frame').toBe(0);
     });
@@ -481,7 +526,13 @@ describe.each(backends)('BatchedMesh in a shadow pass nested in the main pass (w
       // (ShadowNode.updateShadow restores the scene state only when the map render returns). The app puts three's
       // state back and carries on with the next tick; threeforge's own state must recover by itself.
       r.scene.overrideMaterial = null;
-      const next = new FakeRenderer({ webgpu, sceneHooks: true, shadowTrigger: 'first-receiver', record: true, shadowLights: r.suns });
+      const next = new FakeRenderer({
+        webgpu,
+        sceneHooks: true,
+        shadowTrigger: 'first-receiver',
+        record: true,
+        shadowLights: r.suns,
+      });
       setFrame(next, 2);
       const again: Rig = { ...r, renderer: next };
       for (let frame = 2; frame <= 3; frame++) {
@@ -492,7 +543,9 @@ describe.each(backends)('BatchedMesh in a shadow pass nested in the main pass (w
       }
       const frustum = frustumOf(next.passes[0]!, r.cs);
       for (const batch of [r.unlit, r.lit]) {
-        expect(listedIds(batch).length, `${nameOf(r, batch)}: no slot left zeroed`).toBe(internals(batch)._multiDrawCount);
+        expect(listedIds(batch).length, `${nameOf(r, batch)}: no slot left zeroed`).toBe(
+          internals(batch)._multiDrawCount,
+        );
         expectExact(`${nameOf(r, batch)} arrays`, listedIds(batch), reference(r, batch, frustum));
       }
     });
@@ -514,7 +567,15 @@ describe('attachBvhCulling without a pass tracker', () => {
     sun.updateMatrixWorld();
     sun.target.updateMatrixWorld();
     sun.shadow.updateMatrices(sun);
-    const cull = (camera: Camera): void => batch.onBeforeRender({ coordinateSystem: WebGLCoordinateSystem } as never, new Scene(), camera, batch.geometry, batch.material as never, null as never);
+    const cull = (camera: Camera): void =>
+      batch.onBeforeRender(
+        { coordinateSystem: WebGLCoordinateSystem } as never,
+        new Scene(),
+        camera,
+        batch.geometry,
+        batch.material as never,
+        null as never,
+      );
     const idsIn = (frustum: Frustum): Set<number> => {
       const ids = new Set<number>();
       for (let i = 0; i < 101; i++) {
@@ -535,7 +596,8 @@ describe('attachBvhCulling without a pass tracker', () => {
 describe('World nestedPasses option', () => {
   it("resolves 'auto' to 'per-pass' on both backends, and tracks the main camera through the scene hooks", () => {
     const scene = new Scene();
-    for (let i = 0; i < 4; i++) scene.add(tag.static(new Mesh(box, new MeshStandardMaterial({ color: new Color(i * 0x111111) }))));
+    for (let i = 0; i < 4; i++)
+      scene.add(tag.static(new Mesh(box, new MeshStandardMaterial({ color: new Color(i * 0x111111) }))));
     const a = new World(scene);
     expect(a.compile({ coordinateSystem: WebGPUCoordinateSystem }).nestedPasses).toBe('per-pass');
     a.decompile();
@@ -556,22 +618,26 @@ describe('World nestedPasses option', () => {
     expect(seen, 'the main camera while the nested render is over').toBe(main);
     expect(w.mainCamera).toBe(main);
     w.decompile();
-    expect(Object.prototype.hasOwnProperty.call(scene, 'onBeforeRender')).toBe(false);
+    expect(Object.hasOwn(scene, 'onBeforeRender')).toBe(false);
   });
 
-  it.each(['per-pass', 'reuse-main'] as const)("installs marked scene hooks under '%s' and removes them on decompile", (nestedPasses) => {
-    const scene = new Scene();
-    for (let i = 0; i < 4; i++) scene.add(tag.static(new Mesh(box, new MeshStandardMaterial({ color: new Color(i * 0x111111) }))));
-    const w = new World(scene, { nestedPasses });
-    w.compile();
-    for (const name of ['onBeforeRender', 'onAfterRender'] as const) {
-      expect(Object.prototype.hasOwnProperty.call(scene, name), name).toBe(true);
-      expect((scene[name] as unknown as Record<symbol, unknown>)[FORGE_HOOK], name).toBe(true);
-    }
-    w.decompile();
-    expect(Object.prototype.hasOwnProperty.call(scene, 'onBeforeRender')).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(scene, 'onAfterRender')).toBe(false);
-  });
+  it.each(['per-pass', 'reuse-main'] as const)(
+    "installs marked scene hooks under '%s' and removes them on decompile",
+    (nestedPasses) => {
+      const scene = new Scene();
+      for (let i = 0; i < 4; i++)
+        scene.add(tag.static(new Mesh(box, new MeshStandardMaterial({ color: new Color(i * 0x111111) }))));
+      const w = new World(scene, { nestedPasses });
+      w.compile();
+      for (const name of ['onBeforeRender', 'onAfterRender'] as const) {
+        expect(Object.hasOwn(scene, name), name).toBe(true);
+        expect((scene[name] as unknown as Record<symbol, unknown>)[FORGE_HOOK], name).toBe(true);
+      }
+      w.decompile();
+      expect(Object.hasOwn(scene, 'onBeforeRender')).toBe(false);
+      expect(Object.hasOwn(scene, 'onAfterRender')).toBe(false);
+    },
+  );
 });
 
 // ---- compacted instanced meshes -------------------------------------------------------------------------------------
@@ -603,23 +669,44 @@ function instancedRig(options: InstancedRigOptions) {
   const firstRow = litFirst ? row(scene, 'lit', 3, litMaterial, true) : row(scene, 'unlit', -3, unlitMaterial, false);
   const secondRow = litFirst ? row(scene, 'unlit', -3, unlitMaterial, false) : row(scene, 'lit', 3, litMaterial, true);
   const [unlitOriginals, litOriginals] = litFirst ? [secondRow, firstRow] : [firstRow, secondRow];
-  if (options.colors) litOriginals.forEach((mesh, i) => (mesh.material = new MeshStandardMaterial({ roughness: 0.8, color: new Color().setHSL(i / 101, 0.7, 0.5) })));
+  if (options.colors)
+    litOriginals.forEach(
+      (mesh, i) =>
+        (mesh.material = new MeshStandardMaterial({ roughness: 0.8, color: new Color().setHSL(i / 101, 0.7, 0.5) })),
+    );
   scene.updateMatrixWorld(true);
   const world = new World(scene, options.nested === 'auto' ? {} : { nestedPasses: options.nested });
   const report = world.compile({ coordinateSystem: cs });
   const unlit = world.slotOf(unlitOriginals[0]!)!.batch as Instanced;
   const lit = world.slotOf(litOriginals[0]!)!.batch as Instanced;
-  const renderer = new FakeRenderer({ webgpu: options.webgpu, sceneHooks: true, shadowTrigger: 'first-receiver', record: true, shadowLights: lights, uniformBufferLimit: options.buffers === 'vertex' ? 1024 : 65536 });
+  const renderer = new FakeRenderer({
+    webgpu: options.webgpu,
+    sceneHooks: true,
+    shadowTrigger: 'first-receiver',
+    record: true,
+    shadowLights: lights,
+    uniformBufferLimit: options.buffers === 'vertex' ? 1024 : 65536,
+  });
   const originals = new Map<Instanced, Mesh[]>([
     [unlit, unlitOriginals],
     [lit, litOriginals],
   ]);
   /** Per mesh: a row's translation (x, z) -> the instance id placed there. */
   const idAt = new Map<Instanced, Map<string, number>>();
-  for (const [mesh, meshes] of originals) idAt.set(mesh, new Map(meshes.map((m) => [`${Math.round(m.position.x)},${Math.round(m.position.z)}`, world.slotOf(m)!.instanceId])));
+  for (const [mesh, meshes] of originals)
+    idAt.set(
+      mesh,
+      new Map(
+        meshes.map((m) => [`${Math.round(m.position.x)},${Math.round(m.position.z)}`, world.slotOf(m)!.instanceId]),
+      ),
+    );
   /** Per mesh: instance id -> the colour of its original's material. */
   const colorOf = new Map<Instanced, Map<number, Color>>();
-  for (const [mesh, meshes] of originals) colorOf.set(mesh, new Map(meshes.map((m) => [world.slotOf(m)!.instanceId, (m.material as MeshStandardMaterial).color])));
+  for (const [mesh, meshes] of originals)
+    colorOf.set(
+      mesh,
+      new Map(meshes.map((m) => [world.slotOf(m)!.instanceId, (m.material as MeshStandardMaterial).color])),
+    );
   return { cs, scene, main, lights, world, report, unlit, lit, originals, renderer, idAt, colorOf };
 }
 type InstancedRig = ReturnType<typeof instancedRig>;
@@ -644,7 +731,12 @@ function instancedIds(r: InstancedRig, pass: FakePass, mesh: Instanced, label: s
     const wrong: number[] = [];
     ids.forEach((id, k) => {
       const c = r.colorOf.get(mesh)!.get(id)!;
-      if (Math.abs(colors[k * 3]! - c.r) > 1e-4 || Math.abs(colors[k * 3 + 1]! - c.g) > 1e-4 || Math.abs(colors[k * 3 + 2]! - c.b) > 1e-4) wrong.push(k);
+      if (
+        Math.abs(colors[k * 3]! - c.r) > 1e-4 ||
+        Math.abs(colors[k * 3 + 1]! - c.g) > 1e-4 ||
+        Math.abs(colors[k * 3 + 2]! - c.b) > 1e-4
+      )
+        wrong.push(k);
     });
     expect(wrong, `${label}: colour rows that do not hold their instance's colour`).toEqual([]);
   }
@@ -656,7 +748,10 @@ function lightVolume(pass: FakePass, cs: CoordinateSystem): FrustumLike {
   if (pass.face === null) return frustumOf(pass, cs);
   const light = pass.light as PointLight;
   const reach = 2 * (light.distance || light.shadow.camera.far);
-  return new Box3().setFromCenterAndSize(new Vector3().setFromMatrixPosition(light.matrixWorld), new Vector3(reach, reach, reach));
+  return new Box3().setFromCenterAndSize(
+    new Vector3().setFromMatrixPosition(light.matrixWorld),
+    new Vector3(reach, reach, reach),
+  );
 }
 
 /**
@@ -671,7 +766,8 @@ function expectInstancedPasses(r: InstancedRig, label: string): void {
     const mainRef = reference(r, mesh, frustumOf(main, r.cs));
     expectExact(`${label}, main pass, ${name} mesh`, instancedIds(r, main, mesh, `${label}, main`), mainRef);
     const reachable = new Set(mainRef.may);
-    for (const pass of nested) if (pass.kind === 'shadow') for (const id of reference(r, mesh, lightVolume(pass, r.cs)).may) reachable.add(id);
+    for (const pass of nested)
+      if (pass.kind === 'shadow') for (const id of reference(r, mesh, lightVolume(pass, r.cs)).may) reachable.add(id);
     for (const pass of nested) {
       const passLabel = `${label}, ${pass.kind} pass at depth ${pass.depth}${pass.light ? ` (${pass.light.name}${pass.face === null ? '' : ` face ${pass.face}`})` : ''}, ${name} mesh`;
       const ids = instancedIds(r, pass, mesh, passLabel);
@@ -697,62 +793,67 @@ function expectInstancedPasses(r: InstancedRig, label: string): void {
   }
 }
 
-describe.each(backends)('more shadow cameras in a frame than the caster bitmask has bits (webgpu: $webgpu)', ({ webgpu }) => {
-  it('falls back to appending the whole union past the 32nd camera, and still draws every caster that camera needs', () => {
-    // `bitFor` (src/compiler/instancing.ts ~379) gives each shadow camera of the frame one bit of a Uint32, and
-    // `appendCasters` (~518) uses that bit to append only the casters the camera reaches. Past the 32nd camera there is
-    // no bit left, so `bitFor` returns 0, the per-light filter is skipped, and the pass appends the frame's whole union
-    // instead — the old, conservative superset. It may draw more than the light needs, but it must never drop a caster,
-    // which is the one failure mode here that would show as a missing shadow. Nothing covered this branch.
-    const COUNT = 33;
-    const r = instancedRig({
-      webgpu,
-      nested: 'auto',
-      buffers: 'uniform',
-      // Narrow suns spread along the rows, so each reaches a different few cubes and the slices stay distinguishable.
-      lights: (cs) => Array.from({ length: COUNT }, (_, i) => sunLight(`sun-${i}`, -96 + i * 6, cs, 3)),
-    });
-    expect(r.lights).toHaveLength(COUNT);
-    r.renderer.render(r.scene, r.main);
-    expect(passLabels(r.renderer)).toEqual(['render:0', ...Array<string>(COUNT).fill('shadow:1')]);
-    // The contract every pass keeps, the fallback included: every caster its own camera needs is drawn, and nothing
-    // that no light of the frame and not the main camera reaches.
-    expectInstancedPasses(r, `${COUNT} suns`);
+describe.each(backends)(
+  'more shadow cameras in a frame than the caster bitmask has bits (webgpu: $webgpu)',
+  ({ webgpu }) => {
+    it('falls back to appending the whole union past the 32nd camera, and still draws every caster that camera needs', () => {
+      // `bitFor` (src/compiler/instancing.ts ~379) gives each shadow camera of the frame one bit of a Uint32, and
+      // `appendCasters` (~518) uses that bit to append only the casters the camera reaches. Past the 32nd camera there is
+      // no bit left, so `bitFor` returns 0, the per-light filter is skipped, and the pass appends the frame's whole union
+      // instead — the old, conservative superset. It may draw more than the light needs, but it must never drop a caster,
+      // which is the one failure mode here that would show as a missing shadow. Nothing covered this branch.
+      const COUNT = 33;
+      const r = instancedRig({
+        webgpu,
+        nested: 'auto',
+        buffers: 'uniform',
+        // Narrow suns spread along the rows, so each reaches a different few cubes and the slices stay distinguishable.
+        lights: (cs) => Array.from({ length: COUNT }, (_, i) => sunLight(`sun-${i}`, -96 + i * 6, cs, 3)),
+      });
+      expect(r.lights).toHaveLength(COUNT);
+      r.renderer.render(r.scene, r.main);
+      expect(passLabels(r.renderer)).toEqual(['render:0', ...Array<string>(COUNT).fill('shadow:1')]);
+      // The contract every pass keeps, the fallback included: every caster its own camera needs is drawn, and nothing
+      // that no light of the frame and not the main camera reaches.
+      expectInstancedPasses(r, `${COUNT} suns`);
 
-    const [main, ...shadows] = r.renderer.passes as [FakePass, ...FakePass[]];
-    const past = shadows[32]!;
-    expect(past.light!.name, 'the 33rd shadow camera').toBe('sun-32');
-    for (const mesh of [r.unlit, r.lit]) {
-      const name = mesh === r.unlit ? 'unlit' : 'lit';
-      const held = new Set(instancedIds(r, main, mesh, `${name}, main`));
-      const ids = instancedIds(r, past, mesh, `${name}, the 33rd sun`);
-      const own = reference(r, mesh, frustumOf(past, r.cs));
-      const drawn = new Set(ids);
-      expect(
-        own.must.filter((id) => !drawn.has(id)),
-        `${name}: casters the 33rd sun needs but did not draw`,
-      ).toEqual([]);
-      // It appended the other suns' casters too, which is what the missing bit costs: the superset, not a narrowed list.
-      const foreign = [...new Set(shadows.filter((p) => p !== past).flatMap((p) => reference(r, mesh, frustumOf(p, r.cs)).must))].filter((id) => !held.has(id) && !own.may.has(id));
-      expect(foreign.length, `${name}: the other suns have casters of their own`).toBeGreaterThan(15);
-      expect(
-        foreign.filter((id) => !drawn.has(id)),
-        `${name}: past the 32nd camera the pass appends the frame's whole union`,
-      ).toEqual([]);
-    }
-    // A camera inside the 32 still gets only its own casters, so the fallback is the exception and not the new rule.
-    for (const mesh of [r.unlit, r.lit]) {
-      const name = mesh === r.unlit ? 'unlit' : 'lit';
-      const held = new Set(instancedIds(r, main, mesh, `${name}, main`));
-      const first = shadows[0]!;
-      const own = reference(r, mesh, frustumOf(first, r.cs));
-      expect(
-        instancedIds(r, first, mesh, `${name}, the 1st sun`).filter((id) => !held.has(id) && !own.may.has(id)),
-        `${name}: the 1st sun appended only the casters it reaches`,
-      ).toEqual([]);
-    }
-  });
-});
+      const [main, ...shadows] = r.renderer.passes as [FakePass, ...FakePass[]];
+      const past = shadows[32]!;
+      expect(past.light!.name, 'the 33rd shadow camera').toBe('sun-32');
+      for (const mesh of [r.unlit, r.lit]) {
+        const name = mesh === r.unlit ? 'unlit' : 'lit';
+        const held = new Set(instancedIds(r, main, mesh, `${name}, main`));
+        const ids = instancedIds(r, past, mesh, `${name}, the 33rd sun`);
+        const own = reference(r, mesh, frustumOf(past, r.cs));
+        const drawn = new Set(ids);
+        expect(
+          own.must.filter((id) => !drawn.has(id)),
+          `${name}: casters the 33rd sun needs but did not draw`,
+        ).toEqual([]);
+        // It appended the other suns' casters too, which is what the missing bit costs: the superset, not a narrowed list.
+        const foreign = [
+          ...new Set(shadows.filter((p) => p !== past).flatMap((p) => reference(r, mesh, frustumOf(p, r.cs)).must)),
+        ].filter((id) => !held.has(id) && !own.may.has(id));
+        expect(foreign.length, `${name}: the other suns have casters of their own`).toBeGreaterThan(15);
+        expect(
+          foreign.filter((id) => !drawn.has(id)),
+          `${name}: past the 32nd camera the pass appends the frame's whole union`,
+        ).toEqual([]);
+      }
+      // A camera inside the 32 still gets only its own casters, so the fallback is the exception and not the new rule.
+      for (const mesh of [r.unlit, r.lit]) {
+        const name = mesh === r.unlit ? 'unlit' : 'lit';
+        const held = new Set(instancedIds(r, main, mesh, `${name}, main`));
+        const first = shadows[0]!;
+        const own = reference(r, mesh, frustumOf(first, r.cs));
+        expect(
+          instancedIds(r, first, mesh, `${name}, the 1st sun`).filter((id) => !held.has(id) && !own.may.has(id)),
+          `${name}: the 1st sun appended only the casters it reaches`,
+        ).toEqual([]);
+      }
+    });
+  },
+);
 
 const bufferPaths = ['uniform', 'vertex'] as const;
 
@@ -761,36 +862,48 @@ describe.each(backends)('compacted InstancedMesh in nested passes (webgpu: $webg
     describe.each(bufferPaths)('%s buffers', (buffers) => {
       const resolved: NestedPassPolicy = nested === 'auto' ? 'per-pass' : nested;
 
-      it.each([false, true])('draws the main list exactly and every caster a shadow camera needs, on two frames (lit row first: %s)', (litFirst) => {
-        const r = instancedRig({ webgpu, nested, buffers, litFirst });
-        expect(r.report.nestedPasses).toBe(resolved);
-        expect(r.report.after).toMatchObject({ batches: 0, instanced: 2 });
-        expect(r.scene.children.indexOf(r.unlit) < r.scene.children.indexOf(r.lit), 'the unlit mesh is first in traversal').toBe(!litFirst);
-        for (let frame = 1; frame <= 2; frame++) {
-          r.renderer.render(r.scene, r.main);
-          expect(passLabels(r.renderer)).toEqual(['render:0', 'shadow:1']);
-          expectInstancedPasses(r, `frame ${frame}`);
-        }
-        const [main, shadow] = r.renderer.passes as [FakePass, FakePass];
-        for (const mesh of [r.unlit, r.lit]) {
-          const mainMust = new Set(reference(r, mesh, frustumOf(main, r.cs)).must);
-          expect(reference(r, mesh, frustumOf(shadow, r.cs)).must.filter((id) => !mainMust.has(id)).length, 'casters outside the view').toBeGreaterThan(20);
-        }
-      });
+      it.each([false, true])(
+        'draws the main list exactly and every caster a shadow camera needs, on two frames (lit row first: %s)',
+        (litFirst) => {
+          const r = instancedRig({ webgpu, nested, buffers, litFirst });
+          expect(r.report.nestedPasses).toBe(resolved);
+          expect(r.report.after).toMatchObject({ batches: 0, instanced: 2 });
+          expect(
+            r.scene.children.indexOf(r.unlit) < r.scene.children.indexOf(r.lit),
+            'the unlit mesh is first in traversal',
+          ).toBe(!litFirst);
+          for (let frame = 1; frame <= 2; frame++) {
+            r.renderer.render(r.scene, r.main);
+            expect(passLabels(r.renderer)).toEqual(['render:0', 'shadow:1']);
+            expectInstancedPasses(r, `frame ${frame}`);
+          }
+          const [main, shadow] = r.renderer.passes as [FakePass, FakePass];
+          for (const mesh of [r.unlit, r.lit]) {
+            const mainMust = new Set(reference(r, mesh, frustumOf(main, r.cs)).must);
+            expect(
+              reference(r, mesh, frustumOf(shadow, r.cs)).must.filter((id) => !mainMust.has(id)).length,
+              'casters outside the view',
+            ).toBeGreaterThan(20);
+          }
+        },
+      );
 
-      it.each([false, true])('keeps the rows exact while the main camera moves every frame, the lit mesh receiving shadows first (per-instance colours: %s)', (colors) => {
-        const r = instancedRig({ webgpu, nested, buffers, colors });
-        expect(r.lit.instanceColor === null, 'per-instance colours on the lit mesh').toBe(!colors);
-        for (let frame = 1; frame <= 3; frame++) {
-          // Two cubes leave the view and two enter each frame: the main rows and the appended casters both change.
-          r.main.position.set(4 * (frame - 1), 6, 35);
-          r.main.lookAt(4 * (frame - 1), 0, 0);
-          r.main.updateMatrixWorld();
-          r.renderer.render(r.scene, r.main);
-          expect(passLabels(r.renderer)).toEqual(['render:0', 'shadow:1']);
-          expectInstancedPasses(r, `frame ${frame}`);
-        }
-      });
+      it.each([false, true])(
+        'keeps the rows exact while the main camera moves every frame, the lit mesh receiving shadows first (per-instance colours: %s)',
+        (colors) => {
+          const r = instancedRig({ webgpu, nested, buffers, colors });
+          expect(r.lit.instanceColor === null, 'per-instance colours on the lit mesh').toBe(!colors);
+          for (let frame = 1; frame <= 3; frame++) {
+            // Two cubes leave the view and two enter each frame: the main rows and the appended casters both change.
+            r.main.position.set(4 * (frame - 1), 6, 35);
+            r.main.lookAt(4 * (frame - 1), 0, 0);
+            r.main.updateMatrixWorld();
+            r.renderer.render(r.scene, r.main);
+            expect(passLabels(r.renderer)).toEqual(['render:0', 'shadow:1']);
+            expectInstancedPasses(r, `frame ${frame}`);
+          }
+        },
+      );
 
       it('leaves count and visibleIds holding the main list once the frame is over', () => {
         const r = instancedRig({ webgpu, nested, buffers });
@@ -803,7 +916,12 @@ describe.each(backends)('compacted InstancedMesh in nested passes (webgpu: $webg
       });
 
       it("serves two suns and a point light's six faces from rows appended once, restoring count after every shadow render", () => {
-        const r = instancedRig({ webgpu, nested, buffers, lights: (cs) => [sunLight('east', 60, cs, 20), sunLight('west', -60, cs, 20), pointLight('bulb', 0, cs, 30)] });
+        const r = instancedRig({
+          webgpu,
+          nested,
+          buffers,
+          lights: (cs) => [sunLight('east', 60, cs, 20), sunLight('west', -60, cs, 20), pointLight('bulb', 0, cs, 30)],
+        });
         const shadowCameras = new Set<Camera>(r.lights.map((light) => light.shadow.camera));
         const afterShadow: number[][] = [];
         r.scene.onAfterRender = ((previous) =>
@@ -817,14 +935,21 @@ describe.each(backends)('compacted InstancedMesh in nested passes (webgpu: $webg
           expect(passLabels(r.renderer)).toEqual(['render:0', ...Array<string>(8).fill('shadow:1')]);
           expectInstancedPasses(r, `frame ${frame}`);
           const counts = [r.unlit.count, r.lit.count];
-          expect(afterShadow, 'count is back to the main list after each shadow render').toEqual(Array.from({ length: 8 }, () => counts));
+          expect(afterShadow, 'count is back to the main list after each shadow render').toEqual(
+            Array.from({ length: 8 }, () => counts),
+          );
         }
       });
 
       it('appends to each shadow light only the casters that light reaches, on top of the enclosing rows in their order', () => {
         // Two suns with disjoint volumes, neither overlapping the main view: every appended caster belongs to exactly
         // one of them, so a pass that appended the frame's union would draw the other light's casters too.
-        const r = instancedRig({ webgpu, nested, buffers, lights: (cs) => [sunLight('east', 60, cs, 20), sunLight('west', -60, cs, 20)] });
+        const r = instancedRig({
+          webgpu,
+          nested,
+          buffers,
+          lights: (cs) => [sunLight('east', 60, cs, 20), sunLight('west', -60, cs, 20)],
+        });
         for (let frame = 1; frame <= 2; frame++) {
           r.renderer.render(r.scene, r.main);
           expect(passLabels(r.renderer)).toEqual(['render:0', 'shadow:1', 'shadow:1']);
@@ -842,7 +967,10 @@ describe.each(backends)('compacted InstancedMesh in nested passes (webgpu: $webg
               const own = reference(r, mesh, frustumOf(pass, r.cs));
               const other = reference(r, mesh, frustumOf(shadows.find((p) => p !== pass)!, r.cs));
               const held = new Set(prefix);
-              expect(other.must.filter((id) => !held.has(id) && !own.may.has(id)).length, `${label}: the other light has casters of its own`).toBeGreaterThan(15);
+              expect(
+                other.must.filter((id) => !held.has(id) && !own.may.has(id)).length,
+                `${label}: the other light has casters of its own`,
+              ).toBeGreaterThan(15);
               expect(
                 ids.slice(prefix.length).filter((id) => !own.may.has(id)),
                 `${label}: appended casters this light does not reach`,
@@ -860,7 +988,12 @@ describe.each(backends)('compacted InstancedMesh in nested passes (webgpu: $webg
         // The worst case for uploads: two disjoint caster sets, so each pass rewrites what the pass before it wrote.
         // A light whose casters are the rows already there (a point light's faces, or a set the tail starts with)
         // writes nothing; `writeRows` marks only rows that change.
-        const r = instancedRig({ webgpu, nested, buffers, lights: (cs) => [sunLight('east', 60, cs, 20), sunLight('west', -60, cs, 20)] });
+        const r = instancedRig({
+          webgpu,
+          nested,
+          buffers,
+          lights: (cs) => [sunLight('east', 60, cs, 20), sunLight('west', -60, cs, 20)],
+        });
         const bumps = (): number[] => {
           const before = [r.unlit, r.lit].map((m) => m.instanceMatrix.version);
           r.renderer.render(r.scene, r.main);
@@ -884,7 +1017,10 @@ describe.each(backends)('compacted InstancedMesh in nested passes (webgpu: $webg
           // main camera. Either way the reflection draws the main list and appends nothing.
           for (const mesh of [r.unlit, r.lit]) {
             const name = mesh === r.unlit ? 'unlit' : 'lit';
-            expect(new Set(instancedIds(r, reflection, mesh, `reflection, ${name}`)), `frame ${frame}, reflection, ${name}`).toEqual(new Set(instancedIds(r, main, mesh, `main, ${name}`)));
+            expect(
+              new Set(instancedIds(r, reflection, mesh, `reflection, ${name}`)),
+              `frame ${frame}, reflection, ${name}`,
+            ).toEqual(new Set(instancedIds(r, main, mesh, `main, ${name}`)));
           }
         }
       });
@@ -925,7 +1061,14 @@ describe.each(backends)('compacted InstancedMesh in nested passes (webgpu: $webg
         expect(() => r.renderer.render(r.scene, r.main)).toThrow('shadow pass failed');
         armed = false;
         r.scene.overrideMaterial = null; // three's state, left behind by the failed map render (see the batch test)
-        const next = new FakeRenderer({ webgpu, sceneHooks: true, shadowTrigger: 'first-receiver', record: true, shadowLights: r.lights, uniformBufferLimit: buffers === 'vertex' ? 1024 : 65536 });
+        const next = new FakeRenderer({
+          webgpu,
+          sceneHooks: true,
+          shadowTrigger: 'first-receiver',
+          record: true,
+          shadowLights: r.lights,
+          uniformBufferLimit: buffers === 'vertex' ? 1024 : 65536,
+        });
         const again: InstancedRig = { ...r, renderer: next };
         for (let frame = 2; frame <= 3; frame++) {
           setFrame(next, frame);
@@ -953,11 +1096,24 @@ describe('compacted InstancedMesh driven by a PassTracker', () => {
     mirror.rotateY(Math.PI); // looks the other way: a different visible set
     mirror.updateMatrixWorld();
     const rng = mulberry32(5);
-    const matrices = Array.from({ length: 2000 }, () => new Matrix4().makeTranslation(rng() * 2000 - 1000, 1, rng() * 2000 - 1000));
+    const matrices = Array.from({ length: 2000 }, () =>
+      new Matrix4().makeTranslation(rng() * 2000 - 1000, 1, rng() * 2000 - 1000),
+    );
     const passes = new PassTracker();
-    const mesh = createCulledInstancedMesh(box, new MeshStandardMaterial(), matrices, null, WebGLCoordinateSystem, { nestedPasses, passes }) as Instanced;
+    const mesh = createCulledInstancedMesh(box, new MeshStandardMaterial(), matrices, null, WebGLCoordinateSystem, {
+      nestedPasses,
+      passes,
+    }) as Instanced;
     const scene = new Scene();
-    const run = (c: Camera): void => mesh.onBeforeRender({ coordinateSystem: WebGLCoordinateSystem } as never, scene, c, mesh.geometry, mesh.material as never, null as never);
+    const run = (c: Camera): void =>
+      mesh.onBeforeRender(
+        { coordinateSystem: WebGLCoordinateSystem } as never,
+        scene,
+        c,
+        mesh.geometry,
+        mesh.material as never,
+        null as never,
+      );
     const inView = (c: Camera): Set<number> => {
       const frustum = frustumOf(c, WebGLCoordinateSystem);
       const ids = new Set<number>();
@@ -969,38 +1125,49 @@ describe('compacted InstancedMesh driven by a PassTracker', () => {
     return { main, mirror, mesh, passes, run, inView };
   }
 
-  it.each(['per-pass', 'reuse-main'] as const)("draws the enclosing pass's list in a nested render that is not a shadow map, without an upload (%s)", (nestedPasses) => {
-    const f = field(nestedPasses);
-    f.passes.begin(f.main);
-    f.run(f.main);
-    const ids = [...f.mesh.visibleIds];
-    expect(new Set(ids)).toEqual(f.inView(f.main));
-    const version = f.mesh.instanceMatrix.version;
-    f.passes.begin(f.mirror);
-    f.run(f.mirror);
-    expect(f.mesh.visibleIds).toEqual(ids);
-    expect(f.mesh.count).toBe(ids.length);
-    expect(f.mesh.instanceMatrix.version, 'no upload for the nested pass').toBe(version);
-    f.passes.end();
-    f.passes.end();
-    expect([f.mesh.count, f.mesh.visibleIds]).toEqual([ids.length, ids]);
-  });
-
-  it.each(['per-pass', 'reuse-main'] as const)('compacts for the main camera when a nested render reaches the mesh before its outermost render does, and serves that render from it (%s)', (nestedPasses) => {
-    const f = field(nestedPasses);
-    for (let frame = 1; frame <= 2; frame++) {
-      f.passes.begin(f.main); // the outermost render has not drawn the mesh yet
+  it.each(['per-pass', 'reuse-main'] as const)(
+    "draws the enclosing pass's list in a nested render that is not a shadow map, without an upload (%s)",
+    (nestedPasses) => {
+      const f = field(nestedPasses);
+      f.passes.begin(f.main);
+      f.run(f.main);
+      const ids = [...f.mesh.visibleIds];
+      expect(new Set(ids)).toEqual(f.inView(f.main));
+      const version = f.mesh.instanceMatrix.version;
       f.passes.begin(f.mirror);
       f.run(f.mirror);
-      const ids = [...f.mesh.visibleIds];
-      expect(new Set(ids), `frame ${frame}: the nested render draws the main camera's list`).toEqual(f.inView(f.main));
+      expect(f.mesh.visibleIds).toEqual(ids);
       expect(f.mesh.count).toBe(ids.length);
+      expect(f.mesh.instanceMatrix.version, 'no upload for the nested pass').toBe(version);
       f.passes.end();
-      const version = f.mesh.instanceMatrix.version;
-      f.run(f.main);
-      expect([f.mesh.count, f.mesh.visibleIds], `frame ${frame}: the outermost render draws the same list`).toEqual([ids.length, ids]);
-      expect(f.mesh.instanceMatrix.version, 'without another upload').toBe(version);
       f.passes.end();
-    }
-  });
+      expect([f.mesh.count, f.mesh.visibleIds]).toEqual([ids.length, ids]);
+    },
+  );
+
+  it.each(['per-pass', 'reuse-main'] as const)(
+    'compacts for the main camera when a nested render reaches the mesh before its outermost render does, and serves that render from it (%s)',
+    (nestedPasses) => {
+      const f = field(nestedPasses);
+      for (let frame = 1; frame <= 2; frame++) {
+        f.passes.begin(f.main); // the outermost render has not drawn the mesh yet
+        f.passes.begin(f.mirror);
+        f.run(f.mirror);
+        const ids = [...f.mesh.visibleIds];
+        expect(new Set(ids), `frame ${frame}: the nested render draws the main camera's list`).toEqual(
+          f.inView(f.main),
+        );
+        expect(f.mesh.count).toBe(ids.length);
+        f.passes.end();
+        const version = f.mesh.instanceMatrix.version;
+        f.run(f.main);
+        expect([f.mesh.count, f.mesh.visibleIds], `frame ${frame}: the outermost render draws the same list`).toEqual([
+          ids.length,
+          ids,
+        ]);
+        expect(f.mesh.instanceMatrix.version, 'without another upload').toBe(version);
+        f.passes.end();
+      }
+    },
+  );
 });

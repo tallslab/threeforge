@@ -1,5 +1,5 @@
 import { AmbientLight, Color, DirectionalLight, Scene, type SkinnedMesh } from 'three';
-import { assembleCharacter, type AssembledCharacter } from 'threeforge';
+import { type AssembledCharacter, assembleCharacter } from 'threeforge';
 import { buildCharacter } from '../../scenes/character.js';
 import type { BenchBuilder } from './index.js';
 
@@ -46,7 +46,12 @@ export const rpg: BenchBuilder = async ({ camera }) => {
     after: () => {
       for (const g of character.gear) g.visible = true;
       const equipped = character.gear.filter((_, i) => i !== hidden);
-      assembled = assembleCharacter({ skeleton: character.skeleton, wardrobe: parts, equipped: [character.body, ...equipped], atlas: { size: 256 } });
+      assembled = assembleCharacter({
+        skeleton: character.skeleton,
+        wardrobe: parts,
+        equipped: [character.body, ...equipped],
+        atlas: { size: 256 },
+      });
       for (const part of parts) scene.remove(part);
       scene.add(assembled.mesh);
     },

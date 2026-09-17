@@ -6,13 +6,13 @@ import {
   Float32BufferAttribute,
   LinearFilter,
   LinearMipmapLinearFilter,
+  type Material,
   RGBAFormat,
+  type Skeleton,
   SkinnedMesh,
   SRGBColorSpace,
-  Uint16BufferAttribute,
-  type Material,
-  type Skeleton,
   type Texture,
+  Uint16BufferAttribute,
 } from 'three';
 import { ensureIndexed } from '../compiler/geometryCompat.js';
 
@@ -57,7 +57,12 @@ export interface AssembledCharacter {
 
 type MaterialWithMap = Material & { map?: Texture | null; color?: Color };
 
-function readTexels(texture: Texture | null | undefined, fallback: Color | undefined, w: number, h: number): Uint8Array {
+function readTexels(
+  texture: Texture | null | undefined,
+  fallback: Color | undefined,
+  w: number,
+  h: number,
+): Uint8Array {
   const out = new Uint8Array(w * h * 4);
   const image = texture?.image as { data?: ArrayLike<number>; width?: number; height?: number } | undefined;
   if (image && image.data && image.width && image.height) {
@@ -134,7 +139,10 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
       if (index === undefined) missing.push(bone.name || `#${i}`);
       else map[i] = index;
     });
-    if (missing.length > 0) throw new Error(`assembleCharacter: part "${part.name}" uses bones missing from the shared skeleton: ${missing.join(', ')}`);
+    if (missing.length > 0)
+      throw new Error(
+        `assembleCharacter: part "${part.name}" uses bones missing from the shared skeleton: ${missing.join(', ')}`,
+      );
     boneMaps.set(part, map);
   }
 
@@ -152,7 +160,11 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
       const dst = ((row * cellTexels + y) * atlasSize + col * cellTexels) * 4;
       data.set(texels.subarray(y * cellTexels * 4, (y + 1) * cellTexels * 4), dst);
     }
-    cells.set(part, { x: (col * cellTexels) / atlasSize, y: (row * cellTexels) / atlasSize, size: cellTexels / atlasSize });
+    cells.set(part, {
+      x: (col * cellTexels) / atlasSize,
+      y: (row * cellTexels) / atlasSize,
+      size: cellTexels / atlasSize,
+    });
   });
   const atlas = new DataTexture(data, atlasSize, atlasSize, RGBAFormat);
   atlas.colorSpace = SRGBColorSpace;
@@ -162,7 +174,10 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
   atlas.needsUpdate = true;
   atlas.name = 'forge:character-atlas';
 
-  const template = (options.material ?? ((Array.isArray(wardrobe[0]!.material) ? wardrobe[0]!.material[0] : wardrobe[0]!.material) as Material)).clone() as MaterialWithMap;
+  const template = (
+    options.material ??
+    ((Array.isArray(wardrobe[0]!.material) ? wardrobe[0]!.material[0] : wardrobe[0]!.material) as Material)
+  ).clone() as MaterialWithMap;
   template.map = atlas;
   if (template.color) template.color.set(0xffffff);
   template.name = 'forge:character';

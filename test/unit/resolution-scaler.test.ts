@@ -3,14 +3,28 @@ import { ResolutionScaler } from '../../src/overdraw/ResolutionScaler.js';
 
 function fakeRenderer(ratio = 2) {
   const calls: number[] = [];
-  return { calls, getPixelRatio: () => ratio, setPixelRatio: (v: number) => { ratio = v; calls.push(v); } };
+  return {
+    calls,
+    getPixelRatio: () => ratio,
+    setPixelRatio: (v: number) => {
+      ratio = v;
+      calls.push(v);
+    },
+  };
 }
 
 describe('ResolutionScaler', () => {
   it('steps the scale down when the window median exceeds the target and back up with headroom, clamped', () => {
     const r = fakeRenderer(2);
     const env: number[] = [];
-    const scaler = new ResolutionScaler(r, { target: 16.6, window: 20, step: 0.05, min: 0.5, max: 1, ledger: { setEnvironment: (e) => env.push(e.dpr) } });
+    const scaler = new ResolutionScaler(r, {
+      target: 16.6,
+      window: 20,
+      step: 0.05,
+      min: 0.5,
+      max: 1,
+      ledger: { setEnvironment: (e) => env.push(e.dpr) },
+    });
     expect(scaler.base).toBe(2);
     expect(scaler.scale).toBe(1);
     for (let i = 0; i < 19; i++) expect(scaler.update(25)).toBe(1);

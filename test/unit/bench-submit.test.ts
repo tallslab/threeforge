@@ -1,15 +1,68 @@
 import { describe, expect, it } from 'vitest';
-import { compact, issueBody, issueTitle, issueUrl, normalizeEnvString, resultId, toWire, URL_LIMIT } from '../../bench-app/submit.js';
+import {
+  compact,
+  issueBody,
+  issueTitle,
+  issueUrl,
+  normalizeEnvString,
+  resultId,
+  toWire,
+  URL_LIMIT,
+} from '../../bench-app/submit.js';
 import { deviceRows, liveRows } from '../../bench-app/table.js';
 import { extractJson } from '../../scripts/bench-ingest.mjs';
 import { validateDeviceResult } from '../../scripts/bench-schema.mjs';
 import type { SceneId } from '../../test/app/benchMetrics.js';
 
-const metrics = (n: number) => ({ sceneSubmissions: n, gpuDraws: n, triangles: 100, programs: 3, overdrawOpaque: 1.23456, overdrawTransparent: 0.1, skinnedVertices: 0, shadowCasters: 0, shadowTexels: 0, textureBytes: 1, geometryBytes: 2, renderTargetBytes: 3, particles: 100, fillMegapixels: 0.5, objects: 500, autoUpdatedMatrices: 20, shadowPassesPerFrame: 1, renderMs: 1.23456, frameMs: 16.66666, unattributed: 0 });
+const metrics = (n: number) => ({
+  sceneSubmissions: n,
+  gpuDraws: n,
+  triangles: 100,
+  programs: 3,
+  overdrawOpaque: 1.23456,
+  overdrawTransparent: 0.1,
+  skinnedVertices: 0,
+  shadowCasters: 0,
+  shadowTexels: 0,
+  textureBytes: 1,
+  geometryBytes: 2,
+  renderTargetBytes: 3,
+  particles: 100,
+  fillMegapixels: 0.5,
+  objects: 500,
+  autoUpdatedMatrices: 20,
+  shadowPassesPerFrame: 1,
+  renderMs: 1.23456,
+  frameMs: 16.66666,
+  unattributed: 0,
+});
 const ids: SceneId[] = ['village', 'forest', 'crowd', 'bossfight', 'lake', 'daynight', 'zen', 'rpg'];
-const env = { three: '186', backend: 'webgpu' as const, multiDraw: false, tier: 'phone-mid' as const, gpu: 'Apple A16 GPU', dpr: 3, viewport: [390, 844] as [number, number], ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)', platform: 'iPhone', cores: 6, deviceMemory: null, fillRateGPix: 4.25 };
-const scenes = Object.fromEntries(ids.map((id) => [id, { naive: metrics(300), optimized: metrics(30) }])) as Record<SceneId, { naive: ReturnType<typeof metrics>; optimized: ReturnType<typeof metrics> }>;
-const result = { schemaVersion: 1 as const, kind: 'device' as const, id: resultId(env, new Date('2026-09-14T10:00:00Z')), createdAt: '2026-09-14T10:00:00.000Z', env, scenes };
+const env = {
+  three: '186',
+  backend: 'webgpu' as const,
+  multiDraw: false,
+  tier: 'phone-mid' as const,
+  gpu: 'Apple A16 GPU',
+  dpr: 3,
+  viewport: [390, 844] as [number, number],
+  ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
+  platform: 'iPhone',
+  cores: 6,
+  deviceMemory: null,
+  fillRateGPix: 4.25,
+};
+const scenes = Object.fromEntries(ids.map((id) => [id, { naive: metrics(300), optimized: metrics(30) }])) as Record<
+  SceneId,
+  { naive: ReturnType<typeof metrics>; optimized: ReturnType<typeof metrics> }
+>;
+const result = {
+  schemaVersion: 1 as const,
+  kind: 'device' as const,
+  id: resultId(env, new Date('2026-09-14T10:00:00Z')),
+  createdAt: '2026-09-14T10:00:00.000Z',
+  env,
+  scenes,
+};
 
 describe('submit', () => {
   it('builds a valid, compact issue that the ingest script accepts', () => {
@@ -44,7 +97,10 @@ describe('submit', () => {
 
 describe('table', () => {
   it('renders live rows with pending cells and device rows', () => {
-    const live = liveRows({ village: { naive: metrics(303), optimized: metrics(28) }, forest: { naive: metrics(5706) } });
+    const live = liveRows({
+      village: { naive: metrics(303), optimized: metrics(28) },
+      forest: { naive: metrics(5706) },
+    });
     expect(live).toContain('<td>village</td>');
     expect(live).toContain('303 → 28');
     expect(live).toContain('5706 → …');
@@ -78,12 +134,25 @@ describe('normalizeEnvString', () => {
   it('normalizes env before hashing the id and validating: a real ®/™-bearing GPU string and a non-ASCII UA still validate, and the id matches', () => {
     const rawGpu = 'NVIDIA® GeForce RTX™ 4080';
     const rawUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) CaféBrowser/1.0';
-    const normalizedEnv = { ...env, gpu: normalizeEnvString(rawGpu), ua: normalizeEnvString(rawUa), three: normalizeEnvString(env.three), platform: normalizeEnvString(env.platform) };
+    const normalizedEnv = {
+      ...env,
+      gpu: normalizeEnvString(rawGpu),
+      ua: normalizeEnvString(rawUa),
+      three: normalizeEnvString(env.three),
+      platform: normalizeEnvString(env.platform),
+    };
     expect(normalizedEnv.gpu).toBe('NVIDIA(R) GeForce RTX(TM) 4080');
     expect(normalizedEnv.ua).not.toMatch(/[^\x00-\x7f]/);
     const now = new Date('2026-09-14T10:00:00Z');
     const id = resultId(normalizedEnv, now);
-    const built = { schemaVersion: 1 as const, kind: 'device' as const, id, createdAt: now.toISOString(), env: normalizedEnv, scenes };
+    const built = {
+      schemaVersion: 1 as const,
+      kind: 'device' as const,
+      id,
+      createdAt: now.toISOString(),
+      env: normalizedEnv,
+      scenes,
+    };
     const v = validateDeviceResult(built);
     expect(v.ok).toBe(true);
     if (!v.ok) throw new Error('unreachable');

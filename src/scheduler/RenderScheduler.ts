@@ -1,4 +1,4 @@
-import { Vector2, type Camera, type Object3D, type Scene } from 'three';
+import { type Camera, type Object3D, type Scene, Vector2 } from 'three';
 
 /** The slice of three's renderer the scheduler drives. */
 export interface SchedulerRenderer {
@@ -46,8 +46,13 @@ function isMixerAnimating(mixer: SchedulerMixer): boolean {
   for (let i = 0; i < nActive; i++) {
     const action = actions[i];
     if (!action) continue;
-    if ((typeof action.isRunning === 'function' && action.isRunning()) || (action._startTime !== null && action._startTime !== undefined)) return true;
-    if (action.enabled === true && action._weightInterpolant !== null && action._weightInterpolant !== undefined) return true;
+    if (
+      (typeof action.isRunning === 'function' && action.isRunning()) ||
+      (action._startTime !== null && action._startTime !== undefined)
+    )
+      return true;
+    if (action.enabled === true && action._weightInterpolant !== null && action._weightInterpolant !== undefined)
+      return true;
   }
   return false;
 }
@@ -162,7 +167,19 @@ export class RenderScheduler {
     const sizeChanged = this.sizeChanged();
     const keepAlive = this.keepAliveMs > 0 && time - this.lastRender >= this.keepAliveMs;
     const dirty = this.invalidated || animating || cameraChanged || watchedChanged || sizeChanged || keepAlive;
-    const reason = this.invalidated ? 'invalidate' : animating ? 'animation' : cameraChanged ? 'camera' : watchedChanged ? 'watched' : sizeChanged ? 'resize' : keepAlive ? 'keep-alive' : null;
+    const reason = this.invalidated
+      ? 'invalidate'
+      : animating
+        ? 'animation'
+        : cameraChanged
+          ? 'camera'
+          : watchedChanged
+            ? 'watched'
+            : sizeChanged
+              ? 'resize'
+              : keepAlive
+                ? 'keep-alive'
+                : null;
     this.stats.ticks++;
     this.ring.push(!dirty);
     if (this.ring.length > WINDOW) this.ring.shift();

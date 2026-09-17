@@ -5,14 +5,23 @@ import { expect, test } from './fixtures.js';
  * on a kit-less runner this would pass green against an empty arena — a boss-fight shadow budget measured with no
  * fighters to cast the shadows. The second test below uses the procedural naive scene and stays in CI.
  */
-test('ShadowBudget on phone-low fits the boss fight shadows into 262k texels and drops the point-light shadow', { tag: '@corpus' }, async ({ forge }) => {
+test('ShadowBudget on phone-low fits the boss fight shadows into 262k texels and drops the point-light shadow', {
+  tag: '@corpus',
+}, async ({ forge }) => {
   test.setTimeout(300_000);
   await forge.open('bossfight', { variant: 'naive', tier: 'phone-low', shadowBudget: '1' });
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
     for (let i = 0; i < 2; i++) await f.frameAsync();
     const frame = await f.frameAsync();
-    return { report: f.shadowReport!, texels: frame.lighting.shadowTexels, shadowLights: frame.lighting.shadowLights, passes: frame.passes.map((p) => p.id), unattributed: frame.totals.unattributed, hints: frame.hints.map((h) => h.code) };
+    return {
+      report: f.shadowReport!,
+      texels: frame.lighting.shadowTexels,
+      shadowLights: frame.lighting.shadowLights,
+      passes: frame.passes.map((p) => p.id),
+      unattributed: frame.totals.unattributed,
+      hints: frame.hints.map((h) => h.code),
+    };
   });
   expect(r.report.before).toBeGreaterThan(262_144);
   expect(r.report.after).toBeLessThanOrEqual(262_144);
@@ -26,7 +35,9 @@ test('ShadowBudget on phone-low fits the boss fight shadows into 262k texels and
   expect(r.unattributed).toBe(0);
 });
 
-test('a frozen sun shadow renders once, then only on refresh, and counts texels only on the frames it renders', async ({ forge }) => {
+test('a frozen sun shadow renders once, then only on refresh, and counts texels only on the frames it renders', async ({
+  forge,
+}) => {
   await forge.open('naive', { shadows: '1', 'freeze-shadow': '1' });
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -45,6 +56,12 @@ test('a frozen sun shadow renders once, then only on refresh, and counts texels 
     const after = await step();
     return { sunTexels: size.x * size.y, first, settled, refreshed, after };
   });
-  expect(r).toEqual({ sunTexels: r.sunTexels, first: [1, r.sunTexels], settled: [0, 0], refreshed: [1, r.sunTexels], after: [0, 0] });
+  expect(r).toEqual({
+    sunTexels: r.sunTexels,
+    first: [1, r.sunTexels],
+    settled: [0, 0],
+    refreshed: [1, r.sunTexels],
+    after: [0, 0],
+  });
   expect(r.sunTexels).toBeGreaterThan(0);
 });

@@ -1,7 +1,9 @@
 import { expect, test } from './fixtures.js';
 
 /** DayNight re-renders the sun's shadow map only when the sun moved: every second stepped frame here, versus every frame naive. */
-test('daynight: the optimized variant renders the shadow map every second frame and draws the sky dome once', async ({ forge }) => {
+test('daynight: the optimized variant renders the shadow map every second frame and draws the sky dome once', async ({
+  forge,
+}) => {
   test.setTimeout(300_000);
   const stepped = async (variant: 'naive' | 'optimized') => {
     await forge.open('daynight', { variant, dome: '1' });
@@ -21,7 +23,15 @@ test('daynight: the optimized variant renders the shadow map every second frame 
         passes.push(last.lighting.shadowPasses);
         texels += last.lighting.shadowTexels;
       }
-      return { passes, submissions: last.totals.sceneSubmissions, unattributed: last.totals.unattributed, texels, directional: last.lighting.lights.directional, hemisphere: last.lighting.lights.hemisphere, unique: last.byReason['unique-material']?.top ?? [] };
+      return {
+        passes,
+        submissions: last.totals.sceneSubmissions,
+        unattributed: last.totals.unattributed,
+        texels,
+        directional: last.lighting.lights.directional,
+        hemisphere: last.lighting.lights.hemisphere,
+        unique: last.byReason['unique-material']?.top ?? [],
+      };
     });
   };
   const naive = await stepped('naive');

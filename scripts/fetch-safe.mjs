@@ -55,7 +55,8 @@ function nearestExistingAncestor(path) {
  * the target — and skips it when `root` itself doesn't exist yet (nothing to redirect through).
  */
 export function safeLocalPath(root, uri) {
-  if (typeof uri !== 'string' || uri === '') fail(uri, `is ${typeof uri === 'string' ? 'empty' : `a ${typeof uri}`}, not a non-empty string`);
+  if (typeof uri !== 'string' || uri === '')
+    fail(uri, `is ${typeof uri === 'string' ? 'empty' : `a ${typeof uri}`}, not a non-empty string`);
   checkPathText(uri, uri);
   let decoded;
   try {

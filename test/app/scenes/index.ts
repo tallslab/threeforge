@@ -13,8 +13,8 @@ import { daynight } from './daynight.js';
 import { forest } from './forest.js';
 import { lake } from './lake.js';
 import { rpg } from './rpg.js';
-import { zen } from './zen.js';
 import { village } from './village.js';
+import { zen } from './zen.js';
 
 export interface BenchContext {
   renderer: WebGPURenderer;
@@ -48,4 +48,13 @@ export interface BenchScene {
 
 export type BenchBuilder = (ctx: BenchContext) => Promise<BenchScene>;
 
-export const BENCH_SCENES: Record<string, BenchBuilder> = { village, forest, crowd, bossfight, lake, daynight, zen, rpg };
+export const BENCH_SCENES: Record<string, BenchBuilder> = {
+  village,
+  forest,
+  crowd,
+  bossfight,
+  lake,
+  daynight,
+  zen,
+  rpg,
+};

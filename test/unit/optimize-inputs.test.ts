@@ -1,8 +1,18 @@
-import { Document, NodeIO } from '@gltf-transform/core';
 import { createHash } from 'node:crypto';
-import { existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
+import { Document, NodeIO } from '@gltf-transform/core';
 import pngjs from 'pngjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PARITY, parseArgs } from '../../src/cli/args.js';
@@ -40,11 +50,26 @@ function texturedTriangle({ imageUri, bufferUri }: { imageUri?: string; bufferUr
   if (bufferUri) buffer.setURI(bufferUri);
   const png = new pngjs.PNG({ width: 4, height: 4 });
   for (let i = 0; i < png.data.length; i++) png.data[i] = i % 4 === 3 ? 255 : (i * 37) % 256;
-  const texture = doc.createTexture('t').setImage(new Uint8Array(pngjs.PNG.sync.write(png))).setMimeType('image/png');
+  const texture = doc
+    .createTexture('t')
+    .setImage(new Uint8Array(pngjs.PNG.sync.write(png)))
+    .setMimeType('image/png');
   if (imageUri) texture.setURI(imageUri);
-  const position = doc.createAccessor().setType('VEC3').setArray(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0])).setBuffer(buffer);
-  const uv = doc.createAccessor().setType('VEC2').setArray(new Float32Array([0, 0, 1, 0, 0, 1])).setBuffer(buffer);
-  const prim = doc.createPrimitive().setAttribute('POSITION', position).setAttribute('TEXCOORD_0', uv).setMaterial(doc.createMaterial('m').setBaseColorTexture(texture));
+  const position = doc
+    .createAccessor()
+    .setType('VEC3')
+    .setArray(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]))
+    .setBuffer(buffer);
+  const uv = doc
+    .createAccessor()
+    .setType('VEC2')
+    .setArray(new Float32Array([0, 0, 1, 0, 0, 1]))
+    .setBuffer(buffer);
+  const prim = doc
+    .createPrimitive()
+    .setAttribute('POSITION', position)
+    .setAttribute('TEXCOORD_0', uv)
+    .setMaterial(doc.createMaterial('m').setBaseColorTexture(texture));
   doc.createScene().addChild(doc.createNode('n').setMesh(doc.createMesh('triangle').addPrimitive(prim)));
   return doc;
 }
@@ -175,7 +200,10 @@ describe('optimize --out', () => {
     const out = join(dir, 'optimized.gltf');
     const doc = await optimizeAsset(inputFor(file, '--out', out));
     expect(doc.output.file).toBe(out);
-    const json = JSON.parse(readFileSync(out, 'utf8')) as { images?: Array<{ uri: string }>; buffers?: Array<{ uri: string }> };
+    const json = JSON.parse(readFileSync(out, 'utf8')) as {
+      images?: Array<{ uri: string }>;
+      buffers?: Array<{ uri: string }>;
+    };
     const uris = [...(json.images ?? []), ...(json.buffers ?? [])].map((r) => r.uri);
     expect(uris.length).toBeGreaterThan(0);
     for (const uri of uris) expect(existsSync(join(dir, decodeURIComponent(uri))), uri).toBe(true);
@@ -209,7 +237,7 @@ describe("optimize --out overwrite (protects resource files, not just the input'
     return file;
   }
 
-  it("refuses a .gltf out whose single-buffer resource (<basename>.bin) clashes with an unrelated pre-existing file, leaving it byte-identical", async () => {
+  it('refuses a .gltf out whose single-buffer resource (<basename>.bin) clashes with an unrelated pre-existing file, leaving it byte-identical', async () => {
     const file = await inputGlb();
     const out = join(dir, 'x.gltf');
     const clashing = join(dir, 'x.bin');
@@ -308,7 +336,10 @@ describe("optimize --out overwrite (protects resource files, not just the input'
     const out = join(dir, 'raced.glb');
     const target = join(root, 'outside-raced.glb');
     const writeBinary = NodeIO.prototype.writeBinary;
-    const spy = vi.spyOn(NodeIO.prototype, 'writeBinary').mockImplementation(async function (this: NodeIO, doc: Document) {
+    const spy = vi.spyOn(NodeIO.prototype, 'writeBinary').mockImplementation(async function (
+      this: NodeIO,
+      doc: Document,
+    ) {
       const bytes = await writeBinary.call(this, doc);
       symlinkSync(target, out);
       return bytes;
@@ -429,7 +460,8 @@ describe('verifyAnalyzeInput: the inner compile checks keep the analyze default,
     // answers. Whether compiling either file moves a pixel is a separate question, reported in
     // `verify.optimized.parity` and asked directly by `analyze --parity 0`.
     expect(verifyAnalyzeInput(optimizeInput('--parity', '0')).parity).toBe(DEFAULT_PARITY);
-    for (const pct of ['0', '0.001', '0.1', '0.49']) expect(verifyAnalyzeInput(optimizeInput('--parity', pct)).parity, pct).toBe(DEFAULT_PARITY);
+    for (const pct of ['0', '0.001', '0.1', '0.49'])
+      expect(verifyAnalyzeInput(optimizeInput('--parity', pct)).parity, pct).toBe(DEFAULT_PARITY);
   });
 
   it('does not follow --parity up either', () => {
@@ -439,7 +471,29 @@ describe('verifyAnalyzeInput: the inner compile checks keep the analyze default,
   });
 
   it('carries the run flags each file is rendered with, and never bakes', () => {
-    const input = optimizeInput('--backend', 'webgpu', '--frames', '7', '--views', '3', '--timeout', '9000', '--tier', 'phone-low');
-    expect(verifyAnalyzeInput(input)).toEqual({ backend: 'webgpu', tier: 'phone-low', budget: null, frames: 7, compile: true, bake: 'off', views: 3, parity: DEFAULT_PARITY, timeout: 9000, headed: false });
+    const input = optimizeInput(
+      '--backend',
+      'webgpu',
+      '--frames',
+      '7',
+      '--views',
+      '3',
+      '--timeout',
+      '9000',
+      '--tier',
+      'phone-low',
+    );
+    expect(verifyAnalyzeInput(input)).toEqual({
+      backend: 'webgpu',
+      tier: 'phone-low',
+      budget: null,
+      frames: 7,
+      compile: true,
+      bake: 'off',
+      views: 3,
+      parity: DEFAULT_PARITY,
+      timeout: 9000,
+      headed: false,
+    });
   });
 });

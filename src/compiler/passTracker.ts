@@ -89,7 +89,9 @@ export class PassTracker {
 
   /** Installs the scene hooks (marked `FORGE_HOOK`, composed with any existing hooks); returns the uninstaller. */
   install(scene: Scene): () => void {
-    const restoreBefore = prependRenderHook(scene, (renderer, _scene, camera) => this.begin(camera, renderer as unknown as FrameSource));
+    const restoreBefore = prependRenderHook(scene, (renderer, _scene, camera) =>
+      this.begin(camera, renderer as unknown as FrameSource),
+    );
     const restoreAfter = prependAfterRenderHook(scene, () => this.end());
     return () => {
       restoreAfter();

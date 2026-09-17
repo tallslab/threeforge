@@ -3,19 +3,50 @@
  * World with policy `auto`, and publish `window.__threeforge` (the agent hook) plus `window.__threeforgeCli`
  * (asset facts, readiness). No animation loop: the CLI renders frames through the hook.
  */
-import { AmbientLight, AnimationMixer, Box3, Color, DirectionalLight, PerspectiveCamera, Scene, Sphere, Vector3, type AnimationClip, type Mesh } from 'three';
-import { WebGPURenderer, PMREMGenerator } from 'three/webgpu';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+
 import { MeshoptDecoder } from 'meshoptimizer/decoder';
-import { DrawCallLedger, MaterialRegistry, World, detectTier, disposeLoader, exposeToAgents, tierInputFromNavigator, type Tier } from 'threeforge';
+import {
+  AmbientLight,
+  type AnimationClip,
+  AnimationMixer,
+  Box3,
+  Color,
+  DirectionalLight,
+  type Mesh,
+  PerspectiveCamera,
+  Scene,
+  Sphere,
+  Vector3,
+} from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+import { PMREMGenerator, WebGPURenderer } from 'three/webgpu';
+import {
+  DrawCallLedger,
+  detectTier,
+  disposeLoader,
+  exposeToAgents,
+  MaterialRegistry,
+  type Tier,
+  tierInputFromNavigator,
+  World,
+} from 'threeforge';
 
 interface CliFacts {
   ready: boolean;
   error?: string;
-  asset?: { meshes: number; materials: number; vertices: number; triangles: number; animations: number; skinned: number; morph: number; loadMs: number };
+  asset?: {
+    meshes: number;
+    materials: number;
+    vertices: number;
+    triangles: number;
+    animations: number;
+    skinned: number;
+    morph: number;
+    loadMs: number;
+  };
   /** Move the camera to orbit view `i` of `n` around the asset (30° elevation); `i = -1` restores the default framing. */
   setView?(i: number, n: number): void;
 }
@@ -44,17 +75,24 @@ try {
 
   const gpuName = (): string => {
     type AdapterInfo = { description?: string; device?: string; vendor?: string; architecture?: string };
-    const b = renderer.backend as { isWebGPUBackend?: boolean; device?: { adapterInfo?: AdapterInfo }; gl?: WebGL2RenderingContext };
+    const b = renderer.backend as {
+      isWebGPUBackend?: boolean;
+      device?: { adapterInfo?: AdapterInfo };
+      gl?: WebGL2RenderingContext;
+    };
     if (b.isWebGPUBackend) {
       const info = b.device?.adapterInfo;
-      return info?.description || info?.device || [info?.vendor, info?.architecture].filter(Boolean).join(' ') || 'webgpu';
+      return (
+        info?.description || info?.device || [info?.vendor, info?.architecture].filter(Boolean).join(' ') || 'webgpu'
+      );
     }
     const ext = b.gl?.getExtension('WEBGL_debug_renderer_info');
     return ext && b.gl ? String(b.gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : 'webgl2';
   };
   const gpu = gpuName();
   const requested = params.get('tier');
-  const tier: Tier = requested && requested !== 'auto' ? (requested as Tier) : detectTier(tierInputFromNavigator(gpu, navigator));
+  const tier: Tier =
+    requested && requested !== 'auto' ? (requested as Tier) : detectTier(tierInputFromNavigator(gpu, navigator));
   ledger.setEnvironment({ tier, gpu, dpr: 1, viewport: [800, 600] });
 
   const loader = new GLTFLoader();
@@ -96,7 +134,11 @@ try {
   const radius = Math.max(sphere.radius, 1e-3);
   camera.near = radius / 100;
   camera.far = radius * 50;
-  camera.position.copy(sphere.center).add(new Vector3(0.7, 0.45, 1).normalize().multiplyScalar((radius / Math.sin((camera.fov * Math.PI) / 360)) * 1.05));
+  camera.position
+    .copy(sphere.center)
+    .add(
+      new Vector3(0.7, 0.45, 1).normalize().multiplyScalar((radius / Math.sin((camera.fov * Math.PI) / 360)) * 1.05),
+    );
   camera.lookAt(sphere.center);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
@@ -119,7 +161,13 @@ try {
   });
 
   const bake = params.get('bake');
-  const world = new World(scene, { registry, ledger, policy: (params.get('policy') as 'auto' | 'tagged' | null) ?? 'auto', animations: clips, ...(bake ? { bake: bake === 'buried' ? { removeBuried: true } : true } : {}) });
+  const world = new World(scene, {
+    registry,
+    ledger,
+    policy: (params.get('policy') as 'auto' | 'tagged' | null) ?? 'auto',
+    animations: clips,
+    ...(bake ? { bake: bake === 'buried' ? { removeBuried: true } : true } : {}),
+  });
   exposeToAgents({ ledger, world, renderer, scene, camera });
   const home = camera.position.clone();
   const setView = (i: number, n: number): void => {
@@ -127,13 +175,33 @@ try {
     else {
       const a = (i / Math.max(1, n)) * Math.PI * 2;
       const distance = home.distanceTo(sphere.center);
-      camera.position.set(sphere.center.x + Math.cos(a) * distance * Math.cos(Math.PI / 6), sphere.center.y + distance * Math.sin(Math.PI / 6), sphere.center.z + Math.sin(a) * distance * Math.cos(Math.PI / 6));
+      camera.position.set(
+        sphere.center.x + Math.cos(a) * distance * Math.cos(Math.PI / 6),
+        sphere.center.y + distance * Math.sin(Math.PI / 6),
+        sphere.center.z + Math.sin(a) * distance * Math.cos(Math.PI / 6),
+      );
     }
     camera.lookAt(sphere.center);
     camera.updateMatrixWorld();
   };
-  window.__threeforgeCli = { ready: true, asset: { meshes, materials: materials.size, vertices, triangles: Math.round(triangles), animations: clips.length, skinned, morph, loadMs }, setView };
+  window.__threeforgeCli = {
+    ready: true,
+    asset: {
+      meshes,
+      materials: materials.size,
+      vertices,
+      triangles: Math.round(triangles),
+      animations: clips.length,
+      skinned,
+      morph,
+      loadMs,
+    },
+    setView,
+  };
 } catch (error) {
-  window.__threeforgeCli = { ready: false, error: error instanceof Error ? (error.stack ?? error.message) : String(error) };
+  window.__threeforgeCli = {
+    ready: false,
+    error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+  };
   throw error;
 }

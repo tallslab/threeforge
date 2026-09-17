@@ -1,0 +1,117 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!!dist",
+      "!!test-results",
+      "!!playwright-report",
+      "!!test/assets",
+      "!!bench/results",
+      "!!bench/baselines",
+      "!!bench/devices",
+      "!!cli-app/public",
+      "!!bench-app/public",
+      "!docs/**/*.json",
+      "!!test/e2e/__screenshots__",
+      "!**/*.snapshot.json"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 120,
+    "lineEnding": "lf"
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "jsxQuoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all",
+      "arrowParentheses": "always",
+      "bracketSpacing": true
+    }
+  },
+  "json": {
+    "formatter": {
+      "enabled": true
+    }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error",
+        "noUnusedFunctionParameters": "warn"
+      },
+      "style": {
+        "useImportType": "error",
+        "useExportType": "error",
+        "useConst": "error",
+        "noParameterAssign": "off",
+        "useTemplate": "off",
+        "noNonNullAssertion": "off"
+      },
+      "suspicious": {
+        "noExplicitAny": "warn",
+        "noConsole": "off",
+        "noAssignInExpressions": "off",
+        "useIterableCallbackReturn": "off",
+        "noPrototypeBuiltins": "warn"
+      },
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "warn",
+          "options": {
+            "maxAllowedComplexity": 30
+          }
+        },
+        "noArguments": "warn"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "src/cli/untrusted.ts",
+        "src/ledger/text.ts",
+        "test/unit/untrusted.test.ts",
+        "test/unit/measure-sanitize.test.ts",
+        "test/unit/bench-submit.test.ts"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noControlCharactersInRegex": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/cli/untrusted.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noMisleadingCharacterClass": "off"
+          }
+        }
+      }
+    }
+  ]
+}

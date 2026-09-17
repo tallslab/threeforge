@@ -29,11 +29,11 @@
  *   depends on it (byReason.unsupported-material, programs) — is stable and still fully present in the
  *   snapshot, not filtered out.
  */
-import { describe, expect, it } from 'vitest';
+
 import {
   BoxGeometry,
   BufferGeometry,
-  Camera,
+  type Camera,
   DirectionalLight,
   Float32BufferAttribute,
   Group,
@@ -43,7 +43,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
-  Object3D,
+  type Object3D,
   PlaneGeometry,
   Points,
   PointsMaterial,
@@ -51,11 +51,12 @@ import {
   ShaderMaterial,
   SkinnedMesh,
 } from 'three';
+import { describe, expect, it } from 'vitest';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
+import type { FrameSnapshot } from '../../src/ledger/snapshot.js';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 import { tag } from '../../src/tags.js';
-import type { FrameSnapshot } from '../../src/ledger/snapshot.js';
-import { FakeRenderer, sceneWithCamera, batchedOf } from './helpers/fakeRenderer.js';
+import { batchedOf, FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
 import { buildRig } from './helpers/rig.js';
 
 const box = new BoxGeometry(1, 1, 1);
@@ -140,7 +141,9 @@ function buildScene() {
 
   // Morph target.
   const morphGeometry = box.clone();
-  morphGeometry.morphAttributes.position = [new Float32BufferAttribute(new Float32Array(morphGeometry.attributes.position!.count * 3), 3)];
+  morphGeometry.morphAttributes.position = [
+    new Float32BufferAttribute(new Float32Array(morphGeometry.attributes.position!.count * 3), 3),
+  ];
   const morphMesh = tag.static(new Mesh(morphGeometry, new MeshStandardMaterial({ color: 0x998811 })));
   morphMesh.name = 'blob';
   morphMesh.morphTargetInfluences = [0.5];
@@ -157,7 +160,10 @@ function buildScene() {
   panelGeometry.clearGroups();
   panelGeometry.addGroup(0, 18, 0);
   panelGeometry.addGroup(18, 18, 1);
-  const panel = new Mesh(panelGeometry, [new MeshStandardMaterial({ color: 0x224488 }), new MeshBasicMaterial({ color: 0x884422 })]);
+  const panel = new Mesh(panelGeometry, [
+    new MeshStandardMaterial({ color: 0x224488 }),
+    new MeshBasicMaterial({ color: 0x884422 }),
+  ]);
   panel.name = 'panel';
 
   // ShaderMaterial: unsupported on WebGPURenderer. uuid pinned, see the file header.
@@ -201,7 +207,23 @@ function buildScene() {
     renderer.render(scene2, cameraArg as Camera);
   }) as Object3D['onBeforeRender'];
 
-  scene.add(crate, stray, assembly, mirroredProp, batch, instancedEmpty, instancedFive, spriteBatch, rig.root, morphMesh, dust, panel, shaderMesh, mirror, portal);
+  scene.add(
+    crate,
+    stray,
+    assembly,
+    mirroredProp,
+    batch,
+    instancedEmpty,
+    instancedFive,
+    spriteBatch,
+    rig.root,
+    morphMesh,
+    dust,
+    panel,
+    shaderMesh,
+    mirror,
+    portal,
+  );
   scene.updateMatrixWorld(true);
 
   return { scene, camera, light, mirroredProp };
@@ -235,7 +257,14 @@ describe('DrawCallLedger golden output', () => {
     }
 
     // Stability across repeated frames of an unchanging scene: everything but the injected clock is identical.
-    for (const key of ['sceneSubmissions', 'gpuDraws', 'reportedDrawCalls', 'triangles', 'instances', 'instancesDrawn'] as const) {
+    for (const key of [
+      'sceneSubmissions',
+      'gpuDraws',
+      'reportedDrawCalls',
+      'triangles',
+      'instances',
+      'instancesDrawn',
+    ] as const) {
       expect(frames[1]!.totals[key]).toBe(frames[0]!.totals[key]);
       expect(frames[2]!.totals[key]).toBe(frames[0]!.totals[key]);
     }
@@ -248,7 +277,10 @@ describe('DrawCallLedger golden output', () => {
     // the whole scene); the assertions below key on (name, pass) so that duplication does not hide a wrong reason.
     const lastItems = frames[2]!.items!;
     const item = (name: string, pass: string) => lastItems.find((i) => i.name === name && i.pass === pass);
-    expect(item('crate', 'main')).toMatchObject({ reason: 'unique-material', flags: expect.arrayContaining(['shadow-caster']) });
+    expect(item('crate', 'main')).toMatchObject({
+      reason: 'unique-material',
+      flags: expect.arrayContaining(['shadow-caster']),
+    });
     expect(item('crate', 'shadow:sun')).toMatchObject({ reason: 'unique-material' }); // the frame's only shadow caster
     expect(item('Mesh[2]', 'main')).toMatchObject({ reason: 'untagged' }); // unnamed sibling: scene.children[2] (after light, crate)
     expect(item('assembly/Mesh[0]', 'main')).toMatchObject({ reason: 'dynamic' }); // nested group, unnamed child
@@ -266,10 +298,18 @@ describe('DrawCallLedger golden output', () => {
     expect(panelItems).toHaveLength(2);
     expect(panelItems.every((p) => p.reason === 'multi-material-group')).toBe(true);
     expect(item('fx-panel', 'main')).toMatchObject({ reason: 'unsupported-material' });
-    expect(item('mirror', 'main')).toMatchObject({ reason: 'unique-material', flags: expect.arrayContaining(['custom-hook']) });
-    expect(item('portal', 'main')).toMatchObject({ reason: 'unique-material', flags: expect.arrayContaining(['custom-hook']) });
+    expect(item('mirror', 'main')).toMatchObject({
+      reason: 'unique-material',
+      flags: expect.arrayContaining(['custom-hook']),
+    });
+    expect(item('portal', 'main')).toMatchObject({
+      reason: 'unique-material',
+      flags: expect.arrayContaining(['custom-hook']),
+    });
     expect(item('far-room', 'scene:portal-scene')).toMatchObject({ reason: 'unique-material' });
-    expect(frames[2]!.passes.map((p) => p.id).sort()).toEqual(['main', 'nested:reflection', 'scene:portal-scene', 'shadow:sun'].sort());
+    expect(frames[2]!.passes.map((p) => p.id).sort()).toEqual(
+      ['main', 'nested:reflection', 'scene:portal-scene', 'shadow:sun'].sort(),
+    );
     expect(frames[2]!.byReason['renderer-internal']?.top).toContain('Output Color Transform');
 
     // Frame 1 and 2 in full, and frame 3 (with items) as the detailed record: capturing items on every frame

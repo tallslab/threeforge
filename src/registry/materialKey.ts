@@ -34,18 +34,63 @@ export interface MaterialKeys {
 
 /** Numbers that are plain uniforms: they never change the program. */
 const UNIFORM_NUMBERS = new Set([
-  'opacity', 'roughness', 'metalness', 'emissiveIntensity', 'envMapIntensity', 'lightMapIntensity', 'aoMapIntensity',
-  'bumpScale', 'displacementScale', 'displacementBias', 'shininess', 'reflectivity', 'refractionRatio', 'ior',
-  'thickness', 'attenuationDistance', 'clearcoatRoughness', 'sheenRoughness', 'iridescenceIOR', 'specularIntensity',
-  'anisotropyRotation', 'wireframeLinewidth', 'linewidth', 'size', 'rotation', 'blendAlpha', 'polygonOffsetFactor',
-  'polygonOffsetUnits', 'alphaHashScale', 'dashSize', 'gapSize', 'scale', 'dashOffset',
+  'opacity',
+  'roughness',
+  'metalness',
+  'emissiveIntensity',
+  'envMapIntensity',
+  'lightMapIntensity',
+  'aoMapIntensity',
+  'bumpScale',
+  'displacementScale',
+  'displacementBias',
+  'shininess',
+  'reflectivity',
+  'refractionRatio',
+  'ior',
+  'thickness',
+  'attenuationDistance',
+  'clearcoatRoughness',
+  'sheenRoughness',
+  'iridescenceIOR',
+  'specularIntensity',
+  'anisotropyRotation',
+  'wireframeLinewidth',
+  'linewidth',
+  'size',
+  'rotation',
+  'blendAlpha',
+  'polygonOffsetFactor',
+  'polygonOffsetUnits',
+  'alphaHashScale',
+  'dashSize',
+  'gapSize',
+  'scale',
+  'dashOffset',
 ]);
 
 /** Numbers that are state enums: their exact value selects pipeline state or a code path. */
 const ENUM_NUMBERS = new Set([
-  'side', 'blending', 'blendSrc', 'blendDst', 'blendEquation', 'blendSrcAlpha', 'blendDstAlpha', 'blendEquationAlpha',
-  'depthFunc', 'stencilWriteMask', 'stencilFunc', 'stencilRef', 'stencilFuncMask', 'stencilFail', 'stencilZFail',
-  'stencilZPass', 'shadowSide', 'normalMapType', 'combine', 'depthPacking',
+  'side',
+  'blending',
+  'blendSrc',
+  'blendDst',
+  'blendEquation',
+  'blendSrcAlpha',
+  'blendDstAlpha',
+  'blendEquationAlpha',
+  'depthFunc',
+  'stencilWriteMask',
+  'stencilFunc',
+  'stencilRef',
+  'stencilFuncMask',
+  'stencilFail',
+  'stencilZFail',
+  'stencilZPass',
+  'shadowSide',
+  'normalMapType',
+  'combine',
+  'depthPacking',
 ]);
 
 /** Properties that never affect rendering identity. */
@@ -88,7 +133,12 @@ function identityOf(value: object): number {
 let backRefs = 0;
 
 function textureKind(texture: Texture): string {
-  const t = texture as Texture & { isCubeTexture?: boolean; isDataArrayTexture?: boolean; isData3DTexture?: boolean; isVideoTexture?: boolean };
+  const t = texture as Texture & {
+    isCubeTexture?: boolean;
+    isDataArrayTexture?: boolean;
+    isData3DTexture?: boolean;
+    isVideoTexture?: boolean;
+  };
   if (t.isCubeTexture) return 'cube';
   if (t.isDataArrayTexture) return 'array';
   if (t.isData3DTexture) return '3d';
@@ -133,7 +183,10 @@ function stableJson(value: unknown, path: object[], memo: Map<object, string>): 
       out = `[${value.map((v) => stableJson(v, path, memo)).join(',')}]`;
     } else {
       const record = value as Record<string, unknown>;
-      out = `{${Object.keys(record).sort().map((k) => `${JSON.stringify(k)}:${stableJson(record[k], path, memo)}`).join(',')}}`;
+      out = `{${Object.keys(record)
+        .sort()
+        .map((k) => `${JSON.stringify(k)}:${stableJson(record[k], path, memo)}`)
+        .join(',')}}`;
     }
     if (backRefs === before) memo.set(value, out);
     return out;
@@ -151,11 +204,25 @@ export function computeMaterialKeys(material: Material): MaterialKeys {
   const forgeKey: unknown = material.userData?.forgeKey;
   if (typeof forgeKey === 'string') {
     const key = `forgeKey:${forgeKey}`;
-    return { programKey: key, variantKey: key, colorKey: '', colorHex: '', unsupported: false, description: `${material.type} forgeKey=${forgeKey}` };
+    return {
+      programKey: key,
+      variantKey: key,
+      colorKey: '',
+      colorHex: '',
+      unsupported: false,
+      description: `${material.type} forgeKey=${forgeKey}`,
+    };
   }
   if ((m.isShaderMaterial as boolean | undefined) || (m.isRawShaderMaterial as boolean | undefined)) {
     const key = `unsupported:${material.uuid}`;
-    return { programKey: key, variantKey: key, colorKey: '', colorHex: '', unsupported: true, description: `${material.type} (unsupported in WebGPURenderer)` };
+    return {
+      programKey: key,
+      variantKey: key,
+      colorKey: '',
+      colorHex: '',
+      unsupported: true,
+      description: `${material.type} (unsupported in WebGPURenderer)`,
+    };
   }
 
   const program: string[] = [`type=${material.type}`];
@@ -218,7 +285,15 @@ export function computeMaterialKeys(material: Material): MaterialKeys {
 
     if (typeof value === 'boolean') {
       program.push(`${key}=${value ? 1 : 0}`);
-      if (value && (key === 'transparent' || key === 'vertexColors' || key === 'wireframe' || key === 'flatShading' || key === 'alphaHash')) flags.push(key);
+      if (
+        value &&
+        (key === 'transparent' ||
+          key === 'vertexColors' ||
+          key === 'wireframe' ||
+          key === 'flatShading' ||
+          key === 'alphaHash')
+      )
+        flags.push(key);
       continue;
     }
     if (typeof value === 'number') {
@@ -277,7 +352,9 @@ export function computeMaterialKeys(material: Material): MaterialKeys {
     }
     if (typeof (obj as { toArray?: unknown }).toArray === 'function') {
       // Vector2/3/4, Euler, Matrix3/4, Quaternion: uniform data.
-      const array = (value as { toArray(): unknown[] }).toArray().map((v) => (typeof v === 'number' ? num(v) : String(v)));
+      const array = (value as { toArray(): unknown[] })
+        .toArray()
+        .map((v) => (typeof v === 'number' ? num(v) : String(v)));
       variant.push(`${key}=${array.join(',')}`);
       continue;
     }
@@ -287,7 +364,9 @@ export function computeMaterialKeys(material: Material): MaterialKeys {
       } else if (value.every((v) => (v as { isPlane?: boolean } | null)?.isPlane === true)) {
         // Clipping planes (`clippingPlanes`): their number changes the shader, their values are uniforms.
         program.push(`${key}=len${value.length}`);
-        variant.push(`${key}=${(value as Plane[]).map((p) => `${num(p.normal.x)},${num(p.normal.y)},${num(p.normal.z)},${num(p.constant)}`).join(';')}`);
+        variant.push(
+          `${key}=${(value as Plane[]).map((p) => `${num(p.normal.x)},${num(p.normal.y)},${num(p.normal.z)},${num(p.constant)}`).join(';')}`,
+        );
       } else {
         // Any other array: plain data by value, functions and class instances in it by identity (`stableJson`).
         program.push(`${key}=${stableJson(value, [], json)}`);

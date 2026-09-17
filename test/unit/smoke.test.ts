@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { BatchedMesh } from 'three';
+import { describe, expect, it } from 'vitest';
 import { VERSION } from '../../src/index.js';
 
 describe('toolchain smoke', () => {

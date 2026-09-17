@@ -68,7 +68,12 @@ function drawsNoVertices(o: Counted, material: Material | null, group: DrawGroup
   }
   const index = geometry.index;
   const position = geometry.attributes?.position;
-  const items = index !== undefined && index !== null ? index.count : position !== undefined && position !== null ? position.count : undefined;
+  const items =
+    index !== undefined && index !== null
+      ? index.count
+      : position !== undefined && position !== null
+        ? position.count
+        : undefined;
   const itemCount = items === undefined ? Infinity : items * rangeFactor;
   firstVertex = Math.max(firstVertex, 0);
   lastVertex = Math.min(lastVertex, itemCount);
@@ -91,12 +96,24 @@ function drawsNoVertices(o: Counted, material: Material | null, group: DrawGroup
  * seen; the sprite batch's hook only swaps FrontSide and BackSide, which cannot change the factor.
  */
 export function sideFactor(material: Material, scene: Scene): 1 | 2 {
-  const override = material.allowOverride === true ? ((scene.overrideMaterial ?? null) as (Material & { isShadowPassMaterial?: boolean }) | null) : null;
-  if (override === null) return material.transparent === true && material.side === DoubleSide && material.forceSinglePass === false ? 2 : 1;
+  const override =
+    material.allowOverride === true
+      ? ((scene.overrideMaterial ?? null) as (Material & { isShadowPassMaterial?: boolean }) | null)
+      : null;
+  if (override === null)
+    return material.transparent === true && material.side === DoubleSide && material.forceSinglePass === false ? 2 : 1;
   const m = material as SourceMaterial;
   // The raw `||` chain three assigns to `overrideMaterial.transparent`, then compared with `=== true` as three does.
-  const transparent = m.transparent || (m.transmission as number) > 0 || (m.transmissionNode && m.transmissionNode.isNode) || (m.backdropNode && m.backdropNode.isNode);
-  const side = override.isShadowPassMaterial ? (material.shadowSide !== null ? material.shadowSide : material.side) : override.side;
+  const transparent =
+    m.transparent ||
+    (m.transmission as number) > 0 ||
+    (m.transmissionNode && m.transmissionNode.isNode) ||
+    (m.backdropNode && m.backdropNode.isNode);
+  const side = override.isShadowPassMaterial
+    ? material.shadowSide !== null
+      ? material.shadowSide
+      : material.side
+    : override.side;
   return transparent === true && side === DoubleSide && override.forceSinglePass === false ? 2 : 1;
 }
 
@@ -113,10 +130,19 @@ export function sideFactor(material: Material, scene: Scene): 1 | 2 {
  *   WEBGL_multi_draw, one for the whole list with it (`WebGLBufferRenderer.renderMultiDraw`), none for an empty list.
  *   `Info.update` counts a slot whose index count a nested pass zeroed like any other.
  */
-export function expectedGpuDraws(object: Object3D, sides: number, info: BackendInfo, material: Material | null = null, group: DrawGroup | null = null): number {
+export function expectedGpuDraws(
+  object: Object3D,
+  sides: number,
+  info: BackendInfo,
+  material: Material | null = null,
+  group: DrawGroup | null = null,
+): number {
   const o = object as Counted;
   const geometry = o.geometry;
-  if (geometry?.isInstancedBufferGeometry === true ? geometry.instanceCount === 0 : o.count !== undefined && o.count <= 0) return 0;
+  if (
+    geometry?.isInstancedBufferGeometry === true ? geometry.instanceCount === 0 : o.count !== undefined && o.count <= 0
+  )
+    return 0;
   if (!o.isBatchedMesh) return drawsNoVertices(o, material, group) ? 0 : sides;
   const n = o._multiDrawCount ?? 0;
   return (n === 0 ? 0 : info.backend === 'webgpu' || !info.multiDraw ? n : 1) * sides;
@@ -133,7 +159,12 @@ export function expectedGpuDraws(object: Object3D, sides: number, info: BackendI
  * skipped. `instances`, what the submission *covers*, is unchanged: the mesh is still the submission's subject. A
  * BatchedMesh is exempt as it is there, because three returns before the vertex range for one.
  */
-export function writeInstanceCounts<T extends { instances: number; instancesDrawn: number }>(object: Object3D, into: T, material: Material | null = null, group: DrawGroup | null = null): T {
+export function writeInstanceCounts<T extends { instances: number; instancesDrawn: number }>(
+  object: Object3D,
+  into: T,
+  material: Material | null = null,
+  group: DrawGroup | null = null,
+): T {
   const o = object as Counted;
   if (o.isBatchedMesh) {
     into.instances = o.instanceCount ?? 0;

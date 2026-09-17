@@ -9,19 +9,20 @@ import {
   AmbientLight,
   AnimationClip,
   AnimationMixer,
-  Bone,
+  type Bone,
   BufferGeometry,
   Color,
   DoubleSide,
   DynamicDrawUsage,
   Euler,
   Float32BufferAttribute,
-  Group,
+  type Group,
   HemisphereLight,
+  type Material,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
-  Object3D,
+  type Object3D,
   PlaneGeometry,
   PointLight,
   Points,
@@ -30,10 +31,9 @@ import {
   SpotLight,
   Sprite,
   SpriteMaterial,
-  Texture,
+  type Texture,
   TextureLoader,
   Vector3,
-  type Material,
 } from 'three';
 import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
 import type { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -72,16 +72,37 @@ interface KitIndex {
   error?: string;
 }
 
-export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21, vfx = true, effects = 6, shadows = true, assemble = false }: ArenaOptions): Promise<Arena> {
+export async function buildArena({
+  loader,
+  fighters = 12,
+  blocky = 16,
+  seed = 21,
+  vfx = true,
+  effects = 6,
+  shadows = true,
+  assemble = false,
+}: ArenaOptions): Promise<Arena> {
   const rng = mulberry32(seed);
   const scene = new Scene();
   scene.name = 'arena';
   scene.background = new Color(0x0b0d14);
   const counts: Record<string, number> = {};
-  const lists = (await Promise.all(['/kits-index.json'].map((u) => fetch(u).then((r) => (r.ok ? r.json() : [])).catch(() => [])))).flat() as KitIndex[];
+  const lists = (
+    await Promise.all(
+      ['/kits-index.json'].map((u) =>
+        fetch(u)
+          .then((r) => (r.ok ? r.json() : []))
+          .catch(() => []),
+      ),
+    )
+  ).flat() as KitIndex[];
   const kit = (name: string) => lists.find((k) => k.name === name && !k.error);
-  const glb = (kitName: string, base: string) => kit(kitName)?.glbs?.find((g) => g.toLowerCase().endsWith(`/${base}.glb`));
-  const tex = (kitName: string, base: string) => kit(kitName)?.textures?.find((t) => t.toLowerCase().endsWith(`/${base}.png`) || t.toLowerCase().endsWith(`/${base}.jpg`));
+  const glb = (kitName: string, base: string) =>
+    kit(kitName)?.glbs?.find((g) => g.toLowerCase().endsWith(`/${base}.glb`));
+  const tex = (kitName: string, base: string) =>
+    kit(kitName)?.textures?.find(
+      (t) => t.toLowerCase().endsWith(`/${base}.png`) || t.toLowerCase().endsWith(`/${base}.jpg`),
+    );
   const cache = new Map<string, { scene: Group; animations: AnimationClip[] }>();
   const load = async (path: string | undefined) => {
     if (!path) return null;
@@ -92,7 +113,8 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
     return cache.get(path)!;
   };
   const textureLoader = new TextureLoader();
-  const loadTexture = async (path: string | undefined): Promise<Texture | null> => (path ? textureLoader.loadAsync('/' + path) : null);
+  const loadTexture = async (path: string | undefined): Promise<Texture | null> =>
+    path ? textureLoader.loadAsync('/' + path) : null;
   const tagAll = (root: Object3D, kind: 'static' | 'dynamic') =>
     root.traverse((o) => {
       if ((o as Mesh).isMesh) {
@@ -120,8 +142,16 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
   const wall = await load(glb('kenney-mini-arena', 'wall'));
   const corner = await load(glb('kenney-mini-arena', 'wall-corner'));
   const column = await load(glb('kenney-mini-arena', 'column'));
-  const decor = (await Promise.all(['statue', 'tree', 'banner', 'weapon-rack', 'trophy', 'block'].map((n) => load(glb('kenney-mini-arena', n))))).filter((x): x is NonNullable<typeof x> => x !== null);
-  const dungeon = (await Promise.all(['barrel', 'chest', 'table', 'pot', 'chair', 'rocks', 'stones'].map((n) => load(glb('kenney-mini-dungeon', n))))).filter((x): x is NonNullable<typeof x> => x !== null);
+  const decor = (
+    await Promise.all(
+      ['statue', 'tree', 'banner', 'weapon-rack', 'trophy', 'block'].map((n) => load(glb('kenney-mini-arena', n))),
+    )
+  ).filter((x): x is NonNullable<typeof x> => x !== null);
+  const dungeon = (
+    await Promise.all(
+      ['barrel', 'chest', 'table', 'pot', 'chair', 'rocks', 'stones'].map((n) => load(glb('kenney-mini-dungeon', n))),
+    )
+  ).filter((x): x is NonNullable<typeof x> => x !== null);
   let tiles = 0;
   for (let i = -half; i < half; i++) {
     for (let j = -half; j < half; j++) {
@@ -145,7 +175,14 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
       walls++;
     }
   }
-  if (corner) for (const [x, z, r] of [[-half * S, -half * S, 0], [half * S, -half * S, -Math.PI / 2], [half * S, half * S, Math.PI], [-half * S, half * S, Math.PI / 2]] as Array<[number, number, number]>) placeStatic(corner.scene, x, z, r, S);
+  if (corner)
+    for (const [x, z, r] of [
+      [-half * S, -half * S, 0],
+      [half * S, -half * S, -Math.PI / 2],
+      [half * S, half * S, Math.PI],
+      [-half * S, half * S, Math.PI / 2],
+    ] as Array<[number, number, number]>)
+      placeStatic(corner.scene, x, z, r, S);
   let props = 0;
   for (let i = 0; i < 40; i++) {
     const proto = i % 2 ? decor[Math.floor(rng() * decor.length)] : dungeon[Math.floor(rng() * dungeon.length)];
@@ -163,9 +200,36 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
   const animations: Arena['animations'] = [];
   const mixers: AnimationMixer[] = [];
   const fades: Array<{ mixer: AnimationMixer; from: string; to: string; at: number }> = [];
-  const combat = ['attack-melee-right', 'attack-melee-left', 'attack-kick-right', 'attack-kick-left', 'holding-right-shoot', 'idle', 'walk', 'sprint'];
-  const characterNames = ['character-male-a', 'character-male-b', 'character-male-c', 'character-female-a', 'character-female-b', 'character-female-c', 'character-male-d', 'character-female-d'];
-  const weapons = (await Promise.all([glb('kenney-mini-arena', 'weapon-sword'), glb('kenney-mini-arena', 'weapon-spear'), glb('kenney-blaster-kit', 'blaster-a'), glb('kenney-blaster-kit', 'blaster-f')].map(load))).filter((x): x is NonNullable<typeof x> => x !== null);
+  const combat = [
+    'attack-melee-right',
+    'attack-melee-left',
+    'attack-kick-right',
+    'attack-kick-left',
+    'holding-right-shoot',
+    'idle',
+    'walk',
+    'sprint',
+  ];
+  const characterNames = [
+    'character-male-a',
+    'character-male-b',
+    'character-male-c',
+    'character-female-a',
+    'character-female-b',
+    'character-female-c',
+    'character-male-d',
+    'character-female-d',
+  ];
+  const weapons = (
+    await Promise.all(
+      [
+        glb('kenney-mini-arena', 'weapon-sword'),
+        glb('kenney-mini-arena', 'weapon-spear'),
+        glb('kenney-blaster-kit', 'blaster-a'),
+        glb('kenney-blaster-kit', 'blaster-f'),
+      ].map(load),
+    )
+  ).filter((x): x is NonNullable<typeof x> => x !== null);
   let fighterCount = 0;
   for (let i = 0; i < fighters; i++) {
     const proto = await load(glb('kenney-mini-characters', characterNames[i % characterNames.length]!));
@@ -191,7 +255,12 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
         if ((o as import('three').SkinnedMesh).isSkinnedMesh) parts.push(o as import('three').SkinnedMesh);
       });
       if (parts.length > 1) {
-        const assembled = assembleCharacter({ skeleton: parts[0]!.skeleton, wardrobe: parts, equipped: parts, atlas: { size: 256 } });
+        const assembled = assembleCharacter({
+          skeleton: parts[0]!.skeleton,
+          wardrobe: parts,
+          equipped: parts,
+          atlas: { size: 256 },
+        });
         assembled.mesh.castShadow = true;
         assembled.mesh.receiveShadow = true;
         for (const part of parts) part.parent?.remove(part);
@@ -215,9 +284,10 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
     fighter.traverse((o) => {
       if ((o as Bone).isBone && /arm-right|hand-right|arm_right/i.test(o.name) && !hand) hand = o as Bone;
     });
-    if (!hand) fighter.traverse((o) => {
-      if ((o as Bone).isBone && !hand) hand = o as Bone;
-    });
+    if (!hand)
+      fighter.traverse((o) => {
+        if ((o as Bone).isBone && !hand) hand = o as Bone;
+      });
     const weapon = weapons[i % weapons.length];
     if (hand && weapon) {
       const w = weapon.scene.clone();
@@ -236,7 +306,16 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
 
   // ---- Blocky characters: rigid hierarchies driven by node animation ----
   let blockyCount = 0;
-  const blockyNames = ['character-a', 'character-b', 'character-c', 'character-d', 'character-e', 'character-f', 'character-g', 'character-h'];
+  const blockyNames = [
+    'character-a',
+    'character-b',
+    'character-c',
+    'character-d',
+    'character-e',
+    'character-f',
+    'character-g',
+    'character-h',
+  ];
   for (let i = 0; i < blocky; i++) {
     const proto = await load(glb('kenney-blocky-characters', blockyNames[i % blockyNames.length]!));
     if (!proto) continue;
@@ -267,7 +346,10 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
   const spots: SpotLight[] = [];
   const points: PointLight[] = [];
   scene.add(new HemisphereLight(0x8090b0, 0x202020, 0.25), new AmbientLight(0xffffff, 0.08));
-  for (const [x, z, name] of [[-30, -30, 'spot-1'], [30, 30, 'spot-2']] as Array<[number, number, string]>) {
+  for (const [x, z, name] of [
+    [-30, -30, 'spot-1'],
+    [30, 30, 'spot-2'],
+  ] as Array<[number, number, string]>) {
     const spot = new SpotLight(0xfff0d0, 900, 140, Math.PI / 5, 0.4, 1.2);
     spot.name = name;
     spot.position.set(x, 45, z);
@@ -290,7 +372,17 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
     scene.add(light);
     points.push(light);
     // Emissive torch head so bloom has something to grab.
-    const head = new Mesh(new PlaneGeometry(2, 3), new MeshBasicMaterial({ map: torchTex ?? undefined, color: 0xffa040, transparent: true, blending: AdditiveBlending, depthWrite: false, side: DoubleSide }));
+    const head = new Mesh(
+      new PlaneGeometry(2, 3),
+      new MeshBasicMaterial({
+        map: torchTex ?? undefined,
+        color: 0xffa040,
+        transparent: true,
+        blending: AdditiveBlending,
+        depthWrite: false,
+        side: DoubleSide,
+      }),
+    );
     head.name = `torch-${i + 1}`;
     head.position.copy(light.position);
     tag.dynamic(head); // billboarded by hand each frame
@@ -299,14 +391,24 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
 
   // ---- VFX ----
   const particleSystems: Array<{ points: Points; base: Float32Array; speed: number; height: number }> = [];
-  let sprites: Sprite[] = [];
+  const sprites: Sprite[] = [];
   let trail: Mesh | null = null;
   let flip: { mesh: Mesh; texture: Texture } | null = null;
   if (vfx) {
     const sparkTex = await loadTexture(tex('kenney-particle-pack', 'spark_04'));
     const smokeTex = await loadTexture(tex('kenney-particle-pack', 'smoke_04'));
     const magicTex = await loadTexture(tex('kenney-particle-pack', 'magic_02'));
-    const makeParticles = (name: string, n: number, texture: Texture | null, color: number, size: number, center: Vector3, spread: number, height: number, speed: number) => {
+    const makeParticles = (
+      name: string,
+      n: number,
+      texture: Texture | null,
+      color: number,
+      size: number,
+      center: Vector3,
+      spread: number,
+      height: number,
+      speed: number,
+    ) => {
       const base = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) {
         base[i * 3] = center.x + (rng() - 0.5) * spread;
@@ -317,7 +419,15 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
       const position = new Float32BufferAttribute(base.slice(), 3);
       position.setUsage(DynamicDrawUsage);
       geometry.setAttribute('position', position);
-      const material = new PointsMaterial({ size, map: texture ?? undefined, color, transparent: true, blending: AdditiveBlending, depthWrite: false, sizeAttenuation: true });
+      const material = new PointsMaterial({
+        size,
+        map: texture ?? undefined,
+        color,
+        transparent: true,
+        blending: AdditiveBlending,
+        depthWrite: false,
+        sizeAttenuation: true,
+      });
       const p = new Points(geometry, material);
       p.name = name;
       p.frustumCulled = false;
@@ -326,7 +436,17 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
     };
     for (let i = 0; i < 4; i++) {
       const light = points[i]!;
-      makeParticles(`smoke-${i + 1}`, 400, smokeTex, 0x777777, 3, light.position.clone().add(new Vector3(0, 2, 0)), 3, 14, 1.5);
+      makeParticles(
+        `smoke-${i + 1}`,
+        400,
+        smokeTex,
+        0x777777,
+        3,
+        light.position.clone().add(new Vector3(0, 2, 0)),
+        3,
+        14,
+        1.5,
+      );
     }
     makeParticles('sparks', 1500, sparkTex, 0xffcc66, 1.2, new Vector3(0, 1, 0), 40, 6, 6);
     makeParticles('magic', 800, magicTex, 0x66aaff, 2, new Vector3(0, 0.5, 0), 16, 8, 2);
@@ -338,7 +458,17 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
       const k = i % 3;
       const a = (i / Math.max(1, effects - 6)) * Math.PI * 2;
       const r = 6 + (i % 5) * 4;
-      makeParticles(`effect-${i}`, 150, extraTextures[k]!, extraColors[k]!, 1.5 + k * 0.6, new Vector3(Math.cos(a) * r, 0.5, Math.sin(a) * r), 4, 5, 2 + k);
+      makeParticles(
+        `effect-${i}`,
+        150,
+        extraTextures[k]!,
+        extraColors[k]!,
+        1.5 + k * 0.6,
+        new Vector3(Math.cos(a) * r, 0.5, Math.sin(a) * r),
+        4,
+        5,
+        2 + k,
+      );
       particles += 150;
     }
     counts.particles = particles;
@@ -349,12 +479,22 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
     const starTex = await loadTexture(tex('kenney-particle-pack', 'star_06'));
     scene.traverse((o) => {
       if (/^fighter-|^blocky-/.test(o.name) && o.parent === scene) {
-        const bar = new Sprite(new SpriteMaterial({ map: barTex ?? undefined, color: 0x40ff60, transparent: true, depthWrite: false }));
+        const bar = new Sprite(
+          new SpriteMaterial({ map: barTex ?? undefined, color: 0x40ff60, transparent: true, depthWrite: false }),
+        );
         bar.name = `health-${o.name}`;
         bar.position.set(0, 2.2, 0);
         bar.scale.set(1.2, 0.2, 1);
         o.add(bar);
-        const hit = new Sprite(new SpriteMaterial({ map: starTex ?? undefined, color: 0xff4040, transparent: true, depthWrite: false, blending: AdditiveBlending }));
+        const hit = new Sprite(
+          new SpriteMaterial({
+            map: starTex ?? undefined,
+            color: 0xff4040,
+            transparent: true,
+            depthWrite: false,
+            blending: AdditiveBlending,
+          }),
+        );
         hit.name = `hit-${o.name}`;
         hit.position.set(0.4, 1.6, 0);
         hit.scale.set(0.6, 0.6, 1);
@@ -373,14 +513,32 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
     const idx: number[] = [];
     for (let i = 0; i < segments - 1; i++) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
     trailGeometry.setIndex(idx);
-    trail = new Mesh(trailGeometry, new MeshBasicMaterial({ color: 0x80c0ff, transparent: true, opacity: 0.6, blending: AdditiveBlending, side: DoubleSide, depthWrite: false }));
+    trail = new Mesh(
+      trailGeometry,
+      new MeshBasicMaterial({
+        color: 0x80c0ff,
+        transparent: true,
+        opacity: 0.6,
+        blending: AdditiveBlending,
+        side: DoubleSide,
+        depthWrite: false,
+      }),
+    );
     trail.name = 'sword-trail';
     trail.frustumCulled = false;
     scene.add(trail); // deliberately untagged: the dynamic-geometry rule must catch it
 
     // Floor decals: scorch marks projected onto the floor tiles (unique geometries, one shared material).
     const scorchTex = await loadTexture(tex('kenney-particle-pack', 'scorch_01'));
-    const decalMaterial = new MeshStandardMaterial({ map: scorchTex ?? undefined, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, roughness: 1, metalness: 0 });
+    const decalMaterial = new MeshStandardMaterial({
+      map: scorchTex ?? undefined,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      roughness: 1,
+      metalness: 0,
+    });
     const floorMeshes: Mesh[] = [];
     scene.traverse((o) => {
       if ((o as Mesh).isMesh && (o.parent?.name ?? '').startsWith('floor')) floorMeshes.push(o as Mesh);
@@ -389,7 +547,12 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
     for (let i = 0; i < 30 && floorMeshes.length > 0; i++) {
       const target = floorMeshes[Math.floor(rng() * floorMeshes.length)]!;
       const pos = new Vector3().setFromMatrixPosition(target.matrixWorld);
-      const geometry = new DecalGeometry(target, pos.add(new Vector3(0, 0.05, 0)), new Euler(-Math.PI / 2, 0, rng() * Math.PI), new Vector3(3 + rng() * 3, 3 + rng() * 3, 2));
+      const geometry = new DecalGeometry(
+        target,
+        pos.add(new Vector3(0, 0.05, 0)),
+        new Euler(-Math.PI / 2, 0, rng() * Math.PI),
+        new Vector3(3 + rng() * 3, 3 + rng() * 3, 2),
+      );
       const decal = new Mesh(geometry, decalMaterial);
       decal.name = `scorch-${i}`;
       tag.static(decal);
@@ -402,7 +565,16 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
     const flipTex = await loadTexture(tex('kenney-particle-pack', 'fire_01'));
     if (flipTex) {
       flipTex.repeat.set(0.5, 0.5);
-      const mesh = new Mesh(new PlaneGeometry(6, 6), new MeshBasicMaterial({ map: flipTex, transparent: true, blending: AdditiveBlending, depthWrite: false, side: DoubleSide }));
+      const mesh = new Mesh(
+        new PlaneGeometry(6, 6),
+        new MeshBasicMaterial({
+          map: flipTex,
+          transparent: true,
+          blending: AdditiveBlending,
+          depthWrite: false,
+          side: DoubleSide,
+        }),
+      );
       mesh.name = 'explosion';
       mesh.position.set(6, 3, -6);
       tag.dynamic(mesh); // material uniforms animate: tagged dynamic
@@ -415,10 +587,18 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
     for (const m of mixers) m.setTime(t);
     for (const f of fades) {
       const k = Math.min(1, Math.max(0, (t - f.at) / 0.4));
-      const a = f.mixer.existingAction(AnimationClip.findByName((f.mixer.getRoot() as Object3D & { animations?: AnimationClip[] }).animations ?? [], f.from) ?? (f.mixer as unknown as { _actions: { _clip: AnimationClip }[] })._actions[0]!._clip);
+      const a = f.mixer.existingAction(
+        AnimationClip.findByName(
+          (f.mixer.getRoot() as Object3D & { animations?: AnimationClip[] }).animations ?? [],
+          f.from,
+        ) ?? (f.mixer as unknown as { _actions: { _clip: AnimationClip }[] })._actions[0]!._clip,
+      );
       void a;
-      const actions = (f.mixer as unknown as { _actions: Array<{ _clip: AnimationClip; setEffectiveWeight(w: number): void }> })._actions;
-      for (const action of actions) action.setEffectiveWeight(action._clip.name === f.to ? k : action._clip.name === f.from ? 1 - k : 0);
+      const actions = (
+        f.mixer as unknown as { _actions: Array<{ _clip: AnimationClip; setEffectiveWeight(w: number): void }> }
+      )._actions;
+      for (const action of actions)
+        action.setEffectiveWeight(action._clip.name === f.to ? k : action._clip.name === f.from ? 1 - k : 0);
     }
     for (const m of mixers) m.setTime(t); // re-pose with the new weights
     for (const ps of particleSystems) {
@@ -431,7 +611,8 @@ export async function buildArena({ loader, fighters = 12, blocky = 16, seed = 21
       }
       pos.needsUpdate = true;
     }
-    for (const s of sprites) if (s.name.startsWith('hit-')) s.scale.setScalar(0.4 + 0.4 * Math.abs(Math.sin(t * 5 + s.position.x)));
+    for (const s of sprites)
+      if (s.name.startsWith('hit-')) s.scale.setScalar(0.4 + 0.4 * Math.abs(Math.sin(t * 5 + s.position.x)));
     if (trail) {
       const pos = trail.geometry.attributes.position as Float32BufferAttribute;
       const arr = pos.array as Float32Array;

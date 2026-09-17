@@ -1,9 +1,12 @@
-import { SCENE_IDS, type BenchMetrics, type SceneId } from '../test/app/benchMetrics.js';
+import { type BenchMetrics, SCENE_IDS, type SceneId } from '../test/app/benchMetrics.js';
 import type { DeviceResult } from './submit.js';
 
-const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const k = (n: number): string => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n)));
-const pair = (n: BenchMetrics | undefined, o: BenchMetrics | undefined, f: (m: BenchMetrics) => string): string => `${n ? f(n) : '…'} → ${o ? f(o) : '…'}`;
+const esc = (s: string): string =>
+  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+const k = (n: number): string =>
+  n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n));
+const pair = (n: BenchMetrics | undefined, o: BenchMetrics | undefined, f: (m: BenchMetrics) => string): string =>
+  `${n ? f(n) : '…'} → ${o ? f(o) : '…'}`;
 const mb = (m: BenchMetrics): string => ((m.textureBytes + m.geometryBytes + m.renderTargetBytes) / 1048576).toFixed(0);
 
 /** `<tr>`s for the live table: one per scene, cells fill in as variants finish. */

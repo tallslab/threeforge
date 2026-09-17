@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
 import { BoxGeometry, Mesh, MeshStandardMaterial } from 'three';
-import { exposeToAgents, type AgentHook } from '../../src/agent/expose.js';
+import { describe, expect, it } from 'vitest';
+import { type AgentHook, exposeToAgents } from '../../src/agent/expose.js';
 import { World } from '../../src/compiler/World.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { tag } from '../../src/tags.js';
@@ -17,7 +17,15 @@ describe('exposeToAgents', () => {
     ledger.attach(renderer as never);
     const world = new World(scene, { ledger });
     const target: { __threeforge?: AgentHook } = {};
-    const dispose = exposeToAgents({ ledger, world, renderer: renderer as never, scene, camera, target, requestFrame: (cb) => cb() });
+    const dispose = exposeToAgents({
+      ledger,
+      world,
+      renderer: renderer as never,
+      scene,
+      camera,
+      target,
+      requestFrame: (cb) => cb(),
+    });
     const hook = target.__threeforge!;
     expect(hook.schemaVersion).toBe(3);
     expect(hook.schemaVersion).toBe(ledger.frame().schemaVersion);
@@ -57,7 +65,14 @@ describe('exposeToAgents', () => {
       },
     };
     const target: { __threeforge?: AgentHook } = {};
-    exposeToAgents({ ledger, renderer: renderer as never, scene, camera, target, requestFrame: (cb) => setTimeout(cb, 0) });
+    exposeToAgents({
+      ledger,
+      renderer: renderer as never,
+      scene,
+      camera,
+      target,
+      requestFrame: (cb) => setTimeout(cb, 0),
+    });
     await expect(target.__threeforge!.frameAsync()).rejects.toThrow('device lost');
   }, 2000);
 });

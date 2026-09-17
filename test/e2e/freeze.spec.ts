@@ -1,7 +1,9 @@
 import { expect, test } from './fixtures.js';
 import { pixelDiff, settle } from './pixels.js';
 
-test('freezing: the compiled village recomposes far fewer matrices per frame with the same pixels', async ({ forge }) => {
+test('freezing: the compiled village recomposes far fewer matrices per frame with the same pixels', async ({
+  forge,
+}) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   await forge.open('village', { variant: 'naive', freeze: '1' });
   await settle(forge.page);
@@ -19,10 +21,18 @@ test('freezing: the compiled village recomposes far fewer matrices per frame wit
     for (let i = 0; i < 3; i++) await f.frameAsync();
     f.ledger.rescan();
     const frame = await f.frameAsync();
-    return { frozen: report.after.frozen, auto: frame.js.autoUpdatedMatrices, hidden: frame.js.hiddenOriginals, hints: frame.hints.map((h) => h.code), unattributed: frame.totals.unattributed };
+    return {
+      frozen: report.after.frozen,
+      auto: frame.js.autoUpdatedMatrices,
+      hidden: frame.js.hiddenOriginals,
+      hints: frame.hints.map((h) => h.code),
+      unattributed: frame.totals.unattributed,
+    };
   });
   const after = await forge.page.screenshot({ type: 'png' });
-  console.log(`village autoUpdatedMatrices ${naive.auto} -> ${compiled.auto} (frozen ${compiled.frozen}, hidden ${compiled.hidden})`);
+  console.log(
+    `village autoUpdatedMatrices ${naive.auto} -> ${compiled.auto} (frozen ${compiled.frozen}, hidden ${compiled.hidden})`,
+  );
   expect(compiled.auto).toBeLessThan(naive.auto / 4);
   expect(compiled.hidden).toBeGreaterThan(200);
   expect(compiled.hints).not.toContain('static-auto-update');

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { expect, test } from './fixtures.js';
 import { MEASURED, metricsOf, SCENE_IDS, WARM } from '../app/benchMetrics.js';
+import { expect, test } from './fixtures.js';
 
 /**
  * The benchmark runner: every scene in both variants, 10 warm-up frames, 60 measured frames (medians), one overdraw
@@ -46,7 +46,15 @@ for (const id of SCENE_IDS) {
           const overdraw = await f.measureOverdraw();
           f.ledger.rescan();
           frame = await f.frameAsync();
-          return { frame, overdraw, programs, renderMs: median(render), frameMs: median(frames), shadowPassesPerFrame: shadowPasses.reduce((a, b) => a + b, 0) / Math.max(1, shadowPasses.length), shadowTexels };
+          return {
+            frame,
+            overdraw,
+            programs,
+            renderMs: median(render),
+            frameMs: median(frames),
+            shadowPassesPerFrame: shadowPasses.reduce((a, b) => a + b, 0) / Math.max(1, shadowPasses.length),
+            shadowTexels,
+          };
         },
         { warm: WARM, measured: MEASURED },
       );
@@ -62,12 +70,18 @@ for (const id of SCENE_IDS) {
       // `measureOverdraw()` only ever *adds* count-material stages to `info.memory.programs`, and three frees a stage
       // only once its `usedTimes` reaches 0, so a post-measurement frame can never report fewer programs than the
       // pre-measurement capture, whatever the scene draws.
-      expect(out.programs, 'programs must be read before measureOverdraw()').toBeLessThanOrEqual(out.frame.totals.programs);
+      expect(out.programs, 'programs must be read before measureOverdraw()').toBeLessThanOrEqual(
+        out.frame.totals.programs,
+      );
       // And on a scene where the count materials measurably add stages, strictly below it — which is the assertion
       // that actually fails when the capture moves. Measured on webgl2: zen naive 6 -> 10 programs across the
       // measurement, zen optimized 80 -> 158. The other scenes are not asserted strictly because their gap is not
       // guaranteed to be non-zero, and a guard that can pass vacuously is the kind this branch keeps removing.
-      if (id === 'zen') expect(out.programs, 'zen: the count materials add stages, so the captured value must sit below the post-measurement frame').toBeLessThan(out.frame.totals.programs);
+      if (id === 'zen')
+        expect(
+          out.programs,
+          'zen: the count materials add stages, so the captured value must sit below the post-measurement frame',
+        ).toBeLessThan(out.frame.totals.programs);
       const path = `bench/results/local.${forge.backend}.json`;
       mkdirSync('bench/results', { recursive: true });
       // The file's env describes the machine; the viewport is per scene (rpg is portrait) and stays out of it.
@@ -75,7 +89,14 @@ for (const id of SCENE_IDS) {
       const file = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { schemaVersion: 1, env, scenes: {} };
       file.env = env;
       file.scenes[id] ??= {};
-      file.scenes[id][variant] = metricsOf({ ...out.frame, overdraw: { ...out.frame.overdraw, ...out.overdraw, measured: true } }, out.renderMs, out.frameMs, out.shadowPassesPerFrame, out.shadowTexels, out.programs);
+      file.scenes[id][variant] = metricsOf(
+        { ...out.frame, overdraw: { ...out.frame.overdraw, ...out.overdraw, measured: true } },
+        out.renderMs,
+        out.frameMs,
+        out.shadowPassesPerFrame,
+        out.shadowTexels,
+        out.programs,
+      );
       writeFileSync(path, JSON.stringify(file, null, 2));
     });
   }

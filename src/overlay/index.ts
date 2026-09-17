@@ -1,7 +1,8 @@
 import type { DrawCallLedger } from '../ledger/DrawCallLedger.js';
 import type { FrameSnapshot } from '../ledger/snapshot.js';
 
-const fmt = (n: number): string => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k` : String(n));
+const fmt = (n: number): string =>
+  n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k` : String(n);
 const mb = (bytes: number): number => Math.round(bytes / (1024 * 1024));
 
 /** The six cost rows of a v2 snapshot, one line each, aligned for a monospace panel. */

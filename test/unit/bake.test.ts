@@ -1,12 +1,33 @@
+import {
+  BackSide,
+  BoxGeometry,
+  BufferGeometry,
+  Color,
+  DoubleSide,
+  Float32BufferAttribute,
+  FrontSide,
+  Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  PlaneGeometry,
+  Raycaster,
+  Vector3,
+} from 'three';
 import { describe, expect, it } from 'vitest';
-import { BackSide, BoxGeometry, BufferGeometry, Color, DoubleSide, Float32BufferAttribute, FrontSide, Matrix4, Mesh, MeshBasicMaterial, PlaneGeometry, Raycaster, Vector3 } from 'three';
-import { bakeGeometries, unbakeableAttribute, type BakeEntry } from '../../src/compiler/bake.js';
+import { type BakeEntry, bakeGeometries, unbakeableAttribute } from '../../src/compiler/bake.js';
 
 /**
  * An opaque, front-side box module that casts no shadow (an entry without `opaque`, `side` or `castShadow: false` loses
  * no faces, so tests of removal set all three).
  */
-const box = (x: number, size = 1, extra?: Partial<BakeEntry>): BakeEntry => ({ geometry: new BoxGeometry(size, size, size), matrix: new Matrix4().makeTranslation(x, 0, 0), opaque: true, side: FrontSide, castShadow: false, ...extra });
+const box = (x: number, size = 1, extra?: Partial<BakeEntry>): BakeEntry => ({
+  geometry: new BoxGeometry(size, size, size),
+  matrix: new Matrix4().makeTranslation(x, 0, 0),
+  opaque: true,
+  side: FrontSide,
+  castShadow: false,
+  ...extra,
+});
 const faceNormal = (p: Float32Array | ArrayLike<number>, i: number, index: ArrayLike<number>): Vector3 => {
   const a = new Vector3().fromArray(p, index[i * 3]! * 3);
   const b = new Vector3().fromArray(p, index[i * 3 + 1]! * 3);
@@ -50,7 +71,12 @@ function merged(parts: Array<{ geometry: BufferGeometry; matrix?: Matrix4; insid
     normal.push(...(part.insideOut ? n.map((v) => -v) : n));
     uv.push(...(g.attributes.uv!.array as Float32Array));
     const idx = g.index!.array;
-    for (let k = 0; k < idx.length; k += 3) index.push(offset + idx[k]!, offset + idx[part.insideOut ? k + 2 : k + 1]!, offset + idx[part.insideOut ? k + 1 : k + 2]!);
+    for (let k = 0; k < idx.length; k += 3)
+      index.push(
+        offset + idx[k]!,
+        offset + idx[part.insideOut ? k + 2 : k + 1]!,
+        offset + idx[part.insideOut ? k + 1 : k + 2]!,
+      );
   }
   const out = new BufferGeometry();
   out.setAttribute('position', new Float32BufferAttribute(position, 3));
@@ -132,7 +158,10 @@ describe('bakeGeometries', () => {
     // A translucent box inside an opaque solid is never removed.
     expect(bakeGeometries([box(0, 1), box(0, 0.2, { opaque: false })], options).report.buriedFaces).toBe(0);
     // An entry without `opaque` counts as not opaque.
-    expect(bakeGeometries([box(0, 1), { geometry: new BoxGeometry(0.2, 0.2, 0.2), matrix: new Matrix4() }], options).report.buriedFaces).toBe(0);
+    expect(
+      bakeGeometries([box(0, 1), { geometry: new BoxGeometry(0.2, 0.2, 0.2), matrix: new Matrix4() }], options).report
+        .buriedFaces,
+    ).toBe(0);
   });
 
   it('keeps outward winding for mirrored instances', () => {
@@ -142,7 +171,11 @@ describe('bakeGeometries', () => {
     const n = geometry.attributes.normal!;
     for (let i = 0; i < geometry.index!.count / 3; i++) {
       const fn = faceNormal(p, i, geometry.index!.array);
-      const vn = new Vector3(n.getX(geometry.index!.array[i * 3]!), n.getY(geometry.index!.array[i * 3]!), n.getZ(geometry.index!.array[i * 3]!));
+      const vn = new Vector3(
+        n.getX(geometry.index!.array[i * 3]!),
+        n.getY(geometry.index!.array[i * 3]!),
+        n.getZ(geometry.index!.array[i * 3]!),
+      );
       expect(fn.dot(vn)).toBeGreaterThan(0.9);
     }
   });
@@ -193,7 +226,13 @@ describe('bakeGeometries', () => {
 });
 
 describe('bakeGeometries seam guard: a coincident opposite pair goes only between opaque, single-sided, closed outward shells of different entries', () => {
-  const card = (matrix: Matrix4): BakeEntry => ({ geometry: new PlaneGeometry(1, 1), matrix, opaque: true, side: FrontSide, castShadow: false });
+  const card = (matrix: Matrix4): BakeEntry => ({
+    geometry: new PlaneGeometry(1, 1),
+    matrix,
+    opaque: true,
+    side: FrontSide,
+    castShadow: false,
+  });
 
   it('keeps and counts back-to-back cards: open planes, not solids', () => {
     const { report } = bakeGeometries([card(new Matrix4()), card(new Matrix4().makeRotationY(Math.PI))]);
@@ -201,14 +240,21 @@ describe('bakeGeometries seam guard: a coincident opposite pair goes only betwee
     expect(report.keptCoincidentFaces).toBe(4);
     expect(report.triangles).toBe(4);
     // With contact removal off the guard does not run, so nothing is counted.
-    const off = bakeGeometries([card(new Matrix4()), card(new Matrix4().makeRotationY(Math.PI))], { removeContactFaces: false });
+    const off = bakeGeometries([card(new Matrix4()), card(new Matrix4().makeRotationY(Math.PI))], {
+      removeContactFaces: false,
+    });
     expect(off.report.keptCoincidentFaces).toBe(0);
     expect(off.report.triangles).toBe(4);
   });
 
   it('keeps and counts a coincident pair inside one entry', () => {
-    const pair = merged([{ geometry: new BoxGeometry(1, 1, 1) }, { geometry: new BoxGeometry(1, 1, 1), matrix: new Matrix4().makeTranslation(1, 0, 0) }]);
-    const { report } = bakeGeometries([{ geometry: pair, matrix: new Matrix4(), opaque: true, side: FrontSide, castShadow: false }]);
+    const pair = merged([
+      { geometry: new BoxGeometry(1, 1, 1) },
+      { geometry: new BoxGeometry(1, 1, 1), matrix: new Matrix4().makeTranslation(1, 0, 0) },
+    ]);
+    const { report } = bakeGeometries([
+      { geometry: pair, matrix: new Matrix4(), opaque: true, side: FrontSide, castShadow: false },
+    ]);
     expect(report.contactFaces).toBe(0);
     expect(report.keptCoincidentFaces).toBe(4);
     expect(report.triangles).toBe(24);
@@ -222,11 +268,26 @@ describe('bakeGeometries seam guard: a coincident opposite pair goes only betwee
     const quad = new BufferGeometry();
     for (const name of ['position', 'normal', 'uv'] as const) {
       const a = nx.attributes[name]!;
-      quad.setAttribute(name, new Float32BufferAttribute(Array.from(a.array).slice(FACE.nx * 4 * a.itemSize, (FACE.nx + 1) * 4 * a.itemSize), a.itemSize));
+      quad.setAttribute(
+        name,
+        new Float32BufferAttribute(
+          Array.from(a.array).slice(FACE.nx * 4 * a.itemSize, (FACE.nx + 1) * 4 * a.itemSize),
+          a.itemSize,
+        ),
+      );
     }
     quad.setIndex(Array.from(nx.index!.array.slice(FACE.nx * 6, FACE.nx * 6 + 6)).map((i) => i - FACE.nx * 4));
     const slab = merged([{ geometry: quad }, { geometry: quad, insideOut: true }]);
-    const { report } = bakeGeometries([box(1), { geometry: slab, matrix: new Matrix4().makeTranslation(1, 0, 0), opaque: true, side: FrontSide, castShadow: false }]);
+    const { report } = bakeGeometries([
+      box(1),
+      {
+        geometry: slab,
+        matrix: new Matrix4().makeTranslation(1, 0, 0),
+        opaque: true,
+        side: FrontSide,
+        castShadow: false,
+      },
+    ]);
     expect(report.contactFaces).toBe(0);
     expect(report.keptCoincidentFaces).toBe(4);
     expect(report.duplicateFaces).toBe(2);
@@ -234,7 +295,10 @@ describe('bakeGeometries seam guard: a coincident opposite pair goes only betwee
   });
 
   it('keeps and counts the seam when either module is double-sided', () => {
-    for (const entries of [[box(0, 1, { doubleSided: true }), box(1)], [box(0), box(1, 1, { doubleSided: true })]]) {
+    for (const entries of [
+      [box(0, 1, { doubleSided: true }), box(1)],
+      [box(0), box(1, 1, { doubleSided: true })],
+    ]) {
       const { report } = bakeGeometries(entries);
       expect(report.contactFaces).toBe(0);
       expect(report.keptCoincidentFaces).toBe(4);
@@ -243,7 +307,10 @@ describe('bakeGeometries seam guard: a coincident opposite pair goes only betwee
   });
 
   it('keeps and counts the seam between modules that are not opaque; an entry without `opaque` is not opaque', () => {
-    const unflagged = (x: number): BakeEntry => ({ geometry: new BoxGeometry(1, 1, 1), matrix: new Matrix4().makeTranslation(x, 0, 0) });
+    const unflagged = (x: number): BakeEntry => ({
+      geometry: new BoxGeometry(1, 1, 1),
+      matrix: new Matrix4().makeTranslation(x, 0, 0),
+    });
     const cases: Array<[string, BakeEntry[]]> = [
       ['both translucent', [box(0, 1, { opaque: false }), box(1, 1, { opaque: false })]],
       ['one translucent', [box(0), box(1, 1, { opaque: false })]],
@@ -267,22 +334,34 @@ describe('bakeGeometries seam guard: a coincident opposite pair goes only betwee
 
   it('keeps and counts the faces between an inside-out box and a box filling it', () => {
     const inside = merged([{ geometry: new BoxGeometry(1, 1, 1), insideOut: true }]);
-    const { report } = bakeGeometries([{ geometry: inside, matrix: new Matrix4(), opaque: true, side: FrontSide, castShadow: false }, box(0)]);
+    const { report } = bakeGeometries([
+      { geometry: inside, matrix: new Matrix4(), opaque: true, side: FrontSide, castShadow: false },
+      box(0),
+    ]);
     expect(report.contactFaces).toBe(0);
     expect(report.keptCoincidentFaces).toBe(24);
     expect(report.triangles).toBe(24);
   });
 
   it("checks every connected component: an inside-out part keeps its faces although the entry's total volume is positive", () => {
-    const entry = merged([{ geometry: new BoxGeometry(3, 3, 3), matrix: new Matrix4().makeTranslation(10, 0, 0) }, { geometry: new BoxGeometry(1, 1, 1), insideOut: true }]);
-    const { report } = bakeGeometries([{ geometry: entry, matrix: new Matrix4(), opaque: true, side: FrontSide, castShadow: false }, box(0)]);
+    const entry = merged([
+      { geometry: new BoxGeometry(3, 3, 3), matrix: new Matrix4().makeTranslation(10, 0, 0) },
+      { geometry: new BoxGeometry(1, 1, 1), insideOut: true },
+    ]);
+    const { report } = bakeGeometries([
+      { geometry: entry, matrix: new Matrix4(), opaque: true, side: FrontSide, castShadow: false },
+      box(0),
+    ]);
     expect(report.contactFaces).toBe(0);
     expect(report.keptCoincidentFaces).toBe(24);
     expect(report.triangles).toBe(36);
   });
 
   it('treats mirrored matrices consistently: outward shells stay outward, so their seams still go', () => {
-    const mirroredAt = (x: number): BakeEntry => ({ ...box(0), matrix: new Matrix4().makeTranslation(x, 0, 0).multiply(new Matrix4().makeScale(-1, 1, 1)) });
+    const mirroredAt = (x: number): BakeEntry => ({
+      ...box(0),
+      matrix: new Matrix4().makeTranslation(x, 0, 0).multiply(new Matrix4().makeScale(-1, 1, 1)),
+    });
     const { report } = bakeGeometries([mirroredAt(0), mirroredAt(1)]);
     expect(report.contactFaces).toBe(4);
     expect(report.keptCoincidentFaces).toBe(0);
@@ -293,7 +372,10 @@ describe('bakeGeometries seam guard: a coincident opposite pair goes only betwee
 describe('bakeGeometries vertex colours and tangents', () => {
   const gray = (): PlaneGeometry => {
     const g = new PlaneGeometry(1, 1);
-    g.setAttribute('color', new Float32BufferAttribute(new Float32Array(g.attributes.position!.count * 3).fill(0.5), 3));
+    g.setAttribute(
+      'color',
+      new Float32BufferAttribute(new Float32Array(g.attributes.position!.count * 3).fill(0.5), 3),
+    );
     return g;
   };
   const tint = new Color().setRGB(1, 0.2, 0.6);
@@ -303,7 +385,9 @@ describe('bakeGeometries vertex colours and tangents', () => {
   };
 
   it('ignores the colour attribute when vertexColors is false: the tint alone colours the module', () => {
-    const { geometry, hasColor } = bakeGeometries([{ geometry: gray(), matrix: new Matrix4(), color: tint, vertexColors: false }]);
+    const { geometry, hasColor } = bakeGeometries([
+      { geometry: gray(), matrix: new Matrix4(), color: tint, vertexColors: false },
+    ]);
     expect(hasColor).toBe(true);
     for (const [r, g, b] of rows(geometry, 'color', 3)) {
       expect(r).toBeCloseTo(1);
@@ -317,7 +401,12 @@ describe('bakeGeometries vertex colours and tangents', () => {
 
   it('multiplies the colour attribute by the tint when vertexColors is true or absent (the default)', () => {
     for (const vertexColors of [true, undefined]) {
-      const entry: BakeEntry = { geometry: gray(), matrix: new Matrix4(), color: tint, ...(vertexColors === undefined ? {} : { vertexColors }) };
+      const entry: BakeEntry = {
+        geometry: gray(),
+        matrix: new Matrix4(),
+        color: tint,
+        ...(vertexColors === undefined ? {} : { vertexColors }),
+      };
       const { geometry } = bakeGeometries([entry]);
       for (const [r, g, b] of rows(geometry, 'color', 3)) {
         expect(r, String(vertexColors)).toBeCloseTo(0.5);
@@ -339,7 +428,11 @@ describe('bakeGeometries vertex colours and tangents', () => {
     // three builds the bitangent as cross(normalView, tangentView) * tangent.w with no determinant term
     // (nodes/accessors/Bitangent.js), so parity with the naive mesh keeps w even when the matrix mirrors.
     const cases: Array<{ label: string; matrix: Matrix4; expected: [number, number, number] }> = [
-      { label: 'turned and scaled', matrix: new Matrix4().makeRotationZ(Math.PI / 2).multiply(new Matrix4().makeScale(2, 2, 2)), expected: [0, 1, 0] },
+      {
+        label: 'turned and scaled',
+        matrix: new Matrix4().makeRotationZ(Math.PI / 2).multiply(new Matrix4().makeScale(2, 2, 2)),
+        expected: [0, 1, 0],
+      },
       { label: 'mirrored', matrix: new Matrix4().makeScale(-1, 1, 1), expected: [-1, 0, 0] },
     ];
     for (const { label, matrix, expected } of cases) {
@@ -365,7 +458,9 @@ describe('bakeGeometries vertex colours and tangents', () => {
     };
     expect(bakeGeometries([quad(0, [1, 0, 0, 1]), quad(1, [1, 0, 0, 1])]).report.weldedVertices).toBe(2);
     expect(bakeGeometries([quad(0, [1, 0, 0, 1]), quad(1, [1, 0, 0, -1])]).report.weldedVertices).toBe(0);
-    expect(bakeGeometries([quad(0, [1, 0, 0, 1]), quad(1, [Math.cos(0.2), Math.sin(0.2), 0, 1])]).report.weldedVertices).toBe(0);
+    expect(
+      bakeGeometries([quad(0, [1, 0, 0, 1]), quad(1, [Math.cos(0.2), Math.sin(0.2), 0, 1])]).report.weldedVertices,
+    ).toBe(0);
   });
 
   it('drops tangents unless every entry has them', () => {
@@ -378,7 +473,13 @@ describe('bakeGeometries vertex colours and tangents', () => {
 
   it('gives a three-component tangent w = 1 and turns its xyz', () => {
     const g = new PlaneGeometry(1, 1);
-    g.setAttribute('tangent', new Float32BufferAttribute(new Float32Array(g.attributes.position!.count * 3).map((_, i) => (i % 3 === 0 ? 1 : 0)), 3));
+    g.setAttribute(
+      'tangent',
+      new Float32BufferAttribute(
+        new Float32Array(g.attributes.position!.count * 3).map((_, i) => (i % 3 === 0 ? 1 : 0)),
+        3,
+      ),
+    );
     const { geometry } = bakeGeometries([{ geometry: g, matrix: new Matrix4().makeRotationZ(Math.PI / 2) }]);
     expect(geometry.getAttribute('tangent')?.itemSize).toBe(4);
     for (const [x, y, z, w] of rows(geometry, 'tangent', 4)) {
@@ -404,7 +505,13 @@ describe('bakeGeometries: non-manifold shells, render sides, fused duplicates, k
       side: FrontSide,
       castShadow: false,
     });
-    const filler: BakeEntry = { geometry: new BoxGeometry(1, 1, 1), matrix: new Matrix4().makeTranslation(2.5, 2.5, 0.5), opaque: true, side: FrontSide, castShadow: false };
+    const filler: BakeEntry = {
+      geometry: new BoxGeometry(1, 1, 1),
+      matrix: new Matrix4().makeTranslation(2.5, 2.5, 0.5),
+      opaque: true,
+      side: FrontSide,
+      castShadow: false,
+    };
     const shared = bakeGeometries([joined(0), filler]).report;
     // The -x and -y walls fuse with the outward box's faces across the shared edge, so four pairs are judged.
     expect(shared.contactFaces).toBe(0);
@@ -446,16 +553,36 @@ describe('bakeGeometries: non-manifold shells, render sides, fused duplicates, k
   it('keeps two separate regions each covered twice with different triangulations (their fused islands have no outline)', () => {
     // Each spot: a tile and the same tile turned 90 degrees about its normal (the other diagonal). Every edge of a spot
     // is used twice, so each spot fuses into one island whose boundary is empty.
-    const tile = (x: number, turned: boolean): BakeEntry => ({ geometry: new PlaneGeometry(1, 1), matrix: new Matrix4().makeTranslation(x, 0, 0).multiply(new Matrix4().makeRotationZ(turned ? Math.PI / 2 : 0)), opaque: true, side: FrontSide, castShadow: false });
-    const { report, triangleOrigins } = bakeGeometries([tile(0, false), tile(0, true), tile(10, false), tile(10, true)]);
+    const tile = (x: number, turned: boolean): BakeEntry => ({
+      geometry: new PlaneGeometry(1, 1),
+      matrix: new Matrix4().makeTranslation(x, 0, 0).multiply(new Matrix4().makeRotationZ(turned ? Math.PI / 2 : 0)),
+      opaque: true,
+      side: FrontSide,
+      castShadow: false,
+    });
+    const { report, triangleOrigins } = bakeGeometries([
+      tile(0, false),
+      tile(0, true),
+      tile(10, false),
+      tile(10, true),
+    ]);
     expect(report.duplicateFaces).toBe(0);
     expect(report.triangles).toBe(8);
     expect(new Set(triangleOrigins)).toEqual(new Set([0, 1, 2, 3]));
   });
 
   it('counts only the kept coincident faces that survive the bake: a kept pair buried inside a solid is not counted', () => {
-    const card = (turned: boolean): BakeEntry => ({ geometry: new PlaneGeometry(0.5, 0.5), matrix: new Matrix4().makeRotationY(turned ? Math.PI : 0), opaque: true, side: FrontSide, castShadow: false });
-    expect(bakeGeometries([box(0, 1), card(false), card(true)]).report.keptCoincidentFaces, 'without removeBuried').toBe(4);
+    const card = (turned: boolean): BakeEntry => ({
+      geometry: new PlaneGeometry(0.5, 0.5),
+      matrix: new Matrix4().makeRotationY(turned ? Math.PI : 0),
+      opaque: true,
+      side: FrontSide,
+      castShadow: false,
+    });
+    expect(
+      bakeGeometries([box(0, 1), card(false), card(true)]).report.keptCoincidentFaces,
+      'without removeBuried',
+    ).toBe(4);
     const { report } = bakeGeometries([box(0, 1), card(false), card(true)], { removeBuried: { distance: 1 } });
     expect(report.contactFaces).toBe(0);
     expect(report.buriedFaces).toBe(4);
@@ -466,11 +593,18 @@ describe('bakeGeometries: non-manifold shells, render sides, fused duplicates, k
 describe('bakeGeometries: outlines of overlapping or non-manifold islands, shadow casters, back-side hits, copies', () => {
   /** The first front face a ray straight down from above (x, z) meets in a baked geometry, or undefined. */
   const hitFromAbove = (geometry: BufferGeometry, x: number, z: number) =>
-    new Raycaster(new Vector3(x, 5, z), new Vector3(0, -1, 0)).intersectObject(new Mesh(geometry, new MeshBasicMaterial()))[0];
+    new Raycaster(new Vector3(x, 5, z), new Vector3(0, -1, 0)).intersectObject(
+      new Mesh(geometry, new MeshBasicMaterial()),
+    )[0];
   const placed = (geometry: BufferGeometry, matrix: Matrix4): BakeEntry => ({ ...box(0), geometry, matrix });
 
   /** A closed, outward prism over a counter-clockwise (x, z) polygon, its caps split into `caps`, from y0 up to y1. */
-  const prism = (polygon: Array<[number, number]>, caps: Array<[number, number, number]>, y0: number, y1: number): BufferGeometry => {
+  const prism = (
+    polygon: Array<[number, number]>,
+    caps: Array<[number, number, number]>,
+    y0: number,
+    y1: number,
+  ): BufferGeometry => {
     const n = polygon.length;
     const position: number[] = [];
     for (const [x, z] of polygon) position.push(x, y0, z);
@@ -489,7 +623,8 @@ describe('bakeGeometries: outlines of overlapping or non-manifold islands, shado
   };
 
   it('does not pair outlines shortened by an edge used three times: a mirrored copy leaves the longer top over x in [2, 3] covered', () => {
-    const mirrored = (geometry: BufferGeometry, x: number, y: number): BakeEntry => placed(geometry, new Matrix4().makeTranslation(x, y, 0).multiply(new Matrix4().makeScale(-1, 1, 1)));
+    const mirrored = (geometry: BufferGeometry, x: number, y: number): BakeEntry =>
+      placed(geometry, new Matrix4().makeTranslation(x, y, 0).multiply(new Matrix4().makeScale(-1, 1, 1)));
     const { geometry } = bakeGeometries([
       placed(new BoxGeometry(1, 1, 1), new Matrix4().makeTranslation(0.5, 0.5, 0)),
       placed(new BoxGeometry(1, 1, 1), new Matrix4().makeTranslation(1.5, 0.5, 0)),
@@ -509,8 +644,38 @@ describe('bakeGeometries: outlines of overlapping or non-manifold islands, shado
     // covers X's top minus Y's triangle, and its bottom has exactly the plus island's once-used edges.
     const { geometry, report } = bakeGeometries([
       placed(new BoxGeometry(2, 1, 2), new Matrix4().makeTranslation(1, -0.5, 1)),
-      placed(prism([[0, 0], [2, 0], [1, 0.3]], [[0, 1, 2]], -0.2, 0), new Matrix4()),
-      placed(prism([[0, 0], [1, 0.3], [2, 0], [2, 2], [0, 2]], [[1, 2, 3], [1, 3, 4], [1, 4, 0]], 0, 1), new Matrix4()),
+      placed(
+        prism(
+          [
+            [0, 0],
+            [2, 0],
+            [1, 0.3],
+          ],
+          [[0, 1, 2]],
+          -0.2,
+          0,
+        ),
+        new Matrix4(),
+      ),
+      placed(
+        prism(
+          [
+            [0, 0],
+            [1, 0.3],
+            [2, 0],
+            [2, 2],
+            [0, 2],
+          ],
+          [
+            [1, 2, 3],
+            [1, 3, 4],
+            [1, 4, 0],
+          ],
+          0,
+          1,
+        ),
+        new Matrix4(),
+      ),
     ]);
     const hit = hitFromAbove(geometry, 1, 0.1);
     expect(hit, 'nothing covers the prism top triangle: the tops there must stay').toBeDefined();
@@ -533,10 +698,16 @@ describe('bakeGeometries: outlines of overlapping or non-manifold islands, shado
     ['casts shadows', { castShadow: true }],
     ['has no castShadow flag', { castShadow: undefined }],
   ] as Array<[string, Partial<BakeEntry>]>)('removes no buried face of a module that %s', (_label, extra) => {
-    expect(bakeGeometries([box(0, 1), box(0, 0.2, extra)], { removeBuried: { distance: 1 } }).report.buriedFaces).toBe(0);
+    expect(bakeGeometries([box(0, 1), box(0, 0.2, extra)], { removeBuried: { distance: 1 } }).report.buriedFaces).toBe(
+      0,
+    );
   });
 
-  const card = (facingTheBox: boolean): BakeEntry => placed(new PlaneGeometry(10, 10), new Matrix4().makeTranslation(0, 0, 0.55).multiply(new Matrix4().makeRotationY(facingTheBox ? Math.PI : 0)));
+  const card = (facingTheBox: boolean): BakeEntry =>
+    placed(
+      new PlaneGeometry(10, 10),
+      new Matrix4().makeTranslation(0, 0, 0.55).multiply(new Matrix4().makeRotationY(facingTheBox ? Math.PI : 0)),
+    );
 
   it("does not bury a face behind a front-side card that faces it: a viewer beyond sees through the card's culled back", () => {
     expect(bakeGeometries([box(0), card(true)], { removeBuried: true }).report.buriedFaces).toBe(0);
@@ -551,7 +722,10 @@ describe('bakeGeometries: outlines of overlapping or non-manifold islands, shado
     ['back-side', { side: BackSide }],
     ['shadow-casting', { castShadow: true }],
   ] as Array<[string, Partial<BakeEntry>]>)('keeps both exact copies when one of them is %s', (_label, extra) => {
-    for (const entries of [[box(0), box(0, 1, extra)], [box(0, 1, extra), box(0)]]) {
+    for (const entries of [
+      [box(0), box(0, 1, extra)],
+      [box(0, 1, extra), box(0)],
+    ]) {
       const { report } = bakeGeometries(entries);
       expect(report.duplicateFaces).toBe(0);
       expect(report.triangles).toBe(24);
@@ -585,7 +759,9 @@ describe('bakeGeometries duplicate rule: a copy goes only when every coincident 
     const n = g.attributes.normal!;
     const v = new Vector3();
     for (let i = 0; i < n.count; i++) {
-      v.fromBufferAttribute(n, i).add(new Vector3(0.3, 0.3, 0)).normalize();
+      v.fromBufferAttribute(n, i)
+        .add(new Vector3(0.3, 0.3, 0))
+        .normalize();
       n.setXYZ(i, v.x, v.y, v.z);
     }
     return g;
@@ -618,22 +794,39 @@ describe('bakeGeometries duplicate rule: a copy goes only when every coincident 
   });
 
   it('keeps all three copies when the middle one differs: removing the last would show the middle one', () => {
-    const { report } = bakeGeometries([box(0, 1, { color: red }), box(0, 1, { color: blue }), box(0, 1, { color: red })]);
+    const { report } = bakeGeometries([
+      box(0, 1, { color: red }),
+      box(0, 1, { color: blue }),
+      box(0, 1, { color: red }),
+    ]);
     expect(report.duplicateFaces).toBe(0);
     expect(report.keptDuplicateFaces).toBe(36);
     expect(report.triangles).toBe(36);
   });
 
   it('keeps both removable copies when an excluded entry (bake: false) draws the same triangles between them', () => {
-    const { report } = bakeGeometries([box(0, 1, { color: green }), box(0, 1, { color: blue, bake: false }), box(0, 1, { color: green })]);
+    const { report } = bakeGeometries([
+      box(0, 1, { color: green }),
+      box(0, 1, { color: blue, bake: false }),
+      box(0, 1, { color: green }),
+    ]);
     expect(report.duplicateFaces).toBe(0);
     expect(report.keptDuplicateFaces).toBe(24);
     expect(report.triangles).toBe(36);
   });
 
   it('keeps both removable copies when a double-sided copy with the opposite winding draws the same triangle', () => {
-    const quad = (reversed: boolean, extra: Partial<BakeEntry>): BakeEntry => ({ ...box(0), geometry: new PlaneGeometry(1, 1), matrix: new Matrix4().makeRotationY(reversed ? Math.PI : 0), ...extra });
-    const { report } = bakeGeometries([quad(false, { color: green }), quad(true, { color: blue, side: DoubleSide, doubleSided: true }), quad(false, { color: green })]);
+    const quad = (reversed: boolean, extra: Partial<BakeEntry>): BakeEntry => ({
+      ...box(0),
+      geometry: new PlaneGeometry(1, 1),
+      matrix: new Matrix4().makeRotationY(reversed ? Math.PI : 0),
+      ...extra,
+    });
+    const { report } = bakeGeometries([
+      quad(false, { color: green }),
+      quad(true, { color: blue, side: DoubleSide, doubleSided: true }),
+      quad(false, { color: green }),
+    ]);
     expect(report.duplicateFaces).toBe(0);
     expect(report.keptDuplicateFaces).toBe(4);
     expect(report.triangles).toBe(6);
@@ -645,7 +838,16 @@ describe('bakeGeometries duplicate rule: a copy goes only when every coincident 
     const uv = Array.from(g.attributes.uv!.array as Float32Array);
     const doubled = new BufferGeometry();
     doubled.setAttribute('position', new Float32BufferAttribute([...position, ...position], 3));
-    doubled.setAttribute('normal', new Float32BufferAttribute([...Array.from(g.attributes.normal!.array as Float32Array), ...Array.from(g.attributes.normal!.array as Float32Array)], 3));
+    doubled.setAttribute(
+      'normal',
+      new Float32BufferAttribute(
+        [
+          ...Array.from(g.attributes.normal!.array as Float32Array),
+          ...Array.from(g.attributes.normal!.array as Float32Array),
+        ],
+        3,
+      ),
+    );
     doubled.setAttribute('uv', new Float32BufferAttribute([...uv, ...uv.map((u) => u * 0.5)], 2));
     const index = Array.from(g.index!.array);
     doubled.setIndex([...index, ...index.map((i) => i + 4)]);
@@ -656,7 +858,11 @@ describe('bakeGeometries duplicate rule: a copy goes only when every coincident 
   });
 
   it('keeps the copies when a triangle of another triangulation lies over them in between: removing the last would show it', () => {
-    const { report } = bakeGeometries([box(0, 1, { color: red }), box(0, 1, { color: blue, geometry: retriangulated(new BoxGeometry(1, 1, 1), FACE.py) }), box(0, 1, { color: red })]);
+    const { report } = bakeGeometries([
+      box(0, 1, { color: red }),
+      box(0, 1, { color: blue, geometry: retriangulated(new BoxGeometry(1, 1, 1), FACE.py) }),
+      box(0, 1, { color: red }),
+    ]);
     // Every face but +y is on the same points in all three: those copies differ in tint. The +y face of the first and
     // last copies is interchangeable, but the retriangulated blue face lies over it.
     expect(report.duplicateFaces).toBe(0);
@@ -671,7 +877,9 @@ describe('bakeGeometries duplicate rule: a copy goes only when every coincident 
   });
 
   it('counts kept duplicates only while the duplicate rule is on', () => {
-    const { report } = bakeGeometries([box(0, 1, { color: red }), box(0, 1, { color: blue })], { removeDuplicateFaces: false });
+    const { report } = bakeGeometries([box(0, 1, { color: red }), box(0, 1, { color: blue })], {
+      removeDuplicateFaces: false,
+    });
     expect(report.duplicateFaces).toBe(0);
     expect(report.keptDuplicateFaces).toBe(0);
   });
@@ -680,13 +888,23 @@ describe('bakeGeometries duplicate rule: a copy goes only when every coincident 
 describe('unbakeableAttribute: what the bake carries faithfully', () => {
   const withAttribute = (name: string, itemSize: number): BufferGeometry => {
     const g = new BoxGeometry(1, 1, 1);
-    g.setAttribute(name, new Float32BufferAttribute(new Float32Array(g.attributes.position!.count * itemSize).fill(0.5), itemSize));
+    g.setAttribute(
+      name,
+      new Float32BufferAttribute(new Float32Array(g.attributes.position!.count * itemSize).fill(0.5), itemSize),
+    );
     return g;
   };
 
   it('accepts position, normal, a three- or four-component tangent, uv to uv3 and a three-component colour', () => {
     expect(unbakeableAttribute(new BoxGeometry(1, 1, 1))).toBeNull();
-    for (const [name, size] of [['tangent', 4], ['tangent', 3], ['uv1', 2], ['uv2', 2], ['uv3', 2], ['color', 3]] as Array<[string, number]>) {
+    for (const [name, size] of [
+      ['tangent', 4],
+      ['tangent', 3],
+      ['uv1', 2],
+      ['uv2', 2],
+      ['uv3', 2],
+      ['color', 3],
+    ] as Array<[string, number]>) {
       expect(unbakeableAttribute(withAttribute(name, size)), `${name}:${size}`).toBeNull();
     }
   });
@@ -697,13 +915,22 @@ describe('unbakeableAttribute: what the bake carries faithfully', () => {
     expect(unbakeableAttribute(withAttribute('color', 4), false, true)).toBeNull();
   });
 
-  it('names a colour its vertexColors flag ignores unless three\'s own code is all that reads the geometry (an allowlist)', () => {
+  it("names a colour its vertexColors flag ignores unless three's own code is all that reads the geometry (an allowlist)", () => {
     for (const size of [3, 4]) {
-      expect(unbakeableAttribute(withAttribute('color', size), false, true), `color:${size}, built-in reads`).toBeNull();
-      expect(unbakeableAttribute(withAttribute('color', size), false, false), `color:${size}, a node graph may read it`).toBe('color');
+      expect(
+        unbakeableAttribute(withAttribute('color', size), false, true),
+        `color:${size}, built-in reads`,
+      ).toBeNull();
+      expect(
+        unbakeableAttribute(withAttribute('color', size), false, false),
+        `color:${size}, a node graph may read it`,
+      ).toBe('color');
       expect(unbakeableAttribute(withAttribute('color', size), false), `color:${size}, reads not stated`).toBe('color');
     }
-    expect(unbakeableAttribute(withAttribute('color', 3), true, false), 'a three-component colour the flag reads is carried').toBeNull();
+    expect(
+      unbakeableAttribute(withAttribute('color', 3), true, false),
+      'a three-component colour the flag reads is carried',
+    ).toBeNull();
   });
 
   it('names an attribute outside the carried set, and a carried one with another item size', () => {

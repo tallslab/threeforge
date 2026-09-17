@@ -3,8 +3,42 @@
 import { computeResultId } from './bench-id.mjs';
 
 export const SCENE_IDS = ['village', 'forest', 'crowd', 'bossfight', 'lake', 'daynight', 'zen', 'rpg'];
-export const METRIC_KEYS = ['sceneSubmissions', 'gpuDraws', 'triangles', 'programs', 'overdrawOpaque', 'overdrawTransparent', 'skinnedVertices', 'shadowCasters', 'shadowTexels', 'textureBytes', 'geometryBytes', 'renderTargetBytes', 'particles', 'fillMegapixels', 'objects', 'autoUpdatedMatrices', 'shadowPassesPerFrame', 'renderMs', 'frameMs', 'unattributed'];
-export const ENV_KEYS = ['three', 'backend', 'multiDraw', 'tier', 'gpu', 'dpr', 'viewport', 'ua', 'platform', 'cores', 'deviceMemory', 'fillRateGPix'];
+export const METRIC_KEYS = [
+  'sceneSubmissions',
+  'gpuDraws',
+  'triangles',
+  'programs',
+  'overdrawOpaque',
+  'overdrawTransparent',
+  'skinnedVertices',
+  'shadowCasters',
+  'shadowTexels',
+  'textureBytes',
+  'geometryBytes',
+  'renderTargetBytes',
+  'particles',
+  'fillMegapixels',
+  'objects',
+  'autoUpdatedMatrices',
+  'shadowPassesPerFrame',
+  'renderMs',
+  'frameMs',
+  'unattributed',
+];
+export const ENV_KEYS = [
+  'three',
+  'backend',
+  'multiDraw',
+  'tier',
+  'gpu',
+  'dpr',
+  'viewport',
+  'ua',
+  'platform',
+  'cores',
+  'deviceMemory',
+  'fillRateGPix',
+];
 const MAX_STRING = 200;
 const ID = /^\d{4}-\d{2}-\d{2}-[a-z0-9]{8}$/;
 // Strict `now.toISOString()` shape: no other Date.parse-accepted spelling (which admits garbage like
@@ -25,12 +59,16 @@ function keysExactly(obj, keys, path, errors) {
   for (const k of keys) if (!Object.hasOwn(obj, k)) errors.push(`${path}.${JSON.stringify(k)}: missing`);
 }
 function num(v, path, errors, { max = 1e12 } = {}) {
-  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > max) errors.push(`${path}: expected a finite number in [0, ${max}]`);
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > max)
+    errors.push(`${path}: expected a finite number in [0, ${max}]`);
 }
 /** A safe string: at most MAX_STRING printable ASCII characters, no `|`, backtick or newline. Returns whether it's valid. */
 function str(v, path, errors) {
   const ok = typeof v === 'string' && v.length <= MAX_STRING && SAFE_STRING.test(v);
-  if (!ok) errors.push(`${path}: expected a string of at most ${MAX_STRING} printable ASCII characters, without | or a backtick`);
+  if (!ok)
+    errors.push(
+      `${path}: expected a string of at most ${MAX_STRING} printable ASCII characters, without | or a backtick`,
+    );
   return ok;
 }
 
@@ -48,7 +86,8 @@ function str(v, path, errors) {
 export function expandWire(value) {
   if (!isObject(value) || !Object.hasOwn(value, 'metricKeys')) return { value };
   const keys = value.metricKeys;
-  if (!Array.isArray(keys) || keys.length !== METRIC_KEYS.length || keys.some((k, i) => k !== METRIC_KEYS[i])) return { error: 'metricKeys: expected exactly the 20 metric keys in order' };
+  if (!Array.isArray(keys) || keys.length !== METRIC_KEYS.length || keys.some((k, i) => k !== METRIC_KEYS[i]))
+    return { error: 'metricKeys: expected exactly the 20 metric keys in order' };
   const scenes = Object.create(null);
   if (isObject(value.scenes)) {
     for (const [id, block] of Object.entries(value.scenes)) {
@@ -62,7 +101,8 @@ export function expandWire(value) {
           expanded[variant] = arr;
           continue;
         }
-        if (arr.length !== keys.length) return { error: `scenes.${JSON.stringify(id)}.${JSON.stringify(variant)}: expected ${keys.length} values` };
+        if (arr.length !== keys.length)
+          return { error: `scenes.${JSON.stringify(id)}.${JSON.stringify(variant)}: expected ${keys.length} values` };
         expanded[variant] = Object.fromEntries(keys.map((k, i) => [k, arr[i]]));
       }
       scenes[id] = expanded;
@@ -84,7 +124,11 @@ export function validateDeviceResult(input) {
   if (value.kind !== 'device') errors.push("result.kind: expected 'device'");
   const idFormatOk = typeof value.id === 'string' && ID.test(value.id);
   if (!idFormatOk) errors.push('result.id: expected YYYY-MM-DD-xxxxxxxx');
-  const createdAtOk = typeof value.createdAt === 'string' && ISO_CREATED_AT.test(value.createdAt) && !Number.isNaN(Date.parse(value.createdAt)) && new Date(value.createdAt).toISOString() === value.createdAt;
+  const createdAtOk =
+    typeof value.createdAt === 'string' &&
+    ISO_CREATED_AT.test(value.createdAt) &&
+    !Number.isNaN(Date.parse(value.createdAt)) &&
+    new Date(value.createdAt).toISOString() === value.createdAt;
   if (!createdAtOk) errors.push('result.createdAt: expected a strict ISO 8601 date-time (YYYY-MM-DDTHH:mm:ss.sssZ)');
   let envIdFieldsOk = false;
   if (isObject(value.env)) {
@@ -110,7 +154,8 @@ export function validateDeviceResult(input) {
   // reports as exactly that, not also as a confusing "id doesn't match" pile-on.
   if (idFormatOk && createdAtOk && envIdFieldsOk) {
     const expectedId = computeResultId(value.env, value.createdAt.slice(0, 10));
-    if (value.id !== expectedId) errors.push(`result.id: expected ${JSON.stringify(expectedId)} from createdAt and env`);
+    if (value.id !== expectedId)
+      errors.push(`result.id: expected ${JSON.stringify(expectedId)} from createdAt and env`);
   }
   if (isObject(value.scenes)) {
     keysExactly(value.scenes, SCENE_IDS, 'scenes', errors);
@@ -128,8 +173,10 @@ export function validateDeviceResult(input) {
           continue;
         }
         keysExactly(m, METRIC_KEYS, `scenes.${JSON.stringify(id)}.${JSON.stringify(variant)}`, errors);
-        for (const k of METRIC_KEYS) if (Object.hasOwn(m, k)) num(m[k], `scenes.${JSON.stringify(id)}.${JSON.stringify(variant)}.${k}`, errors);
-        if (m.unattributed !== 0) errors.push(`scenes.${JSON.stringify(id)}.${JSON.stringify(variant)}.unattributed: must be 0`);
+        for (const k of METRIC_KEYS)
+          if (Object.hasOwn(m, k)) num(m[k], `scenes.${JSON.stringify(id)}.${JSON.stringify(variant)}.${k}`, errors);
+        if (m.unattributed !== 0)
+          errors.push(`scenes.${JSON.stringify(id)}.${JSON.stringify(variant)}.unattributed: must be 0`);
       }
     }
   } else errors.push('scenes: expected an object');

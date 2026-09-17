@@ -104,13 +104,25 @@ describe('assertConfinedUri', () => {
 
 describe('assertConfinedUris', () => {
   it('checks every image and buffer URI and says which one failed', () => {
-    expect(() => assertConfinedUris({ images: [{ uri: 'a.png' }, { uri: '../../secret.png' }] }, base)).toThrow(/images\[1\]\.uri/);
-    expect(() => assertConfinedUris({ buffers: [{ uri: 'data:application/octet-stream;base64,AAAA' }, { uri: '/etc/passwd' }] }, base)).toThrow(/buffers\[1\]\.uri/);
+    expect(() => assertConfinedUris({ images: [{ uri: 'a.png' }, { uri: '../../secret.png' }] }, base)).toThrow(
+      /images\[1\]\.uri/,
+    );
+    expect(() =>
+      assertConfinedUris(
+        { buffers: [{ uri: 'data:application/octet-stream;base64,AAAA' }, { uri: '/etc/passwd' }] },
+        base,
+      ),
+    ).toThrow(/buffers\[1\]\.uri/);
   });
 
   it('ignores entries without a URI (GLB-embedded images, the GLB buffer)', () => {
     expect(() => assertConfinedUris({}, base)).not.toThrow();
-    expect(() => assertConfinedUris({ images: [{ bufferView: 0, mimeType: 'image/png' }, { uri: '' }], buffers: [{ byteLength: 4 }] }, base)).not.toThrow();
+    expect(() =>
+      assertConfinedUris(
+        { images: [{ bufferView: 0, mimeType: 'image/png' }, { uri: '' }], buffers: [{ byteLength: 4 }] },
+        base,
+      ),
+    ).not.toThrow();
   });
 
   it('refuses images or buffers that are not arrays', () => {
@@ -127,12 +139,21 @@ describe('readGltfJson', () => {
   };
 
   it('parses a .gltf file', () => {
-    const file = write('scene.gltf', JSON.stringify({ asset: { version: '2.0' }, images: [{ uri: '../../secret.png' }] }));
+    const file = write(
+      'scene.gltf',
+      JSON.stringify({ asset: { version: '2.0' }, images: [{ uri: '../../secret.png' }] }),
+    );
     expect(readGltfJson(file)).toMatchObject({ images: [{ uri: '../../secret.png' }] });
   });
 
   it("reads a .glb's JSON chunk and ignores the binary chunk after it", () => {
-    const file = write('scene.glb', glbBytes({ asset: { version: '2.0' }, buffers: [{ uri: '../x.bin', byteLength: 4 }] }, { bin: new Uint8Array([1, 2, 3, 4]) }));
+    const file = write(
+      'scene.glb',
+      glbBytes(
+        { asset: { version: '2.0' }, buffers: [{ uri: '../x.bin', byteLength: 4 }] },
+        { bin: new Uint8Array([1, 2, 3, 4]) },
+      ),
+    );
     expect(readGltfJson(file)).toMatchObject({ buffers: [{ uri: '../x.bin' }] });
   });
 
@@ -145,8 +166,12 @@ describe('readGltfJson', () => {
     const truncated = glbBytes({ asset: { version: '2.0' }, images: [] });
     expect(() => readGltfJson(write('bad.gltf', '{ nope'))).toThrow(UsageError);
     expect(() => readGltfJson(write('array.gltf', '[]'))).toThrow(UsageError);
-    expect(() => readGltfJson(write('bin-first.glb', glbBytes({ asset: { version: '2.0' } }, { chunkType: CHUNK_BIN })))).toThrow(/JSON chunk/);
-    expect(() => readGltfJson(write('truncated.glb', truncated.subarray(0, truncated.length - 8)))).toThrow(/JSON chunk/);
+    expect(() =>
+      readGltfJson(write('bin-first.glb', glbBytes({ asset: { version: '2.0' } }, { chunkType: CHUNK_BIN }))),
+    ).toThrow(/JSON chunk/);
+    expect(() => readGltfJson(write('truncated.glb', truncated.subarray(0, truncated.length - 8)))).toThrow(
+      /JSON chunk/,
+    );
     expect(() => readGltfJson(write('short.glb', truncated.subarray(0, 16)))).toThrow(UsageError);
     expect(() => readGltfJson(join(base, 'missing.gltf'))).toThrow(UsageError);
   });

@@ -53,15 +53,18 @@ export function readGltfJson(file: string): Record<string, unknown> {
     const header = readExactly(fd, 0, Math.min(20, size));
     let bytes: Buffer;
     if (header.length >= 12 && header.readUInt32LE(0) === GLB_MAGIC && header.readUInt32LE(4) === GLB_VERSION) {
-      if (header.length < 20 || header.readUInt32LE(16) !== CHUNK_JSON) throw new UsageError(`cannot read ${file}: the GLB does not start with a JSON chunk`);
+      if (header.length < 20 || header.readUInt32LE(16) !== CHUNK_JSON)
+        throw new UsageError(`cannot read ${file}: the GLB does not start with a JSON chunk`);
       const length = header.readUInt32LE(12);
-      if (20 + length > size) throw new UsageError(`cannot read ${file}: the GLB JSON chunk runs past the end of the file`);
+      if (20 + length > size)
+        throw new UsageError(`cannot read ${file}: the GLB JSON chunk runs past the end of the file`);
       bytes = readExactly(fd, 20, length);
     } else {
       bytes = readExactly(fd, 0, size);
     }
     const json: unknown = JSON.parse(new TextDecoder().decode(bytes));
-    if (typeof json !== 'object' || json === null || Array.isArray(json)) throw new UsageError(`cannot read ${file}: the glTF JSON is not an object`);
+    if (typeof json !== 'object' || json === null || Array.isArray(json))
+      throw new UsageError(`cannot read ${file}: the glTF JSON is not an object`);
     return json as Record<string, unknown>;
   } catch (error) {
     if (error instanceof UsageError) throw error;
@@ -82,7 +85,8 @@ export function assertConfinedUris(json: { images?: unknown; buffers?: unknown }
     if (!list) continue; // glTF-Transform reads `json.images || []`.
     if (!Array.isArray(list)) throw new UsageError(`${key} must be an array`);
     list.forEach((entry: unknown, i) => {
-      if (entry !== null && typeof entry === 'object') assertConfinedUri((entry as { uri?: unknown }).uri, `${key}[${i}].uri`, baseDir);
+      if (entry !== null && typeof entry === 'object')
+        assertConfinedUri((entry as { uri?: unknown }).uri, `${key}[${i}].uri`, baseDir);
     });
   }
 }
@@ -129,7 +133,7 @@ export function resourcePathsOf(json: { images?: unknown; buffers?: unknown }, b
 export function assertConfinedUri(uri: unknown, where: string, baseDir: string): void {
   if (uri === undefined || uri === null || uri === '') return;
   if (typeof uri !== 'string') throw new UsageError(`${where} is not a string (got ${typeof uri})`);
-  const refuse = (problem: string): never => {
+  const refuse: (problem: string) => never = (problem) => {
     throw new UsageError(`${where} ${JSON.stringify(cleanText(uri, URI_QUOTE_MAX))} ${problem}`);
   };
   if (uri.startsWith('data:')) return;
@@ -138,7 +142,7 @@ export function assertConfinedUri(uri: unknown, where: string, baseDir: string):
   try {
     decoded = decodeURIComponent(uri);
   } catch {
-    return refuse('is not valid percent-encoding');
+    refuse('is not valid percent-encoding');
   }
   checkPathText(decoded, refuse);
   const base = resolve(baseDir);
@@ -147,7 +151,8 @@ export function assertConfinedUri(uri: unknown, where: string, baseDir: string):
   const realTarget = realPathOf(target);
   if (realTarget === null) refuse('is a symlink that cannot be resolved');
   const realBase = realPathOf(base);
-  if (realBase === null || !isInside(realBase, realTarget as string)) refuse(`resolves outside ${baseDir} through a symlink`);
+  if (realBase === null || !isInside(realBase, realTarget as string))
+    refuse(`resolves outside ${baseDir} through a symlink`);
 }
 
 function checkPathText(text: string, refuse: (problem: string) => never): void {

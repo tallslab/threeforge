@@ -11,7 +11,10 @@ function chunkHeader(length: number, type: number): Buffer {
 }
 
 /** A glTF 2.0 binary built by hand: header, a space-padded first chunk (JSON unless `chunkType` says otherwise), then an optional BIN chunk. */
-export function glbBytes(json: unknown, { chunkType = CHUNK_JSON, bin }: { chunkType?: number; bin?: Uint8Array } = {}): Buffer {
+export function glbBytes(
+  json: unknown,
+  { chunkType = CHUNK_JSON, bin }: { chunkType?: number; bin?: Uint8Array } = {},
+): Buffer {
   const text = Buffer.from(JSON.stringify(json));
   const jsonData = Buffer.concat([text, Buffer.alloc((4 - (text.length % 4)) % 4, 0x20)]);
   const chunks = [chunkHeader(jsonData.length, chunkType), jsonData];

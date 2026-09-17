@@ -1,4 +1,4 @@
-import { Vector3, type Camera, type Mesh, type Object3D, type Texture } from 'three';
+import { type Camera, type Mesh, type Object3D, type Texture, Vector3 } from 'three';
 import type { World } from '../compiler/World.js';
 import { collectResources, emptyResourceSets, type ResourceSets } from '../memory/resources.js';
 import { tag } from '../tags.js';
@@ -79,7 +79,8 @@ export class Streamer {
       const cell = key.split(',').map(Number) as [number, number, number];
       for (const object of objects) this.place(object, cell);
     }
-    for (const child of [...options.world.scene.children]) if (this.streamable(child)) this.place(child, this.cellOf(child));
+    for (const child of [...options.world.scene.children])
+      if (this.streamable(child)) this.place(child, this.cellOf(child));
   }
 
   /** Static meshes the compiler left as their own draws; compiled originals and outputs are handled through the index. */
@@ -109,7 +110,8 @@ export class Streamer {
     }
     const key = cell.join(',');
     let chunk = this.chunks.get(key);
-    if (!chunk) this.chunks.set(key, (chunk = { key, cell, placed: [], resources: emptyResourceSets(), resident: true }));
+    if (!chunk)
+      this.chunks.set(key, (chunk = { key, cell, placed: [], resources: emptyResourceSets(), resident: true }));
     chunk.placed.push({ object, parent: object.parent });
     this.index.set(object, chunk);
     collectResources(object, chunk.resources);
@@ -162,13 +164,20 @@ export class Streamer {
     chunk.resident = false;
     this.unloads++;
     const resident = [...this.chunks.values()].filter((c) => c.resident);
-    const held = <T>(pick: (s: ResourceSets) => Set<T>, item: T): boolean => resident.some((c) => pick(c.resources).has(item));
+    const held = <T>(pick: (s: ResourceSets) => Set<T>, item: T): boolean =>
+      resident.some((c) => pick(c.resources).has(item));
     for (const g of chunk.resources.geometries) if (!held((s) => s.geometries, g)) g.dispose();
     for (const t of chunk.resources.textures) if (!held((s) => s.textures, t)) t.dispose();
     for (const p of chunk.placed) {
       // BatchedMesh.dispose() nulls these; disposing them directly frees the GPU copies and three re-uploads on the next render.
-      const batch = p.object as Object3D & { isBatchedMesh?: boolean; _matricesTexture?: Texture | null; _indirectTexture?: Texture | null; _colorsTexture?: Texture | null };
-      if (batch.isBatchedMesh) for (const t of [batch._matricesTexture, batch._indirectTexture, batch._colorsTexture]) t?.dispose();
+      const batch = p.object as Object3D & {
+        isBatchedMesh?: boolean;
+        _matricesTexture?: Texture | null;
+        _indirectTexture?: Texture | null;
+        _colorsTexture?: Texture | null;
+      };
+      if (batch.isBatchedMesh)
+        for (const t of [batch._matricesTexture, batch._indirectTexture, batch._colorsTexture]) t?.dispose();
     }
     this.emit({ kind: 'unload', cell: chunk.cell, objects: chunk.placed.map((p) => p.object) });
   }

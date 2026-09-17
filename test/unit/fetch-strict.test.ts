@@ -14,13 +14,20 @@ import { downloadFailures, strictExitCode } from '../../scripts/fetch-strict.mjs
  */
 describe('downloadFailures', () => {
   it('names every entry that records an error, in index order, and nothing else', () => {
-    const index = [{ name: 'Fox', entry: 'Fox/Fox.glb' }, { name: 'Buggy', error: '404 https://x/Buggy.glb' }, { name: 'kenney-car-kit', kind: 'kit', error: '503' }];
+    const index = [
+      { name: 'Fox', entry: 'Fox/Fox.glb' },
+      { name: 'Buggy', error: '404 https://x/Buggy.glb' },
+      { name: 'kenney-car-kit', kind: 'kit', error: '503' },
+    ];
     expect(downloadFailures(index)).toEqual(['Buggy: 404 https://x/Buggy.glb', 'kenney-car-kit: 503']);
   });
 
   it('is empty for a clean index and tolerates malformed rows', () => {
     expect(downloadFailures([{ name: 'Fox' }])).toEqual([]);
-    expect(downloadFailures([null, 7, { error: 'no name' }, { name: 'A', error: '' }] as unknown[])).toEqual(['(unnamed): no name', 'A: (no message)']);
+    expect(downloadFailures([null, 7, { error: 'no name' }, { name: 'A', error: '' }] as unknown[])).toEqual([
+      '(unnamed): no name',
+      'A: (no message)',
+    ]);
   });
 });
 
@@ -67,12 +74,19 @@ describe('fetch-assets.mjs, run for real against a port nothing listens on', () 
     symlinkSync(resolve('node_modules'), join(dir, 'node_modules'), 'dir');
     mkdirSync(join(dir, 'test/assets'), { recursive: true });
     const url = `http://127.0.0.1:${await closedPort()}/Nope/Nope.glb`;
-    writeFileSync(join(dir, 'test/assets/manifest.json'), JSON.stringify({ assets: [{ name: 'Nope', url, source: 'test', tags: [] }] }));
+    writeFileSync(
+      join(dir, 'test/assets/manifest.json'),
+      JSON.stringify({ assets: [{ name: 'Nope', url, source: 'test', tags: [] }] }),
+    );
     return dir;
   }
 
   function run(cwd: string, env: NodeJS.ProcessEnv): { status: number | null; out: string } {
-    const r = spawnSync(process.execPath, [resolve('scripts/fetch-assets.mjs')], { cwd, encoding: 'utf8', env: { ...process.env, ...env } });
+    const r = spawnSync(process.execPath, [resolve('scripts/fetch-assets.mjs')], {
+      cwd,
+      encoding: 'utf8',
+      env: { ...process.env, ...env },
+    });
     return { status: r.status, out: `${r.stdout}${r.stderr}` };
   }
 
@@ -80,7 +94,11 @@ describe('fetch-assets.mjs, run for real against a port nothing listens on', () 
     const dir = await sandbox();
     const r = run(dir, { FORGE_FETCH_STRICT: '' });
     expect(r.status, r.out).toBe(0);
-    const index = JSON.parse(readFileSync(join(dir, 'test/assets/files/index.json'), 'utf8')) as Array<{ name: string; entry: string; error?: string }>;
+    const index = JSON.parse(readFileSync(join(dir, 'test/assets/files/index.json'), 'utf8')) as Array<{
+      name: string;
+      entry: string;
+      error?: string;
+    }>;
     expect(index).toHaveLength(1);
     expect(index[0]).toMatchObject({ name: 'Nope', entry: 'Nope/Nope.glb' });
     expect(index[0]?.error).toBeTruthy();

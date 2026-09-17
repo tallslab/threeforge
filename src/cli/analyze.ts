@@ -8,7 +8,7 @@ import { DEFAULT_PARITY } from './args.js';
 import { launchBrowser, type PlaywrightPage, type PlaywrightRoute } from './browser.js';
 import { PageError, UsageError } from './errors.js';
 import { assertConfinedUris, readGltfJson } from './gltf-uris.js';
-import { Resources, withTimeout, type CliDeps } from './lifecycle.js';
+import { type CliDeps, Resources, withTimeout } from './lifecycle.js';
 import { compileViaHook, evaluateWithin, measureViaHook, screenshotWithin, waitFor } from './measure.js';
 import { serveStatic } from './server.js';
 import type { AgentDocument, AnalyzeInput, AssetFacts, CliCompileReport, Parity } from './types.js';
@@ -18,7 +18,10 @@ import { verdictOf } from './verdict.js';
 /** The shipped harness page lives next to this module's directory: dist/cli/analyze.js -> dist/cli-app. */
 function cliAppDir(): string {
   const dir = fileURLToPath(new URL('../cli-app/', import.meta.url));
-  if (!existsSync(dir)) throw new PageError(`the harness page is missing at ${dir}; reinstall threeforge or run pnpm build in the repository`);
+  if (!existsSync(dir))
+    throw new PageError(
+      `the harness page is missing at ${dir}; reinstall threeforge or run pnpm build in the repository`,
+    );
   return dir;
 }
 
@@ -52,7 +55,11 @@ export function comparePixels(a: Buffer, b: Buffer): PixelComparison {
   let differing = 0;
   for (let i = 0; i < n; i++) {
     const o = i * 4;
-    const d = Math.max(Math.abs(pa.data[o]! - pb.data[o]!), Math.abs(pa.data[o + 1]! - pb.data[o + 1]!), Math.abs(pa.data[o + 2]! - pb.data[o + 2]!));
+    const d = Math.max(
+      Math.abs(pa.data[o]! - pb.data[o]!),
+      Math.abs(pa.data[o + 1]! - pb.data[o + 1]!),
+      Math.abs(pa.data[o + 2]! - pb.data[o + 2]!),
+    );
     if (d > 24) differing++;
   }
   return { changedPixels: differing, comparedPixels: n, diffPct: (100 * differing) / Math.max(1, n) };
@@ -81,14 +88,29 @@ export function parityOf(views: Parity['views'], threshold: number): Parity {
 }
 
 /** Screenshots of the default framing plus `views` orbit views (the page's `setView`), then back to the default. */
-async function captureViews(page: PlaywrightPage, views: number, timeout: number): Promise<Array<{ view: string; png: Buffer }>> {
+async function captureViews(
+  page: PlaywrightPage,
+  views: number,
+  timeout: number,
+): Promise<Array<{ view: string; png: Buffer }>> {
   const shots: Array<{ view: string; png: Buffer }> = [];
   for (let i = -1; i < views; i++) {
     const view = i < 0 ? 'default' : `orbit-${i}`;
-    await evaluateWithin(page, `rendering the ${view} view`, timeout, `(async () => { window.__threeforgeCli.setView(${i}, ${views}); for (let k = 0; k < 2; k++) await window.__threeforge.frameAsync(); })()`);
+    await evaluateWithin(
+      page,
+      `rendering the ${view} view`,
+      timeout,
+      `(async () => { window.__threeforgeCli.setView(${i}, ${views}); for (let k = 0; k < 2; k++) await window.__threeforge.frameAsync(); })()`,
+    );
     shots.push({ view, png: await screenshotWithin(page, `taking the ${view} screenshot`, timeout) });
   }
-  if (views > 0) await evaluateWithin(page, 'restoring the default view', timeout, `(async () => { window.__threeforgeCli.setView(-1, ${views}); await window.__threeforge.frameAsync(); })()`);
+  if (views > 0)
+    await evaluateWithin(
+      page,
+      'restoring the default view',
+      timeout,
+      `(async () => { window.__threeforgeCli.setView(-1, ${views}); await window.__threeforge.frameAsync(); })()`,
+    );
   return shots;
 }
 
@@ -103,8 +125,18 @@ export function bakeProgressLine(bake: BakeSummary): string {
 }
 
 async function waitReady(page: PlaywrightPage, timeout: number): Promise<AssetFacts> {
-  await waitFor(page, `!!(window.__threeforgeCli && (window.__threeforgeCli.ready === true || typeof window.__threeforgeCli.error === 'string'))`, timeout, 'the harness page did not become ready');
-  const facts = await evaluateWithin<{ ready: boolean; error?: string; asset?: AssetFacts }>(page, 'reading the harness state', timeout, `window.__threeforgeCli`);
+  await waitFor(
+    page,
+    `!!(window.__threeforgeCli && (window.__threeforgeCli.ready === true || typeof window.__threeforgeCli.error === 'string'))`,
+    timeout,
+    'the harness page did not become ready',
+  );
+  const facts = await evaluateWithin<{ ready: boolean; error?: string; asset?: AssetFacts }>(
+    page,
+    'reading the harness state',
+    timeout,
+    `window.__threeforgeCli`,
+  );
   if (!facts.ready || !facts.asset) throw new PageError(`harness failed: ${facts.error ?? 'unknown error'}`);
   return facts.asset;
 }
@@ -129,7 +161,11 @@ const BLOCKED_SAMPLE_MAX = 5;
  * The prefix test is on `${origin}/` as well as `origin` itself, so a host that merely *starts* with the served one
  * (`http://127.0.0.1:65123.attacker.example/`) is refused rather than matched.
  */
-export function routeGuard(origin: string): { handler: (route: PlaywrightRoute) => unknown; count: () => number; sample: () => string[] } {
+export function routeGuard(origin: string): {
+  handler: (route: PlaywrightRoute) => unknown;
+  count: () => number;
+  sample: () => string[];
+} {
   const sample = new Set<string>();
   let count = 0;
   return {
@@ -146,7 +182,12 @@ export function routeGuard(origin: string): { handler: (route: PlaywrightRoute) 
 }
 
 /** `analyzeAsset` plus the screenshots it took before compiling, so `optimize` can compare two files. */
-export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: string) => void = () => {}, wantShots = false, deps: CliDeps = {}): Promise<AnalysisWithShots> {
+export async function analyzeAssetWithShots(
+  input: AnalyzeInput,
+  log: (line: string) => void = () => {},
+  wantShots = false,
+  deps: CliDeps = {},
+): Promise<AnalysisWithShots> {
   const started = Date.now();
   const file = resolve(input.file);
   if (!existsSync(file) || !statSync(file).isFile()) throw new UsageError(`file not found: ${input.file}`);
@@ -177,7 +218,12 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
     await page.route('**/*', blocked.handler);
     const pageErrors: string[] = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
-    const q = new URLSearchParams({ file: `/asset/${basename(file)}`, backend: input.backend, tier: input.tier, ...(input.bake === 'off' ? {} : { bake: input.bake === 'buried' ? 'buried' : '1' }) });
+    const q = new URLSearchParams({
+      file: `/asset/${basename(file)}`,
+      backend: input.backend,
+      tier: input.tier,
+      ...(input.bake === 'off' ? {} : { bake: input.bake === 'buried' ? 'buried' : '1' }),
+    });
     log(`opening ${basename(file)} on ${input.backend}`);
     await page.goto(`${server.url}/?${q.toString()}`, { timeout: input.timeout, waitUntil: 'domcontentloaded' });
     const asset = await waitReady(page, input.timeout);
@@ -189,9 +235,16 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
     let parity: Parity | null = null;
     if (input.compile) {
       compile = await compileViaHook(page, input.timeout);
-      log(`compiled: ${compile.after.batches} batches, ${compile.after.instanced} instanced, ${compile.after.baked} baked, ${compile.skippedCount} skipped; measuring again`);
+      log(
+        `compiled: ${compile.after.batches} batches, ${compile.after.instanced} instanced, ${compile.after.baked} baked, ${compile.skippedCount} skipped; measuring again`,
+      );
       if (compile.bake) log(bakeProgressLine(compile.bake));
-      await evaluateWithin(page, 'rendering 3 frames after compile', input.timeout, `(async () => { for (let i = 0; i < 3; i++) await window.__threeforge.frameAsync(); })()`);
+      await evaluateWithin(
+        page,
+        'rendering 3 frames after compile',
+        input.timeout,
+        `(async () => { for (let i = 0; i < 3; i++) await window.__threeforge.frameAsync(); })()`,
+      );
       after = (await measureViaHook(page, input.frames, input.timeout)).snapshot;
       const shotsAfter = await captureViews(page, input.views, input.timeout);
       const views = shotsBefore.map((shot, i) => {
@@ -199,9 +252,15 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
         return { view: shot.view, diffPct: Number(diff.diffPct.toFixed(3)), changedPixels: diff.changedPixels };
       });
       parity = parityOf(views, threshold);
-      if (!parity.pass) log(`pixel parity lost: ${failingViews(views, threshold).map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct}%)`).join(', ')}`);
+      if (!parity.pass)
+        log(
+          `pixel parity lost: ${failingViews(views, threshold)
+            .map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct}%)`)
+            .join(', ')}`,
+        );
     }
-    if (blocked.count() > 0) log(`blocked ${blocked.count()} request(s) the page made outside ${server.url}: ${blocked.sample().join(', ')}`);
+    if (blocked.count() > 0)
+      log(`blocked ${blocked.count()} request(s) the page made outside ${server.url}: ${blocked.sample().join(', ')}`);
     if (pageErrors.length) log(`page errors: ${formatPageErrors(pageErrors)}`);
     const hints = (after ?? before.snapshot).hints;
     const verdict = verdictOf(after, before.snapshot, input.budget, parity, pageErrors);
@@ -226,6 +285,10 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
 }
 
 /** `threeforge analyze <file>`: render, measure, compile, measure again, compare pixels, judge. */
-export async function analyzeAsset(input: AnalyzeInput, log: (line: string) => void = () => {}, deps: CliDeps = {}): Promise<AgentDocument> {
+export async function analyzeAsset(
+  input: AnalyzeInput,
+  log: (line: string) => void = () => {},
+  deps: CliDeps = {},
+): Promise<AgentDocument> {
   return (await analyzeAssetWithShots(input, log, false, deps)).doc;
 }

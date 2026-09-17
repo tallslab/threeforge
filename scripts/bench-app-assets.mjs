@@ -20,7 +20,9 @@ const optional = process.env.FORGE_BENCH_APP_OPTIONAL === '1';
 /** Exits 1, or — under FORGE_BENCH_APP_OPTIONAL=1 — warns and returns `null` so the caller can skip that asset. */
 function fail(message) {
   if (optional) {
-    console.error(`bench-app assets: ${message}; continuing without it (FORGE_BENCH_APP_OPTIONAL=1). Scenes that need the kits fail closed.`);
+    console.error(
+      `bench-app assets: ${message}; continuing without it (FORGE_BENCH_APP_OPTIONAL=1). Scenes that need the kits fail closed.`,
+    );
     return null;
   }
   console.error(`bench-app assets: ${message}`);
@@ -53,7 +55,8 @@ for (const g of kit?.glbs ?? []) {
 writeFileSync(join(out, 'kits-index.json'), JSON.stringify(kit ? [kit] : []) + '\n');
 
 const water = 'waternormals/waternormals.jpg';
-const hasWater = existsSync(join(root, water)) || fail(`${join(root, water)} is missing; run: FORGE_KITS_ONLY=1 pnpm assets:kits`);
+const hasWater =
+  existsSync(join(root, water)) || fail(`${join(root, water)} is missing; run: FORGE_KITS_ONLY=1 pnpm assets:kits`);
 if (hasWater) {
   mkdirSync(join(out, 'waternormals'), { recursive: true });
   cpSync(join(root, water), join(out, water));
@@ -61,4 +64,6 @@ if (hasWater) {
 
 const devices = existsSync('bench/devices/index.json') ? readFileSync('bench/devices/index.json', 'utf8') : '[]\n';
 writeFileSync(join(out, 'devices.json'), devices);
-console.log(`bench-app assets: decoders, ${kit?.glbs.length ?? 0} characters, ${hasWater ? 1 : 0} water normals, ${JSON.parse(devices).length} device results → ${out}`);
+console.log(
+  `bench-app assets: decoders, ${kit?.glbs.length ?? 0} characters, ${hasWater ? 1 : 0} water normals, ${JSON.parse(devices).length} device results → ${out}`,
+);

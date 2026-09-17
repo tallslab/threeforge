@@ -36,7 +36,10 @@ describe('shadowPassIds', () => {
 
   it('moves numbered ids past the ones already taken, to the next free k each', () => {
     const taken = new Set(['shadow:lamp#1', 'shadow:lamp#3']);
-    expect(shadowPassIds([light('lamp', 'SpotLight'), light('lamp', 'SpotLight')], taken)).toEqual(['shadow:lamp#2', 'shadow:lamp#4']);
+    expect(shadowPassIds([light('lamp', 'SpotLight'), light('lamp', 'SpotLight')], taken)).toEqual([
+      'shadow:lamp#2',
+      'shadow:lamp#4',
+    ]);
   });
 
   it('adds every id it hands out to `taken`, so the next scene of the frame sees them', () => {

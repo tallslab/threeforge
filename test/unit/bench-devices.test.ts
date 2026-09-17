@@ -3,15 +3,61 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { readResults, renderDevices, writeDevices } from '../../scripts/bench-devices.mjs';
-import { extractJson, ingest } from '../../scripts/bench-ingest.mjs';
 import { computeResultId } from '../../scripts/bench-id.mjs';
+import { extractJson, ingest } from '../../scripts/bench-ingest.mjs';
 import { validateDeviceResult } from '../../scripts/bench-schema.mjs';
 
-const metrics = (n: number) => ({ sceneSubmissions: n, gpuDraws: n, triangles: 100, programs: 3, overdrawOpaque: 1, overdrawTransparent: 0.1, skinnedVertices: 0, shadowCasters: 0, shadowTexels: 0, textureBytes: 1, geometryBytes: 2, renderTargetBytes: 3, particles: 100, fillMegapixels: 0.5, objects: 500, autoUpdatedMatrices: 20, shadowPassesPerFrame: 1, renderMs: 1.5, frameMs: 16.7, unattributed: 0 });
-const scenes = Object.fromEntries(['village', 'forest', 'crowd', 'bossfight', 'lake', 'daynight', 'zen', 'rpg'].map((id) => [id, { naive: metrics(300), optimized: metrics(30) }]));
-const env = { three: '186', backend: 'webgpu' as const, multiDraw: false, tier: 'phone-mid' as const, gpu: 'Apple A16', dpr: 3, viewport: [390, 844] as [number, number], ua: 'Mozilla/5.0 (iPhone)', platform: 'iPhone', cores: 6, deviceMemory: null, fillRateGPix: 4.2 };
+const metrics = (n: number) => ({
+  sceneSubmissions: n,
+  gpuDraws: n,
+  triangles: 100,
+  programs: 3,
+  overdrawOpaque: 1,
+  overdrawTransparent: 0.1,
+  skinnedVertices: 0,
+  shadowCasters: 0,
+  shadowTexels: 0,
+  textureBytes: 1,
+  geometryBytes: 2,
+  renderTargetBytes: 3,
+  particles: 100,
+  fillMegapixels: 0.5,
+  objects: 500,
+  autoUpdatedMatrices: 20,
+  shadowPassesPerFrame: 1,
+  renderMs: 1.5,
+  frameMs: 16.7,
+  unattributed: 0,
+});
+const scenes = Object.fromEntries(
+  ['village', 'forest', 'crowd', 'bossfight', 'lake', 'daynight', 'zen', 'rpg'].map((id) => [
+    id,
+    { naive: metrics(300), optimized: metrics(30) },
+  ]),
+);
+const env = {
+  three: '186',
+  backend: 'webgpu' as const,
+  multiDraw: false,
+  tier: 'phone-mid' as const,
+  gpu: 'Apple A16',
+  dpr: 3,
+  viewport: [390, 844] as [number, number],
+  ua: 'Mozilla/5.0 (iPhone)',
+  platform: 'iPhone',
+  cores: 6,
+  deviceMemory: null,
+  fillRateGPix: 4.2,
+};
 const createdAt = '2026-09-14T10:00:00.000Z';
-const result = { schemaVersion: 1 as const, kind: 'device' as const, id: computeResultId(env, createdAt.slice(0, 10)), createdAt, env, scenes };
+const result = {
+  schemaVersion: 1 as const,
+  kind: 'device' as const,
+  id: computeResultId(env, createdAt.slice(0, 10)),
+  createdAt,
+  env,
+  scenes,
+};
 
 describe('validateDeviceResult', () => {
   it('accepts a complete result and rejects each kind of damage', () => {
@@ -34,10 +80,27 @@ describe('validateDeviceResult', () => {
 
   it('expands the wire form (metric arrays in metricKeys order) before validating', () => {
     const keys = Object.keys(metrics(1));
-    const wire = { ...result, metricKeys: keys, scenes: Object.fromEntries(Object.entries(scenes).map(([id, b]) => [id, { naive: keys.map((k) => (b.naive as Record<string, number>)[k]), optimized: keys.map((k) => (b.optimized as Record<string, number>)[k]) }])) };
+    const wire = {
+      ...result,
+      metricKeys: keys,
+      scenes: Object.fromEntries(
+        Object.entries(scenes).map(([id, b]) => [
+          id,
+          {
+            naive: keys.map((k) => (b.naive as Record<string, number>)[k]),
+            optimized: keys.map((k) => (b.optimized as Record<string, number>)[k]),
+          },
+        ]),
+      ),
+    };
     expect(validateDeviceResult(wire)).toEqual({ ok: true, result });
     expect(validateDeviceResult({ ...wire, metricKeys: keys.slice(1) }).ok).toBe(false);
-    expect(validateDeviceResult({ ...wire, scenes: { ...wire.scenes, zen: { naive: [1, 2], optimized: wire.scenes.zen!.optimized } } }).ok).toBe(false);
+    expect(
+      validateDeviceResult({
+        ...wire,
+        scenes: { ...wire.scenes, zen: { naive: [1, 2], optimized: wire.scenes.zen!.optimized } },
+      }).ok,
+    ).toBe(false);
   });
 
   it('rejects a createdAt that smuggles markup (must be strict ISO, not just Date.parse-able)', () => {
@@ -77,7 +140,8 @@ describe('validateDeviceResult', () => {
   it('accepts realistic GPU renderer strings and browser UAs (parentheses, semicolons, commas, slashes)', () => {
     const r = JSON.parse(JSON.stringify(result));
     r.env.gpu = 'ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)';
-    r.env.ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    r.env.ua =
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
     r.id = computeResultId(r.env, r.createdAt.slice(0, 10));
     expect(validateDeviceResult(r)).toEqual({ ok: true, result: r });
   });
@@ -87,7 +151,13 @@ describe('validateDeviceResult', () => {
     const withoutZen = Object.fromEntries(
       Object.entries(scenes)
         .filter(([id]) => id !== 'zen')
-        .map(([id, b]) => [id, { naive: keys.map((k) => (b.naive as Record<string, number>)[k]), optimized: keys.map((k) => (b.optimized as Record<string, number>)[k]) }]),
+        .map(([id, b]) => [
+          id,
+          {
+            naive: keys.map((k) => (b.naive as Record<string, number>)[k]),
+            optimized: keys.map((k) => (b.optimized as Record<string, number>)[k]),
+          },
+        ]),
     );
     const payload = { ...result, metricKeys: keys, scenes: withoutZen };
     // Shaped so that pre-fix code (bracket-assigning a scene id onto a fresh `{}`) hijacks the *actual* prototype
@@ -102,7 +172,7 @@ describe('validateDeviceResult', () => {
     // vulnerability is downstream code that re-assigns such a key onto a *fresh* `{}` via bracket notation.
     const poisoned = JSON.stringify(payload).replace('"scenes":{', `"scenes":{"__proto__":${protoBlock},`);
     const wire = JSON.parse(poisoned);
-    expect(Object.prototype.hasOwnProperty.call(wire.scenes, '__proto__')).toBe(true);
+    expect(Object.hasOwn(wire.scenes, '__proto__')).toBe(true);
 
     const v = validateDeviceResult(wire);
     expect(v.ok).toBe(false);
@@ -163,8 +233,18 @@ describe('ingest', () => {
         };
       };
       wrap(String.prototype, 'indexOf', () => counts.indexOf++);
-      for (const key of ['match', 'matchAll', 'replace', 'replaceAll', 'search', 'split'] as const) wrap(String.prototype, key, () => counts.wholeString++);
-      for (const key of ['exec', 'test', Symbol.match, Symbol.matchAll, Symbol.replace, Symbol.search, Symbol.split] as PropertyKey[]) wrap(RegExp.prototype, key, () => counts.wholeString++);
+      for (const key of ['match', 'matchAll', 'replace', 'replaceAll', 'search', 'split'] as const)
+        wrap(String.prototype, key, () => counts.wholeString++);
+      for (const key of [
+        'exec',
+        'test',
+        Symbol.match,
+        Symbol.matchAll,
+        Symbol.replace,
+        Symbol.search,
+        Symbol.split,
+      ] as PropertyKey[])
+        wrap(RegExp.prototype, key, () => counts.wholeString++);
       try {
         return { result: extractJson(body), ...counts };
       } finally {
@@ -186,7 +266,10 @@ describe('ingest', () => {
     const large = probe('```json' + ' \n'.repeat(30_000));
     expect(large.result, 'an unclosed fence yields nothing at any size').toBeNull();
     expect(large.wholeString, 'no regular expression ran').toBe(0);
-    expect(large.indexOf, `${small.indexOf} passes over a 23-character body, ${large.indexOf} over a 60,007-character one`).toBe(small.indexOf);
+    expect(
+      large.indexOf,
+      `${small.indexOf} passes over a 23-character body, ${large.indexOf} over a 60,007-character one`,
+    ).toBe(small.indexOf);
     // The same two passes still find a well-formed fence, so "no regex" has not been bought with a broken parser.
     const found = probe('lead\n```json\n{"a":1}\n```\ntail');
     expect(found.result).toBe('{"a":1}');
@@ -198,7 +281,12 @@ describe('ingest', () => {
 
 describe('renderDevices', () => {
   it('renders one row per result, low tier first, newest first within a device', () => {
-    const desktop = { ...result, id: '2026-09-13-desk0001', createdAt: '2026-09-13T10:00:00.000Z', env: { ...env, tier: 'desktop' as const, gpu: 'apple metal-3', backend: 'webgpu' as const } };
+    const desktop = {
+      ...result,
+      id: '2026-09-13-desk0001',
+      createdAt: '2026-09-13T10:00:00.000Z',
+      env: { ...env, tier: 'desktop' as const, gpu: 'apple metal-3', backend: 'webgpu' as const },
+    };
     const md = renderDevices([desktop, result]);
     const rows = md.split('\n').filter((l) => l.startsWith('| ') && !l.startsWith('| device'));
     expect(rows).toHaveLength(2);
@@ -236,7 +324,12 @@ describe('renderDevices', () => {
  * (backticks are banned by the schema, so a value cannot close its span), where GitHub renders nothing.
  */
 describe('renderDevices inline Markdown and HTML', () => {
-  const payloads = ['[Apple M2](https://phish.example)', '![x](https://x.example/p.png)', '<img src=https://x.example/p>', '<a href=https://phish.example>M2</a>'];
+  const payloads = [
+    '[Apple M2](https://phish.example)',
+    '![x](https://x.example/p.png)',
+    '<img src=https://x.example/p>',
+    '<a href=https://phish.example>M2</a>',
+  ];
 
   /** The row with every code span removed: what GitHub would still parse as Markdown or HTML. */
   const outsideCodeSpans = (row: string): string => row.replace(/`[^`]*`/g, '');
@@ -246,7 +339,9 @@ describe('renderDevices inline Markdown and HTML', () => {
       const hostile = { ...result, env: { ...env, gpu: payload, platform: payload } };
       const validated = validateDeviceResult({ ...hostile, id: computeResultId(hostile.env, createdAt.slice(0, 10)) });
       expect(validated.ok, JSON.stringify(validated)).toBe(true);
-      const row = renderDevices([hostile]).split('\n').find((l) => l.startsWith('| ') && !l.startsWith('| device'))!;
+      const row = renderDevices([hostile])
+        .split('\n')
+        .find((l) => l.startsWith('| ') && !l.startsWith('| device'))!;
       expect(row).toContain(`\`${payload}\``);
       const live = outsideCodeSpans(row);
       for (const marker of ['](', '![', '<', '>', 'http']) expect(live, `${payload}: ${marker}`).not.toContain(marker);
@@ -254,7 +349,9 @@ describe('renderDevices inline Markdown and HTML', () => {
   }
 
   it('cannot be closed early: a backtick in an unvalidated value is replaced, never ends the span', () => {
-    const row = renderDevices([{ ...result, env: { ...env, gpu: 'a`[x](https://phish.example)`b' } }]).split('\n').find((l) => l.startsWith('| ') && !l.startsWith('| device'))!;
+    const row = renderDevices([{ ...result, env: { ...env, gpu: 'a`[x](https://phish.example)`b' } }])
+      .split('\n')
+      .find((l) => l.startsWith('| ') && !l.startsWith('| device'))!;
     expect(outsideCodeSpans(row)).not.toContain('](');
   });
 });

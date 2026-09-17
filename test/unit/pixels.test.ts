@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { PNG } from 'pngjs';
+import { describe, expect, it } from 'vitest';
 import { comparePixels, pixelDiffPct } from '../../src/cli/analyze.js';
 import { differingPixels, pixelDiff } from '../e2e/pixels.js';
 
@@ -76,7 +76,19 @@ describe('pixelDiff', () => {
     const b = png(1, 1, [[0, 0, 0]]);
     expect(pixelDiff(a, b)).toBe(1);
     expect(pixelDiff(b, a)).toBe(1);
-    expect(pixelDiff(png(2, 1, [[0, 0, 0], [0, 0, 0]]), png(1, 2, [[0, 0, 0], [0, 0, 0]])), 'same pixel count, other shape').toBe(1);
+    expect(
+      pixelDiff(
+        png(2, 1, [
+          [0, 0, 0],
+          [0, 0, 0],
+        ]),
+        png(1, 2, [
+          [0, 0, 0],
+          [0, 0, 0],
+        ]),
+      ),
+      'same pixel count, other shape',
+    ).toBe(1);
   });
 });
 
@@ -213,7 +225,16 @@ describe('pixelDiffPct (the CLI parity tolerance)', () => {
     const b = png(1, 1, [[0, 0, 0]]);
     expect(comparePixels(a, b)).toEqual({ changedPixels: 2, comparedPixels: 2, diffPct: 100 });
     expect(comparePixels(b, a)).toEqual({ changedPixels: 2, comparedPixels: 2, diffPct: 100 });
-    expect(comparePixels(a, png(1, 2, [[0, 0, 0], [0, 0, 0]])), 'same pixel count, other shape').toEqual({ changedPixels: 2, comparedPixels: 2, diffPct: 100 });
+    expect(
+      comparePixels(
+        a,
+        png(1, 2, [
+          [0, 0, 0],
+          [0, 0, 0],
+        ]),
+      ),
+      'same pixel count, other shape',
+    ).toEqual({ changedPixels: 2, comparedPixels: 2, diffPct: 100 });
     expect(pixelDiffPct(a, b)).toBe(100);
   });
 });

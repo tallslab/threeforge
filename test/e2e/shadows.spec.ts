@@ -12,7 +12,13 @@ test('shadow passes are attributed per light and batches cast as one submission 
   expect(before.passes[0]?.submissions).toBe(502);
   expect(before.totals.sceneSubmissions).toBe(1005);
   expect(before.totals.unattributed).toBe(0);
-  expect(before.lighting).toMatchObject({ shadowLights: 1, shadowPasses: 1, shadowCasters: 502, shadowSubmissions: 502, shadowTexels: sunTexels });
+  expect(before.lighting).toMatchObject({
+    shadowLights: 1,
+    shadowPasses: 1,
+    shadowCasters: 502,
+    shadowSubmissions: 502,
+    shadowTexels: sunTexels,
+  });
 
   const after = await forge.page.evaluate(async () => {
     window.__forge.compile();
@@ -24,5 +30,10 @@ test('shadow passes are attributed per light and batches cast as one submission 
   expect(after.totals.sceneSubmissions).toBe(27 + 28);
   expect(after.totals.unattributed).toBe(0);
   expect(after.byReason.batched?.submissions).toBe(30);
-  expect(after.lighting).toMatchObject({ shadowPasses: 1, shadowCasters: 27, shadowSubmissions: 27, shadowTexels: sunTexels });
+  expect(after.lighting).toMatchObject({
+    shadowPasses: 1,
+    shadowCasters: 27,
+    shadowSubmissions: 27,
+    shadowTexels: sunTexels,
+  });
 });

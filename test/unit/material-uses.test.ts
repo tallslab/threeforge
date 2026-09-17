@@ -4,8 +4,9 @@
  * behind `static-unbatched` — whether another object of the frame's main pass drew the same material. Materials are
  * keyed by the registry's canonical, so instances the registry merged count as one.
  */
+
+import { type Material, MeshBasicMaterial } from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { MeshBasicMaterial, type Material } from 'three';
 import { MaterialUses } from '../../src/ledger/materialUses.js';
 
 /** A stand-in registry: `canonicalOf` answers from a map the test controls, with a revision it can move. */

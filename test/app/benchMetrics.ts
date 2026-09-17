@@ -42,7 +42,28 @@ export interface BenchMetrics {
  * `scripts/bench-schema.mjs` repeats the list for the node scripts, which cannot import TypeScript;
  * `test/unit/bench-metrics.test.ts` asserts the two agree and that together they cover `BenchMetrics` exactly.
  */
-export const METRIC_KEYS: ReadonlyArray<keyof BenchMetrics> = ['sceneSubmissions', 'gpuDraws', 'triangles', 'programs', 'overdrawOpaque', 'overdrawTransparent', 'skinnedVertices', 'shadowCasters', 'shadowTexels', 'textureBytes', 'geometryBytes', 'renderTargetBytes', 'particles', 'fillMegapixels', 'objects', 'autoUpdatedMatrices', 'shadowPassesPerFrame', 'renderMs', 'frameMs', 'unattributed'];
+export const METRIC_KEYS: ReadonlyArray<keyof BenchMetrics> = [
+  'sceneSubmissions',
+  'gpuDraws',
+  'triangles',
+  'programs',
+  'overdrawOpaque',
+  'overdrawTransparent',
+  'skinnedVertices',
+  'shadowCasters',
+  'shadowTexels',
+  'textureBytes',
+  'geometryBytes',
+  'renderTargetBytes',
+  'particles',
+  'fillMegapixels',
+  'objects',
+  'autoUpdatedMatrices',
+  'shadowPassesPerFrame',
+  'renderMs',
+  'frameMs',
+  'unattributed',
+];
 
 /**
  * Shared by the CI runner (test/e2e/bench.spec.ts) and the device bench page so the two cannot drift. `shadowTexels` is
@@ -54,7 +75,14 @@ export const METRIC_KEYS: ReadonlyArray<keyof BenchMetrics> = ['sceneSubmissions
  * `usedTimes` reaches 0, so the final frame still counts the diagnostic's own shaders. Both callers pass what they read
  * from the last measured frame, before the measurement, which keeps the metric about the shaders the app compiled.
  */
-export function metricsOf(f: FrameSnapshot, renderMs: number, frameMs: number, shadowPassesPerFrame: number, shadowTexels: readonly number[], programs: number): BenchMetrics {
+export function metricsOf(
+  f: FrameSnapshot,
+  renderMs: number,
+  frameMs: number,
+  shadowPassesPerFrame: number,
+  shadowTexels: readonly number[],
+  programs: number,
+): BenchMetrics {
   let texels = 0;
   for (const t of shadowTexels) texels += t;
   return {

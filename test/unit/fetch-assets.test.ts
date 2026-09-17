@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { mergeIndex } from '../../scripts/fetch-assets.mjs';
 
-const entry = (name: string, bytes = 1) => ({ name, entry: `${name}/${name}.glb`, tags: ['t'], source: 's', bytes, files: 1 });
+const entry = (name: string, bytes = 1) => ({
+  name,
+  entry: `${name}/${name}.glb`,
+  tags: ['t'],
+  source: 's',
+  bytes,
+  files: 1,
+});
 
 describe('mergeIndex (fetch-assets run limited to some names)', () => {
   it('keeps every entry the run did not fetch and replaces the fetched one in place', () => {
@@ -28,7 +35,10 @@ describe('mergeIndex (fetch-assets run limited to some names)', () => {
   it('treats a missing or malformed index as empty and drops malformed or duplicate rows', () => {
     expect(mergeIndex(undefined, [entry('A')])).toEqual([entry('A')]);
     expect(mergeIndex({ not: 'an array' }, [entry('A')])).toEqual([entry('A')]);
-    expect(mergeIndex([null, 7, { entry: 'x' }, entry('B'), entry('B', 2)], [entry('A')])).toEqual([entry('B'), entry('A')]);
+    expect(mergeIndex([null, 7, { entry: 'x' }, entry('B'), entry('B', 2)], [entry('A')])).toEqual([
+      entry('B'),
+      entry('A'),
+    ]);
   });
 
   it('does not mutate its inputs', () => {

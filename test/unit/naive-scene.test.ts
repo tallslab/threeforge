@@ -1,7 +1,7 @@
+import { type Mesh, MeshStandardMaterial, SkinnedMesh } from 'three';
 import { describe, expect, it } from 'vitest';
-import { Mesh, MeshStandardMaterial, SkinnedMesh } from 'three';
-import { buildNaiveScene, NAIVE_SCENE } from '../../test/scenes/naive.js';
 import { tag } from '../../src/tags.js';
+import { buildNaiveScene, NAIVE_SCENE } from '../../test/scenes/naive.js';
 
 describe('buildNaiveScene', () => {
   const built = buildNaiveScene(1);
@@ -48,7 +48,13 @@ describe('buildNaiveScene', () => {
   it('is deterministic for a seed and differs across seeds', () => {
     const again = buildNaiveScene(1);
     const other = buildNaiveScene(2);
-    const pos = (b: typeof built) => b.props.map((p) => p.position.toArray().map((v) => v.toFixed(4)).join(','));
+    const pos = (b: typeof built) =>
+      b.props.map((p) =>
+        p.position
+          .toArray()
+          .map((v) => v.toFixed(4))
+          .join(','),
+      );
     expect(pos(again)).toEqual(pos(built));
     expect(pos(other)).not.toEqual(pos(built));
   });

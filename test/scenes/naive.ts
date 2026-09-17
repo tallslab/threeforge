@@ -6,7 +6,7 @@ import {
   AmbientLight,
   Bone,
   BoxGeometry,
-  BufferGeometry,
+  type BufferGeometry,
   CapsuleGeometry,
   ConeGeometry,
   CylinderGeometry,
@@ -17,6 +17,7 @@ import {
   IcosahedronGeometry,
   Mesh,
   MeshStandardMaterial,
+  type MeshStandardMaterialParameters,
   NearestFilter,
   OctahedronGeometry,
   PlaneGeometry,
@@ -29,11 +30,10 @@ import {
   SphereGeometry,
   SRGBColorSpace,
   TetrahedronGeometry,
-  Texture,
+  type Texture,
   TorusGeometry,
   TorusKnotGeometry,
   Uint16BufferAttribute,
-  type MeshStandardMaterialParameters,
 } from 'three';
 import { tag } from '../../src/tags.js';
 
@@ -103,7 +103,8 @@ const SHAPE_FACTORIES: Array<(f: number) => BufferGeometry> = [
 /** The 12 primitives, then parameter variants of them (each further dozen is a different proportion). */
 function makeGeometries(shapes: number = NAIVE_SCENE.geometryCount): BufferGeometry[] {
   const out: BufferGeometry[] = [];
-  for (let k = 0; k < shapes; k++) out.push(SHAPE_FACTORIES[k % SHAPE_FACTORIES.length]!(1 + 0.15 * Math.floor(k / SHAPE_FACTORIES.length)));
+  for (let k = 0; k < shapes; k++)
+    out.push(SHAPE_FACTORIES[k % SHAPE_FACTORIES.length]!(1 + 0.15 * Math.floor(k / SHAPE_FACTORIES.length)));
   return out;
 }
 
@@ -157,7 +158,11 @@ function makeRecipes(rng: () => number, textures: Texture[]): MaterialRecipe[] {
   const recipes: MaterialRecipe[] = [];
   for (let i = 0; i < 24; i++) {
     const hue = i / 24;
-    recipes.push({ name: `solid-${i}`, kind: 'solid', params: { color: hsl(hue, 0.6, 0.55), roughness: 0.8, metalness: 0 } });
+    recipes.push({
+      name: `solid-${i}`,
+      kind: 'solid',
+      params: { color: hsl(hue, 0.6, 0.55), roughness: 0.8, metalness: 0 },
+    });
   }
   const pairs: Array<[number, number]> = [
     [0.2, 0],
@@ -172,13 +177,21 @@ function makeRecipes(rng: () => number, textures: Texture[]): MaterialRecipe[] {
   patterns.forEach((pattern, i) => {
     const map = makeTexture(rng, pattern, true);
     textures.push(map);
-    recipes.push({ name: `textured-${i}`, kind: 'textured', params: { color: 0xffffff, map, roughness: 0.8, metalness: 0 } });
+    recipes.push({
+      name: `textured-${i}`,
+      kind: 'textured',
+      params: { color: 0xffffff, map, roughness: 0.8, metalness: 0 },
+    });
   });
   for (let i = 0; i < 2; i++) {
     const map = makeTexture(rng, 'checker', true);
     const normalMap = makeNormalMap(rng);
     textures.push(map, normalMap);
-    recipes.push({ name: `normal-mapped-${i}`, kind: 'normal-mapped', params: { color: 0xffffff, map, normalMap, roughness: 0.7, metalness: 0 } });
+    recipes.push({
+      name: `normal-mapped-${i}`,
+      kind: 'normal-mapped',
+      params: { color: 0xffffff, map, normalMap, roughness: 0.7, metalness: 0 },
+    });
   }
   const transparent: Array<[number, number]> = [
     [0.5, 0x4fa3ff],
@@ -187,7 +200,11 @@ function makeRecipes(rng: () => number, textures: Texture[]): MaterialRecipe[] {
     [0.25, 0xffd166],
   ];
   transparent.forEach(([opacity, color], i) => {
-    recipes.push({ name: `transparent-${i}`, kind: 'transparent', params: { color, opacity, transparent: true, roughness: 0.4, metalness: 0 } });
+    recipes.push({
+      name: `transparent-${i}`,
+      kind: 'transparent',
+      params: { color, opacity, transparent: true, roughness: 0.4, metalness: 0 },
+    });
   });
   return recipes;
 }
@@ -231,7 +248,10 @@ function makeSkinnedDummy(name: string, x: number, z: number): SkinnedMesh {
   return mesh;
 }
 
-export function buildNaiveScene(seed = 1, { count = NAIVE_SCENE.propCount, shapes = NAIVE_SCENE.geometryCount }: NaiveOptions = {}): NaiveScene {
+export function buildNaiveScene(
+  seed = 1,
+  { count = NAIVE_SCENE.propCount, shapes = NAIVE_SCENE.geometryCount }: NaiveOptions = {},
+): NaiveScene {
   const rng = mulberry32(seed);
   const scene = new Scene();
   scene.name = 'naive';
@@ -270,7 +290,10 @@ export function buildNaiveScene(seed = 1, { count = NAIVE_SCENE.propCount, shape
     scene.add(mesh);
   }
 
-  const ground = new Mesh(new PlaneGeometry(NAIVE_SCENE.area * 2, NAIVE_SCENE.area * 2), new MeshStandardMaterial({ color: 0x3a3f47, roughness: 1, metalness: 0 }));
+  const ground = new Mesh(
+    new PlaneGeometry(NAIVE_SCENE.area * 2, NAIVE_SCENE.area * 2),
+    new MeshStandardMaterial({ color: 0x3a3f47, roughness: 1, metalness: 0 }),
+  );
   ground.name = 'ground';
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
@@ -287,5 +310,16 @@ export function buildNaiveScene(seed = 1, { count = NAIVE_SCENE.propCount, shape
   directional.target.position.set(0, 0, 0);
   scene.add(ambient, directional, directional.target);
 
-  return { scene, counts: { props: count, materials: recipes.length, shapes }, props, dynamics, skinned, ground, geometries, recipes, textures, lights: { ambient, directional } };
+  return {
+    scene,
+    counts: { props: count, materials: recipes.length, shapes },
+    props,
+    dynamics,
+    skinned,
+    ground,
+    geometries,
+    recipes,
+    textures,
+    lights: { ambient, directional },
+  };
 }

@@ -1,7 +1,9 @@
 import { expect, test } from './fixtures.js';
 
 /** Render on change: idle ticks draw nothing; a camera move or invalidate() draws one frame. */
-test('RenderScheduler renders once for ten idle ticks, again on camera move and invalidate, and reports skipped ticks', async ({ forge }) => {
+test('RenderScheduler renders once for ten idle ticks, again on camera move and invalidate, and reports skipped ticks', async ({
+  forge,
+}) => {
   await forge.open('naive', { compile: '1', scheduler: '1' });
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -16,7 +18,14 @@ test('RenderScheduler renders once for ten idle ticks, again on camera move and 
     s.invalidate();
     const frame = await f.frameAsync();
     const afterInvalidate = { ...s.stats };
-    return { afterIdle, afterMove, afterInvalidate, skipped: frame.js.skipped, submissions: frame.totals.sceneSubmissions, unattributed: frame.totals.unattributed };
+    return {
+      afterIdle,
+      afterMove,
+      afterInvalidate,
+      skipped: frame.js.skipped,
+      submissions: frame.totals.sceneSubmissions,
+      unattributed: frame.totals.unattributed,
+    };
   });
   expect(r.afterIdle).toEqual({ ticks: 10, renders: 1, skipped: 9 });
   expect(r.afterMove).toEqual({ ticks: 11, renders: 2, skipped: 9 });

@@ -9,7 +9,15 @@ test('ResolutionScaler at 0.5 renders a quarter of the pixels and reports it', a
     f.scaler!.set(1);
     const full = await f.frameAsync();
     f.scaler!.dispose();
-    return { half: { pixels: half.overdraw.pixels, dpr: half.env.dpr, unattributed: half.totals.unattributed, submissions: half.totals.sceneSubmissions }, full: { pixels: full.overdraw.pixels, dpr: full.env.dpr } };
+    return {
+      half: {
+        pixels: half.overdraw.pixels,
+        dpr: half.env.dpr,
+        unattributed: half.totals.unattributed,
+        submissions: half.totals.sceneSubmissions,
+      },
+      full: { pixels: full.overdraw.pixels, dpr: full.env.dpr },
+    };
   });
   expect(r.half.pixels).toBe(400 * 300);
   expect(r.half.dpr).toBe(0.5);

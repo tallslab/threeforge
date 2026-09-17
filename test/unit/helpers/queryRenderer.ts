@@ -1,4 +1,15 @@
-import { BackSide, DoubleSide, Matrix3, Vector3, Vector4, type Camera, type Material, type Mesh, type Object3D, type Scene } from 'three';
+import {
+  BackSide,
+  type Camera,
+  DoubleSide,
+  type Material,
+  Matrix3,
+  type Mesh,
+  type Object3D,
+  type Scene,
+  Vector3,
+  Vector4,
+} from 'three';
 import { FakeRenderer, type FakeRendererOptions } from './fakeRenderer.js';
 
 interface QueryContext {
@@ -82,7 +93,8 @@ export class QueryRenderer extends FakeRenderer {
     const depth = this.open.length;
     const context = (this.contexts[depth] ??= { renders: 0, pending: [], delivered: new Set() });
     context.renders++;
-    while (context.pending.length > 0 && context.pending[0]!.render + this.lag <= context.renders) context.delivered = context.pending.shift()!.occluded;
+    while (context.pending.length > 0 && context.pending[0]!.render + this.lag <= context.renders)
+      context.delivered = context.pending.shift()!.occluded;
     // threeforge's scene hooks never change occlusionTest, so counting before them is counting when the list is built.
     const counted = new Set<Object3D>();
     scene.traverse((o) => {
@@ -108,7 +120,8 @@ export class QueryRenderer extends FakeRenderer {
     const last = call.last;
     if (last !== null && last.object === object) return;
     // Every scene render ends with the output quad's draw, which ends the last query like finishRender does.
-    if (last !== null && (last.object.occlusionTest === true) !== last.began) throw new Error(`${last.object.name}: occlusionTest changed between its draw and the end of its query`);
+    if (last !== null && (last.object.occlusionTest === true) !== last.began)
+      throw new Error(`${last.object.name}: occlusionTest changed between its draw and the end of its query`);
     const began = object.occlusionTest === true;
     if (began) {
       if (!call.counted.has(object)) throw new Error(`${object.name}: begins a query the render list did not count`);

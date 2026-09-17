@@ -1,8 +1,8 @@
 import type { FrameSnapshot } from '../ledger/snapshot.js';
-import type { CliCompileReport } from './types.js';
 import type { PlaywrightPage } from './browser.js';
 import { PageError } from './errors.js';
 import { withTimeout } from './lifecycle.js';
+import type { CliCompileReport } from './types.js';
 import { cleanText, sanitizeDeep } from './untrusted.js';
 
 export { PageError };
@@ -68,7 +68,8 @@ const unsupported = (version: string): string => `${UNSUPPORTED_PREFIX}${version
  * advertises 3 and hands back a differently-shaped frame would otherwise produce a document that violates the CLI's
  * own published `SNAPSHOT_SCHEMA` (`schema.ts`, `{ const: 3 }`) with nothing to notice.
  */
-const unsupportedFrame = (version: string): string => `window.__threeforge returned a frame with unsupported schemaVersion ${version}${UNSUPPORTED_SUFFIX}`;
+const unsupportedFrame = (version: string): string =>
+  `window.__threeforge returned a frame with unsupported schemaVersion ${version}${UNSUPPORTED_SUFFIX}`;
 
 /**
  * `page.screenshot`, bounded by `timeout` ms twice over: the bound is handed to Playwright so the operation itself is
@@ -89,7 +90,12 @@ export function screenshotWithin(page: PlaywrightPage, what: string, timeout: nu
 
 /** Fails with a PageError unless the page's hook publishes the snapshot version this CLI reads. */
 export async function assertHookVersion(page: PlaywrightPage, timeout: number): Promise<void> {
-  const version = await evaluateWithin<unknown>(page, 'reading window.__threeforge.schemaVersion', timeout, `window.__threeforge.schemaVersion`);
+  const version = await evaluateWithin<unknown>(
+    page,
+    'reading window.__threeforge.schemaVersion',
+    timeout,
+    `window.__threeforge.schemaVersion`,
+  );
   if (version !== HOOK_SCHEMA_VERSION) throw new PageError(unsupported(JSON.stringify(version) ?? 'undefined'));
 }
 
@@ -124,7 +130,8 @@ export async function measureViaHook(page: PlaywrightPage, frames: number, timeo
   if ('error' in result) throw new PageError(result.error);
   // The hook said 3; this is the frame it actually returned (L3).
   const frameVersion = (result.snapshot as { schemaVersion?: unknown } | null | undefined)?.schemaVersion;
-  if (frameVersion !== HOOK_SCHEMA_VERSION) throw new PageError(unsupportedFrame(JSON.stringify(frameVersion) ?? 'undefined'));
+  if (frameVersion !== HOOK_SCHEMA_VERSION)
+    throw new PageError(unsupportedFrame(JSON.stringify(frameVersion) ?? 'undefined'));
   result.snapshot.js.renderMs = result.renderMs;
   result.snapshot.js.ledgerMs = result.ledgerMs;
   result.snapshot.js.frameMs = result.frameMs;

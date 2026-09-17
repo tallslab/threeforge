@@ -3,7 +3,16 @@
  * render-list placement (RenderList.push, needsDoublePass), the override derivation of Renderer.renderObject,
  * RenderObject.getDrawParameters, Info.update's triangle count and PointShadowNode's cube faces.
  */
-import { BackSide, DoubleSide, FrontSide, Vector3, type BufferGeometry, type Material, type Object3D, type Side } from 'three';
+import {
+  BackSide,
+  type BufferGeometry,
+  DoubleSide,
+  FrontSide,
+  type Material,
+  type Object3D,
+  type Side,
+  Vector3,
+} from 'three';
 
 /** Material fields three reads that the base Material type does not declare. */
 type RenderMaterial = Material & {
@@ -16,7 +25,8 @@ type RenderMaterial = Material & {
 /** Renderer.js `_shadowSide`. */
 const SHADOW_SIDE: Record<Side, Side> = { [FrontSide]: BackSide, [BackSide]: FrontSide, [DoubleSide]: DoubleSide };
 
-const hasTransmission = (m: RenderMaterial): boolean => (m.transmission ?? 0) > 0 || m.transmissionNode?.isNode === true;
+const hasTransmission = (m: RenderMaterial): boolean =>
+  (m.transmission ?? 0) > 0 || m.transmissionNode?.isNode === true;
 
 /** RenderList.push: transparent, transmissive and backdrop materials go to the transparent list. */
 export function isTransparentItem(material: Material): boolean {
@@ -26,13 +36,18 @@ export function isTransparentItem(material: Material): boolean {
 
 /** RenderList needsDoublePass: transmissive double-sided materials also render in a back-side pass first. */
 export function needsDoublePass(material: Material): boolean {
-  return hasTransmission(material as RenderMaterial) && material.side === DoubleSide && material.forceSinglePass === false;
+  return (
+    hasTransmission(material as RenderMaterial) && material.side === DoubleSide && material.forceSinglePass === false
+  );
 }
 
 /** Renderer.renderObject: the value it assigns to `overrideMaterial.transparent` (a raw `||` chain, as in three). */
 export function overrideTransparent(material: Material): boolean {
   const m = material as RenderMaterial;
-  return (m.transparent || (m.transmission as number) > 0 || (m.transmissionNode && m.transmissionNode.isNode) || (m.backdropNode && m.backdropNode.isNode)) as boolean;
+  return (m.transparent ||
+    (m.transmission as number) > 0 ||
+    (m.transmissionNode && m.transmissionNode.isNode) ||
+    (m.backdropNode && m.backdropNode.isNode)) as boolean;
 }
 
 /** Renderer.renderObject: the side of a shadow-pass override material, `shadowSide ?? flipped side` (VSM keeps the side). */
@@ -61,7 +76,11 @@ type Drawable = Object3D & {
  * InstancedBufferGeometry, else `object.count` (1 on Mesh, Sprite and BatchedMesh; undefined, so 1, on Points and
  * Lines). A BatchedMesh returns before the vertex range: its backends draw `_multiDrawCounts`.
  */
-export function drawParameters(object: Object3D, material: Material, group: { start: number; count: number } | null): DrawParameters | null {
+export function drawParameters(
+  object: Object3D,
+  material: Material,
+  group: { start: number; count: number } | null,
+): DrawParameters | null {
   const o = object as Drawable;
   const geometry = o.geometry;
   let instanceCount = 1;
@@ -69,7 +88,10 @@ export function drawParameters(object: Object3D, material: Material, group: { st
   else if (o.count !== undefined) instanceCount = Math.max(0, o.count);
   if (instanceCount === 0) return null;
   if (o.isBatchedMesh === true) return { vertexCount: 0, instanceCount };
-  const rangeFactor = (material as RenderMaterial).wireframe === true && !o.isPoints && !o.isLineSegments && !o.isLine && !o.isLineLoop ? 2 : 1;
+  const rangeFactor =
+    (material as RenderMaterial).wireframe === true && !o.isPoints && !o.isLineSegments && !o.isLine && !o.isLineLoop
+      ? 2
+      : 1;
   const range = geometry.drawRange;
   let first = range.start * rangeFactor;
   let last = (range.start + range.count) * rangeFactor;

@@ -72,9 +72,19 @@ export function scanLights(scene: Object3D): LightInfo[] {
 
 /** The lighting section's view of one light (the ledger reads the lights three projected, else walks like `scanLights`). */
 export function lightInfoOf(o: Object3D): LightInfo {
-  const light = o as Object3D & { isPointLight?: boolean; castShadow: boolean; shadow?: { mapSize: { x: number; y: number } } };
+  const light = o as Object3D & {
+    isPointLight?: boolean;
+    castShadow: boolean;
+    shadow?: { mapSize: { x: number; y: number } };
+  };
   const shadow = light.castShadow && light.shadow ? light.shadow : null;
-  return { type: o.type, name: o.name, castShadow: shadow !== null, mapSize: shadow ? [shadow.mapSize.x, shadow.mapSize.y] : [0, 0], faces: light.isPointLight ? 6 : 1 };
+  return {
+    type: o.type,
+    name: o.name,
+    castShadow: shadow !== null,
+    mapSize: shadow ? [shadow.mapSize.x, shadow.mapSize.y] : [0, 0],
+    faces: light.isPointLight ? 6 : 1,
+  };
 }
 
 const TYPE_KEYS: Record<string, keyof LightingSnapshot['lights']> = {
@@ -111,5 +121,12 @@ export function lightingOf(lights: LightInfo[], items: SubmissionRecord[], shado
     passes.add(item.pass);
     shadowSubmissions++;
   }
-  return { lights: counts, shadowLights, shadowPasses: passes.size, shadowCasters: shadows.casters, shadowTexels: shadows.texels, shadowSubmissions };
+  return {
+    lights: counts,
+    shadowLights,
+    shadowPasses: passes.size,
+    shadowCasters: shadows.casters,
+    shadowTexels: shadows.texels,
+    shadowSubmissions,
+  };
 }

@@ -1,16 +1,25 @@
 /** Programmatic access to the CLI's operations: `import { analyzeAsset, inspectApp, explain } from 'threeforge/cli'`. */
 export { analyzeAsset, analyzeAssetWithShots, pixelDiffPct } from './analyze.js';
-export { optimizeAsset, defaultOutputPath } from './optimize.js';
-export { planSteps, PRESETS, STEP_NAMES, type Step, type StepOptions } from './pipeline.js';
-export { applySteps, countsOf, statsOf, requirementsOf, loadDeps, createIO, describeChange, type Deps } from './transform.js';
-export { inspectApp } from './inspect.js';
-export { explain, REMEDIES, type Remedy } from './explain.js';
-export { ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA, SNAPSHOT_SCHEMA } from './schema.js';
-export { parseArgs, UsageError, COMMANDS, type Command } from './args.js';
+export { COMMANDS, type Command, parseArgs, UsageError } from './args.js';
 export { EnvironmentError, launchBrowser } from './browser.js';
-export { PageError, measureViaHook } from './measure.js';
-export type { CliDeps } from './lifecycle.js';
-export { serveStatic } from './server.js';
+export { explain, REMEDIES, type Remedy } from './explain.js';
 export { summarize, summarizeOptimize } from './format.js';
-export { exitCodeOf, verdictOf } from './verdict.js';
+export { inspectApp } from './inspect.js';
+export type { CliDeps } from './lifecycle.js';
+export { measureViaHook, PageError } from './measure.js';
+export { defaultOutputPath, optimizeAsset } from './optimize.js';
+export { PRESETS, planSteps, STEP_NAMES, type Step, type StepOptions } from './pipeline.js';
+export { ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA, SNAPSHOT_SCHEMA } from './schema.js';
+export { serveStatic } from './server.js';
+export {
+  applySteps,
+  countsOf,
+  createIO,
+  type Deps,
+  describeChange,
+  loadDeps,
+  requirementsOf,
+  statsOf,
+} from './transform.js';
 export type * from './types.js';
+export { exitCodeOf, verdictOf } from './verdict.js';

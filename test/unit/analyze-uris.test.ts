@@ -18,7 +18,15 @@ import { glbBytes } from './helpers/gltf-files.js';
  * (blind egress, and GET side effects against `127.0.0.1` services). These pin both layers of the fix: the URI scan
  * `optimize` already ran, and a deny-by-default route that covers a URI the scan cannot see.
  */
-const env = { three: '186', backend: 'webgl2' as const, multiDraw: true, tier: 'desktop' as const, gpu: 'x', dpr: 1, viewport: [800, 600] as [number, number] };
+const env = {
+  three: '186',
+  backend: 'webgl2' as const,
+  multiDraw: true,
+  tier: 'desktop' as const,
+  gpu: 'x',
+  dpr: 1,
+  viewport: [800, 600] as [number, number],
+};
 const asset = { meshes: 1, materials: 1, vertices: 3, triangles: 1, animations: 0, skinned: 0, morph: 0, loadMs: 1 };
 
 /** A page that loads cleanly and records the route handler `analyze` installed, so the test can drive it itself. */
@@ -27,7 +35,10 @@ function recordingPage(): PlaywrightPage & { handler(): (route: PlaywrightRoute)
   const page = {
     goto: async () => null,
     waitForFunction: async () => true,
-    evaluate: async (expression: unknown) => (String(expression).includes('__threeforgeCli') ? { ready: true, asset } : { snapshot: emptyFrame(env), renderMs: 1, ledgerMs: 0, frameMs: 16 }),
+    evaluate: async (expression: unknown) =>
+      String(expression).includes('__threeforgeCli')
+        ? { ready: true, asset }
+        : { snapshot: emptyFrame(env), renderMs: 1, ledgerMs: 0, frameMs: 16 },
     screenshot: async () => Buffer.alloc(0),
     route: async (_url: string, install: (route: PlaywrightRoute) => unknown) => {
       handler = install;
@@ -83,9 +94,21 @@ describe('analyze refuses an asset whose resource URIs leave its directory', () 
   };
 
   it.each([
-    ['an absolute http:// buffer', { buffers: [{ uri: 'http://127.0.0.1:1/x.bin', byteLength: 4 }] }, /buffers\[0\]\.uri .*URI scheme/],
-    ['a protocol-relative image', { images: [{ uri: '//attacker.example/beacon.png' }] }, /images\[0\]\.uri .*absolute path/],
-    ['an image climbing out of the directory', { images: [{ uri: '../../../../etc/passwd' }] }, /images\[0\]\.uri .*outside/],
+    [
+      'an absolute http:// buffer',
+      { buffers: [{ uri: 'http://127.0.0.1:1/x.bin', byteLength: 4 }] },
+      /buffers\[0\]\.uri .*URI scheme/,
+    ],
+    [
+      'a protocol-relative image',
+      { images: [{ uri: '//attacker.example/beacon.png' }] },
+      /images\[0\]\.uri .*absolute path/,
+    ],
+    [
+      'an image climbing out of the directory',
+      { images: [{ uri: '../../../../etc/passwd' }] },
+      /images\[0\]\.uri .*outside/,
+    ],
   ])('refuses %s before it opens a browser', async (_what, json, message) => {
     await withDir(async (dir) => {
       const file = join(dir, 'hostile.gltf');
@@ -106,11 +129,21 @@ describe('analyze refuses an asset whose resource URIs leave its directory', () 
   it('accepts a relative resource URI, and a GLB whose buffer is the embedded chunk', async () => {
     await withDir(async (dir) => {
       const gltf = join(dir, 'fine.gltf');
-      writeFileSync(gltf, JSON.stringify({ asset: { version: '2.0' }, buffers: [{ uri: 'scene.bin', byteLength: 4 }], images: [{ uri: 'tex/a.png' }] }));
+      writeFileSync(
+        gltf,
+        JSON.stringify({
+          asset: { version: '2.0' },
+          buffers: [{ uri: 'scene.bin', byteLength: 4 }],
+          images: [{ uri: 'tex/a.png' }],
+        }),
+      );
       const glb = join(dir, 'fine.glb');
       writeFileSync(glb, glbBytes({ asset: { version: '2.0' }, buffers: [{ byteLength: 4 }] }));
       for (const file of [gltf, glb]) {
-        const launch = async (): Promise<BrowserHandle> => ({ newPage: async () => recordingPage(), close: async () => {} });
+        const launch = async (): Promise<BrowserHandle> => ({
+          newPage: async () => recordingPage(),
+          close: async () => {},
+        });
         const result = await analyzeAssetWithShots(inputFor(file), undefined, false, { launch, appDir: dir });
         expect(result.doc.command).toBe('analyze');
       }

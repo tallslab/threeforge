@@ -1,5 +1,17 @@
+import {
+  BatchedMesh,
+  Box3,
+  BoxGeometry,
+  Frustum,
+  Matrix4,
+  MeshStandardMaterial,
+  PerspectiveCamera,
+  Scene,
+  Sphere,
+  Vector3,
+  WebGLCoordinateSystem,
+} from 'three';
 import { describe, expect, it } from 'vitest';
-import { BatchedMesh, Box3, BoxGeometry, Frustum, Matrix4, MeshStandardMaterial, PerspectiveCamera, Scene, Sphere, Vector3, WebGLCoordinateSystem } from 'three';
 import { attachBvhCulling, FORGE_HOOK } from '../../src/compiler/culling.js';
 import { mulberry32 } from '../../test/scenes/naive.js';
 
@@ -25,7 +37,8 @@ function field(count: number, area = 2000) {
   camera.updateProjectionMatrix();
   const renderer = { coordinateSystem: WebGLCoordinateSystem };
   const scene = new Scene();
-  const cull = () => batch.onBeforeRender(renderer as never, scene, camera, batch.geometry, batch.material as never, null as never);
+  const cull = () =>
+    batch.onBeforeRender(renderer as never, scene, camera, batch.geometry, batch.material as never, null as never);
   /**
    * The instance ids of the multi-draw list, **in draw order**.
    *
@@ -88,7 +101,9 @@ describe('attachBvhCulling', () => {
     expect(bvh.every((id) => linearSet.has(id))).toBe(true);
     expect(bvh.length).toBeGreaterThanOrEqual(linear.length * 0.98);
     // Ground truth: instances whose world box is entirely inside the frustum must all be drawn.
-    const frustum = new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(f.camera.projectionMatrix, f.camera.matrixWorldInverse));
+    const frustum = new Frustum().setFromProjectionMatrix(
+      new Matrix4().multiplyMatrices(f.camera.projectionMatrix, f.camera.matrixWorldInverse),
+    );
     const bvhSet = new Set(bvh);
     const m = new Matrix4();
     const b = new Box3();
@@ -98,8 +113,14 @@ describe('attachBvhCulling', () => {
       f.batch.getBoundingBoxAt(0, b)!.applyMatrix4(m);
       const corners = [b.min, b.max].flatMap((v) => [v]);
       const fullyInside = [
-        [b.min.x, b.min.y, b.min.z], [b.max.x, b.min.y, b.min.z], [b.min.x, b.max.y, b.min.z], [b.max.x, b.max.y, b.min.z],
-        [b.min.x, b.min.y, b.max.z], [b.max.x, b.min.y, b.max.z], [b.min.x, b.max.y, b.max.z], [b.max.x, b.max.y, b.max.z],
+        [b.min.x, b.min.y, b.min.z],
+        [b.max.x, b.min.y, b.min.z],
+        [b.min.x, b.max.y, b.min.z],
+        [b.max.x, b.max.y, b.min.z],
+        [b.min.x, b.min.y, b.max.z],
+        [b.max.x, b.min.y, b.max.z],
+        [b.min.x, b.max.y, b.max.z],
+        [b.max.x, b.max.y, b.max.z],
       ].every(([x, y, z]) => frustum.containsPoint(new Vector3(x, y, z)));
       void corners;
       if (fullyInside) {
@@ -129,7 +150,13 @@ describe('attachBvhCulling', () => {
     ] as const) {
       const depths = ids.map(f.depthOf);
       const ascending = depths.every((z, i) => i === 0 || depths[i - 1]! <= z);
-      expect(ascending, `${label}: drawn near-to-far, first depths ${depths.slice(0, 6).map((z) => z.toFixed(2)).join(', ')}`).toBe(true);
+      expect(
+        ascending,
+        `${label}: drawn near-to-far, first depths ${depths
+          .slice(0, 6)
+          .map((z) => z.toFixed(2))
+          .join(', ')}`,
+      ).toBe(true);
     }
     // And the same order instance for instance over the ids both draw: the BVH rejects a few the linear scan keeps
     // (its exact boxes are tighter than three's spheres), but it may not reshuffle the rest.
@@ -140,7 +167,7 @@ describe('attachBvhCulling', () => {
   it('marks its hook so the ledger does not report it as a custom hook', () => {
     const f = field(10);
     attachBvhCulling(f.batch, WebGLCoordinateSystem);
-    expect(Object.prototype.hasOwnProperty.call(f.batch, 'onBeforeRender')).toBe(true);
+    expect(Object.hasOwn(f.batch, 'onBeforeRender')).toBe(true);
     expect((f.batch.onBeforeRender as unknown as Record<symbol, unknown>)[FORGE_HOOK]).toBe(true);
   });
 
@@ -174,7 +201,10 @@ describe('attachBvhCulling', () => {
     // Fewer tests only counts if the picture is the same one: a tree that pruned everything would test nothing at
     // all and score best of all.
     const linearSet = new Set(linear);
-    expect(bvh.every((id) => linearSet.has(id)), 'drew an instance the linear scan culled').toBe(true);
+    expect(
+      bvh.every((id) => linearSet.has(id)),
+      'drew an instance the linear scan culled',
+    ).toBe(true);
     expect(bvh.length, `${bvh.length} drawn against ${linear.length}`).toBeGreaterThanOrEqual(linear.length * 0.98);
   });
 
@@ -184,7 +214,7 @@ describe('attachBvhCulling', () => {
     const linear = f.drawn();
     const handle = attachBvhCulling(f.batch, WebGLCoordinateSystem);
     handle.detach();
-    expect(Object.prototype.hasOwnProperty.call(f.batch, 'onBeforeRender')).toBe(false);
+    expect(Object.hasOwn(f.batch, 'onBeforeRender')).toBe(false);
     f.cull();
     // Order included, now that `drawn()` keeps it: "restores the prototype behaviour" means the same list, not the
     // same set of ids in some order the BVH left behind.
@@ -214,15 +244,30 @@ describe('attachBvhCulling margin changes what is drawn', () => {
     camera.updateMatrixWorld();
     camera.updateProjectionMatrix();
     const handle = attachBvhCulling(batch, WebGLCoordinateSystem, margin > 0 ? { margin } : {});
-    batch.onBeforeRender({ coordinateSystem: WebGLCoordinateSystem } as never, new Scene(), camera, batch.geometry, batch.material as never, null as never);
+    batch.onBeforeRender(
+      { coordinateSystem: WebGLCoordinateSystem } as never,
+      new Scene(),
+      camera,
+      batch.geometry,
+      batch.material as never,
+      null as never,
+    );
     const b = batch as unknown as { _multiDrawCount: number; _indirectTexture: { image: { data: Uint32Array } } };
-    return { batch, camera, handle, outside, drawn: Array.from(b._indirectTexture.image.data.subarray(0, b._multiDrawCount)) };
+    return {
+      batch,
+      camera,
+      handle,
+      outside,
+      drawn: Array.from(b._indirectTexture.image.data.subarray(0, b._multiDrawCount)),
+    };
   }
 
   it('leaves out an instance whose sphere meets the frustum but whose exact box does not, and a margin draws it', () => {
     const none = parked(0);
     // The precondition, checked with three's own maths rather than assumed.
-    const frustum = new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(none.camera.projectionMatrix, none.camera.matrixWorldInverse));
+    const frustum = new Frustum().setFromProjectionMatrix(
+      new Matrix4().multiplyMatrices(none.camera.projectionMatrix, none.camera.matrixWorldInverse),
+    );
     const matrix = new Matrix4();
     none.batch.getMatrixAt(none.outside, matrix);
     const sphere = none.batch.getBoundingSphereAt(0, new Sphere())!.clone().applyMatrix4(matrix);
@@ -238,6 +283,9 @@ describe('attachBvhCulling margin changes what is drawn', () => {
     // instances sit at z = -10 with the camera at the origin looking down -z, so their sort keys are equal and the
     // order between them is a stable-sort tie broken by whichever the tree visited first. The claim here is that a
     // margin hands the parked instance back at all, not where in the list it lands.
-    expect(margined.drawn.slice().sort((a, b) => a - b), "a margin offers it, and three's sphere test admits it").toEqual([0, 1]);
+    expect(
+      margined.drawn.slice().sort((a, b) => a - b),
+      "a margin offers it, and three's sphere test admits it",
+    ).toEqual([0, 1]);
   });
 });

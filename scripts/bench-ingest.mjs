@@ -15,7 +15,8 @@ const CLOSE_FENCE = '```';
 /** The first ```json fence in an issue body, or null. Throws if the body exceeds MAX_BODY characters. */
 export function extractJson(body) {
   const text = typeof body === 'string' ? body : '';
-  if (text.length > MAX_BODY) throw new Error(`issue body: expected at most ${MAX_BODY} characters, got ${text.length}`);
+  if (text.length > MAX_BODY)
+    throw new Error(`issue body: expected at most ${MAX_BODY} characters, got ${text.length}`);
   const start = text.indexOf(OPEN_FENCE);
   if (start === -1) return null;
   let i = start + OPEN_FENCE.length;
@@ -44,7 +45,8 @@ export function ingest(body, dir) {
   try {
     writeFileSync(path, JSON.stringify(v.result, null, 2) + '\n', { flag: 'wx' });
   } catch (e) {
-    if (e.code === 'EEXIST') throw new Error(`result ${JSON.stringify(v.result.id)} already exists at ${JSON.stringify(path)}`);
+    if (e.code === 'EEXIST')
+      throw new Error(`result ${JSON.stringify(v.result.id)} already exists at ${JSON.stringify(path)}`);
     throw e;
   }
   return { path, result: v.result };

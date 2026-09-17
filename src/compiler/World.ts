@@ -1,18 +1,45 @@
-import { BoxGeometry, DoubleSide, Group, Matrix4, Mesh, MeshBasicMaterial, Vector3, Vector4, WebGLCoordinateSystem, type BatchedMesh, type Box3, type Camera, type CoordinateSystem, type InstancedMesh, type Intersection, type Material, type Object3D, type Scene, type Sprite, type Texture } from 'three';
+import {
+  type BatchedMesh,
+  type Box3,
+  BoxGeometry,
+  type Camera,
+  type CoordinateSystem,
+  DoubleSide,
+  Group,
+  type InstancedMesh,
+  type Intersection,
+  type Material,
+  Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  type Object3D,
+  type Scene,
+  type Sprite,
+  type Texture,
+  Vector3,
+  Vector4,
+  WebGLCoordinateSystem,
+} from 'three';
 import type { DrawCallLedger } from '../ledger/DrawCallLedger.js';
 import { displayName } from '../ledger/reasons.js';
 import { MaterialRegistry, type RegistryStats } from '../registry/MaterialRegistry.js';
-import { batchStatics, type GroupReport, type Slot, rebake, type BakedGroup } from './batchStatics.js';
 import type { BakeOptions } from './bake.js';
-import type { CulledInstancedMesh, InstanceCullingHandle } from './instancing.js';
-import { animatedRoots, classify, exclusionRule, type AnimationSource, type Classification } from './classify.js';
+import { type BakedGroup, batchStatics, type GroupReport, rebake, type Slot } from './batchStatics.js';
+import { type AnimationSource, animatedRoots, type Classification, classify, exclusionRule } from './classify.js';
+import {
+  attachBvhCulling,
+  type CullingHandle,
+  type NestedPassPolicy,
+  prependAfterRenderHook,
+  prependRenderHook,
+} from './culling.js';
 import { freezableObjects } from './freeze.js';
-import { buildSpriteBatch, type SpriteBatch } from './spriteBatch.js';
-import { groupSprites } from './sprites.js';
-import { attachBvhCulling, prependAfterRenderHook, prependRenderHook, type CullingHandle, type NestedPassPolicy } from './culling.js';
+import type { CulledInstancedMesh, InstanceCullingHandle } from './instancing.js';
+import { cameraNearProxy } from './occlusionProxy.js';
 import { PassTracker } from './passTracker.js';
 import { SceneSpace } from './space.js';
-import { cameraNearProxy } from './occlusionProxy.js';
+import { buildSpriteBatch, type SpriteBatch } from './spriteBatch.js';
+import { groupSprites } from './sprites.js';
 
 /** Hidden originals live on this layer: invisible to default cameras and default raycasters, matrices still valid. */
 export const FORGE_HIDDEN_LAYER = 31;
@@ -386,7 +413,16 @@ export class World {
     const group = new Group();
     group.name = 'forge:bake-debug';
     this.baked.forEach((b, i) => {
-      const mesh = new Mesh(b.removed.clone(), new MeshBasicMaterial({ color: 0xff2040, side: DoubleSide, depthTest: false, transparent: true, opacity: 0.85 }));
+      const mesh = new Mesh(
+        b.removed.clone(),
+        new MeshBasicMaterial({
+          color: 0xff2040,
+          side: DoubleSide,
+          depthTest: false,
+          transparent: true,
+          opacity: 0.85,
+        }),
+      );
       mesh.name = `forge:bake-removed:${i}`;
       mesh.renderOrder = 1000;
       group.add(mesh);
@@ -424,7 +460,9 @@ export class World {
     const classifications = classify(this.scene, { policy: this.policy, animated });
     const before = {
       meshes: classifications.length,
-      materials: new Set(classifications.flatMap((c) => (Array.isArray(c.object.material) ? c.object.material : [c.object.material]))).size,
+      materials: new Set(
+        classifications.flatMap((c) => (Array.isArray(c.object.material) ? c.object.material : [c.object.material])),
+      ).size,
     };
 
     const statics = classifications.filter((c) => c.kind === 'static').map((c) => c.object);
@@ -439,7 +477,17 @@ export class World {
       }
     }
     const noBake = new Set<Mesh>([...syncRule.entries()].filter(([, rule]) => rule === null).map(([mesh]) => mesh));
-    const result = batchStatics(statics, this.registry, this.scene, { instanceThreshold: this.instanceThreshold, coordinateSystem, chunkSize: this.chunkSizeOption, nestedPasses, passes: this.passes, space: this.space, transparent: this.transparentMode, ...(this.lod ? { lodDistances: this.lod.distances } : {}), ...(this.bakeOptions ? { bake: this.bakeOptions, noBake } : {}) });
+    const result = batchStatics(statics, this.registry, this.scene, {
+      instanceThreshold: this.instanceThreshold,
+      coordinateSystem,
+      chunkSize: this.chunkSizeOption,
+      nestedPasses,
+      passes: this.passes,
+      space: this.space,
+      transparent: this.transparentMode,
+      ...(this.lod ? { lodDistances: this.lod.distances } : {}),
+      ...(this.bakeOptions ? { bake: this.bakeOptions, noBake } : {}),
+    });
     const transparentKeptSet = new Set<Mesh>(result.transparentKept);
     this.batches = result.batches;
     this.instanced = result.instanced;
@@ -451,7 +499,9 @@ export class World {
     // unsupported one the registry kept as is), else with a white clone made here: only the clone is the World's to dispose.
     for (const target of [...result.batches, ...result.instanced]) {
       const material = target.material as Material;
-      const shared = (result.originals.get(target) ?? []).some((o) => o.material === material || this.registry.canonicalOf(o.material as Material) === material);
+      const shared = (result.originals.get(target) ?? []).some(
+        (o) => o.material === material || this.registry.canonicalOf(o.material as Material) === material,
+      );
       if (!shared) this.ownedMaterials.add(material);
     }
     // Every batch is culled through a marginless tree, movers included: the BVH prefilters candidates by their exact
@@ -462,7 +512,10 @@ export class World {
       for (const batch of this.batches) {
         const geometryIds = result.lodGeometryIds.get(batch);
         const lod = this.lod && geometryIds ? { distances: this.lod.distances, geometryIds } : undefined;
-        this.cullingHandles.set(batch, attachBvhCulling(batch, coordinateSystem, { nestedPasses, passes: this.passes, ...(lod ? { lod } : {}) }));
+        this.cullingHandles.set(
+          batch,
+          attachBvhCulling(batch, coordinateSystem, { nestedPasses, passes: this.passes, ...(lod ? { lod } : {}) }),
+        );
       }
     }
     for (const [mesh, rule] of syncRule) if (rule === null && result.slots.has(mesh)) this.syncedSet.add(mesh);
@@ -473,7 +526,14 @@ export class World {
     for (const mesh of result.slots.keys()) {
       const parent = mesh.parent;
       if (parent) {
-        this.hidden.push({ mesh, parent, index: parent.children.indexOf(mesh), layersMask: mesh.layers.mask, matrixAutoUpdate: mesh.matrixAutoUpdate, synced: this.syncedSet.has(mesh) });
+        this.hidden.push({
+          mesh,
+          parent,
+          index: parent.children.indexOf(mesh),
+          layersMask: mesh.layers.mask,
+          matrixAutoUpdate: mesh.matrixAutoUpdate,
+          synced: this.syncedSet.has(mesh),
+        });
       }
     }
     // Sprites: one instanced billboard draw per material, driven by the hidden originals every frame.
@@ -494,7 +554,15 @@ export class World {
         this.spriteBatchList.push(batch);
         for (const sprite of group.sprites) {
           const parent = sprite.parent;
-          if (parent) this.hidden.push({ mesh: sprite, parent, index: parent.children.indexOf(sprite), layersMask: sprite.layers.mask, matrixAutoUpdate: sprite.matrixAutoUpdate, synced: true });
+          if (parent)
+            this.hidden.push({
+              mesh: sprite,
+              parent,
+              index: parent.children.indexOf(sprite),
+              layersMask: sprite.layers.mask,
+              matrixAutoUpdate: sprite.matrixAutoUpdate,
+              synced: true,
+            });
         }
       });
       for (const { sprite, rule } of grouped.skipped) spriteSkips.push({ name: displayName(sprite, this.scene), rule });
@@ -524,7 +592,8 @@ export class World {
       // transparent static left unbatched by `transparent: 'keep'` gets its own reason, not `unique-material`. Whether its
       // canonical material is shared is a per-frame fact: the ledger relabels it `static-unbatched` in a frame where
       // another object of the main pass draws that material.
-      if (c.kind === 'static') this.ledger?.annotate(c.object, transparentKept ? 'excluded:transparent-kept' : 'unique-material');
+      if (c.kind === 'static')
+        this.ledger?.annotate(c.object, transparentKept ? 'excluded:transparent-kept' : 'unique-material');
       // Dynamic by rule (under a bone, animated) rather than by tag: still a dynamic draw, not an untagged one.
       if (c.kind === 'dynamic') this.ledger?.annotate(c.object, 'dynamic');
       this.canonicalise(c.object);
@@ -534,7 +603,14 @@ export class World {
     this.emitDirty({ kind: 'compile' });
     return {
       before,
-      after: { batches: this.batches.length, instanced: this.instanced.length, baked: this.baked.length, spriteBatches: this.spriteBatchList.length, frozen: this.frozenList.length, meshes: classifications.length - result.slots.size },
+      after: {
+        batches: this.batches.length,
+        instanced: this.instanced.length,
+        baked: this.baked.length,
+        spriteBatches: this.spriteBatchList.length,
+        frozen: this.frozenList.length,
+        meshes: classifications.length - result.slots.size,
+      },
       bake: this.bakeOptions ? this.bakeSummary() : null,
       groups: result.groups,
       skipped,
@@ -570,7 +646,9 @@ export class World {
     const size = new Vector3();
     const center = new Vector3();
     for (const targets of groups) {
-      const target = targets[0] as Object3D & { boundingBox?: { getSize(v: Vector3): Vector3; getCenter(v: Vector3): Vector3 } | null };
+      const target = targets[0] as Object3D & {
+        boundingBox?: { getSize(v: Vector3): Vector3; getCenter(v: Vector3): Vector3 } | null;
+      };
       const box = target.boundingBox;
       if (!box) continue;
       box.getSize(size);
@@ -653,7 +731,13 @@ export class World {
     const hz = Math.max(_size.z, 1e-3) / 2;
     const geometry = entry.proxy.geometry;
     const position = geometry.getAttribute('position');
-    for (let i = 0; i < position.count; i++) position.setXYZ(i, Math.sign(position.getX(i)) * hx, Math.sign(position.getY(i)) * hy, Math.sign(position.getZ(i)) * hz);
+    for (let i = 0; i < position.count; i++)
+      position.setXYZ(
+        i,
+        Math.sign(position.getX(i)) * hx,
+        Math.sign(position.getY(i)) * hy,
+        Math.sign(position.getZ(i)) * hz,
+      );
     position.needsUpdate = true;
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
@@ -748,7 +832,8 @@ export class World {
     if (batches.size + handles.size > 0) {
       for (const entry of this.occluders) {
         const target = entry.targets[0] as BatchedMesh | CulledInstancedMesh;
-        if (batches.has(target as BatchedMesh) || handles.has((target as CulledInstancedMesh).forgeCulling)) this.fitProxy(entry);
+        if (batches.has(target as BatchedMesh) || handles.has((target as CulledInstancedMesh).forgeCulling))
+          this.fitProxy(entry);
       }
     }
     this.emitDirty({ kind: 'markDirty', object });
@@ -1030,7 +1115,8 @@ export class World {
   }
 
   private assertLive(): void {
-    if (this.disposed || this.disposing) throw new Error('World is disposed; create a new World to compile the scene again.');
+    if (this.disposed || this.disposing)
+      throw new Error('World is disposed; create a new World to compile the scene again.');
   }
 
   slotOf(mesh: Mesh): Slot | undefined {
@@ -1059,7 +1145,19 @@ export class World {
   }
 
   private bakeSummary(): BakeSummary {
-    const sum: BakeSummary = { groups: this.baked.length, inputTriangles: 0, triangles: 0, contactFaces: 0, keptCoincidentFaces: 0, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 0, excludedEntries: 0, keptDuplicateFaces: 0, unbakeableEntries: this.unbakeableEntries };
+    const sum: BakeSummary = {
+      groups: this.baked.length,
+      inputTriangles: 0,
+      triangles: 0,
+      contactFaces: 0,
+      keptCoincidentFaces: 0,
+      duplicateFaces: 0,
+      buriedFaces: 0,
+      weldedVertices: 0,
+      excludedEntries: 0,
+      keptDuplicateFaces: 0,
+      unbakeableEntries: this.unbakeableEntries,
+    };
     for (const { report } of this.baked) {
       sum.inputTriangles += report.inputTriangles;
       sum.triangles += report.triangles;

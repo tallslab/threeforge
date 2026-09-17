@@ -1,4 +1,4 @@
-import { createReadStream, realpathSync, statSync } from 'node:fs';
+import { createReadStream, realpathSync, type Stats, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, resolve, sep } from 'node:path';
 import { EnvironmentError } from './errors.js';
@@ -46,7 +46,7 @@ type Resolution = { status: 200; file: string; size: number } | { status: 403 | 
 function resolveInRoot(root: ResolvedRoot, rel: string): Resolution {
   const file = resolve(join(root.base, rel));
   if (file !== root.base && !file.startsWith(root.base + sep)) return { status: 403 };
-  let stats;
+  let stats: Stats;
   try {
     stats = statSync(file);
   } catch {
@@ -95,7 +95,11 @@ export async function serveStatic(roots: StaticRoot[]): Promise<{ url: string; c
         res.writeHead(malformed ? 400 : resolved.status).end();
         return;
       }
-      res.writeHead(200, { 'content-type': TYPES[extname(resolved.file).toLowerCase()] ?? 'application/octet-stream', 'content-length': resolved.size, 'cache-control': 'no-store' });
+      res.writeHead(200, {
+        'content-type': TYPES[extname(resolved.file).toLowerCase()] ?? 'application/octet-stream',
+        'content-length': resolved.size,
+        'cache-control': 'no-store',
+      });
       const stream = createReadStream(resolved.file);
       // Both directions: a read failure (disk error) destroys the response, and a write failure (the
       // client — Chromium/Playwright during analyze/inspect/optimize — aborting mid-download) destroys
@@ -117,7 +121,11 @@ export async function serveStatic(roots: StaticRoot[]): Promise<{ url: string; c
   await new Promise<void>((ok, fail) => {
     server.on('error', (error: NodeJS.ErrnoException) => {
       if (listening) return;
-      fail(new EnvironmentError(`the static server could not listen on 127.0.0.1 (${error.code ?? 'error'}: ${error.message}); close other programs or raise the open-file limit`));
+      fail(
+        new EnvironmentError(
+          `the static server could not listen on 127.0.0.1 (${error.code ?? 'error'}: ${error.message}); close other programs or raise the open-file limit`,
+        ),
+      );
     });
     server.listen(0, '127.0.0.1', () => {
       listening = true;

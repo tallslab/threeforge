@@ -17,7 +17,12 @@ export default defineConfig<ForgeOptions>({
     backend: 'webgl2',
   },
   webServer: [
-    { command: 'pnpm exec vite --config vite.config.ts', url: 'http://localhost:5179', reuseExistingServer: true, timeout: 30_000 },
+    {
+      command: 'pnpm exec vite --config vite.config.ts',
+      url: 'http://localhost:5179',
+      reuseExistingServer: true,
+      timeout: 30_000,
+    },
     // The device bench page (test/e2e/bench-app.spec.ts); its public dir is filled from the downloaded kits first.
     // FORGE_BENCH_APP_OPTIONAL=1: a `webServer` command that exits non-zero fails the WHOLE Playwright
     // run, not one spec, and bench-app-assets.mjs exits 1 without the Kenney kits. With the flag it warns and serves
@@ -56,7 +61,13 @@ export default defineConfig<ForgeOptions>({
           args:
             webgpuAdapter === 'native'
               ? ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist']
-              : ['--enable-features=WebGPU', '--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+              : [
+                  '--enable-features=WebGPU',
+                  '--enable-unsafe-webgpu',
+                  '--use-webgpu-adapter=swiftshader',
+                  '--enable-unsafe-swiftshader',
+                  '--ignore-gpu-blocklist',
+                ],
         },
       },
     },

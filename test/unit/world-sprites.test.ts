@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest';
 import {
   BackSide,
   CustomBlending,
@@ -7,7 +6,8 @@ import {
   GreaterDepth,
   Group,
   IncrementStencilOp,
-  InstancedBufferGeometry,
+  type InstancedBufferGeometry,
+  type Material,
   NotEqualStencilFunc,
   OneFactor,
   PerspectiveCamera,
@@ -17,18 +17,18 @@ import {
   Sprite,
   SpriteMaterial,
   SubtractEquation,
+  type Texture,
   Vector3,
   WebGLCoordinateSystem,
   ZeroFactor,
-  type Material,
-  type Texture,
 } from 'three';
-import { ClippingGroup, SpriteNodeMaterial, type Node, type NodeBuilder } from 'three/webgpu';
 import { positionWorld, vec2, vec3 } from 'three/tsl';
+import { ClippingGroup, type Node, type NodeBuilder, SpriteNodeMaterial } from 'three/webgpu';
+import { describe, expect, it } from 'vitest';
+import { FORGE_HOOK } from '../../src/compiler/culling.js';
+import { FORGE_HIDDEN_LAYER, World } from '../../src/compiler/World.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
-import { FORGE_HIDDEN_LAYER, World } from '../../src/compiler/World.js';
-import { FORGE_HOOK } from '../../src/compiler/culling.js';
 import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
 
 function sprites(scene: Scene, n: number, material: SpriteMaterial, prefix: string): Sprite[] {
@@ -118,8 +118,12 @@ describe('World sprite batching', () => {
     scene.add(clipper);
     const world = new World(scene, { registry, ledger });
     const report = world.compile();
-    expect(report.skipped.filter((s) => s.name.startsWith('ordered-')).map((s) => s.rule)).toEqual(Array(6).fill('group-render-order'));
-    expect(report.skipped.filter((s) => s.name.startsWith('clipped-')).map((s) => s.rule)).toEqual(Array(6).fill('clipping-group'));
+    expect(report.skipped.filter((s) => s.name.startsWith('ordered-')).map((s) => s.rule)).toEqual(
+      Array(6).fill('group-render-order'),
+    );
+    expect(report.skipped.filter((s) => s.name.startsWith('clipped-')).map((s) => s.rule)).toEqual(
+      Array(6).fill('clipping-group'),
+    );
   });
 });
 
@@ -181,11 +185,16 @@ describe('World sprite batch material', () => {
 
   it("takes every field of the sprites' material (alphaMap and alphaTest included), then its own instance nodes; under a mirrored scene the side stays fitted", () => {
     const defaults = new SpriteMaterial();
-    const keys = [...Object.keys(defaults), 'alphaTest'].filter((k) => !/^(_|is[A-Z])|^(id|uuid|version|type)$/.test(k));
+    const keys = [...Object.keys(defaults), 'alphaTest'].filter(
+      (k) => !/^(_|is[A-Z])|^(id|uuid|version|type)$/.test(k),
+    );
     const field = (material: object, key: string): unknown => (material as Record<string, unknown>)[key];
     for (const mirrored of [false, true]) {
       const source = everyField();
-      const notSet = keys.filter((k) => k !== 'side' && k !== 'visible' && JSON.stringify(field(source, k)) === JSON.stringify(field(defaults, k)));
+      const notSet = keys.filter(
+        (k) =>
+          k !== 'side' && k !== 'visible' && JSON.stringify(field(source, k)) === JSON.stringify(field(defaults, k)),
+      );
       expect(notSet, 'fields the fixture leaves at their default').toEqual([]);
       const scene = new Scene();
       sprites(scene, 4, source, 'every');
@@ -200,8 +209,11 @@ describe('World sprite batch material', () => {
         for (const key of keys) {
           const got = field(material, key);
           // userData stays out of the copy (NodeMaterial.copy would JSON-serialise it).
-          const want = key === 'side' ? (mirrored ? BackSide : FrontSide) : key === 'userData' ? {} : field(source, key);
-          const same = (want as Texture | null)?.isTexture ? got === want : JSON.stringify(got) === JSON.stringify(want);
+          const want =
+            key === 'side' ? (mirrored ? BackSide : FrontSide) : key === 'userData' ? {} : field(source, key);
+          const same = (want as Texture | null)?.isTexture
+            ? got === want
+            : JSON.stringify(got) === JSON.stringify(want);
           if (!same) out.push(`${label}: ${key} ${JSON.stringify(got)} instead of ${JSON.stringify(want)}`);
         }
         if (material.positionNode === null || material.scaleNode === null) out.push(`${label}: instance nodes missing`);
@@ -211,7 +223,14 @@ describe('World sprite batch material', () => {
       const camera = new PerspectiveCamera(60, 1, 0.1, 100);
       camera.updateMatrixWorld();
       const atCompile = mismatches(`${label}, at compile`);
-      batch.onBeforeRender({ coordinateSystem: WebGLCoordinateSystem } as never, scene, camera, batch.geometry, material as never, null as never);
+      batch.onBeforeRender(
+        { coordinateSystem: WebGLCoordinateSystem } as never,
+        scene,
+        camera,
+        batch.geometry,
+        material as never,
+        null as never,
+      );
       expect([...atCompile, ...mismatches(`${label}, after a render`)]).toEqual([]);
     }
   });
@@ -234,28 +253,54 @@ describe('World sprite batch material', () => {
         spriteBatches = world.compile().after.spriteBatches;
       }, `${label}: compile`).not.toThrow();
       expect(spriteBatches, `${label}: batches`).toBe(1);
-      expect((world.spriteBatches[0]!.material as SpriteNodeMaterial).userData, `${label}: batch material userData`).toEqual({});
+      expect(
+        (world.spriteBatches[0]!.material as SpriteNodeMaterial).userData,
+        `${label}: batch material userData`,
+      ).toEqual({});
       expect(source.userData, `${label}: the source keeps its userData`).toBe(userData);
     }
   });
 
-  it("leaves unbatched, with their rule, node-material sprites with a node slot set and sprites that draw other than one instance; a node material with every slot null still batches", () => {
+  it('leaves unbatched, with their rule, node-material sprites with a node slot set and sprites that draw other than one instance; a node material with every slot null still batches', () => {
     const scene = new Scene();
     const node = (set: (m: SpriteNodeMaterial) => void): SpriteMaterial => {
       const material = new SpriteNodeMaterial({ transparent: false });
       set(material);
       return material as unknown as SpriteMaterial;
     };
-    sprites(scene, 4, node((m) => (m.positionNode = vec3(0, 1, 0))), 'bobbing');
-    sprites(scene, 4, node((m) => (m.scaleNode = vec2(2, 2))), 'pulsing');
-    sprites(scene, 4, node((m) => (m.colorNode = positionWorld)), 'world-coloured');
-    for (const s of sprites(scene, 4, new SpriteMaterial({ color: 0x00ff00 }), 'particles')) (s as Sprite & { count: number }).count = 3;
-    sprites(scene, 4, node(() => {}), 'plain-node');
+    sprites(
+      scene,
+      4,
+      node((m) => (m.positionNode = vec3(0, 1, 0))),
+      'bobbing',
+    );
+    sprites(
+      scene,
+      4,
+      node((m) => (m.scaleNode = vec2(2, 2))),
+      'pulsing',
+    );
+    sprites(
+      scene,
+      4,
+      node((m) => (m.colorNode = positionWorld)),
+      'world-coloured',
+    );
+    for (const s of sprites(scene, 4, new SpriteMaterial({ color: 0x00ff00 }), 'particles'))
+      (s as Sprite & { count: number }).count = 3;
+    sprites(
+      scene,
+      4,
+      node(() => {}),
+      'plain-node',
+    );
     sprites(scene, 4, new SpriteMaterial({ color: 0xff0000 }), 'plain');
     scene.updateMatrixWorld(true);
     const report = new World(scene).compile();
     const prefixes = ['bobbing', 'pulsing', 'world-coloured', 'particles', 'plain-node', 'plain'];
-    const rules = Object.fromEntries(prefixes.map((p) => [p, report.skipped.filter((s) => s.name.startsWith(`${p}-`)).map((s) => s.rule)]));
+    const rules = Object.fromEntries(
+      prefixes.map((p) => [p, report.skipped.filter((s) => s.name.startsWith(`${p}-`)).map((s) => s.rule)]),
+    );
     expect(rules).toEqual({
       bobbing: Array(4).fill('sprite-node-material'),
       pulsing: Array(4).fill('sprite-node-material'),
@@ -280,19 +325,42 @@ describe('World sprite batch material', () => {
   }
 
   it.each<[string, () => Material]>([
-    ['a SpriteNodeMaterial subclass overriding setupPositionView', () => new CustomPlacementSpriteMaterial({ transparent: false })],
-    ['a SpriteMaterial subclass overriding onBeforeCompile', () => new CustomCompileSpriteMaterial({ transparent: false })],
-    ['a SpriteNodeMaterial with an instance setup', () => Object.assign(new SpriteNodeMaterial({ transparent: false }), { setup(this: SpriteNodeMaterial, builder: NodeBuilder): void { SpriteNodeMaterial.prototype.setup.call(this, builder); } })],
-    ['a SpriteNodeMaterial with an instance onBeforeRender', () => Object.assign(new SpriteNodeMaterial({ transparent: false }), { onBeforeRender(): void {} })],
-  ])('leaves %s unbatched as sprite-custom-material: the batch builds a plain SpriteNodeMaterial and would drop that code', (label, make) => {
-    const scene = new Scene();
-    sprites(scene, 4, make() as unknown as SpriteMaterial, 'custom');
-    sprites(scene, 4, new SpriteMaterial({ color: 0xff0000 }), 'plain');
-    scene.updateMatrixWorld(true);
-    const report = new World(scene).compile();
-    expect(report.skipped.filter((s) => s.name.startsWith('custom-')).map((s) => s.rule), label).toEqual(Array(4).fill('sprite-custom-material'));
-    expect(report.after.spriteBatches, `${label}: only the plain sprites batch`).toBe(1);
-  });
+    [
+      'a SpriteNodeMaterial subclass overriding setupPositionView',
+      () => new CustomPlacementSpriteMaterial({ transparent: false }),
+    ],
+    [
+      'a SpriteMaterial subclass overriding onBeforeCompile',
+      () => new CustomCompileSpriteMaterial({ transparent: false }),
+    ],
+    [
+      'a SpriteNodeMaterial with an instance setup',
+      () =>
+        Object.assign(new SpriteNodeMaterial({ transparent: false }), {
+          setup(this: SpriteNodeMaterial, builder: NodeBuilder): void {
+            SpriteNodeMaterial.prototype.setup.call(this, builder);
+          },
+        }),
+    ],
+    [
+      'a SpriteNodeMaterial with an instance onBeforeRender',
+      () => Object.assign(new SpriteNodeMaterial({ transparent: false }), { onBeforeRender(): void {} }),
+    ],
+  ])(
+    'leaves %s unbatched as sprite-custom-material: the batch builds a plain SpriteNodeMaterial and would drop that code',
+    (label, make) => {
+      const scene = new Scene();
+      sprites(scene, 4, make() as unknown as SpriteMaterial, 'custom');
+      sprites(scene, 4, new SpriteMaterial({ color: 0xff0000 }), 'plain');
+      scene.updateMatrixWorld(true);
+      const report = new World(scene).compile();
+      expect(
+        report.skipped.filter((s) => s.name.startsWith('custom-')).map((s) => s.rule),
+        label,
+      ).toEqual(Array(4).fill('sprite-custom-material'));
+      expect(report.after.spriteBatches, `${label}: only the plain sprites batch`).toBe(1);
+    },
+  );
 });
 
 describe('World sprite batch material on decompile', () => {
@@ -317,12 +385,16 @@ describe('World sprite batch material on decompile', () => {
     const material = world.spriteBatches[0]!.material as SpriteNodeMaterial;
     expect(registry.register(material as unknown as Material)).toBe(material);
     const twin = material.clone();
-    expect(registry.register(twin as unknown as Material), 'an identical material merges into the batch material').toBe(material);
+    expect(registry.register(twin as unknown as Material), 'an identical material merges into the batch material').toBe(
+      material,
+    );
     let disposed = 0;
     material.addEventListener('dispose', () => disposed++);
     world.decompile();
     expect(disposed, 'disposing it would break every mesh drawn with the twin').toBe(0);
     expect(registry.canonicalOf(twin as unknown as Material), 'which still resolves to it').toBe(material);
-    expect(registry.describe(material as unknown as Material).outcome, 'so it stays registered too').not.toBe('unregistered');
+    expect(registry.describe(material as unknown as Material).outcome, 'so it stays registered too').not.toBe(
+      'unregistered',
+    );
   });
 });

@@ -1,4 +1,17 @@
-import { BackSide, Color, DirectionalLight, Float32BufferAttribute, Fog, HemisphereLight, Mesh, MeshBasicMaterial, SphereGeometry, Vector3, type Scene, type Texture } from 'three';
+import {
+  BackSide,
+  Color,
+  DirectionalLight,
+  Float32BufferAttribute,
+  Fog,
+  HemisphereLight,
+  Mesh,
+  MeshBasicMaterial,
+  type Scene,
+  SphereGeometry,
+  type Texture,
+  Vector3,
+} from 'three';
 import { tag } from '../tags.js';
 
 export interface DayNightColors {
@@ -40,7 +53,16 @@ export interface DayNightOptions {
   colors?: Partial<DayNightColors>;
 }
 
-const DEFAULT_COLORS: DayNightColors = { dayZenith: 0x5c8fd6, dayHorizon: 0xbfd7ff, nightZenith: 0x070b1a, nightHorizon: 0x1a2140, sunDay: 0xfff1e0, sunLow: 0xff9a4a, moon: 0x8fa3c8, ground: 0x5a4a3a };
+const DEFAULT_COLORS: DayNightColors = {
+  dayZenith: 0x5c8fd6,
+  dayHorizon: 0xbfd7ff,
+  nightZenith: 0x070b1a,
+  nightHorizon: 0x1a2140,
+  sunDay: 0xfff1e0,
+  sunLow: 0xff9a4a,
+  moon: 0x8fa3c8,
+  ground: 0x5a4a3a,
+};
 
 const _zenith = new Color();
 const _horizon = new Color();
@@ -80,7 +102,11 @@ export class DayNight {
     this.distance = options.distance ?? 200;
     this.sunIntensity = options.sunIntensity ?? 3;
     this.driveBackground = options.background ?? true;
-    this.previous = { fog: scene.fog, background: scene.background, fogColor: scene.fog ? scene.fog.color.clone() : null };
+    this.previous = {
+      fog: scene.fog,
+      background: scene.background,
+      fogColor: scene.fog ? scene.fog.color.clone() : null,
+    };
     // Own the background colour so the caller's object is never mutated and comes back untouched on dispose.
     if (this.driveBackground) scene.background = new Color();
     const fog = options.fog ?? true;
@@ -118,7 +144,13 @@ export class DayNight {
       this.heights = new Float32Array(position.count);
       for (let i = 0; i < position.count; i++) this.heights[i] = (position.getY(i) / radius + 1) / 2;
       geometry.setAttribute('color', new Float32BufferAttribute(new Float32Array(position.count * 3), 3));
-      const material = new MeshBasicMaterial({ vertexColors: true, side: BackSide, fog: false, depthWrite: false, toneMapped: false });
+      const material = new MeshBasicMaterial({
+        vertexColors: true,
+        side: BackSide,
+        fog: false,
+        depthWrite: false,
+        toneMapped: false,
+      });
       this.dome = new Mesh(geometry, material);
       // Named rather than marked: the static tag owns `userData.forge`.
       // Culling stays on: the dome surrounds the camera, so its sphere always intersects the frustum, and the
@@ -159,7 +191,8 @@ export class DayNight {
     this.sun.updateMatrixWorld();
     const up = Math.max(0, elevation);
     this.sun.intensity = Math.max(0.05, elevation) * this.sunIntensity;
-    if (elevation >= 0) this.sun.color.setHex(this.colors.sunLow).lerp(_tmp.setHex(this.colors.sunDay), Math.min(1, elevation * 2));
+    if (elevation >= 0)
+      this.sun.color.setHex(this.colors.sunLow).lerp(_tmp.setHex(this.colors.sunDay), Math.min(1, elevation * 2));
     else this.sun.color.setHex(this.colors.moon);
 
     _zenith.setHex(this.colors.nightZenith).lerp(_tmp.setHex(this.colors.dayZenith), up);

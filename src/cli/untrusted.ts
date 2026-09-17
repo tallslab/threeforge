@@ -23,7 +23,8 @@ const ANSI = /[\x1B\x9B](?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\)|[@-
  * - characters that draw nothing although not `Cf`: the combining grapheme joiner U+034F, the Hangul fillers U+115F,
  *   U+1160, U+3164 and U+FFA0, and the Khmer inherent vowels U+17B4-17B5.
  */
-const INVISIBLE = /[\p{Cf}\u{E0000}-\u{E007F}\uFE00-\uFE0F\u{E0100}-\u{E01EF}\u180B-\u180D\u180F\u034F\u115F\u1160\u3164\uFFA0\u17B4\u17B5]/gu;
+const INVISIBLE =
+  /[\p{Cf}\u{E0000}-\u{E007F}\uFE00-\uFE0F\u{E0100}-\u{E01EF}\u180B-\u180D\u180F\u034F\u115F\u1160\u3164\uFFA0\u17B4\u17B5]/gu;
 
 /**
  * C0 controls (incl. tab/newline/CR/ESC), DEL, C1 controls, and the Unicode line and paragraph separators U+2028-2029.
@@ -96,11 +97,13 @@ function sanitizeAt(value: unknown, opts: Required<SanitizeOptions>, depth: numb
     // The "(+N more)" marker is itself a string: only safe to append when every element already was one (a
     // schema whose array items must all be a particular object shape, e.g. FrameSnapshot.hints: Hint[], would
     // become invalid with a bare string tacked on) — other arrays are truncated silently instead.
-    if (value.length > opts.maxArray && value.every((item) => typeof item === 'string')) kept.push(`(+${value.length - opts.maxArray} more)`);
+    if (value.length > opts.maxArray && value.every((item) => typeof item === 'string'))
+      kept.push(`(+${value.length - opts.maxArray} more)`);
     return kept;
   }
   const out: Record<string, unknown> = {};
-  for (const [key, v] of Object.entries(value as Record<string, unknown>)) out[cleanText(key, opts.maxString)] = sanitizeAt(v, opts, depth + 1, seen);
+  for (const [key, v] of Object.entries(value as Record<string, unknown>))
+    out[cleanText(key, opts.maxString)] = sanitizeAt(v, opts, depth + 1, seen);
   return out;
 }
 

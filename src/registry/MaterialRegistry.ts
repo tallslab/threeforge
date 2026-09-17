@@ -297,7 +297,13 @@ export class MaterialRegistry {
   private ensureProgram(keys: CachedKeys, material: Material): ProgramEntry {
     let program = this.programs.get(keys.programHash);
     if (!program) {
-      program = { type: material.type, description: keys.description, variants: new Set(), canonicals: new Set(), materials: 0 };
+      program = {
+        type: material.type,
+        description: keys.description,
+        variants: new Set(),
+        canonicals: new Set(),
+        materials: 0,
+      };
       this.programs.set(keys.programHash, program);
     }
     return program;

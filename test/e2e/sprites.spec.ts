@@ -3,7 +3,9 @@ import { pixelDiff, settle } from './pixels.js';
 
 /** Sprite batching must not change a pixel: every case compares the naive render with the compiled one. */
 
-test('the lake: 2000 raindrop sprites become one submission per pass, pixels stay, decompile restores', { tag: '@corpus' }, async ({ forge }) => {
+test('the lake: 2000 raindrop sprites become one submission per pass, pixels stay, decompile restores', {
+  tag: '@corpus',
+}, async ({ forge }) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   await forge.open('lake', { variant: 'naive', freeze: '1' });
   await settle(forge.page);
@@ -11,7 +13,12 @@ test('the lake: 2000 raindrop sprites become one submission per pass, pixels sta
     const f = window.__forge;
     f.bench?.setTime?.(0.5);
     const frame = await f.frameAsync();
-    return { submissions: frame.totals.sceneSubmissions, sprites: frame.byReason.sprite?.submissions ?? 0, particles: frame.overdraw.particles, hints: frame.hints.map((h) => h.code) };
+    return {
+      submissions: frame.totals.sceneSubmissions,
+      sprites: frame.byReason.sprite?.submissions ?? 0,
+      particles: frame.overdraw.particles,
+      hints: frame.hints.map((h) => h.code),
+    };
   });
   const before = await forge.page.screenshot({ type: 'png' });
   const compiled = await forge.page.evaluate(async () => {
@@ -20,7 +27,14 @@ test('the lake: 2000 raindrop sprites become one submission per pass, pixels sta
     await f.world.warmup(f.renderer, f.camera);
     for (let i = 0; i < 3; i++) await f.frameAsync();
     const frame = await f.frameAsync();
-    return { spriteBatches: report.after.spriteBatches, submissions: frame.totals.sceneSubmissions, batch: frame.byReason['sprite-batch']?.submissions ?? 0, sprites: frame.byReason.sprite?.submissions ?? 0, particles: frame.overdraw.particles, unattributed: frame.totals.unattributed };
+    return {
+      spriteBatches: report.after.spriteBatches,
+      submissions: frame.totals.sceneSubmissions,
+      batch: frame.byReason['sprite-batch']?.submissions ?? 0,
+      sprites: frame.byReason.sprite?.submissions ?? 0,
+      particles: frame.overdraw.particles,
+      unattributed: frame.totals.unattributed,
+    };
   });
   const after = await forge.page.screenshot({ type: 'png' });
   // Main pass plus the water's reflection pass (which sees fewer drops).
@@ -36,7 +50,9 @@ test('the lake: 2000 raindrop sprites become one submission per pass, pixels sta
   expect(compiled.particles).toBe(naive.particles);
   expect(naive.particles).toBeLessThan(2000);
   const diff = pixelDiff(before, after);
-  console.log(`lake sprite batch pixel diff ${(diff * 100).toFixed(3)}% · submissions ${naive.submissions} -> ${compiled.submissions}`);
+  console.log(
+    `lake sprite batch pixel diff ${(diff * 100).toFixed(3)}% · submissions ${naive.submissions} -> ${compiled.submissions}`,
+  );
   expect(diff).toBeLessThan(0.005);
   const restored = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -50,7 +66,9 @@ test('the lake: 2000 raindrop sprites become one submission per pass, pixels sta
 // @corpus: the health bars and hit markers are attached only to `fighter-*` / `blocky-*` objects, and those come
 // from the Kenney kits through buildArena. Without the kits the arena is empty, so `naiveSprites >= 16` and
 // `spriteBatches === 2` below fail on a kit-less runner.
-test('the bossfight: health bars and hit markers become two batches among the effects', { tag: '@corpus' }, async ({ forge }) => {
+test('the bossfight: health bars and hit markers become two batches among the effects', { tag: '@corpus' }, async ({
+  forge,
+}) => {
   await forge.open('bossfight', { variant: 'naive' });
   await settle(forge.page);
   const r = await forge.page.evaluate(async () => {
@@ -60,7 +78,14 @@ test('the bossfight: health bars and hit markers become two batches among the ef
     await f.world.warmup(f.renderer, f.camera);
     for (let i = 0; i < 3; i++) await f.frameAsync();
     const frame = await f.frameAsync();
-    return { naiveSprites: naive.byReason.sprite?.submissions ?? 0, spriteBatches: report.after.spriteBatches, batches: frame.byReason['sprite-batch']?.submissions ?? 0, sprites: frame.byReason.sprite?.submissions ?? 0, unattributed: frame.totals.unattributed, particles: frame.overdraw.particles };
+    return {
+      naiveSprites: naive.byReason.sprite?.submissions ?? 0,
+      spriteBatches: report.after.spriteBatches,
+      batches: frame.byReason['sprite-batch']?.submissions ?? 0,
+      sprites: frame.byReason.sprite?.submissions ?? 0,
+      unattributed: frame.totals.unattributed,
+      particles: frame.overdraw.particles,
+    };
   });
   expect(r.naiveSprites).toBeGreaterThanOrEqual(16);
   expect(r.spriteBatches).toBe(2);
@@ -71,7 +96,9 @@ test('the bossfight: health bars and hit markers become two batches among the ef
 });
 
 for (const mirrored of [false, true] as const) {
-  test(`sprites with an alphaMap compile at parity in ${mirrored ? 'a mirrored' : 'an unmirrored'} scene: the batch material takes every field of the sprites' material`, async ({ forge }) => {
+  test(`sprites with an alphaMap compile at parity in ${mirrored ? 'a mirrored' : 'an unmirrored'} scene: the batch material takes every field of the sprites' material`, async ({
+    forge,
+  }) => {
     test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
     await forge.open('empty');
     await forge.page.evaluate((mirror) => {
@@ -113,7 +140,12 @@ for (const mirrored of [false, true] as const) {
       await f.world.warmup(f.renderer, f.camera);
       for (let i = 0; i < 3; i++) await f.frameAsync();
       const frame = await f.frameAsync();
-      return { spriteBatches: report.after.spriteBatches, drawn: frame.byReason['sprite-batch']?.submissions ?? 0, sprites: frame.byReason.sprite?.submissions ?? 0, unattributed: frame.totals.unattributed };
+      return {
+        spriteBatches: report.after.spriteBatches,
+        drawn: frame.byReason['sprite-batch']?.submissions ?? 0,
+        sprites: frame.byReason.sprite?.submissions ?? 0,
+        unattributed: frame.totals.unattributed,
+      };
     });
     const after = await forge.page.screenshot({ type: 'png' });
     const diff = pixelDiff(before, after, { threshold: 4 });

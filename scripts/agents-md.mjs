@@ -24,13 +24,18 @@ const COMMAND_DESCRIPTIONS = {
   explain: 'What a hint means, what to change, which API (a hint code or `--all`, not both).',
   schema: 'JSON Schemas (draft 2020-12) of everything the commands print.',
   mcp: 'Stdio MCP server with tools `analyze_asset`, `inspect_app`, `optimize_asset`, `explain_hint` (needs `npm i -D @modelcontextprotocol/sdk zod`).',
-  decoders: "Copies three's Draco decoder and Basis transcoder into `<dir>/draco` and `<dir>/basis` for `createLoader(renderer, { decoders })`. No JSON output.",
+  decoders:
+    "Copies three's Draco decoder and Basis transcoder into `<dir>/draco` and `<dir>/basis` for `createLoader(renderer, { decoders })`. No JSON output.",
 };
 
 const specs = Object.values(COMMAND_SPECS);
-for (const spec of specs) if (!COMMAND_DESCRIPTIONS[spec.name]) throw new Error(`scripts/agents-md.mjs: no description for command ${spec.name}`);
+for (const spec of specs)
+  if (!COMMAND_DESCRIPTIONS[spec.name])
+    throw new Error(`scripts/agents-md.mjs: no description for command ${spec.name}`);
 
-const commandRows = specs.map((spec) => `| \`npx ${cell(usageLine(spec))}\` | ${COMMAND_DESCRIPTIONS[spec.name]} |`).join('\n');
+const commandRows = specs
+  .map((spec) => `| \`npx ${cell(usageLine(spec))}\` | ${COMMAND_DESCRIPTIONS[spec.name]} |`)
+  .join('\n');
 
 // One row per distinct flag (same forms and meaning), listing every command that takes it.
 const flagRowsByKey = new Map();
@@ -43,7 +48,12 @@ for (const spec of specs) {
     flagRowsByKey.set(key, row);
   }
 }
-const flagRows = [...flagRowsByKey.values()].map((row) => `| ${row.forms.map((form) => `\`${cell(form)}\``).join(', ')} | ${row.commands.join(', ')} | ${cell(row.description)} |`).join('\n');
+const flagRows = [...flagRowsByKey.values()]
+  .map(
+    (row) =>
+      `| ${row.forms.map((form) => `\`${cell(form)}\``).join(', ')} | ${row.commands.join(', ')} | ${cell(row.description)} |`,
+  )
+  .join('\n');
 
 const body = `# threeforge for AI agents
 
@@ -225,7 +235,7 @@ writeFileSync(
 > Frame-budget compiler and diagnostics for three.js games. Batches naive scenes at load time, measures draw calls, overdraw, skinning, lighting, JS and memory in one ledger, explains what to fix. CLI and MCP server for AI agents.
 
 - Quick start for agents: AGENTS.md (also printed by \`npx threeforge\`)
-- Commands: ${specs.map((spec) => [spec.name, ...spec.positionals.map((p) => p.usage.startsWith('<') ? p.usage : `[${p.usage}]`)].join(' ')).join(', ')}; analyze, inspect, optimize, explain and schema take --json; unknown flags exit 2
+- Commands: ${specs.map((spec) => [spec.name, ...spec.positionals.map((p) => (p.usage.startsWith('<') ? p.usage : `[${p.usage}]`))].join(' ')).join(', ')}; analyze, inspect, optimize, explain and schema take --json; unknown flags exit 2
 - JSON Schemas: \`npx threeforge schema\`
 - Hint remedies: \`npx threeforge explain --all --json\`
 - Complete reference (every module, option, mechanism): docs/threeforge.md
@@ -234,4 +244,6 @@ writeFileSync(
 - Design notes: docs/design.md
 `,
 );
-console.log(`AGENTS.md and llms.txt written for ${VERSION} with ${Object.keys(REMEDIES).length} hint codes, ${specs.length} commands and ${flagRowsByKey.size} flag rows`);
+console.log(
+  `AGENTS.md and llms.txt written for ${VERSION} with ${Object.keys(REMEDIES).length} hint codes, ${specs.length} commands and ${flagRowsByKey.size} flag rows`,
+);

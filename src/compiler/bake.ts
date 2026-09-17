@@ -5,7 +5,20 @@
  * pair that is not provably a seam between two solids stays, and is counted) and every removal is counted and
  * returned as geometry (`removed`) that an agent can render to check.
  */
-import { BackSide, Box3, BufferAttribute, BufferGeometry, Color, DoubleSide, FrontSide, Matrix3, Matrix4, Ray, Vector3, type Side } from 'three';
+import {
+  BackSide,
+  Box3,
+  BufferAttribute,
+  BufferGeometry,
+  type Color,
+  DoubleSide,
+  FrontSide,
+  Matrix3,
+  type Matrix4,
+  Ray,
+  type Side,
+  Vector3,
+} from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 
 export interface BakeEntry {
@@ -117,7 +130,16 @@ export interface BakeResult {
 }
 
 /** Item sizes of the attributes `gather` carries into the baked geometry (colour: see `unbakeableAttribute`). */
-const CARRIED: Record<string, readonly number[]> = { position: [3], normal: [3], tangent: [3, 4], uv: [2], uv1: [2], uv2: [2], uv3: [2], color: [3] };
+const CARRIED: Record<string, readonly number[]> = {
+  position: [3],
+  normal: [3],
+  tangent: [3, 4],
+  uv: [2],
+  uv1: [2],
+  uv2: [2],
+  uv3: [2],
+  color: [3],
+};
 
 /**
  * The first attribute of `geometry` the bake does not carry faithfully, or null: one outside `position`, `normal`,
@@ -127,7 +149,11 @@ const CARRIED: Record<string, readonly number[]> = { position: [3], normal: [3],
  * which is faithful only when `builtInReads` says three's own code is all that reads the geometry (`bakeProvesReads`;
  * NodeMaterial.js:839 is three r186's only reader); otherwise a node or an overridden method may read it, so it counts.
  */
-export function unbakeableAttribute(geometry: BufferGeometry, vertexColors = true, builtInReads = false): string | null {
+export function unbakeableAttribute(
+  geometry: BufferGeometry,
+  vertexColors = true,
+  builtInReads = false,
+): string | null {
   for (const name of Object.keys(geometry.attributes)) {
     const size = geometry.attributes[name]!.itemSize;
     if (name === 'color' && !vertexColors) {
@@ -139,7 +165,13 @@ export function unbakeableAttribute(geometry: BufferGeometry, vertexColors = tru
   return null;
 }
 
-const DEFAULTS = { tolerance: 1e-4, normalAngle: 0.5, colorTolerance: 1 / 255, removeContactFaces: true, removeDuplicateFaces: true };
+const DEFAULTS = {
+  tolerance: 1e-4,
+  normalAngle: 0.5,
+  colorTolerance: 1 / 255,
+  removeContactFaces: true,
+  removeDuplicateFaces: true,
+};
 const BURIED_DEFAULTS: Required<BuriedOptions> = { samples: 24, distance: 0.1 };
 const GOLDEN = Math.PI * (3 - Math.sqrt(5));
 
@@ -163,10 +195,14 @@ interface Gathered {
 }
 
 function gather(entries: BakeEntry[]): Gathered & { hasColor: boolean; hasUv: boolean } {
-  const uvSets = ['uv', 'uv1', 'uv2', 'uv3'].filter((name) => entries.every((e) => e.geometry.attributes[name] !== undefined));
+  const uvSets = ['uv', 'uv1', 'uv2', 'uv3'].filter((name) =>
+    entries.every((e) => e.geometry.attributes[name] !== undefined),
+  );
   const hasUv = uvSets.includes('uv');
   const readsColor = (e: BakeEntry): boolean => e.vertexColors !== false && e.geometry.attributes.color !== undefined;
-  const hasColor = entries.some((e) => readsColor(e) || (e.color && (e.color.r !== 1 || e.color.g !== 1 || e.color.b !== 1)));
+  const hasColor = entries.some(
+    (e) => readsColor(e) || (e.color && (e.color.r !== 1 || e.color.g !== 1 || e.color.b !== 1)),
+  );
   const hasTangent = entries.length > 0 && entries.every((e) => e.geometry.attributes.tangent !== undefined);
   let vertexTotal = 0;
   let triangleTotal = 0;
@@ -245,7 +281,21 @@ function gather(entries: BakeEntry[]): Gathered & { hasColor: boolean; hasUv: bo
     tOffset += count / 3;
   });
   entryTriangles[entries.length] = tOffset;
-  return { position, normal, tangent, uvSets, uvs, color, vertexEntry, index, triangleEntry, entryTriangles, locked, hasColor, hasUv };
+  return {
+    position,
+    normal,
+    tangent,
+    uvSets,
+    uvs,
+    color,
+    vertexEntry,
+    index,
+    triangleEntry,
+    entryTriangles,
+    locked,
+    hasColor,
+    hasUv,
+  };
 }
 
 /** Parity of the permutation taking (a, b, c) to sorted order: +1 even (same winding as sorted), -1 odd. */
@@ -343,12 +393,24 @@ function closedOutwardShell(g: Gathered, posIds: Uint32Array, posCount: number, 
     const ia = g.index[t * 3]! * 3;
     const ib = g.index[t * 3 + 1]! * 3;
     const ic = g.index[t * 3 + 2]! * 3;
-    const ax = p[ia]! - ox, ay = p[ia + 1]! - oy, az = p[ia + 2]! - oz;
-    const bx = p[ib]! - ox, by = p[ib + 1]! - oy, bz = p[ib + 2]! - oz;
-    const cx = p[ic]! - ox, cy = p[ic + 1]! - oy, cz = p[ic + 2]! - oz;
-    const ux = bx - ax, uy = by - ay, uz = bz - az;
-    const wx = cx - ax, wy = cy - ay, wz = cz - az;
-    const nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+    const ax = p[ia]! - ox,
+      ay = p[ia + 1]! - oy,
+      az = p[ia + 2]! - oz;
+    const bx = p[ib]! - ox,
+      by = p[ib + 1]! - oy,
+      bz = p[ib + 2]! - oz;
+    const cx = p[ic]! - ox,
+      cy = p[ic + 1]! - oy,
+      cz = p[ic + 2]! - oz;
+    const ux = bx - ax,
+      uy = by - ay,
+      uz = bz - az;
+    const wx = cx - ax,
+      wy = cy - ay,
+      wz = cz - az;
+    const nx = uy * wz - uz * wy,
+      ny = uz * wx - ux * wz,
+      nz = ux * wy - uy * wx;
     const root = components.find(i);
     volume[root] = volume[root]! + (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6;
     area[root] = area[root]! + Math.sqrt(nx * nx + ny * ny + nz * nz) / 2;
@@ -370,7 +432,11 @@ function coversOnce(g: Gathered, tris: number[], tolerance: number): boolean {
   const p = g.position;
   const first = tris[0]! * 3;
   const origin = new Vector3().fromArray(p, g.index[first]! * 3);
-  const normal = new Vector3().fromArray(p, g.index[first + 1]! * 3).sub(origin).cross(new Vector3().fromArray(p, g.index[first + 2]! * 3).sub(origin)).normalize();
+  const normal = new Vector3()
+    .fromArray(p, g.index[first + 1]! * 3)
+    .sub(origin)
+    .cross(new Vector3().fromArray(p, g.index[first + 2]! * 3).sub(origin))
+    .normalize();
   const u = new Vector3(1, 0, 0);
   if (Math.abs(normal.x) > 0.9) u.set(0, 1, 0);
   u.cross(normal).normalize();
@@ -413,7 +479,10 @@ function coversOnce(g: Gathered, tris: number[], tolerance: number): boolean {
 
 /** Whether projected triangles `i` and `j` overlap by more than `tolerance` along each of their six edge normals. */
 function trianglesOverlap(xy: Float64Array, i: number, j: number, tolerance: number): boolean {
-  for (const [s, o] of [[i, j], [j, i]] as const) {
+  for (const [s, o] of [
+    [i, j],
+    [j, i],
+  ] as const) {
     for (let e = 0; e < 3; e++) {
       const x0 = xy[s * 6 + e * 2]!;
       const y0 = xy[s * 6 + e * 2 + 1]!;
@@ -526,7 +595,11 @@ function coincidentIslands(
       // An edge used three or more times drops out of the once-used outline, which then no longer bounds the region
       // (it could match a region of a different size). Leave such an island alone.
       if (overused) continue;
-      const boundary = [...counts.entries()].filter(([, c]) => c === 1).map(([k]) => k).sort().join(';');
+      const boundary = [...counts.entries()]
+        .filter(([, c]) => c === 1)
+        .map(([k]) => k)
+        .sort()
+        .join(';');
       // No outline: every such region shares the empty key, so it can be matched against nothing. Leave it alone.
       if (boundary.length === 0) continue;
       const existing = out.get(boundary);
@@ -559,7 +632,8 @@ function coincidentIslands(
     for (const [boundary, island] of plus) {
       const facing = minus.get(boundary);
       if (!facing) continue;
-      const seam = isSeam(island, facing, seamSafe) && coversOnce(g, island, tolerance) && coversOnce(g, facing, tolerance);
+      const seam =
+        isSeam(island, facing, seamSafe) && coversOnce(g, island, tolerance) && coversOnce(g, facing, tolerance);
       (seam ? seams : kept).push(...island, ...facing);
     }
   }
@@ -573,7 +647,12 @@ function coincidentIslands(
  * vertex: a front-side face turned away is not drawn where the copies are. Index order is kept per triangle, so a
  * triangle of the tree is matched to a copy by its three vertex indices.
  */
-function overlapTest(g: Gathered, posIds: Uint32Array, tolerance: number, culledOpposite: (vertex: number) => boolean): ((copies: number[]) => boolean) & { dispose(): void } {
+function overlapTest(
+  g: Gathered,
+  posIds: Uint32Array,
+  tolerance: number,
+  culledOpposite: (vertex: number) => boolean,
+): ((copies: number[]) => boolean) & { dispose(): void } {
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(g.position, 3));
   // MeshBVH reorders the index it is given, whole triangles at a time: give it a copy, and read vertex indices from it.
@@ -613,7 +692,8 @@ function overlapTest(g: Gathered, posIds: Uint32Array, tolerance: number, culled
     u.cross(n).normalize();
     v.crossVectors(n, u);
     const isCopy = (i0: number, i1: number, i2: number): boolean => {
-      for (const copy of copies) if (g.index[copy * 3] === i0 && g.index[copy * 3 + 1] === i1 && g.index[copy * 3 + 2] === i2) return true;
+      for (const copy of copies)
+        if (g.index[copy * 3] === i0 && g.index[copy * 3 + 1] === i1 && g.index[copy * 3 + 2] === i2) return true;
       return false;
     };
     box.makeEmpty().expandByPoint(a).expandByPoint(b).expandByPoint(c).expandByScalar(planeDistance);
@@ -644,7 +724,9 @@ function overlapTest(g: Gathered, posIds: Uint32Array, tolerance: number, culled
 /** Merge modules into one geometry with the removals and welds described by `options`. */
 export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}): BakeResult {
   const opts = { ...DEFAULTS, ...options };
-  const buried: Required<BuriedOptions> | null = options.removeBuried ? { ...BURIED_DEFAULTS, ...(typeof options.removeBuried === 'object' ? options.removeBuried : {}) } : null;
+  const buried: Required<BuriedOptions> | null = options.removeBuried
+    ? { ...BURIED_DEFAULTS, ...(typeof options.removeBuried === 'object' ? options.removeBuried : {}) }
+    : null;
   const g = gather(entries);
   const vertexCount = g.vertexEntry.length;
   const triangleCount = g.triangleEntry.length;
@@ -695,15 +777,29 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
   // tangent w and uv (1e-5), colour within `colorTolerance` (the weld's own rule, `matches` below).
   const cosTol = Math.cos((opts.normalAngle * Math.PI) / 180);
   const sameVertex = (i: number, j: number): boolean => {
-    if (g.normal[i * 3]! * g.normal[j * 3]! + g.normal[i * 3 + 1]! * g.normal[j * 3 + 1]! + g.normal[i * 3 + 2]! * g.normal[j * 3 + 2]! < cosTol) return false;
+    if (
+      g.normal[i * 3]! * g.normal[j * 3]! +
+        g.normal[i * 3 + 1]! * g.normal[j * 3 + 1]! +
+        g.normal[i * 3 + 2]! * g.normal[j * 3 + 2]! <
+      cosTol
+    )
+      return false;
     if (g.tangent) {
-      const x = g.tangent[i * 4]!, y = g.tangent[i * 4 + 1]!, z = g.tangent[i * 4 + 2]!;
-      const ox = g.tangent[j * 4]!, oy = g.tangent[j * 4 + 1]!, oz = g.tangent[j * 4 + 2]!;
+      const x = g.tangent[i * 4]!,
+        y = g.tangent[i * 4 + 1]!,
+        z = g.tangent[i * 4 + 2]!;
+      const ox = g.tangent[j * 4]!,
+        oy = g.tangent[j * 4 + 1]!,
+        oz = g.tangent[j * 4 + 2]!;
       if (g.tangent[i * 4 + 3] !== g.tangent[j * 4 + 3]) return false;
       if (x * ox + y * oy + z * oz < cosTol && (x !== ox || y !== oy || z !== oz)) return false;
     }
-    for (const set of g.uvs) if (Math.abs(set[i * 2]! - set[j * 2]!) > 1e-5 || Math.abs(set[i * 2 + 1]! - set[j * 2 + 1]!) > 1e-5) return false;
-    if (g.color) for (let k = 0; k < 3; k++) if (Math.abs(g.color[i * 3 + k]! - g.color[j * 3 + k]!) > opts.colorTolerance) return false;
+    for (const set of g.uvs)
+      if (Math.abs(set[i * 2]! - set[j * 2]!) > 1e-5 || Math.abs(set[i * 2 + 1]! - set[j * 2 + 1]!) > 1e-5)
+        return false;
+    if (g.color)
+      for (let k = 0; k < 3; k++)
+        if (Math.abs(g.color[i * 3 + k]! - g.color[j * 3 + k]!) > opts.colorTolerance) return false;
     return true;
   };
   // Whether triangles `s` and `t` on the same places draw the same: each corner of `s` against the corner of `t` at its place.
@@ -757,14 +853,24 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
     if (list.length < 2) continue;
     for (const winding of [1, -1] as const) {
       // Winding by place: a locked triangle's posIds are its own and say nothing about its winding against the others.
-      const same = list.filter((t) => parity(placeIds[g.index[t * 3]!]!, placeIds[g.index[t * 3 + 1]!]!, placeIds[g.index[t * 3 + 2]!]!) === winding);
+      const same = list.filter(
+        (t) =>
+          parity(placeIds[g.index[t * 3]!]!, placeIds[g.index[t * 3 + 1]!]!, placeIds[g.index[t * 3 + 2]!]!) ===
+          winding,
+      );
       if (same.length < 2) continue;
-      if (same.every((t) => !triangleLocked(t) && removable(g.triangleEntry[t]!) && sameTriangle(same[0]!, t))) sets.push(same);
+      if (same.every((t) => !triangleLocked(t) && removable(g.triangleEntry[t]!) && sameTriangle(same[0]!, t)))
+        sets.push(same);
       else for (const t of same) if (!triangleLocked(t)) keptDuplicates.push(t);
     }
   }
   if (sets.length > 0) {
-    const drawnOver = overlapTest(g, posIds, opts.tolerance, (vertex) => g.locked[vertex] === 0 && removable(g.vertexEntry[vertex]!));
+    const drawnOver = overlapTest(
+      g,
+      posIds,
+      opts.tolerance,
+      (vertex) => g.locked[vertex] === 0 && removable(g.vertexEntry[vertex]!),
+    );
     for (const same of sets) {
       if (drawnOver(same)) {
         keptDuplicates.push(...same);
@@ -787,7 +893,14 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
       if (shells[k] === 0) shells[k] = closedOutwardShell(g, posIds, nextPos, k, opts.tolerance) ? 1 : -1;
       return shells[k] === 1;
     };
-    const found = coincidentIslands(g, posIds, candidates, opts.tolerance, opts.removeContactFaces ? seamSafe : null, removable);
+    const found = coincidentIslands(
+      g,
+      posIds,
+      candidates,
+      opts.tolerance,
+      opts.removeContactFaces ? seamSafe : null,
+      removable,
+    );
     kept = found.kept;
     if (opts.removeContactFaces) {
       for (const t of found.seams) {
@@ -841,7 +954,12 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
           const r = Math.sqrt(1 - z * z);
           const phi = i * GOLDEN;
           ray.origin.copy(origin);
-          ray.direction.set(0, 0, 0).addScaledVector(t1, r * Math.cos(phi)).addScaledVector(t2, r * Math.sin(phi)).addScaledVector(normal, z).normalize();
+          ray.direction
+            .set(0, 0, 0)
+            .addScaledVector(t1, r * Math.cos(phi))
+            .addScaledVector(t2, r * Math.sin(phi))
+            .addScaledVector(normal, z)
+            .normalize();
           // A hit blocks only when a viewer beyond it, looking back along the ray, would see that triangle drawn: the ray
           // meets its back side (three-mesh-bvh's BackSide test culls triangles facing the ray origin). A front-side card
           // facing the face shows that viewer its culled back, so it hides nothing.
@@ -861,7 +979,12 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
         c.fromArray(g.position, g.index[t * 3 + 2]! * 3);
         n.copy(b).sub(a).cross(edge.copy(c).sub(a)).normalize();
         // The centroid, lifted `eps` along the face normal.
-        origin.copy(a).add(b).add(c).multiplyScalar(1 / 3).addScaledVector(n, eps);
+        origin
+          .copy(a)
+          .add(b)
+          .add(c)
+          .multiplyScalar(1 / 3)
+          .addScaledVector(n, eps);
         if (!blocked(origin, n)) continue;
         removedTriangle[t] = 1;
         report.buriedFaces++;
@@ -887,29 +1010,40 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
     const id = outPosition.length / 3;
     outPosition.push(g.position[i * 3]!, g.position[i * 3 + 1]!, g.position[i * 3 + 2]!);
     outNormal.push(g.normal[i * 3]!, g.normal[i * 3 + 1]!, g.normal[i * 3 + 2]!);
-    if (g.tangent) outTangent.push(g.tangent[i * 4]!, g.tangent[i * 4 + 1]!, g.tangent[i * 4 + 2]!, g.tangent[i * 4 + 3]!);
+    if (g.tangent)
+      outTangent.push(g.tangent[i * 4]!, g.tangent[i * 4 + 1]!, g.tangent[i * 4 + 2]!, g.tangent[i * 4 + 3]!);
     for (let k = 0; k < g.uvs.length; k++) outUvs[k]!.push(g.uvs[k]![i * 2]!, g.uvs[k]![i * 2 + 1]!);
     if (g.color) outColor.push(g.color[i * 3]!, g.color[i * 3 + 1]!, g.color[i * 3 + 2]!);
     return id;
   };
   const matches = (i: number, out: number): boolean => {
-    const dot = g.normal[i * 3]! * outNormal[out * 3]! + g.normal[i * 3 + 1]! * outNormal[out * 3 + 1]! + g.normal[i * 3 + 2]! * outNormal[out * 3 + 2]!;
+    const dot =
+      g.normal[i * 3]! * outNormal[out * 3]! +
+      g.normal[i * 3 + 1]! * outNormal[out * 3 + 1]! +
+      g.normal[i * 3 + 2]! * outNormal[out * 3 + 2]!;
     if (dot < cosTol) return false;
     if (g.tangent) {
       const o = i * 4;
       const p = out * 4;
       if (g.tangent[o + 3] !== outTangent[p + 3]) return false;
-      const x = g.tangent[o]!, y = g.tangent[o + 1]!, z = g.tangent[o + 2]!;
-      const ox = outTangent[p]!, oy = outTangent[p + 1]!, oz = outTangent[p + 2]!;
+      const x = g.tangent[o]!,
+        y = g.tangent[o + 1]!,
+        z = g.tangent[o + 2]!;
+      const ox = outTangent[p]!,
+        oy = outTangent[p + 1]!,
+        oz = outTangent[p + 2]!;
       // Exactly equal directions weld even when degenerate (a zero tangent).
       if (x * ox + y * oy + z * oz < cosTol && (x !== ox || y !== oy || z !== oz)) return false;
     }
     for (let k = 0; k < g.uvs.length; k++) {
       const set = g.uvs[k]!;
       const outSet = outUvs[k]!;
-      if (Math.abs(set[i * 2]! - outSet[out * 2]!) > 1e-5 || Math.abs(set[i * 2 + 1]! - outSet[out * 2 + 1]!) > 1e-5) return false;
+      if (Math.abs(set[i * 2]! - outSet[out * 2]!) > 1e-5 || Math.abs(set[i * 2 + 1]! - outSet[out * 2 + 1]!) > 1e-5)
+        return false;
     }
-    if (g.color) for (let k = 0; k < 3; k++) if (Math.abs(g.color[i * 3 + k]! - outColor[out * 3 + k]!) > opts.colorTolerance) return false;
+    if (g.color)
+      for (let k = 0; k < 3; k++)
+        if (Math.abs(g.color[i * 3 + k]! - outColor[out * 3 + k]!) > opts.colorTolerance) return false;
     return true;
   };
   const vertexOf = (i: number): number => {
@@ -959,7 +1093,12 @@ export function bakeGeometries(entries: BakeEntry[], options: BakeOptions = {}):
   geometry.computeBoundingSphere();
   const removed = new BufferGeometry();
   removed.setAttribute('position', new BufferAttribute(new Float32Array(removedPositions), 3));
-  removed.setIndex(new BufferAttribute(new Uint32Array(removedPositions.length / 3).map((_, i) => i), 1));
+  removed.setIndex(
+    new BufferAttribute(
+      new Uint32Array(removedPositions.length / 3).map((_, i) => i),
+      1,
+    ),
+  );
   return { geometry, removed, report, triangleOrigins: new Uint32Array(origins), hasColor: g.hasColor, hasUv: g.hasUv };
 }
 

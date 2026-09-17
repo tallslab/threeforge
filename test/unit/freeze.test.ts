@@ -1,5 +1,16 @@
+import {
+  BoxGeometry,
+  DirectionalLight,
+  Group,
+  Mesh,
+  MeshStandardMaterial,
+  Object3D,
+  Scene,
+  SkinnedMesh,
+  Sprite,
+  SpriteMaterial,
+} from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { BoxGeometry, DirectionalLight, Group, Mesh, MeshStandardMaterial, Object3D, Scene, SkinnedMesh, Sprite, SpriteMaterial } from 'three';
 import { freezableObjects } from '../../src/compiler/freeze.js';
 import { tag } from '../../src/tags.js';
 
@@ -46,7 +57,11 @@ describe('freezableObjects', () => {
     withSprite.name = 'withSprite';
     withSprite.add(tag.static(mesh('s5')), new Sprite(new SpriteMaterial()));
     scene.add(withDynamic, withAnimated, withSynced, withLight, withSprite);
-    const out = freezableObjects(scene, { hidden: new Set([synced]), synced: new Set([synced]), animated: new Set([animated]) });
+    const out = freezableObjects(scene, {
+      hidden: new Set([synced]),
+      synced: new Set([synced]),
+      animated: new Set([animated]),
+    });
     expect(names(out).sort()).toEqual(['s1', 's2', 's3', 's4', 's5']);
   });
 

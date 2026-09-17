@@ -68,7 +68,8 @@ export class ResourceTracker {
     if (!sets) return report;
     this.owners.delete(owner);
     const others = [...this.owners.values()];
-    const heldElsewhere = <T>(pick: (s: ResourceSets) => Set<T>, item: T): boolean => others.some((s) => pick(s).has(item));
+    const heldElsewhere = <T>(pick: (s: ResourceSets) => Set<T>, item: T): boolean =>
+      others.some((s) => pick(s).has(item));
     for (const g of sets.geometries) {
       if (heldElsewhere((s) => s.geometries, g)) continue;
       g.dispose();
@@ -118,6 +119,11 @@ export class ResourceTracker {
       for (const m of s.materials) all.materials.add(m);
       for (const t of s.textures) all.textures.add(t);
     }
-    return { owners: this.owners.size, geometries: all.geometries.size, materials: all.materials.size, textures: all.textures.size };
+    return {
+      owners: this.owners.size,
+      geometries: all.geometries.size,
+      materials: all.materials.size,
+      textures: all.textures.size,
+    };
   }
 }

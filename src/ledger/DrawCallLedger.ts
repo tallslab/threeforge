@@ -1,22 +1,53 @@
-import { ObjectSpaceNormalMap, REVISION, type Camera, type Light, type Material, type Object3D, type Scene } from 'three';
-import { MaterialRegistry, type MaterialHashes } from '../registry/MaterialRegistry.js';
-import { expectedGpuDraws, sideFactor, writeInstanceCounts, type BackendInfo, type DrawGroup } from './expectedDraws.js';
-import { flagsInto, isVsmBlur, kindOf, reasonOf, type Reason } from './reasons.js';
-import { DisplayNames, type PathCache } from './names.js';
-import { budgetsFor, type Budgets } from './budgets.js';
-import { Vector2 } from 'three';
-import { hintsFor, type HintContext, type MainPassObjects } from './hints.js';
-import { estimateMemory, type AllowedRenderTarget } from './memory.js';
-import { disposeOverdraw, measureOverdraw, overdrawTargetOf, type OverdrawRenderer, type OverdrawResult } from './overdraw.js';
-import { formatCostRows, formatHints } from '../overlay/index.js';
-import { FORGE_TAG_KEY } from '../tags.js';
-import { hasNodeSlot } from '../compiler/sprites.js';
+import {
+  type Camera,
+  type Light,
+  type Material,
+  type Object3D,
+  ObjectSpaceNormalMap,
+  REVISION,
+  type Scene,
+  Vector2,
+} from 'three';
 import { hasOwnFunctions } from '../compiler/batchStatics.js';
+import { hasNodeSlot } from '../compiler/sprites.js';
+import { formatCostRows, formatHints } from '../overlay/index.js';
 import { isBuiltInMaterial } from '../registry/builtInMaterials.js';
-import { lightInfoOf, type LightInfo } from './sections.js';
-import { shadowPassIds } from './shadowPasses.js';
+import { type MaterialHashes, MaterialRegistry } from '../registry/MaterialRegistry.js';
+import { FORGE_TAG_KEY } from '../tags.js';
+import { type Budgets, budgetsFor } from './budgets.js';
+import {
+  type BackendInfo,
+  type DrawGroup,
+  expectedGpuDraws,
+  sideFactor,
+  writeInstanceCounts,
+} from './expectedDraws.js';
+import { type HintContext, hintsFor, type MainPassObjects } from './hints.js';
 import { MaterialUses } from './materialUses.js';
-import { buildFrame, emptyFrame, emptySections, type BudgetResult, type FrameEnv, type FrameSnapshot, type JsSnapshot, type MemorySnapshot, type SubmissionRecord, type Tier } from './snapshot.js';
+import { type AllowedRenderTarget, estimateMemory } from './memory.js';
+import { DisplayNames, type PathCache } from './names.js';
+import {
+  disposeOverdraw,
+  measureOverdraw,
+  type OverdrawRenderer,
+  type OverdrawResult,
+  overdrawTargetOf,
+} from './overdraw.js';
+import { flagsInto, isVsmBlur, kindOf, type Reason, reasonOf } from './reasons.js';
+import { type LightInfo, lightInfoOf } from './sections.js';
+import { shadowPassIds } from './shadowPasses.js';
+import {
+  type BudgetResult,
+  buildFrame,
+  emptyFrame,
+  emptySections,
+  type FrameEnv,
+  type FrameSnapshot,
+  type JsSnapshot,
+  type MemorySnapshot,
+  type SubmissionRecord,
+  type Tier,
+} from './snapshot.js';
 
 /** The slice of three's common Renderer the ledger patches and reads. Structural so tests can fake it. */
 export interface LedgerRenderer {
@@ -24,7 +55,16 @@ export interface LedgerRenderer {
   renderObject(...args: unknown[]): unknown;
   info: {
     render: { drawCalls: number; triangles: number };
-    memory: { programs: number; textures?: number; geometries?: number; texturesSize?: number; attributesSize?: number; indexAttributesSize?: number; renderTargets?: number; total?: number };
+    memory: {
+      programs: number;
+      textures?: number;
+      geometries?: number;
+      texturesSize?: number;
+      attributesSize?: number;
+      indexAttributesSize?: number;
+      renderTargets?: number;
+      total?: number;
+    };
     /** Info.createTexture and destroyTexture: wrapped while attached to count three's DFG_LUT (see `attach`). */
     createTexture?(texture: unknown): void;
     destroyTexture?(texture: unknown): void;
@@ -146,7 +186,25 @@ interface FrameState {
 
 /** A blank record; the property order is `SubmissionRecord`'s, which `frame({ items: true })` copies. */
 function newRecord(): SubmissionRecord {
-  return { name: '', kind: 'other', material: 0, materialType: '', programHash: '', variantHash: '', transparent: false, pass: '', reason: 'unclassified', flags: [], expectedGpuDraws: 0, instances: 0, instancesDrawn: 0, vertices: 0, bones: 0, skeleton: null, morphTargets: 0 };
+  return {
+    name: '',
+    kind: 'other',
+    material: 0,
+    materialType: '',
+    programHash: '',
+    variantHash: '',
+    transparent: false,
+    pass: '',
+    reason: 'unclassified',
+    flags: [],
+    expectedGpuDraws: 0,
+    instances: 0,
+    instancesDrawn: 0,
+    vertices: 0,
+    bones: 0,
+    skeleton: null,
+    morphTargets: 0,
+  };
 }
 
 function acquire(buffer: RecordBuffer): SubmissionRecord {
@@ -198,12 +256,22 @@ export class DrawCallLedger {
   /** This frame's material uses: `SubmissionRecord.material` and the main-pass users behind `static-unbatched`. */
   private readonly uses: MaterialUses;
   private backendInfo: BackendInfo = { backend: 'unknown', multiDraw: false };
-  private environment: { tier: Tier; gpu: string; dpr: number; viewport: [number, number] } = { tier: 'desktop', gpu: 'unknown', dpr: 1, viewport: [0, 0] };
+  private environment: { tier: Tier; gpu: string; dpr: number; viewport: [number, number] } = {
+    tier: 'desktop',
+    gpu: 'unknown',
+    dpr: 1,
+    viewport: [0, 0],
+  };
   private readonly now: () => number;
   private readonly frameStarts: number[] = [];
   private framesSeen = 0;
   private lastScene: Object3D | null = null;
-  private graphStats: { objects: number; autoUpdatedMatrices: number; hiddenOriginals: number; at: number } = { objects: 0, autoUpdatedMatrices: 0, hiddenOriginals: 0, at: -1 };
+  private graphStats: { objects: number; autoUpdatedMatrices: number; hiddenOriginals: number; at: number } = {
+    objects: 0,
+    autoUpdatedMatrices: 0,
+    hiddenOriginals: 0,
+    at: -1,
+  };
   private scheduler: { skippedRecently(): number } | null = null;
   private streamer: { stats(): { chunks: number; resident: number } } | null = null;
   private memoryStats: MemorySnapshot = emptySections().memory;
@@ -228,10 +296,20 @@ export class DrawCallLedger {
     this.internalGeometries.delete(event.target as object);
     this.drawnTargets.delete(event.target as DrawnTarget);
   };
-  private textureInfo: { info: LedgerRenderer['info']; create: (texture: unknown) => void; destroy: (texture: unknown) => void; own: { create: boolean; destroy: boolean } } | null = null;
+  private textureInfo: {
+    info: LedgerRenderer['info'];
+    create: (texture: unknown) => void;
+    destroy: (texture: unknown) => void;
+    own: { create: boolean; destroy: boolean };
+  } | null = null;
   private hintContext: HintContext = {};
   /** Distinct objects the last frame's main pass drew, per reason the draw-call hints count (filled in `exit()`). */
-  private readonly mainObjects: MainPassObjects = { untagged: 0, 'unique-material': 0, 'static-unbatched': 0, sprite: 0 };
+  private readonly mainObjects: MainPassObjects = {
+    untagged: 0,
+    'unique-material': 0,
+    'static-unbatched': 0,
+    sprite: 0,
+  };
   /** Distinct objects the last frame drew with an unsupported material, over every pass (`HintContext.unsupportedObjects`). */
   private unsupportedObjects = 0;
   private overdraw: OverdrawResult | null = null;
@@ -266,9 +344,21 @@ export class DrawCallLedger {
     const ledger = this;
 
     // `arguments` forwards exactly what three passed without copying it into a rest array on every call.
-    renderer.renderObject = function (this: LedgerRenderer, object: Object3D, scene: Scene, _camera: Camera, _geometry: unknown, material: Material, group: unknown, lightsNode: unknown, _clippingContext: unknown, passId: unknown) {
+    renderer.renderObject = function (
+      this: LedgerRenderer,
+      object: Object3D,
+      scene: Scene,
+      _camera: Camera,
+      _geometry: unknown,
+      material: Material,
+      group: unknown,
+      lightsNode: unknown,
+      _clippingContext: unknown,
+      passId: unknown,
+    ) {
       // Paused: an overdraw count render, possibly inside a draw of the open frame (a measurement from a render hook).
-      if (ledger.depth === 0 || ledger.current === null || ledger.paused) return originals.renderObject.apply(this, arguments as unknown as unknown[]);
+      if (ledger.depth === 0 || ledger.current === null || ledger.paused)
+        return originals.renderObject.apply(this, arguments as unknown as unknown[]);
       const hashes = ledger.hashesOf(material);
       // Read before the call: three puts the override material's side back as renderObject returns.
       const sides = sideFactor(material, scene);
@@ -324,7 +414,7 @@ export class DrawCallLedger {
     if (typeof create !== 'function' || typeof destroy !== 'function') return;
     const internal = this.internalTextures;
     const pmrem = this.pmremTextures;
-    const own = { create: Object.prototype.hasOwnProperty.call(info, 'createTexture'), destroy: Object.prototype.hasOwnProperty.call(info, 'destroyTexture') };
+    const own = { create: Object.hasOwn(info, 'createTexture'), destroy: Object.hasOwn(info, 'destroyTexture') };
     info.createTexture = function (this: unknown, texture: unknown) {
       const t = texture as { name?: string; isDataTexture?: boolean; isPMREMTexture?: boolean } | null;
       if (t && t.isDataTexture === true && t.name === 'DFG_LUT') internal.add(t);
@@ -370,7 +460,12 @@ export class DrawCallLedger {
     let objects = 0;
     let auto = 0;
     let hidden = 0;
-    const ctx: Required<Omit<HintContext, 'items' | 'objects' | 'unsupportedObjects'>> = { staticAutoUpdated: [], pointShadowLights: [], transmissive: [], localSpaceDraws: [] };
+    const ctx: Required<Omit<HintContext, 'items' | 'objects' | 'unsupportedObjects'>> = {
+      staticAutoUpdated: [],
+      pointShadowLights: [],
+      transmissive: [],
+      localSpaceDraws: [],
+    };
     const paths = this.names.forRoot(scene);
     // three renders no shadow map with shadow maps off (ShadowNode builds none), so no point light's six faces.
     const shadowMapsOn = this.renderer?.shadowMap?.enabled !== false;
@@ -379,13 +474,18 @@ export class DrawCallLedger {
       if (o.layers.mask === HIDDEN_MASK) hidden++;
       if (o.matrixAutoUpdate && o.matrixWorldAutoUpdate) {
         auto++;
-        if ((o.userData as Record<string, unknown> | null)?.[FORGE_TAG_KEY] === 'static' && (o as { isMesh?: boolean }).isMesh) ctx.staticAutoUpdated.push(this.names.of(o, scene, paths));
+        if (
+          (o.userData as Record<string, unknown> | null)?.[FORGE_TAG_KEY] === 'static' &&
+          (o as { isMesh?: boolean }).isMesh
+        )
+          ctx.staticAutoUpdated.push(this.names.of(o, scene, paths));
       }
       const light = o as Light & { isPointLight?: boolean };
       // Both lists name what three renders: its render lists skip a hidden subtree, lights included (Renderer.js
       // `_projectObject` returns at `visible === false`), so a light or mesh under a hidden parent costs nothing. The
       // static-auto-update list keeps hidden objects: `updateMatrixWorld` recomposes their matrices all the same.
-      if (light.isLight && light.isPointLight && light.castShadow && shadowMapsOn && worldVisible(o, scene)) ctx.pointShadowLights.push(this.names.of(o, scene, paths));
+      if (light.isLight && light.isPointLight && light.castShadow && shadowMapsOn && worldVisible(o, scene))
+        ctx.pointShadowLights.push(this.names.of(o, scene, paths));
       const material = (o as { material?: Material | Material[] }).material;
       for (const m of Array.isArray(material) ? material : material ? [material] : []) {
         if (((m as Material & { transmission?: number }).transmission ?? 0) > 0) {
@@ -394,18 +494,35 @@ export class DrawCallLedger {
         }
       }
       const reader = compiledLocalSpaceReader(o);
-      if (reader && worldVisible(o, scene)) ctx.localSpaceDraws.push({ object: this.names.of(o, scene, paths), material: reader.name || reader.type });
+      if (reader && worldVisible(o, scene))
+        ctx.localSpaceDraws.push({ object: this.names.of(o, scene, paths), material: reader.name || reader.type });
     });
     this.hintContext = ctx;
     // The scene object itself is not part of the count.
-    this.graphStats = { objects: objects - 1, autoUpdatedMatrices: auto - 1, hiddenOriginals: hidden, at: this.framesSeen };
+    this.graphStats = {
+      objects: objects - 1,
+      autoUpdatedMatrices: auto - 1,
+      hiddenOriginals: hidden,
+      at: this.framesSeen,
+    };
     const memory = this.renderer?.info.memory;
-    const info = { textures: memory?.textures ?? 0, geometries: memory?.geometries ?? 0, texturesSize: memory?.texturesSize, attributesSize: memory?.attributesSize, indexAttributesSize: memory?.indexAttributesSize, renderTargets: memory?.renderTargets, total: memory?.total };
+    const info = {
+      textures: memory?.textures ?? 0,
+      geometries: memory?.geometries ?? 0,
+      texturesSize: memory?.texturesSize,
+      attributesSize: memory?.attributesSize,
+      indexAttributesSize: memory?.indexAttributesSize,
+      renderTargets: memory?.renderTargets,
+      total: memory?.total,
+    };
     // The overdraw count target is the renderer's own, held while nothing in the scene reaches it.
     // A target a render drew into and nobody disposed is held by a pass or by three (post-processing, CubeMapNode's cube
     // of an equirect background, a mirror). One drawn once and then abandoned undisposed is not told apart: it is allowed
     // too, a missed hint rather than a false one.
-    const renderTargets: Array<AllowedRenderTarget | null> = [this.renderer ? overdrawTargetOf(this.renderer) : null, ...this.drawnTargets.live()];
+    const renderTargets: Array<AllowedRenderTarget | null> = [
+      this.renderer ? overdrawTargetOf(this.renderer) : null,
+      ...this.drawnTargets.live(),
+    ];
     // three r186 keeps its frame-buffer targets in `_frameBufferTargets` (Renderer.js ~1561-1601) and draws none when a
     // RenderPipeline renders the output itself; without the map the estimate allows the usual colour and depth.
     const frameBuffers = frameBufferTargetsOf(this.renderer);
@@ -417,8 +534,25 @@ export class DrawCallLedger {
       shadowMapType: this.renderer?.shadowMap?.type,
       ...(frameBuffers ? { frameBufferTargets: frameBuffers } : {}),
     });
-    this.last = { ...this.last, js: { ...this.last.js, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals }, memory: this.memoryNow() };
-    this.last = { ...this.last, hints: hintsFor(this.last, this.budgets(), { ...this.hintContext, items: this.lastItems, objects: this.mainObjects, unsupportedObjects: this.unsupportedObjects }) };
+    this.last = {
+      ...this.last,
+      js: {
+        ...this.last.js,
+        objects: this.graphStats.objects,
+        autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices,
+        hiddenOriginals: this.graphStats.hiddenOriginals,
+      },
+      memory: this.memoryNow(),
+    };
+    this.last = {
+      ...this.last,
+      hints: hintsFor(this.last, this.budgets(), {
+        ...this.hintContext,
+        items: this.lastItems,
+        objects: this.mainObjects,
+        unsupportedObjects: this.unsupportedObjects,
+      }),
+    };
   }
 
   /** A RenderScheduler whose skipped ticks the js section reports; null detaches. */
@@ -490,7 +624,9 @@ export class DrawCallLedger {
 
   /** The last completed frame. `items: true` adds copies of its records: they stay valid however long they are held. */
   frame(options: { items?: boolean } = {}): FrameSnapshot {
-    return options.items ? { ...this.last, items: this.lastItems.map((i) => ({ ...i, flags: [...i.flags] })) } : this.last;
+    return options.items
+      ? { ...this.last, items: this.lastItems.map((i) => ({ ...i, flags: [...i.flags] })) }
+      : this.last;
   }
 
   budget(options: { maxSubmissions: number }): BudgetResult {
@@ -511,7 +647,9 @@ export class DrawCallLedger {
     for (const row of formatCostRows(f)) lines.push(`  ${row}`);
     const reasons = Object.entries(f.byReason).sort(([, a], [, b]) => b.submissions - a.submissions);
     for (const [reason, r] of reasons) {
-      lines.push(`  ${reason.padEnd(24)} ${String(r.submissions).padStart(5)}   ${r.top.join(', ')}${r.submissions > r.top.length ? ', …' : ''}`);
+      lines.push(
+        `  ${reason.padEnd(24)} ${String(r.submissions).padStart(5)}   ${r.top.join(', ')}${r.submissions > r.top.length ? ', …' : ''}`,
+      );
     }
     if (f.passes.length > 1) lines.push(`  passes: ${f.passes.map((p) => `${p.id}=${p.submissions}`).join(', ')}`);
     for (const hint of formatHints(f)) lines.push(`  ${hint}`);
@@ -519,7 +657,13 @@ export class DrawCallLedger {
   }
 
   private env(): FrameEnv {
-    return { three: REVISION, backend: this.backendInfo.backend, multiDraw: this.backendInfo.multiDraw, ...this.environment, viewport: [...this.environment.viewport] as [number, number] };
+    return {
+      three: REVISION,
+      backend: this.backendInfo.backend,
+      multiDraw: this.backendInfo.multiDraw,
+      ...this.environment,
+      viewport: [...this.environment.viewport] as [number, number],
+    };
   }
 
   private enter(scene: Object3D, camera: Camera): void {
@@ -600,7 +744,8 @@ export class DrawCallLedger {
       if (geometry?.attributes?.outputDirection !== undefined) this.noteGeometry(geometry);
     }
     const target = shadow || pass.endsWith(':vsm') ? null : (this.renderer?.getRenderTarget?.() ?? null);
-    if (target !== null && target.isPostProcessingRenderTarget !== true && this.drawnTargets.add(target)) target.addEventListener?.('dispose', this.onResourceDispose);
+    if (target !== null && target.isPostProcessingRenderTarget !== true && this.drawnTargets.add(target))
+      target.addEventListener?.('dispose', this.onResourceDispose);
     this.contexts.push({ root: scene, pass, paths: this.names.forRoot(scene), shadow });
     this.depth++;
   }
@@ -632,9 +777,17 @@ export class DrawCallLedger {
       if (i.pass !== 'main') continue;
       // Objects, not submissions, for the draw-call hints: a shadow map or a nested pass draws an object again, and three's
       // back-side pass of a double-sided transmissive material draws it twice in the main pass itself.
-      if (backSide[k] === 0 && (i.reason === 'untagged' || i.reason === 'unique-material' || i.reason === 'static-unbatched' || i.reason === 'sprite')) objects[i.reason]++;
+      if (
+        backSide[k] === 0 &&
+        (i.reason === 'untagged' ||
+          i.reason === 'unique-material' ||
+          i.reason === 'static-unbatched' ||
+          i.reason === 'sprite')
+      )
+        objects[i.reason]++;
       if (i.transparent && i.reason !== 'renderer-internal') transparentSubmissions++;
-      particles += i.kind === 'points' ? i.vertices : i.reason === 'sprite-batch' ? i.instances : i.kind === 'sprite' ? 1 : 0;
+      particles +=
+        i.kind === 'points' ? i.vertices : i.reason === 'sprite-batch' ? i.instances : i.kind === 'sprite' ? 1 : 0;
     }
     this.lastItems = items;
     this.write = state.buffer === this.buffers[0] ? 1 : 0;
@@ -646,7 +799,15 @@ export class DrawCallLedger {
     for (let i = 1; i < this.frameStarts.length; i++) intervals.push(this.frameStarts[i]! - this.frameStarts[i - 1]!);
     intervals.sort((a, b) => a - b);
     const frameMs = intervals.length ? intervals[Math.floor(intervals.length / 2)]! : 0;
-    const js: JsSnapshot = { renderMs: renderEnd - state.startedAt, ledgerMs: 0, frameMs, objects: this.graphStats.objects, autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices, hiddenOriginals: this.graphStats.hiddenOriginals, skipped: this.scheduler?.skippedRecently() ?? 0 };
+    const js: JsSnapshot = {
+      renderMs: renderEnd - state.startedAt,
+      ledgerMs: 0,
+      frameMs,
+      objects: this.graphStats.objects,
+      autoUpdatedMatrices: this.graphStats.autoUpdatedMatrices,
+      hiddenOriginals: this.graphStats.hiddenOriginals,
+      skipped: this.scheduler?.skippedRecently() ?? 0,
+    };
     this.last = buildFrame({
       env: this.env(),
       items,
@@ -664,12 +825,22 @@ export class DrawCallLedger {
         transparent: this.overdraw?.transparent ?? 0,
         transparentSubmissions,
         particles,
-        pixels: this.renderer.getDrawingBufferSize ? (() => { const s = this.renderer.getDrawingBufferSize!(_bufferSize); return s.x * s.y; })() : 0,
+        pixels: this.renderer.getDrawingBufferSize
+          ? (() => {
+              const s = this.renderer.getDrawingBufferSize!(_bufferSize);
+              return s.x * s.y;
+            })()
+          : 0,
         measured: this.overdraw !== null,
       },
     });
     this.unsupportedObjects = state.unsupportedObjects;
-    this.last.hints = hintsFor(this.last, this.budgets(), { ...this.hintContext, items, objects: this.mainObjects, unsupportedObjects: this.unsupportedObjects });
+    this.last.hints = hintsFor(this.last, this.budgets(), {
+      ...this.hintContext,
+      items,
+      objects: this.mainObjects,
+      unsupportedObjects: this.unsupportedObjects,
+    });
     this.current = null;
     // `js` is this frame's own object (buildFrame keeps it): no earlier snapshot shares it.
     js.ledgerMs = this.now() - renderEnd;
@@ -746,12 +917,20 @@ export class DrawCallLedger {
   }
 
   /** Fills a pooled record with everything known before the renderer processes the object; `sides` is `sideFactor()`. */
-  private begin(object: Object3D, material: Material, group: unknown, hashes: MaterialHashes, sides: number, lightsNode: unknown): SubmissionRecord {
+  private begin(
+    object: Object3D,
+    material: Material,
+    group: unknown,
+    hashes: MaterialHashes,
+    sides: number,
+    lightsNode: unknown,
+  ): SubmissionRecord {
     const state = this.current!;
     const context = this.contexts[this.contexts.length - 1]!;
     const reason = reasonOf(object, material, group, context.root, hashes.unsupported, this.annotations.get(object));
     // A scene submission's lights node: three draws the output quad with an empty default one.
-    if (!state.lightsRead && context.pass === 'main' && reason !== 'renderer-internal') this.readLights(state, lightsNode);
+    if (!state.lightsRead && context.pass === 'main' && reason !== 'renderer-internal')
+      this.readLights(state, lightsNode);
     if (context.shadow && reason !== 'renderer-internal' && this.casterFrames.get(object) !== this.frameStamp) {
       // One caster per object per frame, across every shadow map: a batch or an instanced mesh is one, whatever it draws.
       this.casterFrames.set(object, this.frameStamp);
@@ -763,14 +942,31 @@ export class DrawCallLedger {
       this.unsupportedFrames.set(object, this.frameStamp);
       state.unsupportedObjects++;
     }
-    const geometry = (object as { geometry?: { attributes?: { position?: { count: number } }; morphAttributes?: { position?: unknown[] }; drawRange?: { start: number; count: number } } }).geometry;
+    const geometry = (
+      object as {
+        geometry?: {
+          attributes?: { position?: { count: number } };
+          morphAttributes?: { position?: unknown[] };
+          drawRange?: { start: number; count: number };
+        };
+      }
+    ).geometry;
     // three drew this outside every scene (the background sphere): its geometry is three's. The output pass's and the VSM
     // blur's QuadMesh share one geometry the memory section always allows.
-    if (reason === 'renderer-internal' && geometry !== undefined && (object as { isQuadMesh?: boolean }).isQuadMesh !== true && !this.internalGeometries.has(geometry)) this.noteGeometry(geometry);
+    if (
+      reason === 'renderer-internal' &&
+      geometry !== undefined &&
+      (object as { isQuadMesh?: boolean }).isQuadMesh !== true &&
+      !this.internalGeometries.has(geometry)
+    )
+      this.noteGeometry(geometry);
     const positionCount = geometry?.attributes?.position?.count ?? 0;
     const range = geometry?.drawRange;
     // Points draw what drawRange allows (ParticleBudget caps them there); meshes count their whole geometry.
-    const vertices = (object as { isPoints?: boolean }).isPoints && range && Number.isFinite(range.count) ? Math.max(0, Math.min(positionCount - range.start, range.count)) : positionCount;
+    const vertices =
+      (object as { isPoints?: boolean }).isPoints && range && Number.isFinite(range.count)
+        ? Math.max(0, Math.min(positionCount - range.start, range.count))
+        : positionCount;
     const skinned = object as { isSkinnedMesh?: boolean; skeleton?: { bones: unknown[] } };
     let skeleton: number | null = null;
     if (skinned.isSkinnedMesh && skinned.skeleton) {
@@ -805,19 +1001,29 @@ export class DrawCallLedger {
 
   /** Remembers a geometry three draws for itself until it is disposed (`internalGeometries`). */
   private noteGeometry(geometry: object): void {
-    if (this.internalGeometries.add(geometry)) (geometry as DrawnTarget).addEventListener?.('dispose', this.onResourceDispose);
+    if (this.internalGeometries.add(geometry))
+      (geometry as DrawnTarget).addEventListener?.('dispose', this.onResourceDispose);
   }
 
   /** Drops the noted geometries and targets and their dispose listeners (attach and detach). */
   private forgetInternalResources(): void {
-    for (const geometry of this.internalGeometries.live()) (geometry as DrawnTarget).removeEventListener?.('dispose', this.onResourceDispose);
+    for (const geometry of this.internalGeometries.live())
+      (geometry as DrawnTarget).removeEventListener?.('dispose', this.onResourceDispose);
     for (const target of this.drawnTargets.live()) target.removeEventListener?.('dispose', this.onResourceDispose);
     this.internalGeometries.clear();
     this.drawnTargets.clear();
   }
 
   /** Snapshots the draw state into the record once the renderer returned, then files it as this frame's next item. */
-  private file(record: SubmissionRecord, object: Object3D, material: Material, group: DrawGroup | null, sides: number, hashes: MaterialHashes, backSide: boolean): void {
+  private file(
+    record: SubmissionRecord,
+    object: Object3D,
+    material: Material,
+    group: DrawGroup | null,
+    sides: number,
+    hashes: MaterialHashes,
+    backSide: boolean,
+  ): void {
     record.expectedGpuDraws = expectedGpuDraws(object, sides, this.backendInfo, material, group);
     writeInstanceCounts(object, record, material, group);
     const state = this.current;
@@ -830,7 +1036,8 @@ export class DrawCallLedger {
     }
     buffer.backSide[state.count] = backSide ? 1 : 0;
     buffer.items[state.count++] = record;
-    if (!state.descriptions.has(record.programHash)) state.descriptions.set(record.programHash, { type: record.materialType, description: hashes.description });
+    if (!state.descriptions.has(record.programHash))
+      state.descriptions.set(record.programHash, { type: record.materialType, description: hashes.description });
   }
 }
 
@@ -908,14 +1115,26 @@ function frameBufferTargetsOf(renderer: LedgerRenderer | null): AllowedRenderTar
  * `test/e2e/local-space.spec.ts` measures the change on both backends. `userData` is guarded as in `reasonOf`.
  */
 function compiledLocalSpaceReader(object: Object3D): Material | null {
-  const o = object as Object3D & { isBatchedMesh?: boolean; isInstancedMesh?: boolean; material?: Material | Material[] };
+  const o = object as Object3D & {
+    isBatchedMesh?: boolean;
+    isInstancedMesh?: boolean;
+    material?: Material | Material[];
+  };
   const forge = o.userData?.forge as { kind?: string; lodLevel?: number } | null | undefined;
-  const compiled = (o.isBatchedMesh === true && o.name.startsWith('forge:batch:')) || (o.isInstancedMesh === true && o.name.startsWith('forge:instanced:') && (forge?.lodLevel ?? 0) === 0) || forge?.kind === 'bake';
+  const compiled =
+    (o.isBatchedMesh === true && o.name.startsWith('forge:batch:')) ||
+    (o.isInstancedMesh === true && o.name.startsWith('forge:instanced:') && (forge?.lodLevel ?? 0) === 0) ||
+    forge?.kind === 'bake';
   const material = o.material;
   if (!compiled || !material || Array.isArray(material)) return null;
   const m = material as Material & { alphaHash?: boolean; normalMap?: unknown; normalMapType?: number };
   const opaqueCode = !isBuiltInMaterial(material) || hasOwnFunctions(material);
-  return hasNodeSlot(material) || opaqueCode || m.alphaHash === true || (!!m.normalMap && m.normalMapType === ObjectSpaceNormalMap) ? material : null;
+  return hasNodeSlot(material) ||
+    opaqueCode ||
+    m.alphaHash === true ||
+    (!!m.normalMap && m.normalMapType === ObjectSpaceNormalMap)
+    ? material
+    : null;
 }
 
 /**
@@ -949,5 +1168,8 @@ function detectBackend(renderer: LedgerRenderer): BackendInfo {
   const backend = renderer.backend as BackendLike | undefined;
   if (!backend) return { backend: 'unknown', multiDraw: false };
   if (backend.isWebGPUBackend) return { backend: 'webgpu', multiDraw: false };
-  return { backend: 'webgl2', multiDraw: typeof backend.hasFeature === 'function' ? backend.hasFeature('WEBGL_multi_draw') : false };
+  return {
+    backend: 'webgl2',
+    multiDraw: typeof backend.hasFeature === 'function' ? backend.hasFeature('WEBGL_multi_draw') : false,
+  };
 }

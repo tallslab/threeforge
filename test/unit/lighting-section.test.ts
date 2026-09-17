@@ -9,11 +9,25 @@
  * - `shadowCasters`: distinct objects drawn into any shadow map this frame (a batch is one object).
  * - VSM blur quads: `shadow:<id>:vsm`, renderer-internal.
  */
+
+import {
+  AmbientLight,
+  BoxGeometry,
+  DirectionalLight,
+  Group,
+  Mesh,
+  MeshBasicMaterial,
+  MeshStandardMaterial,
+  type Object3D,
+  PointLight,
+  Scene,
+  SpotLight,
+  VSMShadowMap,
+} from 'three';
 import { describe, expect, it } from 'vitest';
-import { AmbientLight, BoxGeometry, DirectionalLight, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PointLight, Scene, SpotLight, VSMShadowMap, type Object3D } from 'three';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { tag } from '../../src/tags.js';
-import { FakeRenderer, batchedOf, sceneWithCamera } from './helpers/fakeRenderer.js';
+import { batchedOf, FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
 
 const box = new BoxGeometry(1, 1, 1);
 
@@ -107,9 +121,22 @@ describe('lighting section: lights', () => {
     hidden.add(new PointLight());
     const otherLayer = new SpotLight();
     otherLayer.layers.set(2);
-    scene.add(new DirectionalLight(), new AmbientLight(), hidden, otherLayer, tag.static(new Mesh(box, new MeshBasicMaterial())));
+    scene.add(
+      new DirectionalLight(),
+      new AmbientLight(),
+      hidden,
+      otherLayer,
+      tag.static(new Mesh(box, new MeshBasicMaterial())),
+    );
     renderer.render(scene, camera);
-    expect(ledger.frame().lighting.lights).toEqual({ directional: 1, point: 0, spot: 0, hemisphere: 0, ambient: 1, other: 0 });
+    expect(ledger.frame().lighting.lights).toEqual({
+      directional: 1,
+      point: 0,
+      spot: 0,
+      hemisphere: 0,
+      ambient: 1,
+      other: 0,
+    });
   });
 
   it('without a lights node on renderObject, walks the main scene for its world-visible lights', () => {
@@ -128,7 +155,14 @@ describe('lighting section: lights', () => {
     otherLayer.layers.set(2);
     scene.add(new DirectionalLight(), hidden, otherLayer, tag.static(new Mesh(box, new MeshBasicMaterial())));
     renderer.render(scene, camera);
-    expect(ledger.frame().lighting.lights).toEqual({ directional: 1, point: 0, spot: 1, hemisphere: 0, ambient: 0, other: 0 });
+    expect(ledger.frame().lighting.lights).toEqual({
+      directional: 1,
+      point: 0,
+      spot: 1,
+      hemisphere: 0,
+      ambient: 0,
+      other: 0,
+    });
   });
 
   it('without a lights node, a frame whose outermost render is an override scene reports only the main scene’s lights, not both scenes’', () => {
@@ -193,7 +227,11 @@ describe('lighting section: shadow texels', () => {
     renderer.render(scene, camera);
     // ShadowNode keys its once-per-frame check by camera, so both maps render for each camera: 7 renders twice.
     expect(renderer.passes.filter((p) => p.kind === 'shadow')).toHaveLength(14);
-    expect(ledger.frame().lighting).toMatchObject({ shadowTexels: 256 * 256 * 6 + 1024 * 1024, shadowCasters: 1, shadowPasses: 2 });
+    expect(ledger.frame().lighting).toMatchObject({
+      shadowTexels: 256 * 256 * 6 + 1024 * 1024,
+      shadowCasters: 1,
+      shadowPasses: 2,
+    });
   });
 
   it('sizes a point light by its map width on every face: three renders each cube face at mapSize.width squared', () => {
@@ -277,6 +315,11 @@ describe('lighting section: VSM blur quads', () => {
     expect(frame.byReason['renderer-internal']?.submissions).toBe(3);
     expect(frame.byReason['fullscreen-pass']).toBeUndefined();
     expect(frame.totals).toMatchObject({ sceneSubmissions: 1 + 6 + 1, unattributed: 0 });
-    expect(frame.lighting).toMatchObject({ shadowPasses: 2, shadowSubmissions: 7, shadowCasters: 1, shadowTexels: 1024 * 1024 + 256 * 256 * 6 });
+    expect(frame.lighting).toMatchObject({
+      shadowPasses: 2,
+      shadowSubmissions: 7,
+      shadowCasters: 1,
+      shadowTexels: 1024 * 1024 + 256 * 256 * 6,
+    });
   });
 });

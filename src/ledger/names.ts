@@ -49,7 +49,14 @@ export class DisplayNames {
     const index = name ? -1 : parent ? this.siblingIndex(object, parent) : 0;
     const type = object.type;
     const entry = paths.get(object);
-    if (entry !== undefined && entry.index === index && entry.name === name && entry.prefix === prefix && entry.type === type) return entry.path;
+    if (
+      entry !== undefined &&
+      entry.index === index &&
+      entry.name === name &&
+      entry.prefix === prefix &&
+      entry.type === type
+    )
+      return entry.path;
     const part = name || `${type}[${index}]`;
     const path = prefix ? `${prefix}/${part}` : part;
     if (entry === undefined) {

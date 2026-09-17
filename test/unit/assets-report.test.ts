@@ -2,23 +2,33 @@ import { describe, expect, it } from 'vitest';
 import {
   commitStamp,
   corpusPlan,
+  type GateInput,
+  type IndexEntry,
   markdownBlock,
   markdownTarget,
   mergeRows,
   missingFromRun,
+  onlyOf,
+  type ReportRow,
   renderReport,
   reportFor,
   rowsForReport,
   runIdOf,
   shortCommit,
   stampRow,
-  onlyOf,
-  type GateInput,
-  type IndexEntry,
-  type ReportRow,
 } from '../e2e/assets-report.js';
 
-const row = (name: string, extra: Partial<ReportRow> = {}): ReportRow => ({ name, tags: 't', meshes: 1, naive: 1, compiled: 1, unattributed: 0, diff: 0, restored: 1, ...extra });
+const row = (name: string, extra: Partial<ReportRow> = {}): ReportRow => ({
+  name,
+  tags: 't',
+  meshes: 1,
+  naive: 1,
+  compiled: 1,
+  unattributed: 0,
+  diff: 0,
+  restored: 1,
+  ...extra,
+});
 const stamp = { commit: 'a'.repeat(40), run: 'run1234' };
 /** The UTC date a run started, folded into the run id so a recycled runner pid cannot inherit an older run's rows. */
 const DAY = '2026-09-16';
@@ -116,7 +126,10 @@ describe('stampRow', () => {
   });
 
   it('replaces an older stamp on a re-measured row', () => {
-    expect(stampRow(row('Fox', { commit: 'old', run: 'older' }), stamp)).toMatchObject({ commit: stamp.commit, run: 'run1234' });
+    expect(stampRow(row('Fox', { commit: 'old', run: 'older' }), stamp)).toMatchObject({
+      commit: stamp.commit,
+      run: 'run1234',
+    });
   });
 });
 
@@ -248,7 +261,10 @@ describe('reportFor', () => {
 
 describe('rowsForReport (an asset dropped from the index leaves the table)', () => {
   it('keeps only the assets the index still lists, in the order given', () => {
-    expect(rowsForReport([row('Duck'), row('Retired'), row('Fox')], ['Duck', 'Fox']).map((r) => r.name)).toEqual(['Duck', 'Fox']);
+    expect(rowsForReport([row('Duck'), row('Retired'), row('Fox')], ['Duck', 'Fox']).map((r) => r.name)).toEqual([
+      'Duck',
+      'Fox',
+    ]);
   });
 
   it('keeps every row when the index dropped nothing', () => {
@@ -263,7 +279,14 @@ describe('rowsForReport (an asset dropped from the index leaves the table)', () 
  */
 describe('markdownTarget / markdownBlock (the gate on the tracked Markdown)', () => {
   const full = [stampRow(row('Duck'), stamp), stampRow(row('Fox'), stamp)];
-  const input = (over: Partial<GateInput> = {}): GateInput => ({ backend: 'webgl2', rows: full, expected: ['Duck', 'Fox'], run: 'run1234', env: {}, ...over });
+  const input = (over: Partial<GateInput> = {}): GateInput => ({
+    backend: 'webgl2',
+    rows: full,
+    expected: ['Duck', 'Fox'],
+    run: 'run1234',
+    env: {},
+    ...over,
+  });
 
   it('opens for a run that measured every expected asset', () => {
     expect(markdownBlock(input())).toBeNull();
@@ -311,7 +334,11 @@ describe('markdownTarget / markdownBlock (the gate on the tracked Markdown)', ()
  * failure, not an absence. An asset filtered out on purpose by FORGE_ASSETS is neither.
  */
 describe('corpusPlan', () => {
-  const model = (name: string, extra: Partial<IndexEntry> = {}): IndexEntry => ({ name, entry: `${name}/${name}.glb`, ...extra });
+  const model = (name: string, extra: Partial<IndexEntry> = {}): IndexEntry => ({
+    name,
+    entry: `${name}/${name}.glb`,
+    ...extra,
+  });
   const lists: IndexEntry[] = [
     model('Duck'),
     model('Fox'),
@@ -338,7 +365,9 @@ describe('corpusPlan', () => {
     const block = markdownBlock({ backend: 'webgl2', rows, expected: plan.expected, run: stamp.run, env: {} });
     expect(block).toBe('run run1234 measured 3/4 assets (missing Buggy)');
     // The old rule dropped Buggy from `expected` too, and this same run published: the defect, pinned.
-    const shrunken = lists.filter((a) => a.entry && /\.(gltf|glb)$/i.test(a.entry) && !a.error && a.kind !== 'kit').map((a) => a.name);
+    const shrunken = lists
+      .filter((a) => a.entry && /\.(gltf|glb)$/i.test(a.entry) && !a.error && a.kind !== 'kit')
+      .map((a) => a.name);
     expect(markdownBlock({ backend: 'webgl2', rows, expected: shrunken, run: stamp.run, env: {} })).toBeNull();
   });
 
@@ -370,7 +399,17 @@ describe('corpusPlan', () => {
   });
 
   it('skips kits, non-model entries and malformed rows, and keeps the first of a repeated name', () => {
-    const plan = corpusPlan([null, 7, { entry: 'x.glb' }, model('Fox'), model('Fox', { error: 'dup' }), { name: 'three-textures', kind: 'kit', textures: [] }] as unknown[], undefined);
+    const plan = corpusPlan(
+      [
+        null,
+        7,
+        { entry: 'x.glb' },
+        model('Fox'),
+        model('Fox', { error: 'dup' }),
+        { name: 'three-textures', kind: 'kit', textures: [] },
+      ] as unknown[],
+      undefined,
+    );
     expect(plan.expected).toEqual(['Fox']);
     expect(plan.attempt).toEqual([model('Fox')]);
   });

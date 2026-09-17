@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { BoxGeometry, Mesh, MeshBasicMaterial } from 'three';
+import { describe, expect, it } from 'vitest';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
 
@@ -61,7 +61,8 @@ describe('js section', () => {
     }
     // The ledger rescans while filing the first frame and every 60 frames after it.
     expect(frames.flatMap((f, i) => (f.rescanned ? [i] : []))).toEqual([0, 60]);
-    for (const [i, f] of frames.entries()) expect(f, `frame ${i}`).toEqual({ renderMs: 3, ledgerMs: f.rescanned ? 20 : 0, rescanned: f.rescanned });
+    for (const [i, f] of frames.entries())
+      expect(f, `frame ${i}`).toEqual({ renderMs: 3, ledgerMs: f.rescanned ? 20 : 0, rescanned: f.rescanned });
     // A rescan between frames changes neither timing of the last frame.
     ledger.rescan();
     expect(ledger.frame().js).toMatchObject({ renderMs: 3, ledgerMs: 20 });
@@ -77,7 +78,7 @@ describe('js section', () => {
    * at `renderEnd` (the value the render cost alone produced) and once when filing is done, so a correct split reports
    * renderMs 3 and ledgerMs 7. Charging the ledger's own work to `renderMs`, as 0.8.0 did, makes this test red.
    */
-  it('charges the ledger\'s own filing work to ledgerMs on an ordinary frame, and leaves renderMs the render alone', () => {
+  it("charges the ledger's own filing work to ledgerMs on an ordinary frame, and leaves renderMs the render alone", () => {
     let t = 0;
     let filing = false;
     // Post-increment: the reading is what the clock said before the ledger's own 7 ms of filing began.

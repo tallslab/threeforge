@@ -12,5 +12,8 @@ test(`the compiled naive scene stays within ${BUDGET} scene submissions`, async 
   }, BUDGET);
   console.log(report);
   console.log(`FORGE_BUDGET ${budget.actual}/${budget.max} ${budget.pass ? 'PASS' : 'FAIL'}`);
-  expect(budget.pass, `over budget: ${budget.actual} > ${budget.max}; top offenders ${JSON.stringify(budget.offenders.slice(0, 3))}`).toBe(true);
+  expect(
+    budget.pass,
+    `over budget: ${budget.actual} > ${budget.max}; top offenders ${JSON.stringify(budget.offenders.slice(0, 3))}`,
+  ).toBe(true);
 });

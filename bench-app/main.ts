@@ -1,12 +1,20 @@
-import { SCENE_IDS, type BenchMetrics, type SceneId } from '../test/app/benchMetrics.js';
-import { createHost, runBench, type Host } from './runner.js';
-import { issueBody, issueUrl, type DeviceResult } from './submit.js';
+import { type BenchMetrics, SCENE_IDS, type SceneId } from '../test/app/benchMetrics.js';
+import { createHost, type Host, runBench } from './runner.js';
+import { type DeviceResult, issueBody, issueUrl } from './submit.js';
 import { deviceRows, liveRows } from './table.js';
 
 declare global {
   interface Window {
     /** What the e2e reads: readiness, the chosen backend, progress text, the result and a done flag. */
-    __bench: { ready: boolean; error?: string; backend?: string; env?: DeviceResult['env']; progress: string; result: DeviceResult | null; done: boolean };
+    __bench: {
+      ready: boolean;
+      error?: string;
+      backend?: string;
+      env?: DeviceResult['env'];
+      progress: string;
+      result: DeviceResult | null;
+      done: boolean;
+    };
   }
 }
 
@@ -25,7 +33,10 @@ const describe = (error: unknown): string => (error instanceof Error ? error.mes
 async function start(host: Host): Promise<void> {
   $('run').setAttribute('disabled', '');
   $('submit').hidden = true;
-  const ids = params.get('scenes')?.split(',').filter((s): s is SceneId => (SCENE_IDS as readonly string[]).includes(s)) ?? [...SCENE_IDS];
+  const ids = params
+    .get('scenes')
+    ?.split(',')
+    .filter((s): s is SceneId => (SCENE_IDS as readonly string[]).includes(s)) ?? [...SCENE_IDS];
   const measured = Math.max(1, Number(params.get('measured') ?? '60'));
   try {
     const result = await runBench(host, {
@@ -50,10 +61,14 @@ async function start(host: Host): Promise<void> {
     } else {
       link.hidden = true;
       $('manual').hidden = false;
-      $<HTMLAnchorElement>('template').href = REPO ? `https://github.com/${REPO}/issues/new?template=bench-result.yml` : '#';
+      $<HTMLAnchorElement>('template').href = REPO
+        ? `https://github.com/${REPO}/issues/new?template=bench-result.yml`
+        : '#';
     }
     $('submit').hidden = false;
-    setProgress(`done · ${ids.length || SCENE_IDS.length} scenes on ${host.backend} · ${result.env.gpu}${result.env.fillRateGPix === null ? '' : ` · fill ${result.env.fillRateGPix.toFixed(1)} GPix/s`}`);
+    setProgress(
+      `done · ${ids.length || SCENE_IDS.length} scenes on ${host.backend} · ${result.env.gpu}${result.env.fillRateGPix === null ? '' : ` · fill ${result.env.fillRateGPix.toFixed(1)} GPix/s`}`,
+    );
   } catch (error) {
     window.__bench.error = error instanceof Error ? (error.stack ?? error.message) : String(error);
     setProgress(`failed: ${describe(error)}`);
@@ -89,7 +104,8 @@ async function main(): Promise<void> {
   const host = await createHost(want, $('canvasMount'));
   window.__bench.ready = true;
   window.__bench.backend = host.backend;
-  $('device').textContent = `${host.gpu} · ${host.backend} · tier ${host.tier} · dpr ${devicePixelRatio} · ${navigator.hardwareConcurrency ?? '?'} cores`;
+  $('device').textContent =
+    `${host.gpu} · ${host.backend} · tier ${host.tier} · dpr ${devicePixelRatio} · ${navigator.hardwareConcurrency ?? '?'} cores`;
   $('run').addEventListener('click', () => void start(host));
   $('copy').addEventListener('click', () => void navigator.clipboard.writeText($('json').textContent ?? ''));
   if (params.get('auto') === '1') await start(host);

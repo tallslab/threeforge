@@ -2,7 +2,9 @@ import { expect, test } from './fixtures.js';
 import { pixelDiff } from './pixels.js';
 
 /** The optimized zen world streams its chunks with the camera: textures leave the GPU and come back, nothing leaks, the view never changes. */
-test('zen: chunks stream with the camera, free their textures, and the start frame matches naive', async ({ forge }) => {
+test('zen: chunks stream with the camera, free their textures, and the start frame matches naive', async ({
+  forge,
+}) => {
   test.setTimeout(300_000);
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   await forge.open('zen', { variant: 'naive', count: '5000' });
@@ -20,7 +22,14 @@ test('zen: chunks stream with the camera, free their textures, and the start fra
       f.bench!.setTime!(t);
       for (let i = 0; i < 2; i++) await f.frameAsync();
       const frame = await f.frameAsync();
-      return { chunks: frame.memory.chunks, unreferenced: frame.memory.unreferenced, textureBytes: frame.memory.textures.bytes, textures: f.renderer.info.memory.textures, unattributed: frame.totals.unattributed, stats: f.streamer!.stats() };
+      return {
+        chunks: frame.memory.chunks,
+        unreferenced: frame.memory.unreferenced,
+        textureBytes: frame.memory.textures.bytes,
+        textures: f.renderer.info.memory.textures,
+        unattributed: frame.totals.unattributed,
+        stats: f.streamer!.stats(),
+      };
     };
     const start = await at(0, 0, 0);
     const corner = await at(-900, -900, 1);

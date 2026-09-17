@@ -6,6 +6,7 @@
 import {
   Bone,
   BoxGeometry,
+  type BufferGeometry,
   CylinderGeometry,
   DataTexture,
   Float32BufferAttribute,
@@ -17,7 +18,6 @@ import {
   SphereGeometry,
   SRGBColorSpace,
   Uint16BufferAttribute,
-  type BufferGeometry,
 } from 'three';
 
 export const BONE_NAMES = ['root', 'spine', 'head'] as const;
@@ -87,12 +87,20 @@ export interface CharacterParts {
 function partSkeleton(order: number[]): Skeleton {
   const { skeleton } = makeRig();
   const bones = order.map((i) => skeleton.bones[i]!);
-  return new Skeleton(bones, bones.map((_, k) => skeleton.boneInverses[order[k]!]!.clone()));
+  return new Skeleton(
+    bones,
+    bones.map((_, k) => skeleton.boneInverses[order[k]!]!.clone()),
+  );
 }
 
 export function buildCharacter(): CharacterParts {
   const { root, skeleton } = makeRig();
-  const make = (geometry: BufferGeometry, rgb: [number, number, number], order: number[], name: string): SkinnedMesh => {
+  const make = (
+    geometry: BufferGeometry,
+    rgb: [number, number, number],
+    order: number[],
+    name: string,
+  ): SkinnedMesh => {
     const bones = order.map((i) => BONE_NAMES[i]!);
     // skinIndex values refer to the part's own bone order; boneOrder maps rig index -> part index.
     const boneOrder = BONE_NAMES.map((n) => bones.indexOf(n));

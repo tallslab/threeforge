@@ -18,7 +18,12 @@ const code = (s) => `\`${cell(s).replace(/`/g, "'")}\``;
 
 /** Low tier first, then by GPU name, newest first for the same device. */
 export function sortResults(results) {
-  return [...results].sort((a, b) => TIER_ORDER[a.env.tier] - TIER_ORDER[b.env.tier] || a.env.gpu.localeCompare(b.env.gpu) || b.createdAt.localeCompare(a.createdAt));
+  return [...results].sort(
+    (a, b) =>
+      TIER_ORDER[a.env.tier] - TIER_ORDER[b.env.tier] ||
+      a.env.gpu.localeCompare(b.env.gpu) ||
+      b.createdAt.localeCompare(a.createdAt),
+  );
 }
 
 /** Markdown: one row per result: device, backend, tier, fill rate, per scene naive → optimized submissions / frame ms. */
@@ -61,8 +66,13 @@ export function readResults(dir) {
 export function writeDevices(dir, docsPath) {
   const results = sortResults(readResults(dir));
   writeFileSync(join(dir, 'index.json'), JSON.stringify(results) + '\n');
-  const body = results.length ? renderDevices(results) : '_No device results yet. Run the bench page on your phone and submit the result._';
-  writeFileSync(docsPath, `# Device results\n\nSubmitted from the bench page (see \`docs/design.md\`) as GitHub issues and ingested by the \`bench-results\` workflow. Each cell is naive → optimized: scene submissions / median frame ms over 60 frames. Fill rate is a two-second probe (transparent fullscreen layers), informational.\n\n${body}\n`);
+  const body = results.length
+    ? renderDevices(results)
+    : '_No device results yet. Run the bench page on your phone and submit the result._';
+  writeFileSync(
+    docsPath,
+    `# Device results\n\nSubmitted from the bench page (see \`docs/design.md\`) as GitHub issues and ingested by the \`bench-results\` workflow. Each cell is naive → optimized: scene submissions / median frame ms over 60 frames. Fill rate is a two-second probe (transparent fullscreen layers), informational.\n\n${body}\n`,
+  );
   return results.length;
 }
 

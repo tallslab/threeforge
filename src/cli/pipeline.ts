@@ -1,7 +1,20 @@
 import type { OptimizeInput, Preset, StepName, TextureFormat } from './types.js';
 
 /** Pipeline order: glTF-Transform's own `optimize` order; meshopt quantizes itself so it replaces quantize. */
-export const STEP_NAMES: readonly StepName[] = ['dedup', 'instance', 'palette', 'flatten', 'join', 'weld', 'simplify', 'resample', 'prune', 'textures', 'quantize', 'meshopt'];
+export const STEP_NAMES: readonly StepName[] = [
+  'dedup',
+  'instance',
+  'palette',
+  'flatten',
+  'join',
+  'weld',
+  'simplify',
+  'resample',
+  'prune',
+  'textures',
+  'quantize',
+  'meshopt',
+];
 export const PRESETS: readonly Preset[] = ['safe', 'balanced', 'aggressive'];
 
 export type StepOptions =

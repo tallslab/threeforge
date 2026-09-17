@@ -6,7 +6,25 @@ import { fileURLToPath } from 'node:url';
 /** Why a gated value is unusable: absent, or present but not a finite number. Shared so the two sites cannot drift. */
 const unusable = (value) => (value === undefined ? 'missing from results' : `${String(value)} is not a finite number`);
 
-export const DETERMINISTIC = ['sceneSubmissions', 'gpuDraws', 'triangles', 'programs', 'overdrawOpaque', 'overdrawTransparent', 'skinnedVertices', 'shadowCasters', 'shadowTexels', 'textureBytes', 'geometryBytes', 'renderTargetBytes', 'particles', 'fillMegapixels', 'objects', 'autoUpdatedMatrices', 'shadowPassesPerFrame'];
+export const DETERMINISTIC = [
+  'sceneSubmissions',
+  'gpuDraws',
+  'triangles',
+  'programs',
+  'overdrawOpaque',
+  'overdrawTransparent',
+  'skinnedVertices',
+  'shadowCasters',
+  'shadowTexels',
+  'textureBytes',
+  'geometryBytes',
+  'renderTargetBytes',
+  'particles',
+  'fillMegapixels',
+  'objects',
+  'autoUpdatedMatrices',
+  'shadowPassesPerFrame',
+];
 export const TIMING = ['renderMs', 'frameMs'];
 
 /**
@@ -36,7 +54,8 @@ export function compare(baseline, result, { gateTiming, tolerance }) {
       for (const metric of [...DETERMINISTIC, ...TIMING]) {
         const before = base[variant]?.[metric];
         const after = res[variant]?.[metric];
-        const ratio = res.naive?.[metric] > 0 && res.optimized?.[metric] > 0 ? res.naive[metric] / res.optimized[metric] : null;
+        const ratio =
+          res.naive?.[metric] > 0 && res.optimized?.[metric] > 0 ? res.naive[metric] / res.optimized[metric] : null;
         rows.push({ scene, variant, metric, before, after, ratio: variant === 'optimized' ? ratio : null });
         if (!gated.includes(metric)) continue;
         if (!Number.isFinite(after)) {
@@ -49,7 +68,10 @@ export function compare(baseline, result, { gateTiming, tolerance }) {
           continue;
         }
         const worse = before === 0 ? after > 0 : after >= before * (1 + tolerance) - 1e-9;
-        if (worse) failures.push(`${scene} ${variant} ${metric}: ${before} -> ${after} (+${(((after - before) / (before || 1)) * 100).toFixed(1)}%)`);
+        if (worse)
+          failures.push(
+            `${scene} ${variant} ${metric}: ${before} -> ${after} (+${(((after - before) / (before || 1)) * 100).toFixed(1)}%)`,
+          );
       }
       // `unattributed` is gated at 0, so it is held to the same rule: absent or non-finite is a hole, not a zero.
       const unattributed = res[variant].unattributed;
@@ -88,7 +110,9 @@ export function baselinePath(backend) {
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const backend = process.argv[2] ?? 'webgl2';
   if (!existsSync(resultPath(backend))) {
-    console.error(`no results at ${resultPath(backend)}; run: pnpm exec playwright test test/e2e/bench.spec.ts --project=${backend}`);
+    console.error(
+      `no results at ${resultPath(backend)}; run: pnpm exec playwright test test/e2e/bench.spec.ts --project=${backend}`,
+    );
     process.exit(2);
   }
   const result = JSON.parse(readFileSync(resultPath(backend), 'utf8'));
@@ -99,10 +123,15 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     process.exit(0);
   }
   const gateTiming = process.env.FORGE_GPU === 'native';
-  const { failures } = compare(JSON.parse(readFileSync(baselinePath(backend), 'utf8')), result, { gateTiming, tolerance: 0.1 });
+  const { failures } = compare(JSON.parse(readFileSync(baselinePath(backend), 'utf8')), result, {
+    gateTiming,
+    tolerance: 0.1,
+  });
   if (failures.length) {
     console.error(`REGRESSION (${failures.length}):\n  ${failures.join('\n  ')}`);
     process.exit(1);
   }
-  console.log(`bench gate ${backend}: PASS${gateTiming ? ' (timing gated)' : ' (timing recorded, not gated: set FORGE_GPU=native on a real GPU)'}`);
+  console.log(
+    `bench gate ${backend}: PASS${gateTiming ? ' (timing gated)' : ' (timing recorded, not gated: set FORGE_GPU=native on a real GPU)'}`,
+  );
 }

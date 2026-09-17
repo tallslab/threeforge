@@ -25,9 +25,45 @@ export interface Budgets {
 const MB = 1024 * 1024;
 
 export const BUDGETS: Record<Tier, Budgets> = {
-  desktop: { sceneSubmissions: 400, triangles: 5_000_000, transparentOverdraw: 3, skinnedVertices: 400_000, shadowTexels: 4 * MB, textureBytes: 512 * MB, frameMs: 16.6, particles: 60_000, objects: 20_000, bones: 20_000, geometryBytes: 256 * MB },
-  'phone-mid': { sceneSubmissions: 150, triangles: 1_500_000, transparentOverdraw: 2, skinnedVertices: 150_000, shadowTexels: 1 * MB, textureBytes: 192 * MB, frameMs: 16.6, particles: 15_000, objects: 5_000, bones: 5_000, geometryBytes: 96 * MB },
-  'phone-low': { sceneSubmissions: 80, triangles: 500_000, transparentOverdraw: 1.5, skinnedVertices: 60_000, shadowTexels: 262_144, textureBytes: 96 * MB, frameMs: 33, particles: 5_000, objects: 2_000, bones: 2_000, geometryBytes: 48 * MB },
+  desktop: {
+    sceneSubmissions: 400,
+    triangles: 5_000_000,
+    transparentOverdraw: 3,
+    skinnedVertices: 400_000,
+    shadowTexels: 4 * MB,
+    textureBytes: 512 * MB,
+    frameMs: 16.6,
+    particles: 60_000,
+    objects: 20_000,
+    bones: 20_000,
+    geometryBytes: 256 * MB,
+  },
+  'phone-mid': {
+    sceneSubmissions: 150,
+    triangles: 1_500_000,
+    transparentOverdraw: 2,
+    skinnedVertices: 150_000,
+    shadowTexels: 1 * MB,
+    textureBytes: 192 * MB,
+    frameMs: 16.6,
+    particles: 15_000,
+    objects: 5_000,
+    bones: 5_000,
+    geometryBytes: 96 * MB,
+  },
+  'phone-low': {
+    sceneSubmissions: 80,
+    triangles: 500_000,
+    transparentOverdraw: 1.5,
+    skinnedVertices: 60_000,
+    shadowTexels: 262_144,
+    textureBytes: 96 * MB,
+    frameMs: 33,
+    particles: 5_000,
+    objects: 2_000,
+    bones: 2_000,
+    geometryBytes: 48 * MB,
+  },
 };
 
 export function budgetsFor(tier: Tier, overrides: Partial<Budgets> = {}): Budgets {
@@ -93,7 +129,8 @@ const MOBILE_PLATFORM = /\bandroid\b|\bios\b|\biphone\b|\bipad\b|\bipod\b/i;
  * Platforms no phone or tablet runs: Windows (`Windows`, `Win32`, `Win64`; `WinCE` excluded by the digits), macOS
  * (`macOS`, `MacIntel`, `Mac OS X`, `Darwin`), Linux (`Linux`, `X11`) and ChromeOS (`Chrome OS`, `CrOS`).
  */
-const DESKTOP_PLATFORM = /\bwin(?:dows|32|64)\b|\bmac(?:os|intel)?\b|\bdarwin\b|\blinux\b|\bx11\b|\bcros\b|\bchrome ?os\b/i;
+const DESKTOP_PLATFORM =
+  /\bwin(?:dows|32|64)\b|\bmac(?:os|intel)?\b|\bdarwin\b|\blinux\b|\bx11\b|\bcros\b|\bchrome ?os\b/i;
 
 /** Whether the reported platform is one no phone or tablet runs. Unknown or mobile platforms answer false. */
 function isDesktopPlatform(platform: string | undefined): boolean {
@@ -170,7 +207,8 @@ function platformOf(nav: TierNavigator): string | undefined {
 export function tierInputFromNavigator(gpu: string, nav: TierNavigator): TierInput {
   const touchPoints = nav.maxTouchPoints ?? 0;
   const uaMobile = nav.userAgentData?.mobile;
-  const mobile = uaMobile !== undefined ? uaMobile : nav.userAgent !== undefined ? MOBILE_UA.test(nav.userAgent) : undefined;
+  const mobile =
+    uaMobile !== undefined ? uaMobile : nav.userAgent !== undefined ? MOBILE_UA.test(nav.userAgent) : undefined;
   return {
     gpu,
     touch: touchPoints > 0,

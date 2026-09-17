@@ -8,14 +8,22 @@ import { expect, test } from './fixtures.js';
  * characters and no props — and this test would very likely still pass, reporting green while measuring a scene it
  * is not named for. False coverage that looks green is worse than coverage deferred to the full-corpus run.
  */
-test('ParticleBudget caps the boss fight particles on phone-low and clears the hint', { tag: '@corpus' }, async ({ forge }) => {
+test('ParticleBudget caps the boss fight particles on phone-low and clears the hint', { tag: '@corpus' }, async ({
+  forge,
+}) => {
   test.setTimeout(300_000);
   const read = async () =>
     forge.page.evaluate(async () => {
       const f = window.__forge;
       for (let i = 0; i < 2; i++) await f.frameAsync();
       const frame = await f.frameAsync();
-      return { particles: frame.overdraw.particles, unattributed: frame.totals.unattributed, hints: frame.hints.map((h) => h.code), report: f.particleReport ?? null, points: frame.byReason.points?.submissions ?? 0 };
+      return {
+        particles: frame.overdraw.particles,
+        unattributed: frame.totals.unattributed,
+        hints: frame.hints.map((h) => h.code),
+        report: f.particleReport ?? null,
+        points: frame.byReason.points?.submissions ?? 0,
+      };
     });
   await forge.open('bossfight', { variant: 'naive', tier: 'phone-low' });
   const free = await read();

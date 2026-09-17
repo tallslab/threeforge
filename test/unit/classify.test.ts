@@ -1,6 +1,17 @@
-import { describe, expect, it } from 'vitest';
-import { BoxGeometry, Group, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, MeshStandardMaterial, Object3D, Scene, ShaderMaterial, SkinnedMesh } from 'three';
+import {
+  BoxGeometry,
+  Group,
+  Mesh,
+  MeshBasicMaterial,
+  MeshPhysicalMaterial,
+  MeshStandardMaterial,
+  Object3D,
+  Scene,
+  ShaderMaterial,
+  SkinnedMesh,
+} from 'three';
 import { ClippingGroup } from 'three/webgpu';
+import { describe, expect, it } from 'vitest';
 import { classify, exclusionRule } from '../../src/compiler/classify.js';
 import { tag } from '../../src/tags.js';
 
@@ -51,7 +62,10 @@ describe('classify', () => {
     const morph = tag.static(new Mesh(box, mat()));
     morph.morphTargetInfluences = [0.5];
     expect(one(morph)).toMatchObject({ kind: 'morph', rule: 'morph-targets' });
-    expect(one(tag.static(new Mesh(box, new ShaderMaterial())))).toMatchObject({ kind: 'unsupported', rule: 'shader-material' });
+    expect(one(tag.static(new Mesh(box, new ShaderMaterial())))).toMatchObject({
+      kind: 'unsupported',
+      rule: 'shader-material',
+    });
   });
 
   it('excludes meshes whose rendering a batch cannot reproduce, naming the rule', () => {

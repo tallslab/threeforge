@@ -4,17 +4,25 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { analyzeAssetWithShots } from '../../src/cli/analyze.js';
 import { UsageError as ArgsUsageError } from '../../src/cli/args.js';
-import { EnvironmentError as BrowserEnvironmentError, type BrowserHandle, type PlaywrightPage } from '../../src/cli/browser.js';
+import {
+  EnvironmentError as BrowserEnvironmentError,
+  type BrowserHandle,
+  type PlaywrightPage,
+} from '../../src/cli/browser.js';
 import { EnvironmentError, exitCodeFor, PageError, UsageError } from '../../src/cli/errors.js';
 import { inspectApp } from '../../src/cli/inspect.js';
 import { armExitWatchdog, Resources, withTimeout } from '../../src/cli/lifecycle.js';
 import { PageError as MeasurePageError } from '../../src/cli/measure.js';
-import { serveStatic, type StaticRoot } from '../../src/cli/server.js';
+import { type StaticRoot, serveStatic } from '../../src/cli/server.js';
 import type { AnalyzeInput, InspectInput } from '../../src/cli/types.js';
 import { emptyFrame } from '../../src/ledger/snapshot.js';
 import { glbBytes } from './helpers/gltf-files.js';
 
-const settle = <T>(promise: Promise<T>): Promise<T | unknown> => promise.then((value) => value, (error: unknown) => error);
+const settle = <T>(promise: Promise<T>): Promise<T | unknown> =>
+  promise.then(
+    (value) => value,
+    (error: unknown) => error,
+  );
 
 afterEach(() => {
   vi.useRealTimers();
@@ -91,7 +99,10 @@ describe('Resources', () => {
     });
     const errors = await resources.close();
     expect(order).toEqual(['page', 'browser', 'server']);
-    expect(errors.map((e) => (e as Error).message)).toEqual(['page close failed', 'closing the stuck browser timed out after 30 ms']);
+    expect(errors.map((e) => (e as Error).message)).toEqual([
+      'page close failed',
+      'closing the stuck browser timed out after 30 ms',
+    ]);
     expect(await resources.close()).toEqual([]);
     expect(order).toHaveLength(3);
   });
@@ -190,7 +201,14 @@ describe('Resources after an abort', () => {
           },
         };
       };
-      const error = await settle(analyzeAssetWithShots(analyzeInput(file), undefined, false, { serve, launch, appDir: dir, signal: controller.signal }));
+      const error = await settle(
+        analyzeAssetWithShots(analyzeInput(file), undefined, false, {
+          serve,
+          launch,
+          appDir: dir,
+          signal: controller.signal,
+        }),
+      );
       expect(error).toBeInstanceOf(PageError);
       expect(browserClosed).toBe(1);
       expect(pagesOpened).toBe(0);
@@ -212,11 +230,34 @@ describe('armExitWatchdog', () => {
   });
 });
 
-const analyzeInput = (file: string): AnalyzeInput => ({ file, backend: 'webgl2', tier: 'auto', budget: null, frames: 1, compile: false, bake: 'off', views: 0, timeout: 1000, headed: false });
-const inspectInput = (timeout: number): InspectInput => ({ url: 'http://127.0.0.1:9/', backend: 'webgl2', tier: 'auto', budget: null, frames: 2, compile: true, timeout, headed: false });
+const analyzeInput = (file: string): AnalyzeInput => ({
+  file,
+  backend: 'webgl2',
+  tier: 'auto',
+  budget: null,
+  frames: 1,
+  compile: false,
+  bake: 'off',
+  views: 0,
+  timeout: 1000,
+  headed: false,
+});
+const inspectInput = (timeout: number): InspectInput => ({
+  url: 'http://127.0.0.1:9/',
+  backend: 'webgl2',
+  tier: 'auto',
+  budget: null,
+  frames: 2,
+  compile: true,
+  timeout,
+  headed: false,
+});
 
 /** A real static server whose close is counted, so a test can prove it stopped listening. */
-function countingServe(): { serve: (roots: StaticRoot[]) => Promise<{ url: string; close(): Promise<void> }>; state: { url: string; closed: number } } {
+function countingServe(): {
+  serve: (roots: StaticRoot[]) => Promise<{ url: string; close(): Promise<void> }>;
+  state: { url: string; closed: number };
+} {
   const state = { url: '', closed: 0 };
   return {
     state,
@@ -258,7 +299,9 @@ describe('analyze and inspect release what they opened', () => {
       const launch = async (): Promise<BrowserHandle> => {
         throw new EnvironmentError('could not launch Chromium');
       };
-      const error = await settle(analyzeAssetWithShots(analyzeInput(file), undefined, false, { serve, launch, appDir: dir }));
+      const error = await settle(
+        analyzeAssetWithShots(analyzeInput(file), undefined, false, { serve, launch, appDir: dir }),
+      );
       expect(error).toBeInstanceOf(EnvironmentError);
       expect(state.closed).toBe(1);
       await expect(fetch(state.url)).rejects.toThrow();
@@ -281,7 +324,9 @@ describe('analyze and inspect release what they opened', () => {
           throw new Error('browser close failed');
         },
       });
-      const error = await settle(analyzeAssetWithShots(analyzeInput(file), undefined, false, { serve, launch, appDir: dir }));
+      const error = await settle(
+        analyzeAssetWithShots(analyzeInput(file), undefined, false, { serve, launch, appDir: dir }),
+      );
       expect(error).toBeInstanceOf(PageError);
       expect((error as Error).message).toBe('the page crashed');
       expect(state.closed).toBe(1);
@@ -303,7 +348,13 @@ describe('analyze and inspect release what they opened', () => {
           browserClosed++;
         },
       });
-      const error = await settle(analyzeAssetWithShots({ ...analyzeInput(file), timeout: 100 }, undefined, false, { serve, launch, appDir: dir }));
+      const error = await settle(
+        analyzeAssetWithShots({ ...analyzeInput(file), timeout: 100 }, undefined, false, {
+          serve,
+          launch,
+          appDir: dir,
+        }),
+      );
       expect(error).toBeInstanceOf(PageError);
       expect((error as Error).message).toMatch(/timed out after 100 ms/);
       expect(browserClosed).toBe(1);
@@ -335,11 +386,42 @@ describe('analyze and inspect release what they opened', () => {
  */
 describe('every wait is governed by --timeout', () => {
   /** A page that answers everything except the one call named, which never settles. */
-  function pageStuckIn(what: 'screenshot' | 'nothing', options: Array<Record<string, unknown> | undefined> = []): PlaywrightPage {
+  function pageStuckIn(
+    what: 'screenshot' | 'nothing',
+    options: Array<Record<string, unknown> | undefined> = [],
+  ): PlaywrightPage {
     const page = {
       goto: async () => null,
       waitForFunction: async () => true,
-      evaluate: async (expression: unknown) => (String(expression).includes('__threeforgeCli') ? { ready: true, asset: { meshes: 1, materials: 1, vertices: 3, triangles: 1, animations: 0, skinned: 0, morph: 0, loadMs: 1 } } : { snapshot: emptyFrame({ three: '186', backend: 'webgl2', multiDraw: true, tier: 'desktop', gpu: 'x', dpr: 1, viewport: [800, 600] }), renderMs: 1, ledgerMs: 0, frameMs: 16 }),
+      evaluate: async (expression: unknown) =>
+        String(expression).includes('__threeforgeCli')
+          ? {
+              ready: true,
+              asset: {
+                meshes: 1,
+                materials: 1,
+                vertices: 3,
+                triangles: 1,
+                animations: 0,
+                skinned: 0,
+                morph: 0,
+                loadMs: 1,
+              },
+            }
+          : {
+              snapshot: emptyFrame({
+                three: '186',
+                backend: 'webgl2',
+                multiDraw: true,
+                tier: 'desktop',
+                gpu: 'x',
+                dpr: 1,
+                viewport: [800, 600],
+              }),
+              renderMs: 1,
+              ledgerMs: 0,
+              frameMs: 16,
+            },
       route: async () => {},
       screenshot: (opts?: Record<string, unknown>) => {
         options.push(opts);
@@ -362,11 +444,19 @@ describe('every wait is governed by --timeout', () => {
     }
   };
 
-  it('analyze gives up on a screenshot that never settles, at --timeout rather than Playwright\'s 30 s', async () => {
+  it("analyze gives up on a screenshot that never settles, at --timeout rather than Playwright's 30 s", async () => {
     await withAsset(async (file, dir) => {
-      const launch = async (): Promise<BrowserHandle> => ({ newPage: async () => pageStuckIn('screenshot'), close: async () => {} });
+      const launch = async (): Promise<BrowserHandle> => ({
+        newPage: async () => pageStuckIn('screenshot'),
+        close: async () => {},
+      });
       const started = Date.now();
-      const error = await settle(analyzeAssetWithShots({ ...analyzeInput(file), timeout: 300, views: 1 }, undefined, true, { launch, appDir: dir }));
+      const error = await settle(
+        analyzeAssetWithShots({ ...analyzeInput(file), timeout: 300, views: 1 }, undefined, true, {
+          launch,
+          appDir: dir,
+        }),
+      );
       expect(error).toBeInstanceOf(PageError);
       expect((error as Error).message).toMatch(/timed out after 300 ms/);
       expect((error as Error).message).toMatch(/screenshot/i);
@@ -377,23 +467,52 @@ describe('every wait is governed by --timeout', () => {
   it('passes the same bound to Playwright, so the operation itself is cancelled and not merely abandoned', async () => {
     await withAsset(async (file, dir) => {
       const options: Array<Record<string, unknown> | undefined> = [];
-      const launch = async (): Promise<BrowserHandle> => ({ newPage: async () => pageStuckIn('nothing', options), close: async () => {} });
-      await analyzeAssetWithShots({ ...analyzeInput(file), timeout: 4321, views: 2 }, undefined, true, { launch, appDir: dir });
+      const launch = async (): Promise<BrowserHandle> => ({
+        newPage: async () => pageStuckIn('nothing', options),
+        close: async () => {},
+      });
+      await analyzeAssetWithShots({ ...analyzeInput(file), timeout: 4321, views: 2 }, undefined, true, {
+        launch,
+        appDir: dir,
+      });
       expect(options.length).toBe(3); // the default framing plus two orbit views
       for (const opts of options) expect(opts).toMatchObject({ type: 'png', timeout: 4321 });
     });
   });
 
   it('analyze and inspect give up on a browser.newPage() that never settles', async () => {
-    const stuckBrowser = async (): Promise<BrowserHandle> => ({ newPage: () => new Promise<PlaywrightPage>(() => {}), close: async () => {} });
+    const stuckBrowser = async (): Promise<BrowserHandle> => ({
+      newPage: () => new Promise<PlaywrightPage>(() => {}),
+      close: async () => {},
+    });
     await withAsset(async (file, dir) => {
       const started = Date.now();
-      const error = await settle(analyzeAssetWithShots({ ...analyzeInput(file), timeout: 250 }, undefined, false, { launch: stuckBrowser, appDir: dir }));
+      const error = await settle(
+        analyzeAssetWithShots({ ...analyzeInput(file), timeout: 250 }, undefined, false, {
+          launch: stuckBrowser,
+          appDir: dir,
+        }),
+      );
       expect(error).toBeInstanceOf(PageError);
       expect((error as Error).message).toMatch(/timed out after 250 ms/);
       expect(Date.now() - started).toBeLessThan(10_000);
     });
-    const inspectError = await settle(inspectApp({ url: 'http://127.0.0.1:9/', backend: 'webgl2', tier: 'auto', budget: null, frames: 1, compile: false, timeout: 250, headed: false }, undefined, { launch: stuckBrowser }));
+    const inspectError = await settle(
+      inspectApp(
+        {
+          url: 'http://127.0.0.1:9/',
+          backend: 'webgl2',
+          tier: 'auto',
+          budget: null,
+          frames: 1,
+          compile: false,
+          timeout: 250,
+          headed: false,
+        },
+        undefined,
+        { launch: stuckBrowser },
+      ),
+    );
     expect(inspectError).toBeInstanceOf(PageError);
     expect((inspectError as Error).message).toMatch(/timed out after 250 ms/);
   });

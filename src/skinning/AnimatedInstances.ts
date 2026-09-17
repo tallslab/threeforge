@@ -1,6 +1,32 @@
-import { DynamicDrawUsage, InstancedBufferAttribute, InstancedBufferGeometry, InstancedInterleavedBuffer, Matrix4, Mesh, type Material, type Object3D } from 'three';
+import {
+  DynamicDrawUsage,
+  InstancedBufferAttribute,
+  InstancedBufferGeometry,
+  InstancedInterleavedBuffer,
+  type Material,
+  Matrix4,
+  Mesh,
+  type Object3D,
+} from 'three';
+import {
+  attribute,
+  Fn,
+  float,
+  floor,
+  instancedDynamicBufferAttribute,
+  int,
+  ivec2,
+  mat3,
+  mat4,
+  mod,
+  normalGeometry,
+  normalLocal,
+  positionGeometry,
+  texture,
+  uniform,
+  vec4,
+} from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
-import { Fn, attribute, float, floor, instancedDynamicBufferAttribute, int, ivec2, mat3, mat4, mod, normalGeometry, normalLocal, positionGeometry, texture, uniform, vec4 } from 'three/tsl';
 import type { AnimationTexture } from './bakeAnimationTexture.js';
 
 export interface AnimatedInstancesOptions {
@@ -17,7 +43,29 @@ export interface ClipOptions {
   speed?: number;
 }
 
-const COPIED = ['color', 'map', 'roughness', 'metalness', 'roughnessMap', 'metalnessMap', 'normalMap', 'normalScale', 'emissive', 'emissiveMap', 'emissiveIntensity', 'aoMap', 'aoMapIntensity', 'alphaMap', 'alphaTest', 'transparent', 'opacity', 'side', 'vertexColors', 'envMapIntensity', 'flatShading'] as const;
+const COPIED = [
+  'color',
+  'map',
+  'roughness',
+  'metalness',
+  'roughnessMap',
+  'metalnessMap',
+  'normalMap',
+  'normalScale',
+  'emissive',
+  'emissiveMap',
+  'emissiveIntensity',
+  'aoMap',
+  'aoMapIntensity',
+  'alphaMap',
+  'alphaTest',
+  'transparent',
+  'opacity',
+  'side',
+  'vertexColors',
+  'envMapIntensity',
+  'flatShading',
+] as const;
 
 const _matrix = new Matrix4();
 
@@ -52,7 +100,11 @@ export class AnimatedInstances {
    * @internal `offset` is reachable only through a cast and is exposed in this shape mainly for the tests that
    * assert the transform a part is drawn at.
    */
-  private readonly parts: Array<{ geometry: InstancedBufferGeometry; material: MeshStandardNodeMaterial; offset: { value: Matrix4 } }> = [];
+  private readonly parts: Array<{
+    geometry: InstancedBufferGeometry;
+    material: MeshStandardNodeMaterial;
+    offset: { value: Matrix4 };
+  }> = [];
   private seconds = 0;
 
   constructor(options: AnimatedInstancesOptions) {
@@ -88,7 +140,9 @@ export class AnimatedInstances {
       geometry.boundingSphere = source.boundingSphere;
       geometry.boundingBox = source.boundingBox;
       const material = new MeshStandardNodeMaterial();
-      const from = (options.material ?? (Array.isArray(part.mesh.material) ? part.mesh.material[0]! : part.mesh.material)) as Material & Record<string, unknown>;
+      const from = (options.material ??
+        (Array.isArray(part.mesh.material) ? part.mesh.material[0]! : part.mesh.material)) as Material &
+        Record<string, unknown>;
       const target = material as unknown as Record<string, unknown>;
       for (const key of COPIED) {
         const value = from[key];
@@ -109,11 +163,22 @@ export class AnimatedInstances {
       const boneOffset: N = int(part.boneOffset);
       const bone = (index: N): N => {
         const x: N = int(index).add(boneOffset).mul(4);
-        return mat4(animationTexture.load(ivec2(x, row)), animationTexture.load(ivec2(x.add(1), row)), animationTexture.load(ivec2(x.add(2), row)), animationTexture.load(ivec2(x.add(3), row)));
+        return mat4(
+          animationTexture.load(ivec2(x, row)),
+          animationTexture.load(ivec2(x.add(1), row)),
+          animationTexture.load(ivec2(x.add(2), row)),
+          animationTexture.load(ivec2(x.add(3), row)),
+        );
       };
       material.positionNode = Fn(() => {
         const skin: N = bindInverse
-          .mul(bone(skinIndex.x).mul(skinWeight.x).add(bone(skinIndex.y).mul(skinWeight.y)).add(bone(skinIndex.z).mul(skinWeight.z)).add(bone(skinIndex.w).mul(skinWeight.w)))
+          .mul(
+            bone(skinIndex.x)
+              .mul(skinWeight.x)
+              .add(bone(skinIndex.y).mul(skinWeight.y))
+              .add(bone(skinIndex.z).mul(skinWeight.z))
+              .add(bone(skinIndex.w).mul(skinWeight.w)),
+          )
           .mul(bind);
         // The character's matrix, then this part's offset from the character root.
         const model: N = instanceMatrix.mul(offset);
@@ -156,7 +221,10 @@ export class AnimatedInstances {
     const clips = this.animation.clips;
     const index = typeof clip === 'number' ? clip : clips.findIndex((c) => c.name === clip);
     const range = clips[index];
-    if (!range) throw new Error(`AnimatedInstances: unknown clip ${JSON.stringify(clip)}; known: ${clips.map((c) => c.name).join(', ')}`);
+    if (!range)
+      throw new Error(
+        `AnimatedInstances: unknown clip ${JSON.stringify(clip)}; known: ${clips.map((c) => c.name).join(', ')}`,
+      );
     this.clipAttribute.setXYZW(i, range.start, range.frames, options.offset ?? 0, options.speed ?? 1);
     this.clipAttribute.needsUpdate = true;
   }

@@ -1,10 +1,12 @@
 import {
   AlphaFormat,
+  type BufferGeometry,
   DepthFormat,
   DepthStencilFormat,
   FloatType,
   HalfFloatType,
   IntType,
+  type Object3D,
   RedFormat,
   RedIntegerFormat,
   RGBFormat,
@@ -12,20 +14,18 @@ import {
   RGFormat,
   RGIntegerFormat,
   ShortType,
-  UnsignedInt101111Type,
+  type Texture,
   UnsignedInt248Type,
   UnsignedInt5999Type,
+  UnsignedInt101111Type,
   UnsignedIntType,
   UnsignedShort4444Type,
   UnsignedShort5551Type,
   UnsignedShortType,
   VSMShadowMap,
-  type BufferGeometry,
-  type Object3D,
-  type Texture,
 } from 'three';
-import type { MeasuredMemory, MemorySnapshot } from './snapshot.js';
 import { collectResources } from '../memory/resources.js';
+import type { MeasuredMemory, MemorySnapshot } from './snapshot.js';
 
 /** The texture fields the estimate reads; structural, so any texture class (and a plain test object) fits. */
 interface TextureFields {
@@ -68,9 +68,21 @@ interface MipLevel {
 function texelBytes(format: number, type: number): number {
   if (type === UnsignedShort4444Type || type === UnsignedShort5551Type) return 2;
   if (type === UnsignedInt248Type || type === UnsignedInt5999Type || type === UnsignedInt101111Type) return 4;
-  const channel = type === ShortType || type === UnsignedShortType || type === HalfFloatType ? 2 : type === IntType || type === UnsignedIntType || type === FloatType ? 4 : 1;
+  const channel =
+    type === ShortType || type === UnsignedShortType || type === HalfFloatType
+      ? 2
+      : type === IntType || type === UnsignedIntType || type === FloatType
+        ? 4
+        : 1;
   let channels = 4;
-  if (format === AlphaFormat || format === RedFormat || format === RedIntegerFormat || format === DepthFormat || format === DepthStencilFormat) channels = 1;
+  if (
+    format === AlphaFormat ||
+    format === RedFormat ||
+    format === RedIntegerFormat ||
+    format === DepthFormat ||
+    format === DepthStencilFormat
+  )
+    channels = 1;
   else if (format === RGFormat || format === RGIntegerFormat) channels = 2;
   else if (format === RGBFormat || format === RGBIntegerFormat) channels = 3;
   return channel * channels;
@@ -85,8 +97,10 @@ function allocatedSize(t: TextureFields): { width: number; height: number; depth
   if (image && image.image !== undefined) image = image.image;
   if (!image) return { width: 1, height: 1, depth: 1 };
   if (t.isHTMLTexture) return { width: image.offsetWidth || 1, height: image.offsetHeight || 1, depth: 1 };
-  if (typeof image.videoWidth === 'number') return { width: image.videoWidth || 1, height: image.videoHeight || 1, depth: 1 };
-  if (typeof image.displayWidth === 'number') return { width: image.displayWidth || 1, height: image.displayHeight || 1, depth: 1 };
+  if (typeof image.videoWidth === 'number')
+    return { width: image.videoWidth || 1, height: image.videoHeight || 1, depth: 1 };
+  if (typeof image.displayWidth === 'number')
+    return { width: image.displayWidth || 1, height: image.displayHeight || 1, depth: 1 };
   return { width: image.width || 1, height: image.height || 1, depth: t.isCubeTexture ? 6 : image.depth || 1 };
 }
 
@@ -114,7 +128,11 @@ export function textureBytes(texture: Texture): number {
   if (t.isCompressedTexture) {
     if (Array.isArray(t.mipmaps) && t.mipmaps.length > 0) return mipDataBytes(t.mipmaps);
     // CompressedCubeTexture (KTX2Loader's six faces) keeps each face's levels on the face.
-    if (Array.isArray(t.image)) return (t.image as Array<{ mipmaps?: unknown } | null>).reduce((bytes, face) => bytes + mipDataBytes(face?.mipmaps), 0);
+    if (Array.isArray(t.image))
+      return (t.image as Array<{ mipmaps?: unknown } | null>).reduce(
+        (bytes, face) => bytes + mipDataBytes(face?.mipmaps),
+        0,
+      );
     return 0;
   }
   const { width, height, depth } = allocatedSize(t);
@@ -124,11 +142,14 @@ export function textureBytes(texture: Texture): number {
   let bytes = 0;
   if (t.isCubeTexture) {
     bytes = width * height * depth * texel;
-    for (let level = 1; level <= mipmaps.length; level++) bytes += Math.max(1, width >> level) * Math.max(1, height >> level) * depth * texel;
+    for (let level = 1; level <= mipmaps.length; level++)
+      bytes += Math.max(1, width >> level) * Math.max(1, height >> level) * depth * texel;
   } else {
     for (let level = 0; level < mipmaps.length; level++) {
       const mip = mipmaps[level];
-      bytes += mip?.data ? mip.data.byteLength : (mip?.width || Math.max(1, width >> level)) * (mip?.height || Math.max(1, height >> level)) * depth * texel;
+      bytes += mip?.data
+        ? mip.data.byteLength
+        : (mip?.width || Math.max(1, width >> level)) * (mip?.height || Math.max(1, height >> level)) * depth * texel;
     }
   }
   return Math.round(bytes);
@@ -147,7 +168,10 @@ export interface AllowedRenderTarget {
  * ~68-160): one per colour attachment, and a depth texture when the target has one or a depth or stencil buffer.
  */
 function renderTargetTextures(target: AllowedRenderTarget): number {
-  return (Array.isArray(target.textures) ? target.textures.length : 1) + (target.depthTexture || target.depthBuffer || target.stencilBuffer ? 1 : 0);
+  return (
+    (Array.isArray(target.textures) ? target.textures.length : 1) +
+    (target.depthTexture || target.depthBuffer || target.stencilBuffer ? 1 : 0)
+  );
 }
 
 /**
@@ -155,7 +179,11 @@ function renderTargetTextures(target: AllowedRenderTarget): number {
  * texture or a depth texture the scene reaches (a mirror's `rt.texture` in a material) or already allowed is not allowed
  * again. A depth texture three creates for a depth buffer lives in its own data, not on the target, and counts one.
  */
-function heldTargetTextures(target: AllowedRenderTarget, reachable: ReadonlySet<unknown>, allowed: Set<unknown>): number {
+function heldTargetTextures(
+  target: AllowedRenderTarget,
+  reachable: ReadonlySet<unknown>,
+  allowed: Set<unknown>,
+): number {
   const once = (texture: unknown): number => {
     if (reachable.has(texture) || allowed.has(texture)) return 0;
     allowed.add(texture);
@@ -176,7 +204,10 @@ function hasMorphTexture(geometry: BufferGeometry): boolean {
 }
 
 /** A built shadow map: an array map carries its VSM blur targets (ShadowNode.js ~389-403). */
-type ShadowMapTarget = AllowedRenderTarget & { _vsmShadowMapVertical?: AllowedRenderTarget | null; _vsmShadowMapHorizontal?: AllowedRenderTarget | null };
+type ShadowMapTarget = AllowedRenderTarget & {
+  _vsmShadowMapVertical?: AllowedRenderTarget | null;
+  _vsmShadowMapHorizontal?: AllowedRenderTarget | null;
+};
 
 /** Renderer-internal allocations present on an empty scene: the output pass's quad, the frame-buffer target's colour and depth. */
 const INTERNAL_GEOMETRIES = 1;
@@ -238,8 +269,20 @@ export interface MemoryEstimateOptions {
 /** three's own counts and byte sizes, null when `info` does not carry them. */
 function measuredOf(info: RendererMemoryInfo): MeasuredMemory | null {
   const { texturesSize, attributesSize, indexAttributesSize, renderTargets, total } = info;
-  if (typeof texturesSize !== 'number' || typeof attributesSize !== 'number' || typeof indexAttributesSize !== 'number' || typeof renderTargets !== 'number' || typeof total !== 'number') return null;
-  return { textures: { count: info.textures, bytes: texturesSize }, geometries: { count: info.geometries, bytes: attributesSize + indexAttributesSize }, renderTargets: { count: renderTargets }, bytes: total };
+  if (
+    typeof texturesSize !== 'number' ||
+    typeof attributesSize !== 'number' ||
+    typeof indexAttributesSize !== 'number' ||
+    typeof renderTargets !== 'number' ||
+    typeof total !== 'number'
+  )
+    return null;
+  return {
+    textures: { count: info.textures, bytes: texturesSize },
+    geometries: { count: info.geometries, bytes: attributesSize + indexAttributesSize },
+    renderTargets: { count: renderTargets },
+    bytes: total,
+  };
 }
 
 /**
@@ -247,7 +290,12 @@ function measuredOf(info: RendererMemoryInfo): MeasuredMemory | null {
  * shadow maps three has built for casting lights, and the renderer's half-float frame-buffer target for the viewport.
  * `measured` is three's own count when `info` carries its byte sizes.
  */
-export function estimateMemory(scene: Object3D, info: RendererMemoryInfo, viewport: [number, number], options: MemoryEstimateOptions = {}): MemorySnapshot {
+export function estimateMemory(
+  scene: Object3D,
+  info: RendererMemoryInfo,
+  viewport: [number, number],
+  options: MemoryEstimateOptions = {},
+): MemorySnapshot {
   const { textures, geometries } = collectResources(scene);
   let rtCount = 0;
   let rtBytes = 0;
@@ -259,7 +307,12 @@ export function estimateMemory(scene: Object3D, info: RendererMemoryInfo, viewpo
   // built but not rendered yet is allowed textures three creates on its first render, so the count reads low until then.
   let allowedTextures = (options.frameBufferTargets ? 0 : FRAME_BUFFER_TEXTURES) + (options.internalTextures ?? 0);
   scene.traverse((o) => {
-    const light = o as Object3D & { isLight?: boolean; isPointLight?: boolean; castShadow: boolean; shadow?: { mapSize: { x: number; y: number }; isPointLightShadow?: boolean; map?: ShadowMapTarget | null } };
+    const light = o as Object3D & {
+      isLight?: boolean;
+      isPointLight?: boolean;
+      castShadow: boolean;
+      shadow?: { mapSize: { x: number; y: number }; isPointLightShadow?: boolean; map?: ShadowMapTarget | null };
+    };
     const map = light.isLight && light.castShadow ? light.shadow?.map : null;
     if (!map || !light.shadow) return;
     rtCount++;
@@ -289,12 +342,15 @@ export function estimateMemory(scene: Object3D, info: RendererMemoryInfo, viewpo
   });
   // By identity from here: a texture the scene reaches, or one already allowed, is not allowed again.
   const allowed = new Set<unknown>();
-  for (const target of options.frameBufferTargets ?? []) allowedTextures += heldTargetTextures(target, textures, allowed);
-  for (const target of options.renderTargets ?? []) if (target) allowedTextures += heldTargetTextures(target, textures, allowed);
-  for (const texture of options.rendererTextures ?? []) if (!textures.has(texture as Texture) && !allowed.has(texture)) {
-    allowed.add(texture);
-    allowedTextures++;
-  }
+  for (const target of options.frameBufferTargets ?? [])
+    allowedTextures += heldTargetTextures(target, textures, allowed);
+  for (const target of options.renderTargets ?? [])
+    if (target) allowedTextures += heldTargetTextures(target, textures, allowed);
+  for (const texture of options.rendererTextures ?? [])
+    if (!textures.has(texture as Texture) && !allowed.has(texture)) {
+      allowed.add(texture);
+      allowedTextures++;
+    }
   // Morph targets: one float DataArrayTexture per morphed geometry, which nothing in the scene reaches.
   for (const g of geometries) if (hasMorphTexture(g)) allowedTextures++;
   let internalGeometries = INTERNAL_GEOMETRIES;
@@ -314,7 +370,10 @@ export function estimateMemory(scene: Object3D, info: RendererMemoryInfo, viewpo
     renderTargets: { count: rtCount, bytes: rtBytes },
     // Reachable textures that never rendered are not uploaded, so the count clamps at zero and is exact once everything
     // reachable has been on screen. One geometry is three's own: the output pass's quad.
-    unreferenced: { geometries: Math.max(0, info.geometries - geometries.size - internalGeometries), textures: Math.max(0, info.textures - textures.size - allowedTextures) },
+    unreferenced: {
+      geometries: Math.max(0, info.geometries - geometries.size - internalGeometries),
+      textures: Math.max(0, info.textures - textures.size - allowedTextures),
+    },
     chunks: { total: 0, resident: 0 },
     measured: measuredOf(info),
     estimated: true,

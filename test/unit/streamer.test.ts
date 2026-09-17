@@ -1,5 +1,15 @@
+import {
+  BoxGeometry,
+  DataTexture,
+  Mesh,
+  MeshStandardMaterial,
+  type Object3D,
+  PerspectiveCamera,
+  RGBAFormat,
+  Scene,
+  UnsignedByteType,
+} from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { BoxGeometry, DataTexture, Mesh, MeshStandardMaterial, PerspectiveCamera, RGBAFormat, Scene, UnsignedByteType, type Object3D } from 'three';
 import { World } from '../../src/compiler/World.js';
 import { Streamer } from '../../src/streaming/Streamer.js';
 import { tag } from '../../src/tags.js';
@@ -9,10 +19,13 @@ const tex = () => new DataTexture(new Uint8Array(16), 2, 2, RGBAFormat, Unsigned
 
 /** Every object the streamer still holds in a chunk. */
 const placed = (streamer: Streamer): Object3D[] =>
-  [...(streamer as unknown as { chunks: Map<string, { placed: Array<{ object: Object3D }> }> }).chunks.values()].flatMap((c) => c.placed.map((p) => p.object));
+  [
+    ...(streamer as unknown as { chunks: Map<string, { placed: Array<{ object: Object3D }> }> }).chunks.values(),
+  ].flatMap((c) => c.placed.map((p) => p.object));
 
 /** The chunk the streamer's object index maps an object to, if any. */
-const indexed = (streamer: Streamer, object: Object3D): unknown => (streamer as unknown as { index: WeakMap<Object3D, unknown> }).index.get(object);
+const indexed = (streamer: Streamer, object: Object3D): unknown =>
+  (streamer as unknown as { index: WeakMap<Object3D, unknown> }).index.get(object);
 
 /** Cells 0..3 along x (chunkSize 20): two batched meshes per cell plus one unique ground tile per cell; tiles 0 and 2 share a texture. */
 function world() {
@@ -25,7 +38,9 @@ function world() {
       m.position.set(c * 20 + k * 5, 0, 0);
       scene.add(m);
     }
-    const tile = tag.static(new Mesh(new BoxGeometry(20, 1, 20), new MeshStandardMaterial({ map: c % 2 === 0 ? shared : tex() })));
+    const tile = tag.static(
+      new Mesh(new BoxGeometry(20, 1, 20), new MeshStandardMaterial({ map: c % 2 === 0 ? shared : tex() })),
+    );
     tile.name = `tile-${c}`;
     tile.position.set(c * 20 + 10, -1, 0);
     scene.add(tile);

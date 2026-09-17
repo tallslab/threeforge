@@ -1,15 +1,64 @@
-import { AmbientLight, AnimationMixer, BatchedMesh, Box3, BoxGeometry, Color, DirectionalLight, Frustum, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SkinnedMesh, Sphere, Vector3, type AnimationClip, type Object3D, type OrthographicCamera } from 'three';
-import { WebGPURenderer } from 'three/webgpu';
-import * as THREE_WEBGPU from 'three/webgpu';
 import * as THREE from 'three';
-import { AnimatedInstances, DrawCallLedger, MaterialRegistry, ParticleBudget, RenderScheduler, ResolutionScaler, ResourceTracker, ShadowBudget, World, bakeAnimationTexture, bakeGeometries, assembleCharacter, collectResources, createLoader, detectTier, disposeLoader, exposeToAgents, prepareLods, tag, tierInputFromNavigator, unreferencedResources, type Streamer, type AssembledCharacter, type CompileReport, type FrameSnapshot, type ParticleBudgetReport, type ShadowBudgetReport, type Tier } from 'threeforge';
+import {
+  AmbientLight,
+  type AnimationClip,
+  AnimationMixer,
+  type BatchedMesh,
+  Box3,
+  BoxGeometry,
+  Color,
+  DirectionalLight,
+  Frustum,
+  Matrix4,
+  Mesh,
+  MeshStandardMaterial,
+  type Object3D,
+  type OrthographicCamera,
+  PerspectiveCamera,
+  Raycaster,
+  Scene,
+  type SkinnedMesh,
+  Sphere,
+  Vector3,
+} from 'three';
+import * as THREE_WEBGPU from 'three/webgpu';
+import { WebGPURenderer } from 'three/webgpu';
+import {
+  AnimatedInstances,
+  type AssembledCharacter,
+  assembleCharacter,
+  bakeAnimationTexture,
+  bakeGeometries,
+  type CompileReport,
+  collectResources,
+  createLoader,
+  DrawCallLedger,
+  detectTier,
+  disposeLoader,
+  exposeToAgents,
+  type FrameSnapshot,
+  MaterialRegistry,
+  ParticleBudget,
+  type ParticleBudgetReport,
+  prepareLods,
+  RenderScheduler,
+  ResolutionScaler,
+  ResourceTracker,
+  ShadowBudget,
+  type ShadowBudgetReport,
+  type Streamer,
+  type Tier,
+  tag,
+  tierInputFromNavigator,
+  World,
+} from 'threeforge';
 import { createOverlay } from 'threeforge/overlay';
-import { BENCH_SCENES, type BenchScene } from './scenes/index.js';
-import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
-import { buildFieldScene, type FieldScene } from '../scenes/field.js';
 import { buildCharacter, type CharacterParts } from '../scenes/character.js';
-import { buildBiome, type Biome } from './biome.js';
-import { buildArena, type Arena } from './arena.js';
+import { buildFieldScene, type FieldScene } from '../scenes/field.js';
+import { buildNaiveScene, type NaiveScene } from '../scenes/naive.js';
+import { type Arena, buildArena } from './arena.js';
+import { type Biome, buildBiome } from './biome.js';
+import { BENCH_SCENES, type BenchScene } from './scenes/index.js';
 
 export type BackendName = 'webgl2' | 'webgpu';
 
@@ -71,7 +120,13 @@ export interface MemoryHarness {
   load(name: string): Promise<{ geometries: number; textures: number }>;
   remove(): void;
   release(): { geometries: number; textures: number };
-  info(): { geometries: number; textures: number; reachable: { geometries: number; textures: number }; renderTargets: number; unreferenced: { geometries: number; textures: number } };
+  info(): {
+    geometries: number;
+    textures: number;
+    reachable: { geometries: number; textures: number };
+    renderTargets: number;
+    unreferenced: { geometries: number; textures: number };
+  };
 }
 
 export interface ForgeHarness {
@@ -192,7 +247,11 @@ try {
     }
     return deviceLostMessage;
   };
-  const deviceLostTiming = () => ({ lostAt: deviceLostAt, lostAtIsUpperBound: deviceLostAtIsUpperBound, compileStartedAt });
+  const deviceLostTiming = () => ({
+    lostAt: deviceLostAt,
+    lostAtIsUpperBound: deviceLostAtIsUpperBound,
+    compileStartedAt,
+  });
   renderer.setPixelRatio(1);
   renderer.setSize(800, 600, false);
 
@@ -200,15 +259,23 @@ try {
   const ledger = new DrawCallLedger({ registry });
   ledger.attach(renderer);
 
-  const backend: BackendName = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'webgpu' : 'webgl2';
+  const backend: BackendName = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend
+    ? 'webgpu'
+    : 'webgl2';
   // Describe the device for the snapshot's env: adapter info on WebGPU, the unmasked renderer string on WebGL.
   const gpuName = (): string => {
     type AdapterInfo = { description?: string; device?: string; vendor?: string; architecture?: string };
-    const b = renderer.backend as { isWebGPUBackend?: boolean; device?: { adapterInfo?: AdapterInfo }; gl?: WebGL2RenderingContext };
+    const b = renderer.backend as {
+      isWebGPUBackend?: boolean;
+      device?: { adapterInfo?: AdapterInfo };
+      gl?: WebGL2RenderingContext;
+    };
     if (b.isWebGPUBackend) {
       // three keeps only the device; Chrome exposes the adapter's info on it.
       const info = b.device?.adapterInfo;
-      return info?.description || info?.device || [info?.vendor, info?.architecture].filter(Boolean).join(' ') || 'webgpu';
+      return (
+        info?.description || info?.device || [info?.vendor, info?.architecture].filter(Boolean).join(' ') || 'webgpu'
+      );
     }
     const gl = b.gl;
     const ext = gl?.getExtension('WEBGL_debug_renderer_info');
@@ -218,7 +285,10 @@ try {
   const tier = (params.get('tier') as Tier | null) ?? detectTier(tierInputFromNavigator(gpu, navigator));
   ledger.setEnvironment({ tier, gpu, dpr: renderer.getPixelRatio(), viewport: [800, 600] });
   const hasFeature = (renderer.backend as { hasFeature?: (name: string) => boolean }).hasFeature;
-  const multiDraw = backend === 'webgl2' && typeof hasFeature === 'function' ? hasFeature.call(renderer.backend, 'WEBGL_multi_draw') : false;
+  const multiDraw =
+    backend === 'webgl2' && typeof hasFeature === 'function'
+      ? hasFeature.call(renderer.backend, 'WEBGL_multi_draw')
+      : false;
 
   const camera = new PerspectiveCamera(60, 800 / 600, 0.1, 1000);
   // Far enough back that the whole 120-unit prop field is inside the frustum: the naive number is then one draw per mesh.
@@ -263,7 +333,14 @@ try {
     return loader;
   };
   if (benchBuilder) {
-    bench = await benchBuilder({ renderer, camera, params, loader: makeLoader, url: (p) => '/' + p.replace(/^\//, ''), tier });
+    bench = await benchBuilder({
+      renderer,
+      camera,
+      params,
+      loader: makeLoader,
+      url: (p) => '/' + p.replace(/^\//, ''),
+      tier,
+    });
     scene = bench.scene;
     animationSources = bench.animations ?? [];
     if (bench.portrait) {
@@ -273,7 +350,10 @@ try {
       ledger.setEnvironment({ viewport: [450, 800] });
     }
   } else if (sceneName === 'arena') {
-    const [{ RoomEnvironment }, { PMREMGenerator }] = await Promise.all([import('three/addons/environments/RoomEnvironment.js'), import('three/webgpu')]);
+    const [{ RoomEnvironment }, { PMREMGenerator }] = await Promise.all([
+      import('three/addons/environments/RoomEnvironment.js'),
+      import('three/webgpu'),
+    ]);
     const loader = await makeLoader();
     if (params.get('shadows') !== '0') renderer.shadowMap.enabled = true;
     arena = await buildArena({
@@ -303,9 +383,17 @@ try {
     camera.updateMatrixWorld();
     arena.setTime(Number(params.get('t') ?? '1'));
   } else if (sceneName === 'biome') {
-    const [{ RoomEnvironment }, { PMREMGenerator }] = await Promise.all([import('three/addons/environments/RoomEnvironment.js'), import('three/webgpu')]);
+    const [{ RoomEnvironment }, { PMREMGenerator }] = await Promise.all([
+      import('three/addons/environments/RoomEnvironment.js'),
+      import('three/webgpu'),
+    ]);
     const loader = await makeLoader();
-    biome = await buildBiome({ loader, density: Number(params.get('density') ?? '1'), water: params.get('water') !== '0', hiPoly: params.get('hipoly') !== '0' });
+    biome = await buildBiome({
+      loader,
+      density: Number(params.get('density') ?? '1'),
+      water: params.get('water') !== '0',
+      hiPoly: params.get('hipoly') !== '0',
+    });
     disposeLoader(loader);
     scene = biome.scene;
     const roomEnvironment = new RoomEnvironment();
@@ -322,14 +410,21 @@ try {
   } else if (sceneName === 'gltf') {
     const assetName = params.get('asset') ?? params.get('url') ?? '';
     const lists = await Promise.all(
-      ['/index.json', '/kits-index.json'].map((u) => fetch(u).then((r) => (r.ok ? r.json() : [])).catch(() => [])),
+      ['/index.json', '/kits-index.json'].map((u) =>
+        fetch(u)
+          .then((r) => (r.ok ? r.json() : []))
+          .catch(() => []),
+      ),
     );
     // Either a named asset from the index, or any served file via ?url=<path under test/assets/files>.
     const entry = params.has('url')
       ? { name: assetName, entry: params.get('url')!.replace(/^\//, '') }
       : (lists.flat() as Array<{ name: string; entry?: string; error?: string }>).find((a) => a.name === assetName);
     if (!entry?.entry) throw new Error(`asset "${assetName}" not found in test/assets/files (run pnpm assets)`);
-    const [{ RoomEnvironment }, { PMREMGenerator }] = await Promise.all([import('three/addons/environments/RoomEnvironment.js'), import('three/webgpu')]);
+    const [{ RoomEnvironment }, { PMREMGenerator }] = await Promise.all([
+      import('three/addons/environments/RoomEnvironment.js'),
+      import('three/webgpu'),
+    ]);
     const loader = await makeLoader();
     const t0 = performance.now();
     const gltf = await loader.loadAsync('/' + entry.entry);
@@ -358,7 +453,11 @@ try {
     const radius = Math.max(sphere.radius, 1e-3);
     camera.near = radius / 100;
     camera.far = radius * 50;
-    camera.position.copy(sphere.center).add(new Vector3(0.7, 0.45, 1).normalize().multiplyScalar((radius / Math.sin((camera.fov * Math.PI) / 360)) * 1.05));
+    camera.position
+      .copy(sphere.center)
+      .add(
+        new Vector3(0.7, 0.45, 1).normalize().multiplyScalar((radius / Math.sin((camera.fov * Math.PI) / 360)) * 1.05),
+      );
     camera.lookAt(sphere.center);
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
@@ -371,7 +470,12 @@ try {
     let linesPoints = 0;
     const materials = new Set<unknown>();
     gltf.scene.traverse((o) => {
-      const m = o as Mesh & { isSkinnedMesh?: boolean; isInstancedMesh?: boolean; isLine?: boolean; isPoints?: boolean };
+      const m = o as Mesh & {
+        isSkinnedMesh?: boolean;
+        isInstancedMesh?: boolean;
+        isLine?: boolean;
+        isPoints?: boolean;
+      };
       if (m.isLine || m.isPoints) linesPoints++;
       if (!m.isMesh) return;
       meshes++;
@@ -387,11 +491,28 @@ try {
     gltf.scene.traverse((o) => {
       if ((o as { isBone?: boolean }).isBone) bones++;
     });
-    gltfInfo = { name: assetName, meshes, materials: materials.size, vertices, triangles: Math.round(triangles), animations: clips.length, skinned, morph, instanced, linesPoints, radius, loadMs: Math.round(loadMs), clips: clips.map((c) => c.name), bones };
+    gltfInfo = {
+      name: assetName,
+      meshes,
+      materials: materials.size,
+      vertices,
+      triangles: Math.round(triangles),
+      animations: clips.length,
+      skinned,
+      morph,
+      instanced,
+      linesPoints,
+      radius,
+      loadMs: Math.round(loadMs),
+      clips: clips.map((c) => c.name),
+      bones,
+    };
   } else if (sceneName === 'vat') {
     // One skinned character (left, driven by a mixer) next to its AnimatedInstances twin (right): the two must match.
     const loader = await makeLoader();
-    const kits = (await fetch('/kits-index.json').then((r) => (r.ok ? r.json() : [])).catch(() => [])) as Array<{ name: string; glbs?: string[] }>;
+    const kits = (await fetch('/kits-index.json')
+      .then((r) => (r.ok ? r.json() : []))
+      .catch(() => [])) as Array<{ name: string; glbs?: string[] }>;
     const kit = kits.find((k) => k.name === 'kenney-mini-characters');
     const file = kit?.glbs?.find((g) => g.toLowerCase().endsWith(`/${params.get('asset') ?? 'character-male-a'}.glb`));
     if (!file) throw new Error('kenney-mini-characters kit not found (run pnpm assets)');
@@ -440,7 +561,12 @@ try {
     scene.background = new Color(0x202830);
     character = buildCharacter();
     if (params.get('assemble') === '1') {
-      assembled = assembleCharacter({ skeleton: character.skeleton, wardrobe: [character.body, ...character.gear], equipped: [character.body, ...character.gear], atlas: { size: 256 } });
+      assembled = assembleCharacter({
+        skeleton: character.skeleton,
+        wardrobe: [character.body, ...character.gear],
+        equipped: [character.body, ...character.gear],
+        atlas: { size: 256 },
+      });
       scene.add(assembled.mesh);
     } else {
       scene.add(character.body, ...character.gear);
@@ -487,7 +613,13 @@ try {
   let loadedRoot: THREE.Object3D | null = null;
   const memory: MemoryHarness = {
     async load(name) {
-      const lists = await Promise.all(['/index.json', '/kits-index.json'].map((u) => fetch(u).then((r) => (r.ok ? r.json() : [])).catch(() => [])));
+      const lists = await Promise.all(
+        ['/index.json', '/kits-index.json'].map((u) =>
+          fetch(u)
+            .then((r) => (r.ok ? r.json() : []))
+            .catch(() => []),
+        ),
+      );
       const entry = (lists.flat() as Array<{ name: string; entry?: string }>).find((a) => a.name === name);
       if (!entry?.entry) throw new Error(`asset "${name}" not found in test/assets/files (run pnpm assets)`);
       const loader = await createLoader(renderer, { decoders: '/_decoders/' });
@@ -514,7 +646,13 @@ try {
       const m = renderer.info.memory;
       const estimate = ledger.measureMemory();
       const reachable = collectResources(scene);
-      return { geometries: m.geometries, textures: m.textures, reachable: { geometries: reachable.geometries.size, textures: reachable.textures.size }, renderTargets: estimate.renderTargets.count, unreferenced: estimate.unreferenced };
+      return {
+        geometries: m.geometries,
+        textures: m.textures,
+        reachable: { geometries: reachable.geometries.size, textures: reachable.textures.size },
+        renderTargets: estimate.renderTargets.count,
+        unreferenced: estimate.unreferenced,
+      };
     },
   };
 
@@ -568,7 +706,13 @@ try {
         else if ((o as SkinnedMesh).isSkinnedMesh) skinnedSurvived++;
         else if ((o as Mesh).isMesh) plainMeshes++;
       });
-      return { drawsAfter: measure(target), batchedMeshes, plainMeshes, skinnedSurvived, visibleAfter: countVisible(target, camera) };
+      return {
+        drawsAfter: measure(target),
+        batchedMeshes,
+        plainMeshes,
+        skinnedSurvived,
+        visibleAfter: countVisible(target, camera),
+      };
     };
 
     const asIsScene = buildNaiveScene(seed);
@@ -614,7 +758,10 @@ try {
   if (useLod) await prepareLods(scene, { ratios: [0.5, 0.2] });
   if (params.get('wall') === '1') {
     // A tall opaque wall between the camera and the left half of the naive field: an occluder for chunk proxies.
-    const wall = new Mesh(new BoxGeometry(220, 220, 2), new MeshStandardMaterial({ color: 0x555a60, roughness: 1, metalness: 0 }));
+    const wall = new Mesh(
+      new BoxGeometry(220, 220, 2),
+      new MeshStandardMaterial({ color: 0x555a60, roughness: 1, metalness: 0 }),
+    );
     wall.name = 'wall';
     wall.position.set(-110, 110, 80);
     tag.static(wall);
@@ -626,13 +773,17 @@ try {
     policy: (params.get('policy') ?? (sceneName === 'gltf' ? 'auto' : 'tagged')) as 'auto' | 'tagged',
     animations: animationSources.length > 0 ? animationSources : clips,
     dynamics: params.get('dynamics') === 'batch-sync' ? 'batch-sync' : 'separate',
-    ...(useLod ? { lod: { distances: [Number(params.get('lod0') ?? '200'), Number(params.get('lod1') ?? '600')] } } : {}),
+    ...(useLod
+      ? { lod: { distances: [Number(params.get('lod0') ?? '200'), Number(params.get('lod1') ?? '600')] } }
+      : {}),
     ...(params.has('chunk') ? { chunkSize: Number(params.get('chunk')) } : {}),
     ...(params.get('culling') === 'linear' ? { culling: 'linear' as const } : {}),
     ...(params.has('threshold') ? { instanceThreshold: Number(params.get('threshold')) } : {}),
     occlusion: params.get('occlusion') === '1',
     ...(params.get('materials') === 'keep' ? { materials: 'keep' as const } : {}),
-    ...(params.get('nested') === 'per-pass' || params.get('nested') === 'reuse-main' ? { nestedPasses: params.get('nested') as 'per-pass' | 'reuse-main' } : {}),
+    ...(params.get('nested') === 'per-pass' || params.get('nested') === 'reuse-main'
+      ? { nestedPasses: params.get('nested') as 'per-pass' | 'reuse-main' }
+      : {}),
     ...(params.has('bake') ? { bake: params.get('bake') === 'buried' ? { removeBuried: true } : true } : {}),
     ...(params.get('sprites') === 'keep' ? { sprites: 'keep' as const } : {}),
     ...(params.get('transparent') === 'keep' ? { transparent: 'keep' as const } : {}),
@@ -678,7 +829,8 @@ try {
     scaler.set(Number(params.get('scale')));
   }
 
-  const measureOverdraw = (cam?: PerspectiveCamera | OrthographicCamera) => ledger.measureOverdraw(scene, cam ?? camera);
+  const measureOverdraw = (cam?: PerspectiveCamera | OrthographicCamera) =>
+    ledger.measureOverdraw(scene, cam ?? camera);
 
   function raycastDown(x: number, z: number): { hitCount: number; hitIsBatch: boolean; resolvedName: string | null } {
     const raycaster = new Raycaster(new Vector3(x, 60, z), new Vector3(0, -1, 0));
@@ -703,14 +855,19 @@ try {
   // Optional bloom post-processing: the scene becomes a nested pass under a fullscreen quad.
   let postProcessing: { render(): void } | null = null;
   if (params.get('bloom') === '1') {
-    const [{ PostProcessing }, { pass }, { bloom }] = await Promise.all([import('three/webgpu'), import('three/tsl'), import('three/addons/tsl/display/BloomNode.js')]);
+    const [{ PostProcessing }, { pass }, { bloom }] = await Promise.all([
+      import('three/webgpu'),
+      import('three/tsl'),
+      import('three/addons/tsl/display/BloomNode.js'),
+    ]);
     const scenePass = pass(scene, camera);
     const post = new PostProcessing(renderer);
     post.outputNode = scenePass.add(bloom(scenePass, 0.6, 0.4, 0.85));
     postProcessing = post;
   }
 
-  const scheduler = params.get('scheduler') === '1' ? new RenderScheduler({ renderer, scene, camera, ledger, world }) : undefined;
+  const scheduler =
+    params.get('scheduler') === '1' ? new RenderScheduler({ renderer, scene, camera, ledger, world }) : undefined;
   function frame(options?: { items?: boolean }): FrameSnapshot {
     if (scheduler) scheduler.tick(performance.now());
     else if (postProcessing) postProcessing.render();
@@ -730,8 +887,51 @@ try {
     });
   }
 
-  window.__forge = { three: THREE, bakeGeometries, webgpu: THREE_WEBGPU, ready: true, backend, scene, camera, renderer, registry, ledger, world, naive, field, character, assembled, gltf: gltfInfo, biome, arena, bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined, particleReport, scaler, scheduler, shadowReport, refreshShadow, vat: vatInstances, streamer: bench?.streamer, memory, setTime, compile, decompile, measureOverdraw, raycastDown, renderOnce, frame, frameAsync, visibleMeshes, spikeSceneOptimizer, deviceLost, deviceLostTiming };
+  window.__forge = {
+    three: THREE,
+    bakeGeometries,
+    webgpu: THREE_WEBGPU,
+    ready: true,
+    backend,
+    scene,
+    camera,
+    renderer,
+    registry,
+    ledger,
+    world,
+    naive,
+    field,
+    character,
+    assembled,
+    gltf: gltfInfo,
+    biome,
+    arena,
+    bench: bench ? { counts: bench.counts, variant, setTime: bench.setTime } : undefined,
+    particleReport,
+    scaler,
+    scheduler,
+    shadowReport,
+    refreshShadow,
+    vat: vatInstances,
+    streamer: bench?.streamer,
+    memory,
+    setTime,
+    compile,
+    decompile,
+    measureOverdraw,
+    raycastDown,
+    renderOnce,
+    frame,
+    frameAsync,
+    visibleMeshes,
+    spikeSceneOptimizer,
+    deviceLost,
+    deviceLostTiming,
+  };
 } catch (error) {
-  window.__forge = { ready: false, error: error instanceof Error ? error.stack ?? error.message : String(error) } as ForgeHarness;
+  window.__forge = {
+    ready: false,
+    error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+  } as ForgeHarness;
   throw error;
 }

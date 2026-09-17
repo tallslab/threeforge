@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest';
 import { Matrix4, Object3D, Quaternion, Scene, Vector3 } from 'three';
+import { describe, expect, it } from 'vitest';
 import { SceneSpace } from '../../src/compiler/space.js';
 
-const world = new Matrix4().compose(new Vector3(1.1, 2.2, -3.3), new Quaternion().setFromAxisAngle(new Vector3(0.2, 1, 0.1).normalize(), 0.7), new Vector3(1, 2, 3));
+const world = new Matrix4().compose(
+  new Vector3(1.1, 2.2, -3.3),
+  new Quaternion().setFromAxisAngle(new Vector3(0.2, 1, 0.1).normalize(), 0.7),
+  new Vector3(1, 2, 3),
+);
 
 function expectClose(actual: Matrix4, expected: Matrix4, label: string): void {
   actual.elements.forEach((e, i) => expect(e, `${label} [${i}]`).toBeCloseTo(expected.elements[i]!, 10));
@@ -39,12 +43,20 @@ describe('SceneSpace', () => {
     root.position.set(10, 0, 0);
     root.updateMatrixWorld();
     const space = new SceneSpace(root);
-    expectClose(new Matrix4().multiplyMatrices(root.matrixWorld, space.toLocal(world, new Matrix4())), world, 'first matrix');
+    expectClose(
+      new Matrix4().multiplyMatrices(root.matrixWorld, space.toLocal(world, new Matrix4())),
+      world,
+      'first matrix',
+    );
     root.position.set(-4, 8, 1);
     root.rotation.y = 1.2;
     root.scale.setScalar(0.25);
     root.updateMatrixWorld();
-    expectClose(new Matrix4().multiplyMatrices(root.matrixWorld, space.toLocal(world, new Matrix4())), world, 'after the root moved');
+    expectClose(
+      new Matrix4().multiplyMatrices(root.matrixWorld, space.toLocal(world, new Matrix4())),
+      world,
+      'after the root moved',
+    );
     expect(space.scaleX).toBeCloseTo(0.25, 12);
     root.position.set(0, 0, 0);
     root.rotation.y = 0;

@@ -1,9 +1,23 @@
-import { BackSide, DynamicDrawUsage, FrontSide, Frustum, InstancedBufferAttribute, InstancedBufferGeometry, Matrix4, Mesh, NormalBlending, PlaneGeometry, type Camera, type CoordinateSystem, type Object3D } from 'three';
-import { SpriteNodeMaterial } from 'three/webgpu';
+import {
+  BackSide,
+  type Camera,
+  type CoordinateSystem,
+  DynamicDrawUsage,
+  FrontSide,
+  Frustum,
+  InstancedBufferAttribute,
+  InstancedBufferGeometry,
+  Matrix4,
+  Mesh,
+  NormalBlending,
+  type Object3D,
+  PlaneGeometry,
+} from 'three';
 import { instancedDynamicBufferAttribute } from 'three/tsl';
+import { SpriteNodeMaterial } from 'three/webgpu';
 import { prependRenderHook } from './culling.js';
-import { fillSpriteInstances, type SpriteGroup } from './sprites.js';
 import { SceneSpace } from './space.js';
+import { fillSpriteInstances, type SpriteGroup } from './sprites.js';
 
 /** One instanced billboard draw standing in for a group of sprites; the originals keep driving it. */
 export interface SpriteBatch {
@@ -109,7 +123,14 @@ export function buildSpriteBatch(group: SpriteGroup, index: number, options: Spr
     const cap = (mesh.userData.forge as { cap?: number }).cap ?? Infinity;
     projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     frustum.setFromProjectionMatrix(projScreen, (renderer as { coordinateSystem?: CoordinateSystem }).coordinateSystem);
-    const count = fillSpriteInstances(group.sprites, centers.array as Float32Array, scales.array as Float32Array, { camera, sorted, cap, root: options.root, frustum, space });
+    const count = fillSpriteInstances(group.sprites, centers.array as Float32Array, scales.array as Float32Array, {
+      camera,
+      sorted,
+      cap,
+      root: options.root,
+      frustum,
+      space,
+    });
     geometry.instanceCount = count;
     centers.needsUpdate = true;
     scales.needsUpdate = true;

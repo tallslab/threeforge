@@ -10,7 +10,8 @@ import { expect, test } from './fixtures.js';
 
 /** The built CLI, as an agent would run it: `node dist/cli/index.js …` (npx threeforge … after install). */
 const bin = 'dist/cli/index.js';
-const run = (args: string[]) => spawnSync('node', [bin, ...args], { encoding: 'utf8', timeout: 300_000, env: { ...process.env } });
+const run = (args: string[]) =>
+  spawnSync('node', [bin, ...args], { encoding: 'utf8', timeout: 300_000, env: { ...process.env } });
 /** Like `run`, but keeps this process's event loop free (a server in the test can answer); SIGKILL after `timeout`. */
 const runAsync = (args: string[], timeout: number) =>
   new Promise<{ status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string }>((done) => {
@@ -26,11 +27,17 @@ const runAsync = (args: string[], timeout: number) =>
     });
   });
 const asset = (name: string): string => {
-  const index = JSON.parse(readFileSync('test/assets/files/index.json', 'utf8')) as Array<{ name: string; entry: string }>;
+  const index = JSON.parse(readFileSync('test/assets/files/index.json', 'utf8')) as Array<{
+    name: string;
+    entry: string;
+  }>;
   return `test/assets/files/${index.find((a) => a.name === name)!.entry}`;
 };
 const sample = (): string => {
-  const index = JSON.parse(readFileSync('test/assets/files/index.json', 'utf8')) as Array<{ name: string; entry: string }>;
+  const index = JSON.parse(readFileSync('test/assets/files/index.json', 'utf8')) as Array<{
+    name: string;
+    entry: string;
+  }>;
   return `test/assets/files/${index.find((a) => a.name === 'Fox')!.entry}`;
 };
 
@@ -57,15 +64,32 @@ test('analyze renders a sample asset, compiles it and prints the document', { ta
   expect(r.stderr).toContain('PASS');
 });
 
-test('analyze --parity 0 judges compile parity on the raw changed-pixel count, from the built binary', { tag: '@corpus' }, async ({ forge }) => {
+test('analyze --parity 0 judges compile parity on the raw changed-pixel count, from the built binary', {
+  tag: '@corpus',
+}, async ({ forge }) => {
   test.setTimeout(600_000);
-  const r = run(['analyze', sample(), '--backend', forge.backend, '--frames', '3', '--views', '1', '--parity', '0', '--json']);
+  const r = run([
+    'analyze',
+    sample(),
+    '--backend',
+    forge.backend,
+    '--frames',
+    '3',
+    '--views',
+    '1',
+    '--parity',
+    '0',
+    '--json',
+  ]);
   const doc = JSON.parse(r.stdout);
   expect(doc.input.parity).toBe(0);
   const views = doc.parity.views as Array<{ view: string; diffPct: number; changedPixels: number }>;
   expect(views.map((v) => v.view)).toEqual(['default', 'orbit-0']);
   const identical = views.every((v) => v.changedPixels === 0);
-  test.info().annotations.push({ type: 'parity', description: `[${forge.backend}] Fox analyze --parity 0: exit ${r.status}, ${views.map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct} %)`).join(', ')}` });
+  test.info().annotations.push({
+    type: 'parity',
+    description: `[${forge.backend}] Fox analyze --parity 0: exit ${r.status}, ${views.map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct} %)`).join(', ')}`,
+  });
   // Whatever the compile did to this asset, the verdict is exactly "no pixel moved", and the exit code follows it.
   expect(doc.parity).toMatchObject({ threshold: 0, pass: identical });
   expect(doc.verdict.pass).toBe(identical);
@@ -75,7 +99,9 @@ test('analyze --parity 0 judges compile parity on the raw changed-pixel count, f
   expect(bad.stderr).toContain('--parity must be a number from 0 to 100');
 });
 
-test('analyze reports no false unreferenced-resources hint for the Fox (harness environment disposal)', { tag: '@corpus' }, async ({ forge }) => {
+test('analyze reports no false unreferenced-resources hint for the Fox (harness environment disposal)', {
+  tag: '@corpus',
+}, async ({ forge }) => {
   test.setTimeout(600_000);
   const r = run(['analyze', sample(), '--backend', forge.backend, '--frames', '5', '--json']);
   expect(r.status, r.stderr).toBe(0);
@@ -85,7 +111,10 @@ test('analyze reports no false unreferenced-resources hint for the Fox (harness 
   const snapshot = doc.after ?? doc.before;
   const afterCodes = snapshot.hints.map((h: { code: string }) => h.code);
   expect(afterCodes).not.toContain('unreferenced-resources');
-  test.info().annotations.push({ type: 'memory', description: `[${forge.backend}] Fox analyze unreferenced: before ${JSON.stringify(doc.before.memory.unreferenced)}, after ${JSON.stringify(doc.after?.memory.unreferenced)}` });
+  test.info().annotations.push({
+    type: 'memory',
+    description: `[${forge.backend}] Fox analyze unreferenced: before ${JSON.stringify(doc.before.memory.unreferenced)}, after ${JSON.stringify(doc.after?.memory.unreferenced)}`,
+  });
   // The measured residual, exactly, not the hint's own threshold (8), which the hint assertions above already cover: a
   // regression that stopped disposing RoomEnvironment alone (one geometry) would stay under it. Measured on both backends
   // before and after compiling: 0 and 0 (it was 0 geometries and 1 texture before three's own render targets were allowed).
@@ -93,7 +122,9 @@ test('analyze reports no false unreferenced-resources hint for the Fox (harness 
   expect(snapshot.memory.unreferenced).toEqual({ geometries: 0, textures: 0 });
 });
 
-test('analyze fails the verdict on a tiny budget (exit 1), usage on a missing file (exit 2), and --no-compile skips the compile', { tag: '@corpus' }, async ({ forge }) => {
+test('analyze fails the verdict on a tiny budget (exit 1), usage on a missing file (exit 2), and --no-compile skips the compile', {
+  tag: '@corpus',
+}, async ({ forge }) => {
   test.setTimeout(600_000);
   // The Fox compiles to exactly one submission, so a budget of 0 is the smallest failing budget.
   const over = run(['analyze', sample(), '--backend', forge.backend, '--frames', '3', '--budget', '0', '--json']);
@@ -112,7 +143,16 @@ test('analyze fails the verdict on a tiny budget (exit 1), usage on a missing fi
 
 test('inspect drives a page that exposes window.__threeforge', async ({ forge }) => {
   test.setTimeout(600_000);
-  const r = run(['inspect', `http://localhost:5179/?scene=village&variant=naive&backend=${forge.backend}`, '--backend', forge.backend, '--frames', '5', '--compile', '--json']);
+  const r = run([
+    'inspect',
+    `http://localhost:5179/?scene=village&variant=naive&backend=${forge.backend}`,
+    '--backend',
+    forge.backend,
+    '--frames',
+    '5',
+    '--compile',
+    '--json',
+  ]);
   expect(r.status, r.stderr).toBe(0);
   const doc = JSON.parse(r.stdout);
   expect(doc.command).toBe('inspect');
@@ -133,7 +173,11 @@ test('inspect reports a page without the hook as a page error (exit 4)', () => {
 
 test('analyze exits 3 promptly when Chromium cannot launch', { tag: '@corpus' }, ({ backend }) => {
   const started = Date.now();
-  const r = spawnSync('node', [bin, 'analyze', sample(), '--backend', backend, '--json'], { encoding: 'utf8', timeout: 20_000, env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: '/nonexistent' } });
+  const r = spawnSync('node', [bin, 'analyze', sample(), '--backend', backend, '--json'], {
+    encoding: 'utf8',
+    timeout: 20_000,
+    env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: '/nonexistent' },
+  });
   const ms = Date.now() - started;
   expect(r.status, `${r.stderr}\n(signal ${r.signal} after ${ms} ms)`).toBe(3);
   expect(r.stderr).toContain('environment: could not launch Chromium');
@@ -145,12 +189,19 @@ test('analyze exits 3 promptly when Chromium cannot launch', { tag: '@corpus' },
 test('inspect exits 4 when the hook never resolves a frame, bounded by --timeout', async ({ backend }) => {
   test.setTimeout(60_000);
   const hook = `window.__threeforge = { version: 'stuck', schemaVersion: 3, frame: () => ({}), frameAsync: () => new Promise(() => {}), measureMemory: () => ({}), hints: () => [], report: () => '' };`;
-  const server = createServer((_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(`<!doctype html><title>stuck</title><script>${hook}</script>`));
+  const server = createServer((_req, res) =>
+    res
+      .writeHead(200, { 'content-type': 'text/html' })
+      .end(`<!doctype html><title>stuck</title><script>${hook}</script>`),
+  );
   await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
   try {
     const { port } = server.address() as AddressInfo;
     const started = Date.now();
-    const r = await runAsync(['inspect', `http://127.0.0.1:${port}/`, '--backend', backend, '--frames', '2', '--timeout', '3000', '--json'], 30_000);
+    const r = await runAsync(
+      ['inspect', `http://127.0.0.1:${port}/`, '--backend', backend, '--frames', '2', '--timeout', '3000', '--json'],
+      30_000,
+    );
     const ms = Date.now() - started;
     expect(r.status, `${r.stderr}\n(signal ${r.signal} after ${ms} ms)`).toBe(4);
     expect(r.stderr).toMatch(/page: .*timed out after 3000 ms/);
@@ -161,15 +212,22 @@ test('inspect exits 4 when the hook never resolves a frame, bounded by --timeout
   }
 });
 
-test('inspect exits 4 at once for an app whose hook exposes schemaVersion 2 (threeforge 0.8.0)', async ({ backend }) => {
+test('inspect exits 4 at once for an app whose hook exposes schemaVersion 2 (threeforge 0.8.0)', async ({
+  backend,
+}) => {
   test.setTimeout(60_000);
   const hook = `window.__threeforge = { version: '0.8.0', schemaVersion: 2, frame: () => ({}), frameAsync: () => Promise.resolve({}), measureMemory: () => ({}), hints: () => [], report: () => '' };`;
-  const server = createServer((_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(`<!doctype html><title>v2</title><script>${hook}</script>`));
+  const server = createServer((_req, res) =>
+    res.writeHead(200, { 'content-type': 'text/html' }).end(`<!doctype html><title>v2</title><script>${hook}</script>`),
+  );
   await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
   try {
     const { port } = server.address() as AddressInfo;
     const started = Date.now();
-    const r = await runAsync(['inspect', `http://127.0.0.1:${port}/`, '--backend', backend, '--frames', '2', '--timeout', '20000', '--json'], 40_000);
+    const r = await runAsync(
+      ['inspect', `http://127.0.0.1:${port}/`, '--backend', backend, '--frames', '2', '--timeout', '20000', '--json'],
+      40_000,
+    );
     const ms = Date.now() - started;
     expect(r.status, `${r.stderr}\n(signal ${r.signal} after ${ms} ms)`).toBe(4);
     expect(r.stderr).toMatch(/unsupported schemaVersion 2/);
@@ -196,7 +254,9 @@ test('explain, schema and help are pure and fast', () => {
   expect(help.stdout).toContain('analyze');
 });
 
-test('usage errors exit 2 with nothing on stdout, and a boolean flag never swallows the argument after it', { tag: '@corpus' }, () => {
+test('usage errors exit 2 with nothing on stdout, and a boolean flag never swallows the argument after it', {
+  tag: '@corpus',
+}, () => {
   const typo = run(['explain', 'untagged', '--jsonn']);
   expect(typo.status, typo.stderr).toBe(2);
   expect(typo.stdout).toBe('');
@@ -214,11 +274,27 @@ test('usage errors exit 2 with nothing on stdout, and a boolean flag never swall
   expect(JSON.parse(swallowed.stdout).code).toBe('untagged');
 });
 
-test('analyze --bake --views keeps parity on a multi-part static asset and reports what the bake removed', { tag: '@corpus' }, async ({ forge }) => {
+test('analyze --bake --views keeps parity on a multi-part static asset and reports what the bake removed', {
+  tag: '@corpus',
+}, async ({ forge }) => {
   test.setTimeout(600_000);
-  const index = JSON.parse(readFileSync('test/assets/files/index.json', 'utf8')) as Array<{ name: string; entry: string }>;
+  const index = JSON.parse(readFileSync('test/assets/files/index.json', 'utf8')) as Array<{
+    name: string;
+    entry: string;
+  }>;
   const engine = index.find((a) => a.name === '2CylinderEngine')!;
-  const r = run(['analyze', `test/assets/files/${engine.entry}`, '--backend', forge.backend, '--frames', '3', '--bake', '--views', '3', '--json']);
+  const r = run([
+    'analyze',
+    `test/assets/files/${engine.entry}`,
+    '--backend',
+    forge.backend,
+    '--frames',
+    '3',
+    '--bake',
+    '--views',
+    '3',
+    '--json',
+  ]);
   expect(r.status, r.stderr).toBe(0);
   const doc = JSON.parse(r.stdout);
   expect(doc.input.bake).toBe('on');
@@ -231,11 +307,25 @@ test('analyze --bake --views keeps parity on a multi-part static asset and repor
   expect(r.stderr).toContain('bake:');
 });
 
-test('analyze --bake --json output validates against ANALYZE_SCHEMA, compiled standalone in ajv (self-contained $defs)', { tag: '@corpus' }, async ({ forge }) => {
+test('analyze --bake --json output validates against ANALYZE_SCHEMA, compiled standalone in ajv (self-contained $defs)', {
+  tag: '@corpus',
+}, async ({ forge }) => {
   test.setTimeout(600_000);
-  const index = JSON.parse(readFileSync('test/assets/files/index.json', 'utf8')) as Array<{ name: string; entry: string }>;
+  const index = JSON.parse(readFileSync('test/assets/files/index.json', 'utf8')) as Array<{
+    name: string;
+    entry: string;
+  }>;
   const engine = index.find((a) => a.name === '2CylinderEngine')!;
-  const r = run(['analyze', `test/assets/files/${engine.entry}`, '--backend', forge.backend, '--frames', '3', '--bake', '--json']);
+  const r = run([
+    'analyze',
+    `test/assets/files/${engine.entry}`,
+    '--backend',
+    forge.backend,
+    '--frames',
+    '3',
+    '--bake',
+    '--json',
+  ]);
   expect(r.status, r.stderr).toBe(0);
   const doc = JSON.parse(r.stdout);
   expect(doc.input.bake).toBe('on');
@@ -245,7 +335,9 @@ test('analyze --bake --json output validates against ANALYZE_SCHEMA, compiled st
   expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
 });
 
-test('optimize changes zero pixels of the Fox at --parity 0 in every view, skin and clips kept', { tag: '@corpus' }, async ({ forge }) => {
+test('optimize changes zero pixels of the Fox at --parity 0 in every view, skin and clips kept', {
+  tag: '@corpus',
+}, async ({ forge }) => {
   test.setTimeout(600_000);
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
@@ -255,7 +347,19 @@ test('optimize changes zero pixels of the Fox at --parity 0 in every view, skin 
     // `diffPct` that replaced it could prove that — `diffPct` is rounded to three decimals, which at 1280x720
     // absorbs up to 4 changed pixels of 921,600. `changedPixels` is the exact count, so these rows
     // are the first form of this assertion that actually tests rule 7.
-    const r = run(['optimize', asset('Fox'), '--out', out, '--parity', '0', '--backend', forge.backend, '--frames', '5', '--json']);
+    const r = run([
+      'optimize',
+      asset('Fox'),
+      '--out',
+      out,
+      '--parity',
+      '0',
+      '--backend',
+      forge.backend,
+      '--frames',
+      '5',
+      '--json',
+    ]);
     // Status first. This became a real parity gate only once `parityOf` judged raw counts: until then the CLI compared
     // the rounded percentage, so `--parity 0` exited 0 while 1-4 pixels moved, and an earlier version of this
     // comment claimed a gate the tool did not yet have. `parityOf` now judges a threshold of 0 on
@@ -263,7 +367,12 @@ test('optimize changes zero pixels of the Fox at --parity 0 in every view, skin 
     // Passing stderr as the message also keeps a crashed CLI from surfacing as "Unexpected end of JSON input".
     expect(r.status, r.stderr).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc).toMatchObject({ schemaVersion: 2, tool: 'threeforge', command: 'optimize', input: { preset: 'safe', parity: 0 } });
+    expect(doc).toMatchObject({
+      schemaVersion: 2,
+      tool: 'threeforge',
+      command: 'optimize',
+      input: { preset: 'safe', parity: 0 },
+    });
     // `weld` moved to `balanced` (it moved pixels) and `resample` followed it (it grew files), so `safe`
     // is these three steps. `--weld` / `--resample` add them back (pinned in pipeline.test.ts).
     expect(doc.steps.map((s: { name: string }) => s.name)).toEqual(['dedup', 'palette', 'prune']);
@@ -274,12 +383,21 @@ test('optimize changes zero pixels of the Fox at --parity 0 in every view, skin 
     // rewriting the container, which lands the Fox at exactly the same 164,252 with no steps at all. Assets that
     // are not tiny and animation-heavy go the other way -- the Buggy is -27.4 % below.
     const sizeRatio = doc.output.bytes / doc.stats.before.bytes;
-    expect(sizeRatio, `safe took the Fox to ${doc.output.bytes} bytes (${(sizeRatio * 100).toFixed(2)} % of the input)`).toBeGreaterThan(0.98);
-    expect(sizeRatio, `safe took the Fox to ${doc.output.bytes} bytes (${(sizeRatio * 100).toFixed(2)} % of the input)`).toBeLessThan(1.02);
+    expect(
+      sizeRatio,
+      `safe took the Fox to ${doc.output.bytes} bytes (${(sizeRatio * 100).toFixed(2)} % of the input)`,
+    ).toBeGreaterThan(0.98);
+    expect(
+      sizeRatio,
+      `safe took the Fox to ${doc.output.bytes} bytes (${(sizeRatio * 100).toFixed(2)} % of the input)`,
+    ).toBeLessThan(1.02);
     expect(doc.stats.after.vertices).toBe(doc.stats.before.vertices);
     expect(doc.stats.after).toMatchObject({ skins: 1, animations: 3 });
     expect(doc.requires).toEqual([]);
-    expect(doc.verify.optimized.asset).toMatchObject({ skinned: doc.verify.original.asset.skinned, animations: doc.verify.original.asset.animations });
+    expect(doc.verify.optimized.asset).toMatchObject({
+      skinned: doc.verify.original.asset.skinned,
+      animations: doc.verify.original.asset.animations,
+    });
     expect(doc.verify.original.before.totals.unattributed).toBe(0);
     expect(doc.verify.optimized.after.totals.unattributed).toBe(0);
     const views = doc.verify.parity.views as Array<{ view: string; diffPct: number; changedPixels: number }>;
@@ -292,7 +410,10 @@ test('optimize changes zero pixels of the Fox at --parity 0 in every view, skin 
     expect(doc.verify.optimized.input.parity).toBe(0.5);
     expect(doc.verify.optimized.parity.pass, JSON.stringify(doc.verify.optimized.parity)).toBe(true);
     expect(doc.verify.original.parity.pass, JSON.stringify(doc.verify.original.parity)).toBe(true);
-    test.info().annotations.push({ type: 'parity', description: `[${forge.backend}] safe Fox: ${views.map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct} %)`).join(', ')}` });
+    test.info().annotations.push({
+      type: 'parity',
+      description: `[${forge.backend}] safe Fox: ${views.map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct} %)`).join(', ')}`,
+    });
     // Two defects had to be fixed before this could assert zero, and both were found by measuring rather than by
     // reading: `weld` moved to `balanced` because it moves pixels on WebGPU on some assets even
     // though it changes no drawn value, and `resample` now runs at tolerance 0 because
@@ -325,12 +446,27 @@ test('optimize changes zero pixels of the Fox at --parity 0 in every view, skin 
  * `diffPct`'s three-decimal rounding on WebGL2, so even a percentage-based parity check would have missed it. The
  * raw changed-pixel count on both backends is the guard.
  */
-test('optimize --preset safe --resample changes zero pixels of the Fox at --parity 0: the flag runs resample losslessly', { tag: '@corpus' }, async ({ forge }) => {
+test('optimize --preset safe --resample changes zero pixels of the Fox at --parity 0: the flag runs resample losslessly', {
+  tag: '@corpus',
+}, async ({ forge }) => {
   test.setTimeout(600_000);
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
     const out = join(dir, 'fox.glb');
-    const r = run(['optimize', asset('Fox'), '--out', out, '--resample', '--parity', '0', '--backend', forge.backend, '--frames', '5', '--json']);
+    const r = run([
+      'optimize',
+      asset('Fox'),
+      '--out',
+      out,
+      '--resample',
+      '--parity',
+      '0',
+      '--backend',
+      forge.backend,
+      '--frames',
+      '5',
+      '--json',
+    ]);
     expect(r.status, r.stderr).toBe(0);
     const doc = JSON.parse(r.stdout);
     expect(doc.input).toMatchObject({ preset: 'safe', parity: 0, steps: { resample: true } });
@@ -341,7 +477,10 @@ test('optimize --preset safe --resample changes zero pixels of the Fox at --pari
     const views = doc.verify.parity.views as Array<{ view: string; diffPct: number; changedPixels: number }>;
     expect(views.map((v) => v.view)).toEqual(['default', 'orbit-0', 'orbit-1']);
     expect(doc.verify.parity.threshold).toBe(0);
-    test.info().annotations.push({ type: 'parity', description: `[${forge.backend}] safe+resample Fox: ${views.map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct} %)`).join(', ')}` });
+    test.info().annotations.push({
+      type: 'parity',
+      description: `[${forge.backend}] safe+resample Fox: ${views.map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct} %)`).join(', ')}`,
+    });
     for (const v of views) {
       expect(v.changedPixels, `${v.view}: --preset safe --resample changed pixels`).toBe(0);
       expect(v.diffPct, `${v.view}: --preset safe --resample changed pixels`).toBe(0);
@@ -354,7 +493,9 @@ test('optimize --preset safe --resample changes zero pixels of the Fox at --pari
   }
 });
 
-test('optimize collapses the Buggy to one material and still compiles to one submission', { tag: '@corpus' }, async ({ forge }) => {
+test('optimize collapses the Buggy to one material and still compiles to one submission', { tag: '@corpus' }, async ({
+  forge,
+}) => {
   test.setTimeout(600_000);
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
@@ -363,18 +504,37 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
     // nothing about weld, which is a measured no-op on it (245,673 vertices in and out, all 148 primitives already
     // indexed) and no longer in `safe` anyway; what it covers is dedup, palette and prune -- `safe`'s steps since
     // resample left the preset -- on a many-material asset, where safe does measure 0 on both backends.
-    const r = run(['optimize', asset('Buggy'), '--out', join(dir, 'buggy.glb'), '--parity', '0', '--backend', forge.backend, '--frames', '3', '--views', '1', '--json']);
+    const r = run([
+      'optimize',
+      asset('Buggy'),
+      '--out',
+      join(dir, 'buggy.glb'),
+      '--parity',
+      '0',
+      '--backend',
+      forge.backend,
+      '--frames',
+      '3',
+      '--views',
+      '1',
+      '--json',
+    ]);
     expect(r.status, r.stderr).toBe(0);
     const doc = JSON.parse(r.stdout);
     expect(doc.stats.before.materials).toBe(148);
     expect(doc.stats.after.materials).toBe(1);
     expect(doc.stats.after.textures).toBe(1);
     expect(doc.verify.delta.materials).toBeLessThan(0);
-    expect(doc.verify.optimized.after.totals.sceneSubmissions).toBeLessThanOrEqual(doc.verify.original.after.totals.sceneSubmissions);
+    expect(doc.verify.optimized.after.totals.sceneSubmissions).toBeLessThanOrEqual(
+      doc.verify.original.after.totals.sceneSubmissions,
+    );
     const views = doc.verify.parity.views as Array<{ view: string; diffPct: number; changedPixels: number }>;
     expect(views.map((v) => v.view)).toEqual(['default', 'orbit-0']);
     expect(doc.verify.parity.threshold).toBe(0);
-    test.info().annotations.push({ type: 'parity', description: `[${forge.backend}] safe Buggy: ${views.map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct} %)`).join(', ')}` });
+    test.info().annotations.push({
+      type: 'parity',
+      description: `[${forge.backend}] safe Buggy: ${views.map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct} %)`).join(', ')}`,
+    });
     for (const v of views) {
       expect(v.changedPixels, `${v.view}: --preset safe changed pixels`).toBe(0);
       expect(v.diffPct, `${v.view}: --preset safe changed pixels`).toBe(0);
@@ -395,14 +555,22 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
     //
     // Carrying a stricter `--parity` into those inner checks made this run exit 1 — answering "no" to a question
     // whose answer is yes. If someone reintroduces that, the two expectations below go red together.
-    const compileDrift = (side: 'original' | 'optimized'): number[] => (doc.verify[side].parity.views as Array<{ changedPixels: number }>).map((v) => v.changedPixels);
+    const compileDrift = (side: 'original' | 'optimized'): number[] =>
+      (doc.verify[side].parity.views as Array<{ changedPixels: number }>).map((v) => v.changedPixels);
     expect(doc.verify.original.parity.threshold, '--parity must not reach the inner compile checks').toBe(0.5);
     expect(doc.verify.optimized.parity.threshold, '--parity must not reach the inner compile checks').toBe(0.5);
-    test.info().annotations.push({ type: 'parity', description: `[${forge.backend}] Buggy compile drift: original ${JSON.stringify(compileDrift('original'))}, optimized ${JSON.stringify(compileDrift('optimized'))}` });
+    test.info().annotations.push({
+      type: 'parity',
+      description: `[${forge.backend}] Buggy compile drift: original ${JSON.stringify(compileDrift('original'))}, optimized ${JSON.stringify(compileDrift('optimized'))}`,
+    });
     // The drift is real, symmetric between the two files, and small enough that only a zero threshold would see it.
-    expect(Math.max(...compileDrift('optimized')), 'the premise of this test: compiling the Buggy moves pixels').toBeGreaterThan(0);
+    expect(
+      Math.max(...compileDrift('optimized')),
+      'the premise of this test: compiling the Buggy moves pixels',
+    ).toBeGreaterThan(0);
     expect(compileDrift('optimized')).toEqual(compileDrift('original'));
-    for (const changed of [...compileDrift('original'), ...compileDrift('optimized')]) expect(changed).toBeLessThanOrEqual(4);
+    for (const changed of [...compileDrift('original'), ...compileDrift('optimized')])
+      expect(changed).toBeLessThanOrEqual(4);
     // Reported, not judged into the verdict: the run still passes, and the drift is readable in the document.
     expect(doc.verify.optimized.parity.pass).toBe(true);
     expect(doc.verdict.reasons).toEqual([]);
@@ -423,15 +591,39 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
  */
 const BALANCED_PARITY = 0.05;
 
-test('optimize --preset balanced quantizes and re-encodes the Fox, changing pixels but staying inside a measured 0.05 %', { tag: '@corpus' }, async ({ forge }) => {
+test('optimize --preset balanced quantizes and re-encodes the Fox, changing pixels but staying inside a measured 0.05 %', {
+  tag: '@corpus',
+}, async ({ forge }) => {
   test.setTimeout(600_000);
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
     const out = join(dir, 'fox.glb');
-    const r = run(['optimize', asset('Fox'), '--out', out, '--preset', 'balanced', '--parity', String(BALANCED_PARITY), '--backend', forge.backend, '--frames', '5', '--json']);
+    const r = run([
+      'optimize',
+      asset('Fox'),
+      '--out',
+      out,
+      '--preset',
+      'balanced',
+      '--parity',
+      String(BALANCED_PARITY),
+      '--backend',
+      forge.backend,
+      '--frames',
+      '5',
+      '--json',
+    ]);
     expect(r.status, r.stderr).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.steps.map((s: { name: string }) => s.name)).toEqual(['dedup', 'palette', 'weld', 'resample', 'prune', 'textures', 'quantize']);
+    expect(doc.steps.map((s: { name: string }) => s.name)).toEqual([
+      'dedup',
+      'palette',
+      'weld',
+      'resample',
+      'prune',
+      'textures',
+      'quantize',
+    ]);
     // Both lossy steps really ran: the preset is not quietly degrading to safe because sharp is missing.
     expect(doc.steps.find((s: { name: string }) => s.name === 'textures')).toMatchObject({ applied: true, note: null });
     expect(doc.stats.after.extensions).toEqual(['EXT_texture_webp', 'KHR_mesh_quantization']);
@@ -443,12 +635,22 @@ test('optimize --preset balanced quantizes and re-encodes the Fox, changing pixe
     expect(doc.verify.optimized.asset).toMatchObject({ skinned: 1, animations: 3 });
     const views = doc.verify.parity.views as Array<{ view: string; diffPct: number; changedPixels: number }>;
     expect(views.map((v) => v.view)).toEqual(['default', 'orbit-0', 'orbit-1']);
-    test.info().annotations.push({ type: 'parity', description: `[${forge.backend}] balanced Fox: ${views.map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct} %)`).join(', ')} (tolerance ${BALANCED_PARITY} %)` });
-    for (const v of views) expect(v.diffPct, `${v.view}: --preset balanced moved more pixels than the measured tolerance`).toBeLessThanOrEqual(BALANCED_PARITY);
+    test.info().annotations.push({
+      type: 'parity',
+      description: `[${forge.backend}] balanced Fox: ${views.map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct} %)`).join(', ')} (tolerance ${BALANCED_PARITY} %)`,
+    });
+    for (const v of views)
+      expect(
+        v.diffPct,
+        `${v.view}: --preset balanced moved more pixels than the measured tolerance`,
+      ).toBeLessThanOrEqual(BALANCED_PARITY);
     // Balanced is lossy where safe is not: safe measures 0 changed pixels in every view on both backends, and this
     // measures 76/42/21 on webgl2 and 126/129/141 on webgpu. A run that changed nothing would mean weld, quantize
     // and the WebP re-encode had all stopped doing anything.
-    expect(Math.max(...views.map((v) => v.changedPixels)), 'balanced changed no pixel at all: did the lossy steps run?').toBeGreaterThan(0);
+    expect(
+      Math.max(...views.map((v) => v.changedPixels)),
+      'balanced changed no pixel at all: did the lossy steps run?',
+    ).toBeGreaterThan(0);
     expect(doc.verify.parity.pass).toBe(true);
     expect(doc.verdict.pass).toBe(true);
   } finally {
@@ -470,11 +672,27 @@ test('optimize --preset balanced quantizes and re-encodes the Fox, changing pixe
  * per view across the two backends — so `--parity 0` must reject it, on both. The `safe` tests above are the
  * complement: the same binary, the same flag, exit 0.
  */
-test('optimize exits 1 when --parity 0 is not met, from the built binary and not only the decision path', { tag: '@corpus' }, async ({ forge }) => {
+test('optimize exits 1 when --parity 0 is not met, from the built binary and not only the decision path', {
+  tag: '@corpus',
+}, async ({ forge }) => {
   test.setTimeout(600_000);
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
-    const r = run(['optimize', asset('Fox'), '--out', join(dir, 'fox.glb'), '--preset', 'balanced', '--parity', '0', '--backend', forge.backend, '--frames', '5', '--json']);
+    const r = run([
+      'optimize',
+      asset('Fox'),
+      '--out',
+      join(dir, 'fox.glb'),
+      '--preset',
+      'balanced',
+      '--parity',
+      '0',
+      '--backend',
+      forge.backend,
+      '--frames',
+      '5',
+      '--json',
+    ]);
     // The assertion the ruling is about: the status of the process, read first so a crash does not surface as
     // "Unexpected end of JSON input".
     expect(r.status, `exit status of a run that moved pixels at --parity 0\n${r.stderr}`).toBe(1);
@@ -482,7 +700,10 @@ test('optimize exits 1 when --parity 0 is not met, from the built binary and not
     expect(doc.input).toMatchObject({ preset: 'balanced', parity: 0 });
     const views = doc.verify.parity.views as Array<{ view: string; diffPct: number; changedPixels: number }>;
     const worst = Math.max(...views.map((v) => v.changedPixels));
-    test.info().annotations.push({ type: 'parity', description: `[${forge.backend}] balanced Fox at --parity 0: exit ${r.status}, ${views.map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct} %)`).join(', ')}` });
+    test.info().annotations.push({
+      type: 'parity',
+      description: `[${forge.backend}] balanced Fox at --parity 0: exit ${r.status}, ${views.map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct} %)`).join(', ')}`,
+    });
     // And it failed for the right reason: pixels really moved. Without this the test would also pass if `balanced`
     // had quietly degraded to `safe` and the non-zero exit came from something else entirely.
     expect(worst, 'balanced changed no pixel at all: did the lossy steps run?').toBeGreaterThan(0);
@@ -498,17 +719,46 @@ test('optimize exits 1 when --parity 0 is not met, from the built binary and not
   }
 });
 
-test('optimize --preset aggressive --compress meshopt lowers triangles, needs the decoder, and loads through the harness', { tag: '@corpus' }, async ({ forge }) => {
+test('optimize --preset aggressive --compress meshopt lowers triangles, needs the decoder, and loads through the harness', {
+  tag: '@corpus',
+}, async ({ forge }) => {
   test.setTimeout(600_000);
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
-    const r = run(['optimize', asset('Fox'), '--out', join(dir, 'fox.glb'), '--preset', 'aggressive', '--compress', 'meshopt', '--parity', '5', '--backend', forge.backend, '--frames', '3', '--json']);
+    const r = run([
+      'optimize',
+      asset('Fox'),
+      '--out',
+      join(dir, 'fox.glb'),
+      '--preset',
+      'aggressive',
+      '--compress',
+      'meshopt',
+      '--parity',
+      '5',
+      '--backend',
+      forge.backend,
+      '--frames',
+      '3',
+      '--json',
+    ]);
     expect(r.status, r.stderr).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.steps.map((s: { name: string }) => s.name)).toEqual(['dedup', 'palette', 'weld', 'simplify', 'resample', 'prune', 'textures', 'meshopt']);
+    expect(doc.steps.map((s: { name: string }) => s.name)).toEqual([
+      'dedup',
+      'palette',
+      'weld',
+      'simplify',
+      'resample',
+      'prune',
+      'textures',
+      'meshopt',
+    ]);
     expect(doc.stats.after.triangles).toBeLessThan(doc.stats.before.triangles);
     expect(doc.stats.after.extensions).toContain('EXT_meshopt_compression');
-    expect(doc.requires.find((q: { extension: string }) => q.extension === 'EXT_meshopt_compression').code).toContain('setMeshoptDecoder');
+    expect(doc.requires.find((q: { extension: string }) => q.extension === 'EXT_meshopt_compression').code).toContain(
+      'setMeshoptDecoder',
+    );
     expect(doc.verify.optimized.asset.skinned).toBe(1);
     expect(doc.verify.parity.diffPct).toBeLessThan(5);
     expect(doc.verdict.pass).toBe(true);
@@ -517,7 +767,9 @@ test('optimize --preset aggressive --compress meshopt lowers triangles, needs th
   }
 });
 
-test('optimize --no-verify runs without a browser; a missing file, an out-of-directory resource URI and a non-glTF --out are usage errors', { tag: '@corpus' }, () => {
+test('optimize --no-verify runs without a browser; a missing file, an out-of-directory resource URI and a non-glTF --out are usage errors', {
+  tag: '@corpus',
+}, () => {
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
   try {
     const r = run(['optimize', asset('Fox'), '--out', join(dir, 'fox.glb'), '--no-verify', '--json']);
@@ -553,7 +805,10 @@ test('analyze refuses an asset whose buffer URI points off the served origin (ex
   const dir = mkdtempSync(join(tmpdir(), 'forge-analyze-uri-'));
   try {
     const hostile = join(dir, 'hostile.gltf');
-    writeFileSync(hostile, JSON.stringify({ asset: { version: '2.0' }, buffers: [{ uri: 'http://127.0.0.1:1/x.bin', byteLength: 4 }] }));
+    writeFileSync(
+      hostile,
+      JSON.stringify({ asset: { version: '2.0' }, buffers: [{ uri: 'http://127.0.0.1:1/x.bin', byteLength: 4 }] }),
+    );
     const started = Date.now();
     const r = run(['analyze', hostile, '--json']);
     const ms = Date.now() - started;
@@ -569,7 +824,10 @@ test('analyze refuses an asset whose buffer URI points off the served origin (ex
     writeFileSync(climbing, JSON.stringify({ asset: { version: '2.0' }, images: [{ uri: '../../../../etc/passwd' }] }));
     expect(run(['analyze', climbing, '--json']).status).toBe(2);
     const relative = join(dir, 'relative.gltf');
-    writeFileSync(relative, JSON.stringify({ asset: { version: '2.0' }, images: [{ uri: '//attacker.example/beacon.png' }] }));
+    writeFileSync(
+      relative,
+      JSON.stringify({ asset: { version: '2.0' }, images: [{ uri: '//attacker.example/beacon.png' }] }),
+    );
     const protocolRelative = run(['analyze', relative, '--json']);
     expect(protocolRelative.status, protocolRelative.stderr).toBe(2);
     expect(protocolRelative.stderr).toContain('//attacker.example/beacon.png');

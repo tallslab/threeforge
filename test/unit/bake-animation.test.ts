@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
 import { AnimationClip, Matrix4, QuaternionKeyframeTrack, Skeleton, SkinnedMesh } from 'three';
+import { describe, expect, it } from 'vitest';
 import { bakeAnimationTexture } from '../../src/skinning/bakeAnimationTexture.js';
 import { buildRig } from './helpers/rig.js';
 
-const row = (data: Float32Array, width: number, y: number, bone: number): number[] => Array.from(data.subarray((y * width + bone * 4) * 4, (y * width + bone * 4 + 4) * 4));
+const row = (data: Float32Array, width: number, y: number, bone: number): number[] =>
+  Array.from(data.subarray((y * width + bone * 4) * 4, (y * width + bone * 4 + 4) * 4));
 
 describe('bakeAnimationTexture', () => {
   it('bakes one row of bone matrices per frame, per clip, and restores the prototype', () => {
@@ -33,9 +34,14 @@ describe('bakeAnimationTexture', () => {
 
   it('appends a second clip after the first', () => {
     const { root, clip } = buildRig();
-    const still = new AnimationClip('still', 0.5, [new QuaternionKeyframeTrack('b.quaternion', [0, 0.5], [0, 0, 0, 1, 0, 0, 0, 1])]);
+    const still = new AnimationClip('still', 0.5, [
+      new QuaternionKeyframeTrack('b.quaternion', [0, 0.5], [0, 0, 0, 1, 0, 0, 0, 1]),
+    ]);
     const baked = bakeAnimationTexture(root, [clip, still], { fps: 10 });
-    expect(baked.clips.map((c) => [c.name, c.start, c.frames])).toEqual([['spin', 0, 11], ['still', 11, 6]]);
+    expect(baked.clips.map((c) => [c.name, c.start, c.frames])).toEqual([
+      ['spin', 0, 11],
+      ['still', 11, 6],
+    ]);
     expect(baked.texture.image.height).toBe(17);
   });
 
@@ -49,6 +55,9 @@ describe('bakeAnimationTexture', () => {
     const baked = bakeAnimationTexture(root, [clip], { fps: 10 });
     expect(baked.bones).toBe(3);
     expect(baked.texture.image.width).toBe(12);
-    expect(baked.parts.map((p) => [p.mesh.name, p.boneOffset])).toEqual([['body', 0], ['hat', 2]]);
+    expect(baked.parts.map((p) => [p.mesh.name, p.boneOffset])).toEqual([
+      ['body', 0],
+      ['hat', 2],
+    ]);
   });
 });

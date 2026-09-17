@@ -10,13 +10,19 @@ import { differingPixels, pixelDiff } from './pixels.js';
  */
 
 const cases = [
-  { asset: 'polyhaven-fir_sapling_medium', what: 'alpha-blended double-sided foliage batched into one BatchedMesh', repaired: 1 },
+  {
+    asset: 'polyhaven-fir_sapling_medium',
+    what: 'alpha-blended double-sided foliage batched into one BatchedMesh',
+    repaired: 1,
+  },
   { asset: 'CommercialRefrigerator', what: 'transmissive glass (excluded from batching)', repaired: 1 },
 ];
 
 for (const mode of ['frame', 'async'] as const) {
   for (const c of cases) {
-    test(`warmup(${mode}) keeps ${c.what} within 0.05 % changed pixels of a cold frame at tolerance 4`, { tag: '@corpus' }, async ({ forge }) => {
+    test(`warmup(${mode}) keeps ${c.what} within 0.05 % changed pixels of a cold frame at tolerance 4`, {
+      tag: '@corpus',
+    }, async ({ forge }) => {
       test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
       await forge.open('gltf', { asset: c.asset });
       await forge.page.evaluate(async () => {
@@ -47,7 +53,10 @@ for (const mode of ['frame', 'async'] as const) {
       // webgpu, where the 149 pixels are exactly the warm-up's own 0.0310% and decompile() adds none.
       const warmedPixels = differingPixels(cold, warmed, { threshold: 4 });
       const back = differingPixels(cold, restored, { threshold: 4 });
-      test.info().annotations.push({ type: 'warmup', description: `[${forge.backend}] ${mode} ${c.asset}: warm-up ${warmedPixels} pixels, decompile ${back} pixels` });
+      test.info().annotations.push({
+        type: 'warmup',
+        description: `[${forge.backend}] ${mode} ${c.asset}: warm-up ${warmedPixels} pixels, decompile ${back} pixels`,
+      });
       expect(back, 'pixels changed by decompile() after warm-up').toBeLessThanOrEqual(warmedPixels + 8);
     });
   }

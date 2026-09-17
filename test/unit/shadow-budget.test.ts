@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { DirectionalLight, PointLight, Scene, SpotLight } from 'three';
+import { describe, expect, it } from 'vitest';
 import { ShadowBudget } from '../../src/lighting/ShadowBudget.js';
 
 function lit() {

@@ -1,4 +1,4 @@
-import { Matrix4, type Camera, type Mesh } from 'three';
+import { type Camera, Matrix4, type Mesh } from 'three';
 import type { SceneSpace } from './space.js';
 
 const _view = new Matrix4();
@@ -24,7 +24,9 @@ const _view = new Matrix4();
 export function cameraNearProxy(camera: Camera, proxy: Mesh, space: SceneSpace): boolean {
   const bounds = proxy.geometry.boundingBox;
   if (bounds === null) return true;
-  const e = (space.update() ? _view.copy(camera.matrixWorld) : _view.multiplyMatrices(space.inverse, camera.matrixWorld)).elements;
+  const e = (
+    space.update() ? _view.copy(camera.matrixWorld) : _view.multiplyMatrices(space.inverse, camera.matrixWorld)
+  ).elements;
   const cx = proxy.position.x + (bounds.min.x + bounds.max.x) / 2;
   const cy = proxy.position.y + (bounds.min.y + bounds.max.y) / 2;
   const cz = proxy.position.z + (bounds.min.z + bounds.max.z) / 2;

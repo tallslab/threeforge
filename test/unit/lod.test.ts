@@ -1,5 +1,13 @@
+import {
+  type BufferGeometry,
+  DodecahedronGeometry,
+  Mesh,
+  MeshStandardMaterial,
+  Scene,
+  SphereGeometry,
+  TorusKnotGeometry,
+} from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { DodecahedronGeometry, Mesh, MeshStandardMaterial, Scene, SphereGeometry, TorusKnotGeometry, type BufferGeometry } from 'three';
 import { disposeLods, generateLods, lodsOf, prepareLods } from '../../src/lod/generateLods.js';
 import { tag } from '../../src/tags.js';
 
@@ -43,7 +51,10 @@ describe('prepareLods', () => {
   it('attaches LODs to every distinct geometry under a root once and exposes them through lodsOf', async () => {
     const scene = new Scene();
     const shared = new TorusKnotGeometry(1, 0.3, 64, 12);
-    scene.add(tag.static(new Mesh(shared, new MeshStandardMaterial())), tag.static(new Mesh(shared, new MeshStandardMaterial())));
+    scene.add(
+      tag.static(new Mesh(shared, new MeshStandardMaterial())),
+      tag.static(new Mesh(shared, new MeshStandardMaterial())),
+    );
     scene.add(tag.static(new Mesh(new SphereGeometry(1, 16, 12), new MeshStandardMaterial())));
     const report = await prepareLods(scene, { ratios: [0.5, 0.2] });
     expect(report.geometries).toBe(2);

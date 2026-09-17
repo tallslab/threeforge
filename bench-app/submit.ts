@@ -1,5 +1,5 @@
 import { computeResultId } from '../scripts/bench-id.mjs';
-import { METRIC_KEYS, type BenchMetrics, type SceneId } from '../test/app/benchMetrics.js';
+import { type BenchMetrics, METRIC_KEYS, type SceneId } from '../test/app/benchMetrics.js';
 
 export type Backend = 'webgl2' | 'webgpu';
 export type Tier = 'desktop' | 'phone-mid' | 'phone-low';
@@ -77,7 +77,9 @@ export function normalizeEnvString(raw: string): string {
 /** Rounded numbers and capped strings: smaller issue bodies, same information. */
 export function compact(r: DeviceResult): DeviceResult {
   const scenes = {} as DeviceResult['scenes'];
-  for (const [id, block] of Object.entries(r.scenes) as Array<[SceneId, { naive: BenchMetrics; optimized: BenchMetrics }]>) {
+  for (const [id, block] of Object.entries(r.scenes) as Array<
+    [SceneId, { naive: BenchMetrics; optimized: BenchMetrics }]
+  >) {
     const c = (m: BenchMetrics): BenchMetrics => ({
       ...m,
       overdrawOpaque: round(m.overdrawOpaque, 2),
@@ -96,7 +98,18 @@ export function compact(r: DeviceResult): DeviceResult {
     });
     scenes[id] = { naive: c(block.naive), optimized: c(block.optimized) };
   }
-  return { ...r, env: { ...r.env, gpu: cap(r.env.gpu), ua: cap(r.env.ua), platform: cap(r.env.platform), dpr: round(r.env.dpr, 2), fillRateGPix: r.env.fillRateGPix === null ? null : round(r.env.fillRateGPix, 2) }, scenes };
+  return {
+    ...r,
+    env: {
+      ...r.env,
+      gpu: cap(r.env.gpu),
+      ua: cap(r.env.ua),
+      platform: cap(r.env.platform),
+      dpr: round(r.env.dpr, 2),
+      fillRateGPix: r.env.fillRateGPix === null ? null : round(r.env.fillRateGPix, 2),
+    },
+    scenes,
+  };
 }
 
 /** The issue-body form: metrics as arrays in `metricKeys` order (about a third of the size, so the prefilled URL fits). */
@@ -110,10 +123,23 @@ export { METRIC_KEYS };
 export function toWire(r: DeviceResult): WireResult {
   const c = compact(r);
   const scenes = {} as WireResult['scenes'];
-  for (const [id, block] of Object.entries(c.scenes) as Array<[SceneId, { naive: BenchMetrics; optimized: BenchMetrics }]>) {
-    scenes[id] = { naive: METRIC_KEYS.map((k) => block.naive[k]), optimized: METRIC_KEYS.map((k) => block.optimized[k]) };
+  for (const [id, block] of Object.entries(c.scenes) as Array<
+    [SceneId, { naive: BenchMetrics; optimized: BenchMetrics }]
+  >) {
+    scenes[id] = {
+      naive: METRIC_KEYS.map((k) => block.naive[k]),
+      optimized: METRIC_KEYS.map((k) => block.optimized[k]),
+    };
   }
-  return { schemaVersion: c.schemaVersion, kind: c.kind, id: c.id, createdAt: c.createdAt, env: c.env, metricKeys: METRIC_KEYS, scenes };
+  return {
+    schemaVersion: c.schemaVersion,
+    kind: c.kind,
+    id: c.id,
+    createdAt: c.createdAt,
+    env: c.env,
+    metricKeys: METRIC_KEYS,
+    scenes,
+  };
 }
 
 export function issueTitle(r: DeviceResult): string {

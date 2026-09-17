@@ -1,6 +1,7 @@
 // pnpm bench:baseline [backend]: promote the last results to the committed baseline and refresh docs/bench.md.
-import { copyFileSync, existsSync } from 'node:fs';
+
 import { spawnSync } from 'node:child_process';
+import { copyFileSync, existsSync } from 'node:fs';
 import { baselinePath, resultPath } from './bench-gate.mjs';
 
 const backends = process.argv[2] ? [process.argv[2]] : ['webgl2', 'webgpu'];

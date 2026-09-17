@@ -1,7 +1,16 @@
 import { VERSION } from '../version.js';
 import { UsageError } from './errors.js';
 import { PRESETS, STEP_NAMES } from './pipeline.js';
-import type { AnalyzeInput, Backend, BakeChoice, InspectInput, OptimizeInput, StepName, TextureFormat, TierChoice } from './types.js';
+import type {
+  AnalyzeInput,
+  Backend,
+  BakeChoice,
+  InspectInput,
+  OptimizeInput,
+  StepName,
+  TextureFormat,
+  TierChoice,
+} from './types.js';
 
 export { UsageError };
 
@@ -30,7 +39,15 @@ const COMPRESS: readonly OptimizeInput['compress'][] = ['none', 'meshopt'];
 const TEXTURES: readonly (TextureFormat | 'none')[] = ['webp', 'avif', 'none'];
 
 /** Allowed values of every enumerated input field, shared by the CLI parser and the MCP server's schemas. */
-export const CHOICES = { backend: BACKENDS, tier: TIERS, bake: BAKES, preset: PRESETS, compress: COMPRESS, textures: TEXTURES, schema: SCHEMAS } as const;
+export const CHOICES = {
+  backend: BACKENDS,
+  tier: TIERS,
+  bake: BAKES,
+  preset: PRESETS,
+  compress: COMPRESS,
+  textures: TEXTURES,
+  schema: SCHEMAS,
+} as const;
 
 /** A numeric input bound. `min` is inclusive unless `minExclusive`; `max` is inclusive and absent when unbounded. */
 export interface NumberRange {
@@ -40,7 +57,16 @@ export interface NumberRange {
   readonly integer: boolean;
 }
 
-export type RangeField = 'budget' | 'frames' | 'timeout' | 'views' | 'parity' | 'simplify' | 'simplifyError' | 'textureSize' | 'textureQuality';
+export type RangeField =
+  | 'budget'
+  | 'frames'
+  | 'timeout'
+  | 'views'
+  | 'parity'
+  | 'simplify'
+  | 'simplifyError'
+  | 'textureSize'
+  | 'textureQuality';
 
 /**
  * The default `--parity` of `analyze` and `optimize` (and of the MCP `analyze_asset` and `optimize_asset`): the percent
@@ -50,7 +76,8 @@ export type RangeField = 'budget' | 'frames' | 'timeout' | 'views' | 'parity' | 
 export const DEFAULT_PARITY = 0.5;
 
 /** `--parity`'s sentence on what 0 means, shared word for word by every command that takes the flag. */
-const PARITY_ZERO = 'A threshold of 0 means zero: it is judged on the raw changed-pixel count of every view, not the rounded percent.';
+const PARITY_ZERO =
+  'A threshold of 0 means zero: it is judged on the raw changed-pixel count of every view, not the rounded percent.';
 
 /**
  * Bounds of every numeric run input, keyed by input field. The CLI flag is the kebab-case name (`textureSize` →
@@ -111,14 +138,61 @@ export interface CommandSpec {
   readonly refuses?: Readonly<Record<string, string>>;
 }
 
-const JSON_FLAG: FlagSpec = { name: 'json', kind: 'boolean', description: 'Print JSON on stdout. `analyze`, `inspect` and `optimize` print the document and move the human summary to stderr; `schema` prints JSON either way.' };
-const BACKEND: FlagSpec = { name: 'backend', kind: 'value', value: 'webgl2|webgpu', choices: BACKENDS, description: 'Renderer backend to measure on (default `webgl2`).' };
-const TIER: FlagSpec = { name: 'tier', kind: 'value', value: 'auto|desktop|phone-mid|phone-low', choices: TIERS, description: 'Device tier for budgets and hints (default `auto`: detected from the GPU and device).' };
-const BUDGET: FlagSpec = { name: 'budget', kind: 'value', value: 'N', numeric: true, description: 'Fail the verdict (exit 1) above N scene submissions after compiling (an integer ≥ 0).' };
-const FRAMES: FlagSpec = { name: 'frames', kind: 'value', value: 'N', numeric: true, description: 'Frames to measure; costs are medians (an integer ≥ 1, default 30).' };
-const COMPILE: FlagSpec = { name: 'compile', kind: 'boolean', negatable: true, defaultOn: true, description: 'Compile (batch) the scene and measure again. On by default; `--no-compile` measures the scene as loaded.' };
-const TIMEOUT: FlagSpec = { name: 'timeout', kind: 'value', value: 'ms', numeric: true, description: 'Bound in milliseconds on each page step: the load, every evaluate, the whole N-frame measurement, `compile()` (an integer from 1000 to 2147483647, default 60000). A step over it exits 4.' };
-const HEADED: FlagSpec = { name: 'headed', kind: 'boolean', description: 'Show the browser window instead of running headless (debugging).' };
+const JSON_FLAG: FlagSpec = {
+  name: 'json',
+  kind: 'boolean',
+  description:
+    'Print JSON on stdout. `analyze`, `inspect` and `optimize` print the document and move the human summary to stderr; `schema` prints JSON either way.',
+};
+const BACKEND: FlagSpec = {
+  name: 'backend',
+  kind: 'value',
+  value: 'webgl2|webgpu',
+  choices: BACKENDS,
+  description: 'Renderer backend to measure on (default `webgl2`).',
+};
+const TIER: FlagSpec = {
+  name: 'tier',
+  kind: 'value',
+  value: 'auto|desktop|phone-mid|phone-low',
+  choices: TIERS,
+  description: 'Device tier for budgets and hints (default `auto`: detected from the GPU and device).',
+};
+const BUDGET: FlagSpec = {
+  name: 'budget',
+  kind: 'value',
+  value: 'N',
+  numeric: true,
+  description: 'Fail the verdict (exit 1) above N scene submissions after compiling (an integer ≥ 0).',
+};
+const FRAMES: FlagSpec = {
+  name: 'frames',
+  kind: 'value',
+  value: 'N',
+  numeric: true,
+  description: 'Frames to measure; costs are medians (an integer ≥ 1, default 30).',
+};
+const COMPILE: FlagSpec = {
+  name: 'compile',
+  kind: 'boolean',
+  negatable: true,
+  defaultOn: true,
+  description:
+    'Compile (batch) the scene and measure again. On by default; `--no-compile` measures the scene as loaded.',
+};
+const TIMEOUT: FlagSpec = {
+  name: 'timeout',
+  kind: 'value',
+  value: 'ms',
+  numeric: true,
+  description:
+    'Bound in milliseconds on each page step: the load, every evaluate, the whole N-frame measurement, `compile()` (an integer from 1000 to 2147483647, default 60000). A step over it exits 4.',
+};
+const HEADED: FlagSpec = {
+  name: 'headed',
+  kind: 'boolean',
+  description: 'Show the browser window instead of running headless (debugging).',
+};
 
 const RUN_FLAGS = [BACKEND, TIER, BUDGET, FRAMES, COMPILE, TIMEOUT, HEADED] as const;
 
@@ -132,10 +206,13 @@ const STEP_DESCRIPTIONS: Record<Exclude<StepName, 'simplify' | 'textures'>, stri
   resample: 'drop redundant animation keyframes (`balanced`, `aggressive`; lossless when added to `safe`)',
   prune: 'remove unused properties (in every preset)',
   quantize: '`KHR_mesh_quantization` (`balanced`, `aggressive`)',
-  meshopt: '`EXT_meshopt_compression`, replaces quantize; the app needs `loader.setMeshoptDecoder` (same as `--compress meshopt`)',
+  meshopt:
+    '`EXT_meshopt_compression`, replaces quantize; the app needs `loader.setMeshoptDecoder` (same as `--compress meshopt`)',
 };
 const STEP_GROUP = '--no-<step>|--<step>';
-const STEP_FLAGS: FlagSpec[] = STEP_NAMES.filter((name): name is keyof typeof STEP_DESCRIPTIONS => name !== 'simplify' && name !== 'textures').map((name) => ({
+const STEP_FLAGS: FlagSpec[] = STEP_NAMES.filter(
+  (name): name is keyof typeof STEP_DESCRIPTIONS => name !== 'simplify' && name !== 'textures',
+).map((name) => ({
   name,
   kind: 'boolean',
   negatable: true,
@@ -150,10 +227,32 @@ export const COMMAND_SPECS: Readonly<Record<CommandName, CommandSpec>> = {
     positionals: [{ name: 'file', usage: '<file.glb|.gltf>', required: true }],
     flags: [
       ...RUN_FLAGS,
-      { name: 'bake', kind: 'boolean', description: 'Bake each finished static group into one mesh (seams and duplicated faces removed, vertices welded); check with `--views`.' },
-      { name: 'bake-buried', kind: 'boolean', description: 'Like `--bake`, and also remove faces with solid geometry within 0.1 units in front of them.' },
-      { name: 'views', kind: 'value', value: 'N', numeric: true, description: 'Extra orbit views for pixel parity on top of the default framing (an integer from 0 to 64, default 0).' },
-      { name: 'parity', kind: 'value', value: 'pct', numeric: true, description: `Allowed percent of changed pixels between the render before and after compiling (and baking), from 0 to 100 (default ${DEFAULT_PARITY}). ${PARITY_ZERO}` },
+      {
+        name: 'bake',
+        kind: 'boolean',
+        description:
+          'Bake each finished static group into one mesh (seams and duplicated faces removed, vertices welded); check with `--views`.',
+      },
+      {
+        name: 'bake-buried',
+        kind: 'boolean',
+        description: 'Like `--bake`, and also remove faces with solid geometry within 0.1 units in front of them.',
+      },
+      {
+        name: 'views',
+        kind: 'value',
+        value: 'N',
+        numeric: true,
+        description:
+          'Extra orbit views for pixel parity on top of the default framing (an integer from 0 to 64, default 0).',
+      },
+      {
+        name: 'parity',
+        kind: 'value',
+        value: 'pct',
+        numeric: true,
+        description: `Allowed percent of changed pixels between the render before and after compiling (and baking), from 0 to 100 (default ${DEFAULT_PARITY}). ${PARITY_ZERO}`,
+      },
       JSON_FLAG,
     ],
     summary: 'render an asset headlessly, measure, compile, measure again, compare pixels, judge',
@@ -171,19 +270,97 @@ export const COMMAND_SPECS: Readonly<Record<CommandName, CommandSpec>> = {
     name: 'optimize',
     positionals: [{ name: 'file', usage: '<file.glb|.gltf>', required: true }],
     flags: [
-      { name: 'out', kind: 'value', value: 'out.glb', description: 'Output path ending in `.glb` or `.gltf` (default `<name>.forge.glb` next to the input; never the input file, not even through a link).' },
-      { name: 'preset', kind: 'value', value: 'safe|balanced|aggressive', choices: PRESETS, description: 'Step preset (default `safe`: dedup, palette, prune; measured at 0 changed pixels, no channel moving by more than 24 of 255, on the Fox and the Buggy; `palette` stores merged material factors in 8-bit palette textures and adds a UV attribute to every primitive it merges, so it can add bytes: `--no-palette` drops it).' },
+      {
+        name: 'out',
+        kind: 'value',
+        value: 'out.glb',
+        description:
+          'Output path ending in `.glb` or `.gltf` (default `<name>.forge.glb` next to the input; never the input file, not even through a link).',
+      },
+      {
+        name: 'preset',
+        kind: 'value',
+        value: 'safe|balanced|aggressive',
+        choices: PRESETS,
+        description:
+          'Step preset (default `safe`: dedup, palette, prune; measured at 0 changed pixels, no channel moving by more than 24 of 255, on the Fox and the Buggy; `palette` stores merged material factors in 8-bit palette textures and adds a UV attribute to every primitive it merges, so it can add bytes: `--no-palette` drops it).',
+      },
       ...STEP_FLAGS,
-      { name: 'simplify', kind: 'optional-value', negatable: true, numeric: true, value: 'ratio', description: 'Add the simplify step with this ratio of vertices to keep, in (0, 1] (bare: 0.5); `--no-simplify` removes it from a preset.' },
-      { name: 'simplify-error', kind: 'value', value: 'e', numeric: true, description: 'Simplify error limit as a fraction of the mesh radius, from 0 to 1 (default 0.001).' },
-      { name: 'compress', kind: 'value', value: 'none|meshopt', choices: COMPRESS, description: '`meshopt` adds `EXT_meshopt_compression` (the app needs `loader.setMeshoptDecoder`); default `none`.' },
-      { name: 'textures', kind: 'optional-value', negatable: true, value: 'webp|avif|none', choices: TEXTURES, description: 'Add the texture step with this format (needs `sharp`; bare: `webp`); `none` or `--no-textures` removes it from a preset.' },
-      { name: 'texture-size', kind: 'value', value: 'N', numeric: true, description: "Longest texture side in pixels (an integer from 1 to 16384; default: the preset's size, no resize outside presets)." },
-      { name: 'texture-quality', kind: 'value', value: 'Q', numeric: true, description: 'Texture encoder quality (an integer from 1 to 100, default 85).' },
-      { name: 'verify', kind: 'boolean', negatable: true, defaultOn: true, description: 'Render the original and the optimized file and compare pixels. On by default; `--no-verify` runs without a browser (and cannot take `--budget`).' },
-      { name: 'parity', kind: 'value', value: 'pct', numeric: true, description: `Allowed percent of changed pixels between the original and the optimized file, each rendered before compiling, from 0 to 100 (default ${DEFAULT_PARITY}). ${PARITY_ZERO} It governs the original-versus-optimized comparison only; each file's own compile check runs at ${DEFAULT_PARITY} whatever this is, and is reported in \`verify.optimized.parity\` (which fails the verdict) and \`verify.original.parity\` (reported only). Read those, or run \`analyze --parity 0\`, when compile exactness is the question.` },
-      { name: 'views', kind: 'value', value: 'N', numeric: true, description: 'Extra orbit views for the comparison (an integer from 0 to 64, default 2).' },
-      { ...BUDGET, description: "Fail the verdict (exit 1) when the optimized file compiles to more than N scene submissions (an integer ≥ 0); needs verification, so not with `--no-verify`." },
+      {
+        name: 'simplify',
+        kind: 'optional-value',
+        negatable: true,
+        numeric: true,
+        value: 'ratio',
+        description:
+          'Add the simplify step with this ratio of vertices to keep, in (0, 1] (bare: 0.5); `--no-simplify` removes it from a preset.',
+      },
+      {
+        name: 'simplify-error',
+        kind: 'value',
+        value: 'e',
+        numeric: true,
+        description: 'Simplify error limit as a fraction of the mesh radius, from 0 to 1 (default 0.001).',
+      },
+      {
+        name: 'compress',
+        kind: 'value',
+        value: 'none|meshopt',
+        choices: COMPRESS,
+        description:
+          '`meshopt` adds `EXT_meshopt_compression` (the app needs `loader.setMeshoptDecoder`); default `none`.',
+      },
+      {
+        name: 'textures',
+        kind: 'optional-value',
+        negatable: true,
+        value: 'webp|avif|none',
+        choices: TEXTURES,
+        description:
+          'Add the texture step with this format (needs `sharp`; bare: `webp`); `none` or `--no-textures` removes it from a preset.',
+      },
+      {
+        name: 'texture-size',
+        kind: 'value',
+        value: 'N',
+        numeric: true,
+        description:
+          "Longest texture side in pixels (an integer from 1 to 16384; default: the preset's size, no resize outside presets).",
+      },
+      {
+        name: 'texture-quality',
+        kind: 'value',
+        value: 'Q',
+        numeric: true,
+        description: 'Texture encoder quality (an integer from 1 to 100, default 85).',
+      },
+      {
+        name: 'verify',
+        kind: 'boolean',
+        negatable: true,
+        defaultOn: true,
+        description:
+          'Render the original and the optimized file and compare pixels. On by default; `--no-verify` runs without a browser (and cannot take `--budget`).',
+      },
+      {
+        name: 'parity',
+        kind: 'value',
+        value: 'pct',
+        numeric: true,
+        description: `Allowed percent of changed pixels between the original and the optimized file, each rendered before compiling, from 0 to 100 (default ${DEFAULT_PARITY}). ${PARITY_ZERO} It governs the original-versus-optimized comparison only; each file's own compile check runs at ${DEFAULT_PARITY} whatever this is, and is reported in \`verify.optimized.parity\` (which fails the verdict) and \`verify.original.parity\` (reported only). Read those, or run \`analyze --parity 0\`, when compile exactness is the question.`,
+      },
+      {
+        name: 'views',
+        kind: 'value',
+        value: 'N',
+        numeric: true,
+        description: 'Extra orbit views for the comparison (an integer from 0 to 64, default 2).',
+      },
+      {
+        ...BUDGET,
+        description:
+          'Fail the verdict (exit 1) when the optimized file compiles to more than N scene submissions (an integer ≥ 0); needs verification, so not with `--no-verify`.',
+      },
       ...RUN_FLAGS.filter((flag) => flag !== BUDGET),
       JSON_FLAG,
     ],
@@ -226,7 +403,12 @@ export function flagUsage(flag: FlagSpec): string {
 
 /** Every form of a flag, as the AGENTS.md flag table lists it: `--compile`, `--no-compile`; `--frames N`. */
 export function flagForms(flag: FlagSpec): string[] {
-  const on = flag.kind === 'boolean' ? `--${flag.name}` : flag.kind === 'value' ? `--${flag.name} ${flag.value}` : `--${flag.name} [${flag.value}]`;
+  const on =
+    flag.kind === 'boolean'
+      ? `--${flag.name}`
+      : flag.kind === 'value'
+        ? `--${flag.name} ${flag.value}`
+        : `--${flag.name} [${flag.value}]`;
   return flag.negatable ? [on, `--no-${flag.name}`] : [on];
 }
 
@@ -275,7 +457,8 @@ function levenshtein(a: string, b: string): number {
   let row = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) {
     const next = [i];
-    for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j]! + 1, next[j - 1]! + 1, row[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
+    for (let j = 1; j <= b.length; j++)
+      next[j] = Math.min(row[j]! + 1, next[j - 1]! + 1, row[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
     row = next;
   }
   return row[b.length]!;
@@ -294,20 +477,30 @@ function closest(word: string, candidates: readonly string[]): string | null {
   return best;
 }
 
-const list = (words: readonly string[]): string => (words.length < 2 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`);
+const list = (words: readonly string[]): string =>
+  words.length < 2 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
 
 function unknownFlag(spec: CommandSpec, display: string): UsageError {
-  const forms = spec.flags.flatMap((flag) => (flag.negatable ? [`--${flag.name}`, `--no-${flag.name}`] : [`--${flag.name}`]));
-  if (!display.startsWith('--') && forms.includes(`-${display}`)) return new UsageError(`unknown flag ${display} for ${spec.name}; did you mean -${display}?`);
+  const forms = spec.flags.flatMap((flag) =>
+    flag.negatable ? [`--${flag.name}`, `--no-${flag.name}`] : [`--${flag.name}`],
+  );
+  if (!display.startsWith('--') && forms.includes(`-${display}`))
+    return new UsageError(`unknown flag ${display} for ${spec.name}; did you mean -${display}?`);
   const name = display.replace(/^--?/, '');
   const base = name.startsWith('no-') ? spec.flags.find((flag) => flag.name === name.slice(3)) : undefined;
   if (base) return new UsageError(`${display} is not a flag of ${spec.name}: --${base.name} has no --no- form`);
   const owners = Object.values(COMMAND_SPECS)
-    .filter((other) => other !== spec && other.flags.some((flag) => flag.name === name || (flag.negatable && `no-${flag.name}` === name)))
+    .filter(
+      (other) =>
+        other !== spec &&
+        other.flags.some((flag) => flag.name === name || (flag.negatable && `no-${flag.name}` === name)),
+    )
     .map((other) => other.name);
   if (owners.length > 0) {
     const why = spec.refuses?.[name];
-    return new UsageError(`${display} is not a flag of ${spec.name}${why ? `: ${why}` : ''} (${list(owners)} take${owners.length === 1 ? 's' : ''} it)`);
+    return new UsageError(
+      `${display} is not a flag of ${spec.name}${why ? `: ${why}` : ''} (${list(owners)} take${owners.length === 1 ? 's' : ''} it)`,
+    );
   }
   const guess = closest(display, [...forms, '--help']);
   const known = forms.length > 0 ? `; flags of ${spec.name}: ${forms.join(', ')}` : `; ${spec.name} takes no flags`;
@@ -350,7 +543,8 @@ function scan(spec: CommandSpec, argv: readonly string[]): Scanned {
       }
     }
     if (!flag) throw unknownFlag(spec, display);
-    if (values.has(flag.name)) throw new UsageError(`--${flag.name}${flag.negatable ? ` / --no-${flag.name}` : ''} is given more than once`);
+    if (values.has(flag.name))
+      throw new UsageError(`--${flag.name}${flag.negatable ? ` / --no-${flag.name}` : ''} is given more than once`);
     if (negated || flag.kind === 'boolean') {
       if (inline !== undefined) throw new UsageError(`${display} takes no value (got ${arg})`);
       values.set(flag.name, !negated);
@@ -362,7 +556,8 @@ function scan(spec: CommandSpec, argv: readonly string[]): Scanned {
     }
     const next = argv[i + 1];
     if (flag.kind === 'value') {
-      if (next === undefined || next.startsWith('--')) throw new UsageError(`${display} needs a value: ${display} ${flag.value}`);
+      if (next === undefined || next.startsWith('--'))
+        throw new UsageError(`${display} needs a value: ${display} ${flag.value}`);
       values.set(flag.name, next);
       i++;
     } else if (next !== undefined && (flag.choices?.includes(next) || (flag.numeric && NUMBER.test(next)))) {
@@ -377,12 +572,14 @@ function scan(spec: CommandSpec, argv: readonly string[]): Scanned {
 }
 
 const show = (value: unknown): string => {
-  const text = typeof value === 'string' ? JSON.stringify(value.length > 60 ? `${value.slice(0, 60)}…` : value) : String(value);
+  const text =
+    typeof value === 'string' ? JSON.stringify(value.length > 60 ? `${value.slice(0, 60)}…` : value) : String(value);
   return text;
 };
 
 function badValue(flag: FlagSpec, raw: string): UsageError {
-  if (flag.choices) return new UsageError(`--${flag.name} must be one of ${flag.choices.join(', ')} (got ${show(raw)})`);
+  if (flag.choices)
+    return new UsageError(`--${flag.name} must be one of ${flag.choices.join(', ')} (got ${show(raw)})`);
   const range = RANGES[camel(flag.name) as RangeField];
   return new UsageError(`--${flag.name} must be ${range ? describeRange(range) : 'a number'} (got ${show(raw)})`);
 }
@@ -395,10 +592,16 @@ function positionalsOf(spec: CommandSpec, scanned: Scanned): string[] {
     const stray = positionals.find((p) => p.after !== null);
     if (stray) throw badValue(stray.after!, stray.value);
     const extra = positionals.slice(max).map((p) => show(p.value));
-    const takes = max === 0 ? 'takes no arguments' : `takes ${spec.positionals.map((p) => (p.required ? p.usage : `at most one ${p.usage}`)).join(' ')}`;
-    throw new UsageError(`unexpected argument${extra.length > 1 ? 's' : ''} ${extra.join(', ')}: threeforge ${spec.name} ${takes}`);
+    const takes =
+      max === 0
+        ? 'takes no arguments'
+        : `takes ${spec.positionals.map((p) => (p.required ? p.usage : `at most one ${p.usage}`)).join(' ')}`;
+    throw new UsageError(
+      `unexpected argument${extra.length > 1 ? 's' : ''} ${extra.join(', ')}: threeforge ${spec.name} ${takes}`,
+    );
   }
-  if (positionals.length < spec.positionals.filter((p) => p.required).length) throw new UsageError(spec.missing ?? `${spec.name} is missing an argument: ${usageLine(spec)}`);
+  if (positionals.length < spec.positionals.filter((p) => p.required).length)
+    throw new UsageError(spec.missing ?? `${spec.name} is missing an argument: ${usageLine(spec)}`);
   return positionals.map((p) => p.value);
 }
 
@@ -428,7 +631,9 @@ function choiceFlag<T extends string>(spec: CommandSpec, values: Scanned['values
 function runInput(spec: CommandSpec, values: Scanned['values']): Omit<InspectInput, 'url'> {
   return {
     backend: choiceFlag(spec, values, 'backend', 'webgl2' as Backend),
-    tier: spec.flags.some((flag) => flag.name === 'tier') ? choiceFlag(spec, values, 'tier', 'auto' as TierChoice) : 'auto',
+    tier: spec.flags.some((flag) => flag.name === 'tier')
+      ? choiceFlag(spec, values, 'tier', 'auto' as TierChoice)
+      : 'auto',
     budget: values.has('budget') ? numberFlag(spec, values, 'budget', 0) : null,
     frames: numberFlag(spec, values, 'frames', 30),
     compile: values.get('compile') !== false,
@@ -446,13 +651,21 @@ export function parseArgs(argv: string[]): Command {
   const [command, ...rest] = argv as [string, ...string[]];
   if (command === 'help') {
     const topic = rest[0];
-    if (rest.length > 1 || (topic !== undefined && !(COMMANDS as readonly string[]).includes(topic))) throw new UsageError(`help takes at most one command name (got ${rest.map(show).join(' ')}); commands: ${COMMANDS.join(', ')}`);
+    if (rest.length > 1 || (topic !== undefined && !(COMMANDS as readonly string[]).includes(topic)))
+      throw new UsageError(
+        `help takes at most one command name (got ${rest.map(show).join(' ')}); commands: ${COMMANDS.join(', ')}`,
+      );
     return { name: 'help' };
   }
-  if (command.startsWith('-')) throw new UsageError(`put the command first: threeforge <command> [flags] (got ${show(command)} first); commands: ${COMMANDS.join(', ')}`);
+  if (command.startsWith('-'))
+    throw new UsageError(
+      `put the command first: threeforge <command> [flags] (got ${show(command)} first); commands: ${COMMANDS.join(', ')}`,
+    );
   if (!(COMMANDS as readonly string[]).includes(command)) {
     const guess = closest(command, COMMANDS);
-    throw new UsageError(`unknown command "${command}"; ${guess ? `did you mean ${guess}? ` : ''}commands: ${COMMANDS.join(', ')}`);
+    throw new UsageError(
+      `unknown command "${command}"; ${guess ? `did you mean ${guess}? ` : ''}commands: ${COMMANDS.join(', ')}`,
+    );
   }
   const spec = COMMAND_SPECS[command as CommandName];
   const scanned = scan(spec, rest);
@@ -461,8 +674,15 @@ export function parseArgs(argv: string[]): Command {
   switch (spec.name) {
     case 'analyze': {
       const [file] = positionalsOf(spec, scanned) as [string];
-      const bake: BakeChoice = values.get('bake-buried') === true ? 'buried' : values.get('bake') === true ? 'on' : 'off';
-      const input: AnalyzeInput = { file, ...runInput(spec, values), bake, views: numberFlag(spec, values, 'views', 0), parity: numberFlag(spec, values, 'parity', DEFAULT_PARITY) };
+      const bake: BakeChoice =
+        values.get('bake-buried') === true ? 'buried' : values.get('bake') === true ? 'on' : 'off';
+      const input: AnalyzeInput = {
+        file,
+        ...runInput(spec, values),
+        bake,
+        views: numberFlag(spec, values, 'views', 0),
+        parity: numberFlag(spec, values, 'parity', DEFAULT_PARITY),
+      };
       return { name: 'analyze', json, input: validateInput('analyze', input, FLAG_NAMES) };
     }
     case 'inspect': {
@@ -485,10 +705,20 @@ export function parseArgs(argv: string[]): Command {
         out: typeof outRaw === 'string' ? outRaw : null,
         preset: choiceFlag(spec, values, 'preset', 'safe'),
         steps,
-        simplify: typeof simplifyRaw === 'string' ? numberFlag(spec, values, 'simplify', 0.5) : simplifyRaw === true ? 0.5 : null,
+        simplify:
+          typeof simplifyRaw === 'string'
+            ? numberFlag(spec, values, 'simplify', 0.5)
+            : simplifyRaw === true
+              ? 0.5
+              : null,
         simplifyError: numberFlag(spec, values, 'simplify-error', 0.001),
         compress: choiceFlag(spec, values, 'compress', 'none'),
-        textures: typeof texturesRaw === 'string' ? choiceFlag(spec, values, 'textures', 'webp') : texturesRaw === true ? 'webp' : null,
+        textures:
+          typeof texturesRaw === 'string'
+            ? choiceFlag(spec, values, 'textures', 'webp')
+            : texturesRaw === true
+              ? 'webp'
+              : null,
         textureSize: values.has('texture-size') ? numberFlag(spec, values, 'texture-size', 0) : null,
         textureQuality: numberFlag(spec, values, 'texture-quality', 85),
         verify: values.get('verify') !== false,
@@ -501,14 +731,16 @@ export function parseArgs(argv: string[]): Command {
     case 'explain': {
       const [code] = positionalsOf(spec, scanned);
       const all = values.get('all') === true;
-      if (all && code !== undefined) throw new UsageError(`explain takes a hint code or --all, not both (got ${show(code)} and --all)`);
+      if (all && code !== undefined)
+        throw new UsageError(`explain takes a hint code or --all, not both (got ${show(code)} and --all)`);
       if (!all && code === undefined) throw new UsageError('explain needs a hint code or --all');
       return { name: 'explain', code: code ?? null, all, json };
     }
     case 'schema': {
       const [raw] = positionalsOf(spec, scanned);
       const which = (raw ?? 'all') as SchemaChoice;
-      if (!SCHEMAS.includes(which)) throw new UsageError(`schema must be one of ${SCHEMAS.join(', ')} (got ${show(raw)})`);
+      if (!SCHEMAS.includes(which))
+        throw new UsageError(`schema must be one of ${SCHEMAS.join(', ')} (got ${show(raw)})`);
       return { name: 'schema', which, json };
     }
     case 'mcp':
@@ -536,13 +768,21 @@ export interface ValidateOptions {
 export function validateInput(command: 'analyze', input: AnalyzeInput, options?: ValidateOptions): AnalyzeInput;
 export function validateInput(command: 'inspect', input: InspectInput, options?: ValidateOptions): InspectInput;
 export function validateInput(command: 'optimize', input: OptimizeInput, options?: ValidateOptions): OptimizeInput;
-export function validateInput(command: RunCommandName, input: AnalyzeInput | InspectInput | OptimizeInput, options?: ValidateOptions): AnalyzeInput | InspectInput | OptimizeInput;
+export function validateInput(
+  command: RunCommandName,
+  input: AnalyzeInput | InspectInput | OptimizeInput,
+  options?: ValidateOptions,
+): AnalyzeInput | InspectInput | OptimizeInput;
 /**
  * Checks a run input against `RANGES`, `CHOICES` and the cross-field rules (inspect takes no tier; optimize's budget
  * needs verification). Returns the input unchanged; throws `UsageError` (exit code 2) naming the first bad field.
  * The CLI parser and the MCP server both call it, so a bound is enforced once for both.
  */
-export function validateInput(command: RunCommandName, input: AnalyzeInput | InspectInput | OptimizeInput, options: ValidateOptions = {}): AnalyzeInput | InspectInput | OptimizeInput {
+export function validateInput(
+  command: RunCommandName,
+  input: AnalyzeInput | InspectInput | OptimizeInput,
+  options: ValidateOptions = {},
+): AnalyzeInput | InspectInput | OptimizeInput {
   const flags = options.names === 'flags';
   const label = (field: string): string => (flags ? `--${kebab(field)}` : field);
   const record = input as unknown as Record<string, unknown>;
@@ -562,14 +802,22 @@ export function validateInput(command: RunCommandName, input: AnalyzeInput | Ins
     const value = record[field];
     if (nullable && value === null) return;
     const range = RANGES[field];
-    const ok = typeof value === 'number' && Number.isFinite(value) && (!range.integer || Number.isInteger(value)) && (range.minExclusive ? value > range.min : value >= range.min) && (range.max === undefined || value <= range.max);
+    const ok =
+      typeof value === 'number' &&
+      Number.isFinite(value) &&
+      (!range.integer || Number.isInteger(value)) &&
+      (range.minExclusive ? value > range.min : value >= range.min) &&
+      (range.max === undefined || value <= range.max);
     if (!ok) fail(field, describeRange(range) + (nullable && !flags ? ' or null' : ''));
   };
 
   text(command === 'inspect' ? 'url' : 'file');
   oneOf('backend', BACKENDS);
   if (command === 'inspect') {
-    if (record.tier !== 'auto') throw new UsageError(`${label('tier')} is not accepted by inspect: the app measures itself at the tier its own ledger detects (got ${show(record.tier)})`);
+    if (record.tier !== 'auto')
+      throw new UsageError(
+        `${label('tier')} is not accepted by inspect: the app measures itself at the tier its own ledger detects (got ${show(record.tier)})`,
+      );
   } else oneOf('tier', TIERS);
   inRange('budget', true);
   inRange('frames');
@@ -583,13 +831,16 @@ export function validateInput(command: RunCommandName, input: AnalyzeInput | Ins
     if (record.parity !== undefined) inRange('parity');
   }
   if (command === 'optimize') {
-    if (record.out !== null && (typeof record.out !== 'string' || record.out === '')) fail('out', 'a non-empty path or null');
+    if (record.out !== null && (typeof record.out !== 'string' || record.out === ''))
+      fail('out', 'a non-empty path or null');
     oneOf('preset', PRESETS);
     const steps = record.steps;
     if (typeof steps !== 'object' || steps === null || Array.isArray(steps)) fail('steps', 'an object of step toggles');
     for (const [name, toggle] of Object.entries(steps as Record<string, unknown>)) {
-      if (!(STEP_NAMES as readonly string[]).includes(name)) throw new UsageError(`${flags ? `--${name}` : `steps.${name}`} is not a step; steps: ${STEP_NAMES.join(', ')}`);
-      if (typeof toggle !== 'boolean') throw new UsageError(`${flags ? `--${name}` : `steps.${name}`} must be true or false (got ${show(toggle)})`);
+      if (!(STEP_NAMES as readonly string[]).includes(name))
+        throw new UsageError(`${flags ? `--${name}` : `steps.${name}`} is not a step; steps: ${STEP_NAMES.join(', ')}`);
+      if (typeof toggle !== 'boolean')
+        throw new UsageError(`${flags ? `--${name}` : `steps.${name}`} must be true or false (got ${show(toggle)})`);
     }
     inRange('simplify', true);
     inRange('simplifyError');
@@ -600,7 +851,10 @@ export function validateInput(command: RunCommandName, input: AnalyzeInput | Ins
     bool('verify');
     inRange('parity');
     inRange('views');
-    if (record.budget !== null && record.verify === false) throw new UsageError(`${label('budget')} needs verification: it is judged on the optimized file's compiled render, which ${flags ? '--no-verify' : 'verify: false'} skips`);
+    if (record.budget !== null && record.verify === false)
+      throw new UsageError(
+        `${label('budget')} needs verification: it is judged on the optimized file's compiled render, which ${flags ? '--no-verify' : 'verify: false'} skips`,
+      );
   }
   return input;
 }

@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
 import { BoxGeometry, Mesh, MeshBasicMaterial } from 'three';
-import { exposeToAgents, type AgentHook } from '../../src/agent/expose.js';
+import { describe, expect, it } from 'vitest';
+import { type AgentHook, exposeToAgents } from '../../src/agent/expose.js';
 import type { BrowserHandle, PlaywrightPage } from '../../src/cli/browser.js';
 import { PageError } from '../../src/cli/errors.js';
 import { printDocument, summarize } from '../../src/cli/format.js';
@@ -67,14 +67,35 @@ function app(options: { schemaVersion?: number; filingCosts?: number[] } = {}): 
   const { scene, camera } = sceneWithCamera();
   for (let i = 0; i < 4; i++) scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial()));
   const window: FakeWindow = {};
-  exposeToAgents({ ledger, renderer: renderer as never, scene, camera, target: window, requestFrame: (callback) => callback() });
+  exposeToAgents({
+    ledger,
+    renderer: renderer as never,
+    scene,
+    camera,
+    target: window,
+    requestFrame: (callback) => callback(),
+  });
   delete window.__threeforge!.measureOverdraw; // the fake renderer cannot run the overdraw count renders
-  if (options.schemaVersion !== undefined) (window.__threeforge as unknown as { schemaVersion: number }).schemaVersion = options.schemaVersion;
+  if (options.schemaVersion !== undefined)
+    (window.__threeforge as unknown as { schemaVersion: number }).schemaVersion = options.schemaVersion;
   return { window };
 }
 
-const input = (overrides: Partial<InspectInput> = {}): InspectInput => ({ url: 'http://127.0.0.1:9/', backend: 'webgl2', tier: 'auto', budget: null, frames: 3, compile: true, timeout: 2000, headed: false, ...overrides });
-const launchOn = (page: PlaywrightPage) => async (): Promise<BrowserHandle> => ({ newPage: async () => page, close: async () => {} });
+const input = (overrides: Partial<InspectInput> = {}): InspectInput => ({
+  url: 'http://127.0.0.1:9/',
+  backend: 'webgl2',
+  tier: 'auto',
+  budget: null,
+  frames: 3,
+  compile: true,
+  timeout: 2000,
+  headed: false,
+  ...overrides,
+});
+const launchOn = (page: PlaywrightPage) => async (): Promise<BrowserHandle> => ({
+  newPage: async () => page,
+  close: async () => {},
+});
 
 describe('inspect and the frame snapshot schemaVersion', () => {
   it('measures an app whose hook exposes schemaVersion 3; js.renderMs and js.ledgerMs are medians over the measured frames', async () => {
@@ -92,10 +113,15 @@ describe('inspect and the frame snapshot schemaVersion', () => {
     const { window } = app({ schemaVersion: 2 });
     const evaluated: string[] = [];
     const printed: string[] = [];
-    const streams = { stdout: { write: (chunk: string) => printed.push(chunk) }, stderr: { write: (chunk: string) => printed.push(chunk) } };
+    const streams = {
+      stdout: { write: (chunk: string) => printed.push(chunk) },
+      stderr: { write: (chunk: string) => printed.push(chunk) },
+    };
     const started = Date.now();
     // What `threeforge inspect` does (src/cli/index.ts): print the document inspectApp resolves with.
-    const error = await inspectApp(input({ timeout: 5000 }), undefined, { launch: launchOn(pageOn(window, evaluated)) }).then(
+    const error = await inspectApp(input({ timeout: 5000 }), undefined, {
+      launch: launchOn(pageOn(window, evaluated)),
+    }).then(
       (doc) => printDocument(doc, summarize, true, streams),
       (e: unknown) => e,
     );
@@ -110,7 +136,9 @@ describe('inspect and the frame snapshot schemaVersion', () => {
   });
 
   it('a page without the hook still times out naming exposeToAgents', async () => {
-    const error = await inspectApp(input({ timeout: 100 }), undefined, { launch: launchOn(pageOn({})) }).catch((e: unknown) => e);
+    const error = await inspectApp(input({ timeout: 100 }), undefined, { launch: launchOn(pageOn({})) }).catch(
+      (e: unknown) => e,
+    );
     expect(error).toBeInstanceOf(PageError);
     expect((error as Error).message).toMatch(/no window.__threeforge hook appeared/);
   });
@@ -120,7 +148,9 @@ describe('inspect and the frame snapshot schemaVersion', () => {
     await expect(measureViaHook(pageOn(window), 2, 2000)).rejects.toThrow(/unsupported schemaVersion 2/);
     // The in-page check (measureViaHook's own script) and the Node-side check (assertHookVersion, above) share the
     // same wording: both build it from measure.ts's UNSUPPORTED_PREFIX/UNSUPPORTED_SUFFIX, not a re-typed copy.
-    await expect(measureViaHook(pageOn(window), 2, 2000)).rejects.toThrow(/upgrade threeforge in the app \(exposeToAgents\)/);
+    await expect(measureViaHook(pageOn(window), 2, 2000)).rejects.toThrow(
+      /upgrade threeforge in the app \(exposeToAgents\)/,
+    );
   });
 });
 

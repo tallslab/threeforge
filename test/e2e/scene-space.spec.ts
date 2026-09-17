@@ -8,11 +8,16 @@ import { pixelDiff, settle } from './pixels.js';
  */
 
 for (const offset of ['0', '1'] as const) {
-  test(`the village compiles at parity ${offset === '1' ? 'in a translated, turned and scaled scene' : 'in an untransformed scene'}`, async ({ forge }) => {
+  test(`the village compiles at parity ${offset === '1' ? 'in a translated, turned and scaled scene' : 'in an untransformed scene'}`, async ({
+    forge,
+  }) => {
     test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
     await forge.open('village', { variant: 'naive', sceneOffset: offset });
     await settle(forge.page);
-    const naive = await forge.page.evaluate(() => ({ visible: window.__forge.visibleMeshes(), position: window.__forge.scene.position.toArray() }));
+    const naive = await forge.page.evaluate(() => ({
+      visible: window.__forge.visibleMeshes(),
+      position: window.__forge.scene.position.toArray(),
+    }));
     const before = await forge.page.screenshot({ type: 'png' });
     const r = await forge.page.evaluate(async () => {
       const f = window.__forge;
@@ -20,7 +25,11 @@ for (const offset of ['0', '1'] as const) {
       await f.world.warmup(f.renderer, f.camera);
       for (let i = 0; i < 3; i++) await f.frameAsync();
       const frame = await f.frameAsync();
-      return { batches: report.after.batches, submissions: frame.totals.sceneSubmissions, unattributed: frame.totals.unattributed };
+      return {
+        batches: report.after.batches,
+        submissions: frame.totals.sceneSubmissions,
+        unattributed: frame.totals.unattributed,
+      };
     });
     const after = await forge.page.screenshot({ type: 'png' });
     expect(naive.position).toEqual(offset === '1' ? [40, -12, -30] : [0, 0, 0]);
@@ -33,7 +42,9 @@ for (const offset of ['0', '1'] as const) {
   });
 }
 
-test('the offset village moved after compile, with batch-synced dynamics turning, matches the same scene decompiled', async ({ forge }) => {
+test('the offset village moved after compile, with batch-synced dynamics turning, matches the same scene decompiled', async ({
+  forge,
+}) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   await forge.open('village', { variant: 'naive', sceneOffset: '1', dynamics: 'batch-sync' });
   await settle(forge.page);
@@ -65,7 +76,9 @@ test('the offset village moved after compile, with batch-synced dynamics turning
   expect(diff).toBeLessThan(0.0005);
 });
 
-test('the village in a mirrored scene compiles at parity: children mirrored again stay unbatched, the rest batch', async ({ forge }) => {
+test('the village in a mirrored scene compiles at parity: children mirrored again stay unbatched, the rest batch', async ({
+  forge,
+}) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   await forge.open('village', { variant: 'naive' });
   const setup = await forge.page.evaluate(() => {
@@ -93,11 +106,18 @@ test('the village in a mirrored scene compiles at parity: children mirrored agai
     await f.world.warmup(f.renderer, f.camera);
     for (let i = 0; i < 3; i++) await f.frameAsync();
     const frame = await f.frameAsync();
-    return { batches: report.after.batches, mirrored: report.skipped.filter((s) => s.rule === 'mirrored').length, unattributed: frame.totals.unattributed, submissions: frame.totals.sceneSubmissions };
+    return {
+      batches: report.after.batches,
+      mirrored: report.skipped.filter((s) => s.rule === 'mirrored').length,
+      unattributed: frame.totals.unattributed,
+      submissions: frame.totals.sceneSubmissions,
+    };
   });
   const after = await forge.page.screenshot({ type: 'png' });
   const diff = pixelDiff(before, after, { threshold: 4 });
-  console.log(`mirrored village (${setup.again} meshes mirrored again, ${r.mirrored} skipped as mirrored, ${r.batches} batches) pixel diff ${(diff * 100).toFixed(4)}% · submissions ${r.submissions}`);
+  console.log(
+    `mirrored village (${setup.again} meshes mirrored again, ${r.mirrored} skipped as mirrored, ${r.batches} batches) pixel diff ${(diff * 100).toFixed(4)}% · submissions ${r.submissions}`,
+  );
   expect(diff).toBeLessThan(0.0005);
   expect(setup.visible, 'the village is in view').toBeGreaterThan(250);
   expect(r.mirrored, 'children mirrored again stay unbatched').toBeGreaterThan(0);
@@ -112,7 +132,10 @@ for (const mirrored of [false, true] as const) {
     await forge.page.evaluate((mirror) => {
       const f = window.__forge;
       const T = f.three;
-      const materials = [new T.SpriteMaterial({ color: 0xff6040, transparent: false }), new T.SpriteMaterial({ color: 0x40a0ff, transparent: false })];
+      const materials = [
+        new T.SpriteMaterial({ color: 0xff6040, transparent: false }),
+        new T.SpriteMaterial({ color: 0x40a0ff, transparent: false }),
+      ];
       for (let x = 0; x < 8; x++) {
         for (let z = 0; z < 6; z++) {
           const sprite = new T.Sprite(materials[(x + z) % 2]!);
@@ -134,7 +157,12 @@ for (const mirrored of [false, true] as const) {
       await f.world.warmup(f.renderer, f.camera);
       for (let i = 0; i < 3; i++) await f.frameAsync();
       const frame = await f.frameAsync();
-      return { spriteBatches: report.after.spriteBatches, drawn: frame.byReason['sprite-batch']?.submissions ?? 0, sprites: frame.byReason.sprite?.submissions ?? 0, unattributed: frame.totals.unattributed };
+      return {
+        spriteBatches: report.after.spriteBatches,
+        drawn: frame.byReason['sprite-batch']?.submissions ?? 0,
+        sprites: frame.byReason.sprite?.submissions ?? 0,
+        unattributed: frame.totals.unattributed,
+      };
     });
     const after = await forge.page.screenshot({ type: 'png' });
     const diff = pixelDiff(before, after, { threshold: 4 });

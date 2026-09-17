@@ -13,11 +13,25 @@ export function pageErrorsReason(errors: readonly string[]): string {
  * for each verified render); `inspect` passes none, its page being the user's own app. The reason quotes them cleaned
  * and capped, never raw.
  */
-export function verdictOf(after: FrameSnapshot | null, before: FrameSnapshot, budget: number | null, parity: Parity | null, pageErrors: readonly string[] = []): Verdict {
+export function verdictOf(
+  after: FrameSnapshot | null,
+  before: FrameSnapshot,
+  budget: number | null,
+  parity: Parity | null,
+  pageErrors: readonly string[] = [],
+): Verdict {
   const frame = after ?? before;
   const reasons: string[] = [];
-  const budgetResult = budget === null ? null : { maxSubmissions: budget, actual: frame.totals.sceneSubmissions, pass: frame.totals.sceneSubmissions <= budget };
-  if (budgetResult && !budgetResult.pass) reasons.push(`${budgetResult.actual} scene submissions over the budget of ${budgetResult.maxSubmissions}`);
+  const budgetResult =
+    budget === null
+      ? null
+      : {
+          maxSubmissions: budget,
+          actual: frame.totals.sceneSubmissions,
+          pass: frame.totals.sceneSubmissions <= budget,
+        };
+  if (budgetResult && !budgetResult.pass)
+    reasons.push(`${budgetResult.actual} scene submissions over the budget of ${budgetResult.maxSubmissions}`);
   const errors = frame.hints.filter((h) => h.severity === 'error').map((h) => h.code);
   for (const code of errors) reasons.push(`error hint ${code}`);
   if (parity && !parity.pass) {

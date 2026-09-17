@@ -26,7 +26,9 @@ export function strictExitCode(index, env = process.env, write = (line) => conso
   if (env.FORGE_FETCH_STRICT !== '1') return 0;
   const failures = downloadFailures(index);
   if (failures.length === 0) return 0;
-  write(`\nfetch: ${failures.length} download${failures.length === 1 ? '' : 's'} failed under FORGE_FETCH_STRICT=1 (unset it to keep what did download):`);
+  write(
+    `\nfetch: ${failures.length} download${failures.length === 1 ? '' : 's'} failed under FORGE_FETCH_STRICT=1 (unset it to keep what did download):`,
+  );
   for (const line of failures) write(`  ${line}`);
   return 1;
 }

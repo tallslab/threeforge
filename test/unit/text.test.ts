@@ -4,12 +4,22 @@ import { hintsFor } from '../../src/ledger/hints.js';
 import { buildFrame, emptyFrame, type SubmissionRecord } from '../../src/ledger/snapshot.js';
 import { capMessage, capName, MAX_MESSAGE_LENGTH, MAX_NAME_LENGTH } from '../../src/ledger/text.js';
 
-const env = { three: '0.186.0', backend: 'webgl2' as const, multiDraw: true, tier: 'desktop' as const, gpu: 'test', dpr: 1, viewport: [800, 600] as [number, number] };
+const env = {
+  three: '0.186.0',
+  backend: 'webgl2' as const,
+  multiDraw: true,
+  tier: 'desktop' as const,
+  gpu: 'test',
+  dpr: 1,
+  viewport: [800, 600] as [number, number],
+};
 
 describe('capName / capMessage', () => {
   it('leaves short names and messages untouched', () => {
     expect(capName('crate')).toBe('crate');
-    expect(capMessage('7 untagged meshes: tag.static() or tag.dynamic() them')).toBe('7 untagged meshes: tag.static() or tag.dynamic() them');
+    expect(capMessage('7 untagged meshes: tag.static() or tag.dynamic() them')).toBe(
+      '7 untagged meshes: tag.static() or tag.dynamic() them',
+    );
   });
 
   it('caps a name at 120 characters', () => {
@@ -64,7 +74,14 @@ describe('snapshot.ts caps names pushed into byReason[].top', () => {
       skeleton: null,
       morphTargets: 0,
     };
-    const frame = buildFrame({ env, items: [item], reportedDrawCalls: 1, triangles: 12, programs: 1, descriptions: new Map() });
+    const frame = buildFrame({
+      env,
+      items: [item],
+      reportedDrawCalls: 1,
+      triangles: 12,
+      programs: 1,
+      descriptions: new Map(),
+    });
     const top = frame.byReason.untagged!.top;
     expect(top).toHaveLength(1);
     expect(top[0]!.length).toBeLessThanOrEqual(MAX_NAME_LENGTH);
@@ -95,6 +112,12 @@ describe('hints.ts caps names and messages coming from HintContext', () => {
     const f = emptyFrame(env);
     f.byReason = { untagged: { submissions: 7, gpuDraws: 7, top: ['crate', 'barrel'] } };
     const hints = hintsFor(f, budgetsFor('phone-low'));
-    expect(hints.find((h) => h.code === 'untagged')).toEqual({ category: 'drawCalls', severity: 'warn', code: 'untagged', message: '7 untagged meshes: tag.static() or tag.dynamic() them', objects: ['crate', 'barrel'] });
+    expect(hints.find((h) => h.code === 'untagged')).toEqual({
+      category: 'drawCalls',
+      severity: 'warn',
+      code: 'untagged',
+      message: '7 untagged meshes: tag.static() or tag.dynamic() them',
+      objects: ['crate', 'barrel'],
+    });
   });
 });

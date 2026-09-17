@@ -7,7 +7,9 @@ import { expect, test } from './fixtures.js';
  * than the harness background's red channel (0x20 in sRGB, 0.014 linear) that the count used to add.
  */
 
-test('measured overdraw: one opaque full-screen quad reads 1, two stacked transparent quads read 2', async ({ forge }) => {
+test('measured overdraw: one opaque full-screen quad reads 1, two stacked transparent quads read 2', async ({
+  forge,
+}) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -25,17 +27,31 @@ test('measured overdraw: one opaque full-screen quad reads 1, two stacked transp
     const measured = await f.measureOverdraw(cam);
     await f.frameAsync();
     const frame = f.frame();
-    return { measured, frame: frame.overdraw, unattributed: frame.totals.unattributed, sceneSubmissions: frame.totals.sceneSubmissions };
+    return {
+      measured,
+      frame: frame.overdraw,
+      unattributed: frame.totals.unattributed,
+      sceneSubmissions: frame.totals.sceneSubmissions,
+    };
   });
   expect(r.measured.opaque).toBeCloseTo(1, 2);
   expect(r.measured.transparent).toBeCloseTo(2, 2);
-  expect(r.frame).toEqual({ opaque: r.measured.opaque, transparent: r.measured.transparent, transparentSubmissions: 2, particles: 0, pixels: 800 * 600, measured: true });
+  expect(r.frame).toEqual({
+    opaque: r.measured.opaque,
+    transparent: r.measured.transparent,
+    transparentSubmissions: 2,
+    particles: 0,
+    pixels: 800 * 600,
+    measured: true,
+  });
   // The measurement renders are not frames: the following real frame still attributes every draw.
   expect(r.unattributed).toBe(0);
   expect(r.sceneSubmissions).toBe(3);
 });
 
-test('the background never counts: a white colour, a white texture and a white background node still read 1 and 2', async ({ forge }) => {
+test('the background never counts: a white colour, a white texture and a white background node still read 1 and 2', async ({
+  forge,
+}) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -73,7 +89,9 @@ test('the background never counts: a white colour, a white texture and a white b
   expect(r.restored).toBe(true);
 });
 
-test('black instance and batch colours count like any other: an instanced quad reads 1, a two-quad batch reads 2', async ({ forge }) => {
+test('black instance and batch colours count like any other: an instanced quad reads 1, a two-quad batch reads 2', async ({
+  forge,
+}) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -118,9 +136,19 @@ test('map and alphaMap cutouts count only their kept texels: half-cut quads read
       t.needsUpdate = true;
       return t;
     };
-    const mapCut = new T.Mesh(plane, new T.MeshBasicMaterial({ map: halves([255, 255, 255, 0, 255, 255, 255, 255]), alphaTest: 0.5 }));
+    const mapCut = new T.Mesh(
+      plane,
+      new T.MeshBasicMaterial({ map: halves([255, 255, 255, 0, 255, 255, 255, 255]), alphaTest: 0.5 }),
+    );
     // alphaMap reads the green channel.
-    const alphaMapCut = new T.Mesh(plane, new T.MeshBasicMaterial({ alphaMap: halves([0, 0, 0, 255, 255, 255, 255, 255]), alphaTest: 0.5, transparent: true }));
+    const alphaMapCut = new T.Mesh(
+      plane,
+      new T.MeshBasicMaterial({
+        alphaMap: halves([0, 0, 0, 255, 255, 255, 255, 255]),
+        alphaTest: 0.5,
+        transparent: true,
+      }),
+    );
     alphaMapCut.position.z = 1;
     for (const m of [mapCut, alphaMapCut]) m.frustumCulled = false;
     f.scene.add(mapCut, alphaMapCut);
@@ -130,7 +158,9 @@ test('map and alphaMap cutouts count only their kept texels: half-cut quads read
   expect(r.transparent).toBeCloseTo(0.5, 2);
 });
 
-test('a closed box counts its front faces once: an opaque box and a transparent box filling the view read 1 each', async ({ forge }) => {
+test('a closed box counts its front faces once: an opaque box and a transparent box filling the view read 1 each', async ({
+  forge,
+}) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -148,7 +178,9 @@ test('a closed box counts its front faces once: an opaque box and a transparent 
   expect(r.transparent).toBeCloseTo(1, 2);
 });
 
-test('measuring while the app renders changes nothing: renders during the read-back see the app state, and the counts match a still measurement', async ({ forge }) => {
+test('measuring while the app renders changes nothing: renders during the read-back see the app state, and the counts match a still measurement', async ({
+  forge,
+}) => {
   await forge.open('empty', { animate: '1' });
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -167,7 +199,17 @@ test('measuring while the app renders changes nothing: renders during the read-b
     // What each app render (the harness camera: the animation loop and frame()) sees, compared with a render before any
     // measurement. The count renders use `cam` and are not recorded.
     const renderer = f.renderer;
-    const stateOf = () => [f.scene.overrideMaterial, f.scene.background, (f.scene as { backgroundNode?: unknown }).backgroundNode, renderer.getRenderTarget(), renderer.getRenderObjectFunction(), renderer.getMRT(), renderer.autoClear, renderer.opaque, renderer.transparent];
+    const stateOf = () => [
+      f.scene.overrideMaterial,
+      f.scene.background,
+      (f.scene as { backgroundNode?: unknown }).backgroundNode,
+      renderer.getRenderTarget(),
+      renderer.getRenderObjectFunction(),
+      renderer.getMRT(),
+      renderer.autoClear,
+      renderer.opaque,
+      renderer.transparent,
+    ];
     let baseline: unknown[] | null = null;
     let measuring = false;
     const during: boolean[] = [];
@@ -186,7 +228,13 @@ test('measuring while the app renders changes nothing: renders during the read-b
     await new Promise((resolve) => setTimeout(resolve, 100));
     renderer.setAnimationLoop(null);
     const still = await f.measureOverdraw(cam);
-    return { measured, still, during, sceneSubmissions: frame.totals.sceneSubmissions, unattributed: frame.totals.unattributed };
+    return {
+      measured,
+      still,
+      during,
+      sceneSubmissions: frame.totals.sceneSubmissions,
+      unattributed: frame.totals.unattributed,
+    };
   });
   expect(r.during.length).toBeGreaterThan(0);
   expect(r.during.every(Boolean)).toBe(true);
@@ -198,7 +246,9 @@ test('measuring while the app renders changes nothing: renders during the read-b
   expect(r.still.transparent).toBeCloseTo(2, 2);
 });
 
-test('occlusion proxies and batch colours leave the count alone: the compiled scene measures like the uncompiled one', async ({ forge }) => {
+test('occlusion proxies and batch colours leave the count alone: the compiled scene measures like the uncompiled one', async ({
+  forge,
+}) => {
   await forge.open('empty', { occlusion: '1' });
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -250,7 +300,9 @@ test('occlusion proxies and batch colours leave the count alone: the compiled sc
   expect(r.compiled.transparent).toBeCloseTo(r.naive.transparent, 2);
 });
 
-test('sprites count their billboards from a tilted view, and the compiled sprite batch counts the same: 16 sprites each an eighth of the view wide read 0.25', async ({ forge }) => {
+test('sprites count their billboards from a tilted view, and the compiled sprite batch counts the same: 16 sprites each an eighth of the view wide read 0.25', async ({
+  forge,
+}) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -281,7 +333,13 @@ test('sprites count their billboards from a tilted view, and the compiled sprite
     await f.frameAsync();
     const frame = f.frame();
     const compiled = { ortho: await f.measureOverdraw(ortho), perspective: await f.measureOverdraw(f.camera) };
-    return { naive, compiled, spriteBatches: report.after.spriteBatches, batchSubmissions: frame.byReason['sprite-batch']?.submissions ?? 0, sprites: frame.byReason.sprite?.submissions ?? 0 };
+    return {
+      naive,
+      compiled,
+      spriteBatches: report.after.spriteBatches,
+      batchSubmissions: frame.byReason['sprite-batch']?.submissions ?? 0,
+      sprites: frame.byReason.sprite?.submissions ?? 0,
+    };
   });
   expect(r.spriteBatches).toBe(1);
   expect([r.batchSubmissions, r.sprites]).toEqual([1, 0]);
@@ -289,10 +347,13 @@ test('sprites count their billboards from a tilted view, and the compiled sprite
   expect(r.compiled.ortho.transparent).toBeCloseTo(r.naive.ortho.transparent, 2);
   expect(r.naive.perspective.transparent).toBeGreaterThan(0.01);
   expect(r.compiled.perspective.transparent).toBeCloseTo(r.naive.perspective.transparent, 2);
-  for (const measured of [r.naive.ortho, r.naive.perspective, r.compiled.ortho, r.compiled.perspective]) expect(measured.opaque).toBeCloseTo(0, 2);
+  for (const measured of [r.naive.ortho, r.naive.perspective, r.compiled.ortho, r.compiled.perspective])
+    expect(measured.opaque).toBeCloseTo(0, 2);
 });
 
-test('node alpha counts too: a maskNode cutout and an opacityNode + alphaTestNode cutout each read 0.5', async ({ forge }) => {
+test('node alpha counts too: a maskNode cutout and an opacityNode + alphaTestNode cutout each read 0.5', async ({
+  forge,
+}) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;

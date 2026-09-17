@@ -1,4 +1,22 @@
-import { AmbientLight, Color, DataTexture, DirectionalLight, DodecahedronGeometry, Fog, HemisphereLight, Mesh, MeshStandardMaterial, PlaneGeometry, RepeatWrapping, RGBAFormat, Scene, Sprite, SpriteMaterial, TextureLoader, Vector3 } from 'three';
+import {
+  AmbientLight,
+  Color,
+  DataTexture,
+  DirectionalLight,
+  DodecahedronGeometry,
+  Fog,
+  HemisphereLight,
+  Mesh,
+  MeshStandardMaterial,
+  PlaneGeometry,
+  RepeatWrapping,
+  RGBAFormat,
+  Scene,
+  Sprite,
+  SpriteMaterial,
+  TextureLoader,
+  Vector3,
+} from 'three';
 import { tag } from 'threeforge';
 import { mulberry32 } from '../../scenes/naive.js';
 import type { BenchBuilder } from './index.js';
@@ -34,12 +52,21 @@ export const lake: BenchBuilder = async ({ camera, params, url }) => {
   const { WaterMesh } = await import('three/addons/objects/WaterMesh.js');
   const normals = await new TextureLoader().loadAsync(url('waternormals/waternormals.jpg'));
   normals.wrapS = normals.wrapT = RepeatWrapping;
-  const water = new WaterMesh(new PlaneGeometry(300, 300), { waterNormals: normals, sunDirection: new Vector3(0.3, 0.8, 0.5).normalize(), sunColor: 0xffffff, waterColor: 0x1f4c66, distortionScale: 2.5 });
+  const water = new WaterMesh(new PlaneGeometry(300, 300), {
+    waterNormals: normals,
+    sunDirection: new Vector3(0.3, 0.8, 0.5).normalize(),
+    sunColor: 0xffffff,
+    waterColor: 0x1f4c66,
+    distortionScale: 2.5,
+  });
   water.rotation.x = -Math.PI / 2;
   water.name = 'water';
   scene.add(water);
 
-  const ground = new Mesh(new PlaneGeometry(600, 600), new MeshStandardMaterial({ color: 0x3b4450, roughness: 0.25, metalness: 0 }));
+  const ground = new Mesh(
+    new PlaneGeometry(600, 600),
+    new MeshStandardMaterial({ color: 0x3b4450, roughness: 0.25, metalness: 0 }),
+  );
   ground.name = 'wet-ground';
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.5;

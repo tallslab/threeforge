@@ -81,7 +81,9 @@ export async function main(names = []) {
       files.push({ file: entry, bytes: first.bytes });
       if (entry.endsWith('.gltf')) {
         const json = JSON.parse(await readFile(entryPath, 'utf8'));
-        const uris = [...(json.buffers ?? []), ...(json.images ?? [])].map((x) => x.uri).filter((u) => u && !u.startsWith('data:'));
+        const uris = [...(json.buffers ?? []), ...(json.images ?? [])]
+          .map((x) => x.uri)
+          .filter((u) => u && !u.startsWith('data:'));
         for (const uri of uris) {
           const url = new URL(uri, asset.url).href;
           const local = safeLocalPath(dir, uri);
@@ -91,11 +93,24 @@ export async function main(names = []) {
       }
       const bytes = files.reduce((s, f) => s + f.bytes, 0);
       total += bytes;
-      index.push({ name: asset.name, entry: `${asset.name}/${entry}`, tags: asset.tags, source: asset.source, bytes, files: files.length });
+      index.push({
+        name: asset.name,
+        entry: `${asset.name}/${entry}`,
+        tags: asset.tags,
+        source: asset.source,
+        bytes,
+        files: files.length,
+      });
       console.log(`${asset.name.padEnd(34)} ${(bytes / 1e6).toFixed(2).padStart(7)} MB  ${files.length} file(s)`);
     } catch (error) {
       console.log(`${asset.name.padEnd(34)} FAILED ${error.message}`);
-      index.push({ name: asset.name, entry: `${asset.name}/${entry}`, tags: asset.tags, source: asset.source, error: error.message });
+      index.push({
+        name: asset.name,
+        entry: `${asset.name}/${entry}`,
+        tags: asset.tags,
+        source: asset.source,
+        error: error.message,
+      });
     }
   }
 
@@ -110,7 +125,9 @@ export async function main(names = []) {
   const indexPath = join(root, 'index.json');
   const written = only.size ? mergeIndex(await readIndex(indexPath), index) : index;
   await writeFile(indexPath, JSON.stringify(written, null, 2));
-  console.log(`\n${index.filter((a) => !a.error).length}/${index.length} assets ready, ${(total / 1e6).toFixed(1)} MB in ${root}`);
+  console.log(
+    `\n${index.filter((a) => !a.error).length}/${index.length} assets ready, ${(total / 1e6).toFixed(1)} MB in ${root}`,
+  );
   if (only.size) console.log(`index.json: ${written.length} entries (merged)`);
   return index;
 }

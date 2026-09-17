@@ -9,7 +9,10 @@ export interface CreateLoaderOptions {
   meshopt?: boolean;
 }
 
-type LoaderRenderer = Parameters<KTX2Loader['detectSupport']>[0] & { isWebGPURenderer?: boolean; init?(): Promise<unknown> };
+type LoaderRenderer = Parameters<KTX2Loader['detectSupport']>[0] & {
+  isWebGPURenderer?: boolean;
+  init?(): Promise<unknown>;
+};
 
 /** Where the Draco decoder and the Basis transcoder are served: `<base>/draco/` and `<base>/basis/` unless given explicitly. */
 export function decoderPaths(decoders: CreateLoaderOptions['decoders']): { draco: string; basis: string } {

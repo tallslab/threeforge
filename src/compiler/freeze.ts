@@ -10,7 +10,17 @@ export interface FreezeInput {
   animated: Set<Object3D>;
 }
 
-type Kinded = Object3D & { isMesh?: boolean; isSkinnedMesh?: boolean; isLight?: boolean; isCamera?: boolean; isBone?: boolean; isSprite?: boolean; isPoints?: boolean; isLine?: boolean; isScene?: boolean };
+type Kinded = Object3D & {
+  isMesh?: boolean;
+  isSkinnedMesh?: boolean;
+  isLight?: boolean;
+  isCamera?: boolean;
+  isBone?: boolean;
+  isSprite?: boolean;
+  isPoints?: boolean;
+  isLine?: boolean;
+  isScene?: boolean;
+};
 
 /** A node that only ever holds other nodes: Group, Object3D, LOD roots without their own draw. */
 function isContainer(o: Kinded): boolean {
@@ -36,7 +46,8 @@ interface Probe {
  */
 export function freezableObjects(scene: Scene, input: FreezeInput): Object3D[] {
   const out: Object3D[] = [];
-  const isStaticMesh = (o: Kinded): boolean => Boolean(o.isMesh) && !o.isSkinnedMesh && tag.of(o) === 'static' && !input.animated.has(o) && !input.synced.has(o);
+  const isStaticMesh = (o: Kinded): boolean =>
+    Boolean(o.isMesh) && !o.isSkinnedMesh && tag.of(o) === 'static' && !input.animated.has(o) && !input.synced.has(o);
   // Folds `o`'s children's probes into one; `ownLeaf` says whether `o` itself is a leaf (a static mesh or a hidden
   // original) rather than a plain container.
   const foldChildren = (o: Kinded, ownLeaf: boolean): Probe => {

@@ -1,28 +1,28 @@
 import {
   BatchedMesh,
+  type BufferGeometry,
   Color,
+  type CoordinateSystem,
   DoubleSide,
+  type InstancedMesh,
   LessEqualDepth,
   Material,
   Matrix4,
   Mesh,
   NoBlending,
   NormalBlending,
-  WebGLCoordinateSystem,
-  type BufferGeometry,
-  type CoordinateSystem,
-  type InstancedMesh,
   type Scene,
+  WebGLCoordinateSystem,
 } from 'three';
 import { NodeMaterial } from 'three/webgpu';
-import { bakeGeometries, unbakeableAttribute, type BakeEntry, type BakeOptions, type BakeReport } from './bake.js';
-import { createCulledInstancedMesh } from './instancing.js';
-import type { NestedPassPolicy } from './culling.js';
-import type { PassTracker } from './passTracker.js';
 import { lodsOf } from '../lod/generateLods.js';
-import type { MaterialRegistry } from '../registry/MaterialRegistry.js';
 import { isBuiltInMaterial } from '../registry/builtInMaterials.js';
+import type { MaterialRegistry } from '../registry/MaterialRegistry.js';
+import { type BakeEntry, type BakeOptions, type BakeReport, bakeGeometries, unbakeableAttribute } from './bake.js';
+import type { NestedPassPolicy } from './culling.js';
 import { attributeSignature, ensureIndexed } from './geometryCompat.js';
+import { createCulledInstancedMesh } from './instancing.js';
+import type { PassTracker } from './passTracker.js';
 import { SceneSpace } from './space.js';
 
 /** Where an original mesh went: a BatchedMesh instance id, an InstancedMesh master index, or a baked mesh's entry index. */
@@ -137,7 +137,12 @@ const _local = new Matrix4();
  * One BatchedMesh per (material variant, geometry attribute signature, shadow flags). Colour is per instance,
  * so materials that differ only by `color` share a batch. Originals are not modified here.
  */
-export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene: Scene, options: BatchOptions = {}): BatchResult {
+export function batchStatics(
+  statics: Mesh[],
+  registry: MaterialRegistry,
+  scene: Scene,
+  options: BatchOptions = {},
+): BatchResult {
   const instanceThreshold = options.instanceThreshold ?? 64;
   const coordinateSystem = options.coordinateSystem ?? WebGLCoordinateSystem;
   const chunkSize = options.chunkSize;
@@ -155,11 +160,26 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
     }
     const key = `${keys.variantKey}|${attributeSignature(mesh.geometry)}|${mesh.castShadow ? 1 : 0}${mesh.receiveShadow ? 1 : 0}|${chunk ? chunk.join(',') : ''}`;
     let group = groups.get(key);
-    if (!group) groups.set(key, (group = { canonical, meshes: [], castShadow: mesh.castShadow, receiveShadow: mesh.receiveShadow, chunk }));
+    if (!group)
+      groups.set(
+        key,
+        (group = { canonical, meshes: [], castShadow: mesh.castShadow, receiveShadow: mesh.receiveShadow, chunk }),
+      );
     group.meshes.push(mesh);
   }
 
-  const result: BatchResult = { batches: [], instanced: [], baked: [], groups: [], slots: new Map(), originals: new Map(), singletons: [], transparentKept: [], lodGeometryIds: new Map(), unbakeable: 0 };
+  const result: BatchResult = {
+    batches: [],
+    instanced: [],
+    baked: [],
+    groups: [],
+    slots: new Map(),
+    originals: new Map(),
+    singletons: [],
+    transparentKept: [],
+    lodGeometryIds: new Map(),
+    unbakeable: 0,
+  };
   const perProgramBaked = new Map<string, number>();
   const perProgram = new Map<string, number>();
   const perProgramInstanced = new Map<string, number>();
@@ -197,9 +217,12 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
           continue;
         }
         const { material, perInstanceColor } = batchMaterial();
-        if (material !== group.canonical) material.name = `${group.canonical.name || group.canonical.type} (forge instanced)`;
+        if (material !== group.canonical)
+          material.name = `${group.canonical.name || group.canonical.type} (forge instanced)`;
         // The level meshes are children of the scene: scene-space masters (an untransformed scene passes the world matrices).
-        const matrices = space.update() ? meshes.map((m) => m.matrixWorld) : meshes.map((m) => space.toLocal(m.matrixWorld, new Matrix4()));
+        const matrices = space.update()
+          ? meshes.map((m) => m.matrixWorld)
+          : meshes.map((m) => space.toLocal(m.matrixWorld, new Matrix4()));
         const colors = perInstanceColor ? meshes.map((m) => (m.material as Material & { color: Color }).color) : null;
         const lods = lodDistances ? lodsOf(geometry) : [];
         const instanced = createCulledInstancedMesh(geometry, material, matrices, colors, coordinateSystem, {
@@ -210,7 +233,8 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
         const index = perProgramInstanced.get(programHash) ?? 0;
         perProgramInstanced.set(programHash, index + 1);
         instanced.levels.forEach((level, L) => {
-          level.name = L === 0 ? `forge:instanced:${programHash}:${index}` : `forge:instanced:${programHash}:${index}:lod${L}`;
+          level.name =
+            L === 0 ? `forge:instanced:${programHash}:${index}` : `forge:instanced:${programHash}:${index}:lod${L}`;
           level.userData.forgeChunk = group.chunk;
           level.castShadow = group.castShadow;
           level.receiveShadow = group.receiveShadow;
@@ -255,8 +279,11 @@ export function batchStatics(statics: Mesh[], registry: MaterialRegistry, scene:
     // Otherwise it is batched: BatchedMesh keeps each geometry, in its own space, with every attribute. Counted, since
     // `bake` asked for it.
     const provenReads = bakeProvesReads(group.canonical);
-    const bakeable = provenReads && !group.meshes.some((m) => unbakeableAttribute(m.geometry, group.canonical.vertexColors, provenReads) !== null);
-    if (options.bake && !bakeable && !group.meshes.some((m) => options.noBake?.has(m))) result.unbakeable += group.meshes.length;
+    const bakeable =
+      provenReads &&
+      !group.meshes.some((m) => unbakeableAttribute(m.geometry, group.canonical.vertexColors, provenReads) !== null);
+    if (options.bake && !bakeable && !group.meshes.some((m) => options.noBake?.has(m)))
+      result.unbakeable += group.meshes.length;
     if (options.bake && bakeable && !group.meshes.some((m) => options.noBake?.has(m))) {
       const index = perProgramBaked.get(programHash) ?? 0;
       perProgramBaked.set(programHash, index + 1);
@@ -413,15 +440,21 @@ export function cloneMaterial<T extends Material>(source: T): T {
   for (const key of Object.getOwnPropertyNames(source)) {
     if (typeof from[key] === 'function') to[key] = from[key];
   }
-  if (Object.prototype.hasOwnProperty.call(source, 'defines')) {
+  if (Object.hasOwn(source, 'defines')) {
     const defines = from.defines;
-    to.defines = defines !== null && typeof defines === 'object' ? { ...(defines as Record<string, unknown>) } : defines;
+    to.defines =
+      defines !== null && typeof defines === 'object' ? { ...(defines as Record<string, unknown>) } : defines;
   }
-  for (let proto = Object.getPrototypeOf(source) as object | null; proto && proto !== Object.prototype; proto = Object.getPrototypeOf(proto) as object | null) {
+  for (
+    let proto = Object.getPrototypeOf(source) as object | null;
+    proto && proto !== Object.prototype;
+    proto = Object.getPrototypeOf(proto) as object | null
+  ) {
     for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(proto))) {
       if (!descriptor.get || !descriptor.set || key === 'type') continue;
       const value = from[key];
-      if ((typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') && to[key] !== value) to[key] = value;
+      if ((typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') && to[key] !== value)
+        to[key] = value;
     }
   }
   for (const key of Object.keys(source)) {
@@ -459,13 +492,23 @@ function hasNoNodes(material: Material): boolean {
  * `BakeEntry.side` and `BakeEntry.castShadow`; renderer-level clipping planes are outside what a material shows.
  */
 function isOpaque(material: Material): boolean {
-  const m = material as Material & { transmission?: number; displacementMap?: unknown; wireframe?: boolean; isShaderMaterial?: boolean; isNodeMaterial?: boolean; defines?: Record<string, unknown> | null };
+  const m = material as Material & {
+    transmission?: number;
+    displacementMap?: unknown;
+    wireframe?: boolean;
+    isShaderMaterial?: boolean;
+    isNodeMaterial?: boolean;
+    defines?: Record<string, unknown> | null;
+  };
   if (!isBuiltInMaterial(m) || hasOwnFunctions(m)) return false;
-  if (m.transparent || !(m.blending === NormalBlending || m.blending === NoBlending) || (m.transmission ?? 0) > 0) return false;
-  if (m.alphaTest > 0 || m.alphaHash || m.alphaToCoverage || m.isShaderMaterial === true || !hasNoNodes(m)) return false;
+  if (m.transparent || !(m.blending === NormalBlending || m.blending === NoBlending) || (m.transmission ?? 0) > 0)
+    return false;
+  if (m.alphaTest > 0 || m.alphaHash || m.alphaToCoverage || m.isShaderMaterial === true || !hasNoNodes(m))
+    return false;
   if ((m.clippingPlanes?.length ?? 0) > 0 || m.stencilWrite) return false;
   if (m.onBeforeCompile !== Material.prototype.onBeforeCompile) return false;
-  const ownCacheKey = m.isNodeMaterial === true ? NodeMaterial.prototype.customProgramCacheKey : Material.prototype.customProgramCacheKey;
+  const ownCacheKey =
+    m.isNodeMaterial === true ? NodeMaterial.prototype.customProgramCacheKey : Material.prototype.customProgramCacheKey;
   if (m.customProgramCacheKey !== ownCacheKey) return false;
   if (m.defines && Object.keys(m.defines).some((key) => !MATERIAL_DEFINES.has(key))) return false;
   if ((m.displacementMap ?? null) !== null || m.polygonOffset || m.wireframe === true) return false;
@@ -492,7 +535,12 @@ export interface BakeEntriesOptions {
  * a rebake passes the baked mesh's `castShadow`, which is what the shadow pass draws by (the hidden originals draw
  * nothing), so originals that stop casting after compile never let a rebake remove seams from a mesh that still casts.
  */
-export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Material, options: BakeEntriesOptions = {}): BakeEntry[] {
+export function bakeEntriesOf(
+  meshes: Mesh[],
+  hidden: Set<Mesh>,
+  material: Material,
+  options: BakeEntriesOptions = {},
+): BakeEntry[] {
   const { space, vertexColors = material.vertexColors, opaqueAtBake = true, alsoCasts = false } = options;
   const local = space !== undefined && !space.update();
   const opaque = opaqueAtBake && isOpaque(material);
@@ -511,11 +559,22 @@ export function bakeEntriesOf(meshes: Mesh[], hidden: Set<Mesh>, material: Mater
     }));
 }
 
-function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, name: string, space: SceneSpace): BakedGroup {
+function bakeGroup(
+  group: Group,
+  options: BakeOptions,
+  shareCanonical: boolean,
+  name: string,
+  space: SceneSpace,
+): BakedGroup {
   const canonical = group.canonical;
   const vertexColors = canonical.vertexColors;
   const opaque = isOpaque(canonical);
-  const entries = bakeEntriesOf(group.meshes, new Set(), canonical, { space, vertexColors, opaqueAtBake: opaque, alsoCasts: group.castShadow });
+  const entries = bakeEntriesOf(group.meshes, new Set(), canonical, {
+    space,
+    vertexColors,
+    opaqueAtBake: opaque,
+    alsoCasts: group.castShadow,
+  });
   const result = bakeGeometries(entries, options);
   // Instance tints become vertex colours: the material then needs vertexColors and a white base colour.
   let material: Material = canonical;
@@ -534,7 +593,19 @@ function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, 
   mesh.castShadow = group.castShadow;
   mesh.receiveShadow = group.receiveShadow;
   mesh.matrixAutoUpdate = false;
-  const baked: BakedGroup = { mesh, entries: group.meshes, hidden: new Set(), options, ownsMaterial, report: result.report, triangleOrigins: result.triangleOrigins, removed: result.removed, space, vertexColors, opaque };
+  const baked: BakedGroup = {
+    mesh,
+    entries: group.meshes,
+    hidden: new Set(),
+    options,
+    ownsMaterial,
+    report: result.report,
+    triangleOrigins: result.triangleOrigins,
+    removed: result.removed,
+    space,
+    vertexColors,
+    opaque,
+  };
   mesh.userData.forge = { kind: 'bake', report: result.report, triangleOrigins: result.triangleOrigins };
   return baked;
 }
@@ -543,7 +614,12 @@ function bakeGroup(group: Group, options: BakeOptions, shareCanonical: boolean, 
 export function rebake(group: BakedGroup): void {
   const material = group.mesh.material as Material;
   const entriesVisible = group.entries.filter((m) => !group.hidden.has(m));
-  const entries = bakeEntriesOf(entriesVisible, new Set(), material, { space: group.space, vertexColors: group.vertexColors, opaqueAtBake: group.opaque, alsoCasts: group.mesh.castShadow });
+  const entries = bakeEntriesOf(entriesVisible, new Set(), material, {
+    space: group.space,
+    vertexColors: group.vertexColors,
+    opaqueAtBake: group.opaque,
+    alsoCasts: group.mesh.castShadow,
+  });
   const result = bakeGeometries(entries, group.options);
   group.mesh.geometry.dispose();
   group.removed.dispose();

@@ -20,7 +20,9 @@ import { fileURLToPath } from 'node:url';
 
 if (typeof globalThis.gc !== 'function') {
   const flags = ['--expose-gc', '--min-semi-space-size=512', '--max-semi-space-size=512'];
-  const run = spawnSync(process.execPath, [...flags, fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
+  const run = spawnSync(process.execPath, [...flags, fileURLToPath(import.meta.url), ...process.argv.slice(2)], {
+    stdio: 'inherit',
+  });
   process.exit(run.status ?? 1);
 }
 
@@ -32,9 +34,13 @@ if (!existsSync(fileURLToPath(dist('ledger/DrawCallLedger.js')))) {
 const { DrawCallLedger } = await import(dist('ledger/DrawCallLedger.js').href);
 const { MaterialRegistry } = await import(dist('registry/MaterialRegistry.js').href);
 const { tag } = await import(dist('tags.js').href);
-const { BoxGeometry, Color, DirectionalLight, Group, Mesh, MeshStandardMaterial, PerspectiveCamera, REVISION, Scene } = await import('three');
+const { BoxGeometry, Color, DirectionalLight, Group, Mesh, MeshStandardMaterial, PerspectiveCamera, REVISION, Scene } =
+  await import('three');
 
-const counts = process.argv.slice(2).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+const counts = process.argv
+  .slice(2)
+  .map(Number)
+  .filter((n) => Number.isInteger(n) && n > 0);
 const SUBMISSIONS = counts.length > 0 ? counts : [2000, 10000, 20000];
 const MATERIALS = 16;
 const ROUNDS = 9;
@@ -81,7 +87,8 @@ function buildScene(shape, submissions) {
   scene.add(sun);
   const geometry = new BoxGeometry(1, 1, 1);
   const materials = [];
-  for (let i = 0; i < MATERIALS; i++) materials.push(new MeshStandardMaterial({ color: new Color().setHSL(i / MATERIALS, 0.5, 0.5) }));
+  for (let i = 0; i < MATERIALS; i++)
+    materials.push(new MeshStandardMaterial({ color: new Color().setHSL(i / MATERIALS, 0.5, 0.5) }));
   const list = [];
   let zone = null;
   let group = null;
@@ -106,7 +113,8 @@ function buildScene(shape, submissions) {
     list.push(mesh);
   }
   scene.updateMatrixWorld(true);
-  const shadow = shape === 'shadow' ? { camera: sun.shadow.camera, list: list.filter((mesh) => mesh.castShadow) } : null;
+  const shadow =
+    shape === 'shadow' ? { camera: sun.shadow.camera, list: list.filter((mesh) => mesh.castShadow) } : null;
   return { scene, camera, materials, list, shadow };
 }
 
@@ -166,19 +174,32 @@ function measure(shape, submissions) {
   // The shadow scene submits its casters again in the map's pass; µs is per submission the frame actually made.
   const expected = submissions + (shadow === null ? 0 : shadow.list.length);
   const snapshot = ledger.frame();
-  if (snapshot.totals.submissions !== expected) throw new Error(`expected ${expected} submissions, the ledger saw ${snapshot.totals.submissions}`);
+  if (snapshot.totals.submissions !== expected)
+    throw new Error(`expected ${expected} submissions, the ledger saw ${snapshot.totals.submissions}`);
   ledger.detach();
-  return { shape, submissions: expected, usPerSubmission: (best * 1000) / expected, bytesPerFrame: ledgerBytes - bareBytes, rescanMs };
+  return {
+    shape,
+    submissions: expected,
+    usPerSubmission: (best * 1000) / expected,
+    bytesPerFrame: ledgerBytes - bareBytes,
+    rescanMs,
+  };
 }
 
 const pad = (value, width) => String(value).padStart(width);
-console.log(`threeforge ledger overhead: node ${process.version}, three r${REVISION} (not a gate; compare runs on one machine)`);
-console.log(`${'scene'.padEnd(7)} ${pad('submissions', 11)} ${pad('µs/submission', 13)} ${pad('bytes/frame', 12)} ${pad('MB/frame', 8)} ${pad('rescan ms', 9)}`);
+console.log(
+  `threeforge ledger overhead: node ${process.version}, three r${REVISION} (not a gate; compare runs on one machine)`,
+);
+console.log(
+  `${'scene'.padEnd(7)} ${pad('submissions', 11)} ${pad('µs/submission', 13)} ${pad('bytes/frame', 12)} ${pad('MB/frame', 8)} ${pad('rescan ms', 9)}`,
+);
 for (const shape of ['flat', 'nested', 'shadow']) {
   for (const n of SUBMISSIONS) {
     const r = measure(shape, n);
     const bytes = Math.max(0, Math.round(r.bytesPerFrame));
-    console.log(`${shape.padEnd(7)} ${pad(r.submissions, 11)} ${pad(r.usPerSubmission.toFixed(2), 13)} ${pad(bytes, 12)} ${pad((bytes / 1e6).toFixed(2), 8)} ${pad(r.rescanMs.toFixed(1), 9)}`);
+    console.log(
+      `${shape.padEnd(7)} ${pad(r.submissions, 11)} ${pad(r.usPerSubmission.toFixed(2), 13)} ${pad(bytes, 12)} ${pad((bytes / 1e6).toFixed(2), 8)} ${pad(r.rescanMs.toFixed(1), 9)}`,
+    );
   }
 }
 // Only this run's own figures and the fixed targets: an older release's numbers came from another machine and run, and

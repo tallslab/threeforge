@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { BoxGeometry, ConeGeometry, SphereGeometry } from 'three';
+import { describe, expect, it } from 'vitest';
 import { generateLods } from '../../src/lod/generateLods.js';
 
 describe('generateLods on the field geometries', () => {

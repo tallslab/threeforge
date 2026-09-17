@@ -15,11 +15,15 @@
  * plain loop instead of `Object3D.traverse`.
  */
 import { readdirSync, readFileSync } from 'node:fs';
-import { describe, expect, it, vi } from 'vitest';
 import {
   BoxGeometry,
+  type BufferGeometry,
+  type Camera,
+  type CoordinateSystem,
   DirectionalLight,
   Group,
+  type Light,
+  type Material,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -29,12 +33,8 @@ import {
   Scene,
   WebGLCoordinateSystem,
   WebGPUCoordinateSystem,
-  type BufferGeometry,
-  type Camera,
-  type CoordinateSystem,
-  type Light,
-  type Material,
 } from 'three';
+import { describe, expect, it, vi } from 'vitest';
 import { World } from '../../src/compiler/World.js';
 import { DrawCallLedger, type LedgerRenderer } from '../../src/ledger/DrawCallLedger.js';
 import { displayName, flagsInto, reasonOf } from '../../src/ledger/reasons.js';
@@ -157,7 +157,9 @@ function countIndexOf(arrays: Set<unknown>, run: () => void): number {
 describe('DrawCallLedger material hashes', () => {
   it('reads the registry at most once per unique material in a frame, however the materials interleave, and never calls describe()', () => {
     const registry = new MaterialRegistry();
-    const materials = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00].map((color) => registry.register(new MeshStandardMaterial({ color })));
+    const materials = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00].map((color) =>
+      registry.register(new MeshStandardMaterial({ color })),
+    );
     const { scene, camera } = sceneWithCamera();
     for (let i = 0; i < 40; i++) scene.add(tag.static(new Mesh(box, materials[i % 4]!)));
     const renderer = new ListRenderer();
@@ -219,8 +221,16 @@ describe('DrawCallLedger material hashes', () => {
     expect(d3.programHash).not.toBe(d2.programHash);
     expect(hashes()).toEqual([d2.programHash, d2.programHash, d3.programHash, d3.programHash]);
     const programs = ledger.frame().programs;
-    expect(programs[d2.programHash]).toEqual({ type: 'MeshStandardMaterial', description: d2.description, submissions: 2 });
-    expect(programs[d3.programHash]).toEqual({ type: 'MeshStandardMaterial', description: d3.description, submissions: 2 });
+    expect(programs[d2.programHash]).toEqual({
+      type: 'MeshStandardMaterial',
+      description: d2.description,
+      submissions: 2,
+    });
+    expect(programs[d3.programHash]).toEqual({
+      type: 'MeshStandardMaterial',
+      description: d3.description,
+      submissions: 2,
+    });
   });
 });
 
@@ -280,7 +290,13 @@ describe('DrawCallLedger scene walks', () => {
     named.name = 'crate';
     const loose = new Group();
     loose.add(tag.static(new Mesh(box, new MeshBasicMaterial())));
-    scene.add(new Mesh(box, new MeshBasicMaterial()), named, zone, loose, tag.static(new Mesh(box, new MeshBasicMaterial())));
+    scene.add(
+      new Mesh(box, new MeshBasicMaterial()),
+      named,
+      zone,
+      loose,
+      tag.static(new Mesh(box, new MeshBasicMaterial())),
+    );
     const renderer = new ListRenderer();
     const ledger = new DrawCallLedger();
     ledger.attach(renderer);
@@ -295,12 +311,24 @@ describe('DrawCallLedger scene walks', () => {
 
     expect(calls).toBe(0);
     const names = ledger.frame({ items: true }).items!.map((i) => i.name);
-    expect(names).toEqual(['Mesh[1]', 'crate', 'zone/Mesh[0]', 'zone/Group[1]/Mesh[0]', 'zone/Group[1]/Mesh[1]', 'Group[4]/Mesh[0]', 'Mesh[5]']);
+    expect(names).toEqual([
+      'Mesh[1]',
+      'crate',
+      'zone/Mesh[0]',
+      'zone/Group[1]/Mesh[0]',
+      'zone/Group[1]/Mesh[1]',
+      'Group[4]/Mesh[0]',
+      'Mesh[5]',
+    ]);
     // The reference, outside the counted calls (displayName() itself uses indexOf).
     renderer.expectNames = true;
     renderer.render(scene, camera);
     expect(renderer.expectedNames).toEqual(names);
-    expect(ledger.frame().hints.find((h) => h.code === 'static-auto-update')?.objects).toEqual(['zone/Group[1]/Mesh[1]', 'Group[4]/Mesh[0]', 'Mesh[5]']);
+    expect(ledger.frame().hints.find((h) => h.code === 'static-auto-update')?.objects).toEqual([
+      'zone/Group[1]/Mesh[1]',
+      'Group[4]/Mesh[0]',
+      'Mesh[5]',
+    ]);
   });
 
   it('keeps names current through renames, sibling reorders, reparenting, removal and mutations inside a frame', () => {
@@ -370,7 +398,9 @@ describe('DrawCallLedger scene walks', () => {
     const quad = new Mesh(box, material);
     renderer.expectedNames = [];
     renderer.render(quad as unknown as Scene, camera);
-    expect(ledger.frame({ items: true }).items!.map((i) => ({ name: i.name, reason: i.reason, pass: i.pass }))).toEqual([{ name: '', reason: 'fullscreen-pass', pass: 'fullscreen' }]);
+    expect(ledger.frame({ items: true }).items!.map((i) => ({ name: i.name, reason: i.reason, pass: i.pass }))).toEqual(
+      [{ name: '', reason: 'fullscreen-pass', pass: 'fullscreen' }],
+    );
   });
 });
 
@@ -408,7 +438,9 @@ describe('DrawCallLedger shadow passes on the hot path', () => {
 
   it('reads the registry at most once per unique material in a frame whose shadow maps render as nested passes', () => {
     const registry = new MaterialRegistry();
-    const materials = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00].map((color) => registry.register(new MeshStandardMaterial({ color })));
+    const materials = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00].map((color) =>
+      registry.register(new MeshStandardMaterial({ color })),
+    );
     const { scene, camera } = sceneWithCamera();
     const lights = [shadowLight('sun'), shadowLight('lamp')];
     scene.add(...lights);
@@ -437,7 +469,9 @@ describe('DrawCallLedger shadow passes on the hot path', () => {
 
   it('resolves a drawn material to its registry canonical at most once per unique material, across the passes of a frame', () => {
     const registry = new MaterialRegistry();
-    const materials = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00].map((color) => registry.register(new MeshStandardMaterial({ color })));
+    const materials = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00].map((color) =>
+      registry.register(new MeshStandardMaterial({ color })),
+    );
     const { scene, camera } = sceneWithCamera();
     const lights = [shadowLight('sun'), shadowLight('lamp')];
     scene.add(...lights);
@@ -468,7 +502,9 @@ describe('DrawCallLedger cost per submission', () => {
   /** Milliseconds per submission of an attached frame (ledger plus ListRenderer), best of 7, over n unnamed meshes directly under the scene. */
   function msPerSubmission(n: number): number {
     const registry = new MaterialRegistry();
-    const materials = Array.from({ length: 16 }, (_, i) => registry.register(new MeshStandardMaterial({ color: i * 0x0f0f0f })));
+    const materials = Array.from({ length: 16 }, (_, i) =>
+      registry.register(new MeshStandardMaterial({ color: i * 0x0f0f0f })),
+    );
     const { scene, camera } = sceneWithCamera();
     for (let i = 0; i < n; i++) {
       const mesh = new Mesh(box, materials[i % 16]!);
@@ -559,12 +595,19 @@ const RECORD_WALK_SITES: Record<string, number> = {
 
 describe('DrawCallLedger per-frame allocations', () => {
   it('walks the per-frame submission records with no iterator protocol anywhere under src/ledger/', () => {
-    const files = (readdirSync('src/ledger', { recursive: true }) as string[]).filter((f) => f.endsWith('.ts')).map((f) => `src/ledger/${f}`);
+    const files = (readdirSync('src/ledger', { recursive: true }) as string[])
+      .filter((f) => f.endsWith('.ts'))
+      .map((f) => `src/ledger/${f}`);
     expect(files.length, 'the scan found the ledger sources').toBeGreaterThan(0);
     for (const file of files) {
       const hit = readFileSync(file, 'utf8').match(ITERATOR_WALK);
       // soft: name every offending file in one run instead of stopping at the first.
-      expect.soft(hit?.[0], `${file}: an iterator-protocol walk of the records allocates one iterator result per submission per frame`).toBeUndefined();
+      expect
+        .soft(
+          hit?.[0],
+          `${file}: an iterator-protocol walk of the records allocates one iterator result per submission per frame`,
+        )
+        .toBeUndefined();
     }
   });
 
@@ -583,14 +626,23 @@ describe('DrawCallLedger per-frame allocations', () => {
       'const names = new Set(ctx.items);',
     ];
     for (const code of walks) expect(ITERATOR_WALK.test(code), code).toBe(true);
-    const indexed = ['for (let k = 0; k < items.length; k++) {', 'items.map((i) => i.name)', 'items.forEach((i) => count(i))', 'for (const light of lights) {', 'for (const { pass } of passes) {', 'Array.from(itemsByName)'];
+    const indexed = [
+      'for (let k = 0; k < items.length; k++) {',
+      'items.map((i) => i.name)',
+      'items.forEach((i) => count(i))',
+      'for (const light of lights) {',
+      'for (const { pass } of passes) {',
+      'Array.from(itemsByName)',
+    ];
     for (const code of indexed) expect(ITERATOR_WALK.test(code), code).toBe(false);
   });
 
   it('keeps every known walk of the records an index loop', () => {
     for (const [file, sites] of Object.entries(RECORD_WALK_SITES)) {
       const loops = readFileSync(file, 'utf8').match(INDEX_WALK)?.length ?? 0;
-      expect.soft(loops, `${file}: index loops over the record array (see scripts/ledger-overhead.mjs)`).toBeGreaterThanOrEqual(sites);
+      expect
+        .soft(loops, `${file}: index loops over the record array (see scripts/ledger-overhead.mjs)`)
+        .toBeGreaterThanOrEqual(sites);
     }
   });
 });
@@ -608,7 +660,7 @@ describe('flagsInto', () => {
     return { flags, writes: () => writes };
   };
 
-  it('rewrites a pooled record\'s flags in place, writing nothing when they are unchanged: no length = 0 per submission per frame', () => {
+  it("rewrites a pooled record's flags in place, writing nothing when they are unchanged: no length = 0 per submission per frame", () => {
     // V8 releases an array's backing store when its length is set to 0, so resetting a flagged record's array and pushing
     // its flags again allocated a new store for every flagged submission of every frame (~40 bytes per submission at the
     // ledger-overhead scenes, where a quarter of the meshes cast shadows and every shadow-pass record is flagged).
@@ -641,7 +693,8 @@ describe('reasonOf', () => {
     const mesh = new Mesh(box, material);
     group.add(mesh);
     scene.add(group);
-    const reason = (object: Object3D, root: Object3D = scene): string => reasonOf(object, material, null, root, false, undefined);
+    const reason = (object: Object3D, root: Object3D = scene): string =>
+      reasonOf(object, material, null, root, false, undefined);
 
     expect(reason(mesh)).toBe('untagged');
     tag.dynamic(holder);
@@ -862,7 +915,13 @@ describe('DrawCallLedger reads draw state after renderObject returns', () => {
       const ledger = new DrawCallLedger();
       const world = new World(scene, { instanceThreshold: 1000, ledger });
       world.compile({ coordinateSystem: cs });
-      const renderer = new FakeRenderer({ webgpu, sceneHooks: true, shadowTrigger: 'first-receiver', record: true, shadowLights: [light] });
+      const renderer = new FakeRenderer({
+        webgpu,
+        sceneHooks: true,
+        shadowTrigger: 'first-receiver',
+        record: true,
+        shadowLights: [light],
+      });
       ledger.attach(renderer as never);
       renderer.render(scene, mainCamera(cs));
       // The camera moves to the end of the rows, where fewer cubes are in view: a count read before a draw would still
@@ -880,14 +939,28 @@ describe('DrawCallLedger reads draw state after renderObject returns', () => {
       // slots) -- not the backend's draw count: `expectedGpuDraws` is pinned per item by BATCHES below, and pinning
       // it again against `d.drawCalls` restated the same numbers in backend terms.
       for (const kind of ['render', 'shadow'] as const) {
-        const draws = renderer.passes.filter((p) => p.kind === kind).flatMap((p) => p.draws.filter((d) => isBatch(d.object)));
-        const batchItems = items.filter((i) => i.kind === 'batched' && i.pass.startsWith('shadow:') === (kind === 'shadow'));
+        const draws = renderer.passes
+          .filter((p) => p.kind === kind)
+          .flatMap((p) => p.draws.filter((d) => isBatch(d.object)));
+        const batchItems = items.filter(
+          (i) => i.kind === 'batched' && i.pass.startsWith('shadow:') === (kind === 'shadow'),
+        );
         expect(draws.length, `${backend} ${kind}: batch draws`).toBe(2);
-        expect(batchItems.map((i) => i.instancesDrawn), `${backend} ${kind}: instances drawn`).toEqual(draws.map((d) => d.batchIds!.length));
+        expect(
+          batchItems.map((i) => i.instancesDrawn),
+          `${backend} ${kind}: instances drawn`,
+        ).toEqual(draws.map((d) => d.batchIds!.length));
       }
       const observed: NestedObservation = {
         passes: frame.passes,
-        batches: items.filter((i) => i.kind === 'batched').map(({ pass, instances, instancesDrawn, expectedGpuDraws }) => ({ pass, instances, instancesDrawn, expectedGpuDraws })),
+        batches: items
+          .filter((i) => i.kind === 'batched')
+          .map(({ pass, instances, instancesDrawn, expectedGpuDraws }) => ({
+            pass,
+            instances,
+            instancesDrawn,
+            expectedGpuDraws,
+          })),
       };
       expect(observed).toEqual(NESTED_EXPECTED[backend]);
     });

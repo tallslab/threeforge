@@ -1,5 +1,15 @@
+import {
+  type BatchedMesh,
+  BoxGeometry,
+  type InstancedMesh,
+  Matrix4,
+  Mesh,
+  MeshStandardMaterial,
+  PerspectiveCamera,
+  Scene,
+  WebGLCoordinateSystem,
+} from 'three';
 import { describe, expect, it } from 'vitest';
-import { BatchedMesh, BoxGeometry, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Scene, WebGLCoordinateSystem } from 'three';
 import { FORGE_HIDDEN_LAYER, World } from '../../src/compiler/World.js';
 import { tag } from '../../src/tags.js';
 
@@ -18,14 +28,23 @@ function sceneWithDynamics() {
   const mover = tag.dynamic(new Mesh(box, solid(0xff0000)));
   mover.name = 'mover';
   mover.position.set(0, 0, 5);
-  const lonely = tag.dynamic(new Mesh(box, new MeshStandardMaterial({ color: 0x00ff00, roughness: 0.1, metalness: 1 })));
+  const lonely = tag.dynamic(
+    new Mesh(box, new MeshStandardMaterial({ color: 0x00ff00, roughness: 0.1, metalness: 1 })),
+  );
   lonely.name = 'lonely';
   scene.add(...statics, mover, lonely);
   return { scene, statics, mover, lonely };
 }
 
 function cullWith(batch: BatchedMesh | InstancedMesh, scene: Scene, camera: PerspectiveCamera) {
-  batch.onBeforeRender({ coordinateSystem: WebGLCoordinateSystem } as never, scene, camera, batch.geometry, batch.material as never, null as never);
+  batch.onBeforeRender(
+    { coordinateSystem: WebGLCoordinateSystem } as never,
+    scene,
+    camera,
+    batch.geometry,
+    batch.material as never,
+    null as never,
+  );
 }
 
 function camera() {

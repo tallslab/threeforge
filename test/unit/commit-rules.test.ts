@@ -3,7 +3,18 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writ
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { EXCLUDED_PATHS, EXEMPT_COMMITS, RENDERING_PATHS, ZERO_SHA, budgetDeclaration, checkCommits, gitQueries, main, pushRange, touchesRendering } from '../../scripts/commit-rules.mjs';
+import {
+  budgetDeclaration,
+  checkCommits,
+  EXCLUDED_PATHS,
+  EXEMPT_COMMITS,
+  gitQueries,
+  main,
+  pushRange,
+  RENDERING_PATHS,
+  touchesRendering,
+  ZERO_SHA,
+} from '../../scripts/commit-rules.mjs';
 
 const script = resolve('scripts/commit-rules.mjs');
 const made: string[] = [];
@@ -13,7 +24,11 @@ afterEach(() => {
 });
 
 /** A throwaway repository, so the git plumbing CI depends on is exercised rather than assumed. */
-function repo(): { dir: string; git: (...args: string[]) => string; commit: (message: string, files: string[]) => string } {
+function repo(): {
+  dir: string;
+  git: (...args: string[]) => string;
+  commit: (message: string, files: string[]) => string;
+} {
   const dir = mkdtempSync(join(tmpdir(), 'forge-commit-rules-'));
   made.push(dir);
   const git = (...args: string[]): string => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
@@ -38,7 +53,11 @@ function repo(): { dir: string; git: (...args: string[]) => string; commit: (mes
 
 function run(dir: string, range: string): { status: number; out: string } {
   try {
-    const out = execFileSync(process.execPath, [script, range], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const out = execFileSync(process.execPath, [script, range], {
+      cwd: dir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     return { status: 0, out };
   } catch (e) {
     const err = e as { status: number; stdout: string; stderr: string };
@@ -51,7 +70,11 @@ function run(dir: string, range: string): { status: number; out: string } {
  * from the environment or the command line — a guard whose bypass is one env var away is not a guard — so injecting
  * the list here is the only way to exercise the reporting path on a throwaway repository's SHAs.
  */
-function mainIn(dir: string, range: string, exempt?: Record<string, { date: string; reason: string }>): { status: number; out: string } {
+function mainIn(
+  dir: string,
+  range: string,
+  exempt?: Record<string, { date: string; reason: string }>,
+): { status: number; out: string } {
   const lines: string[] = [];
   const write = (...parts: unknown[]): void => void lines.push(parts.join(' '));
   const out = vi.spyOn(console, 'log').mockImplementation(write);
@@ -71,7 +94,13 @@ function mainIn(dir: string, range: string, exempt?: Record<string, { date: stri
  * had created the ref, which for a force push is simply untrue — so the rule went unenforced and said so wrongly.
  */
 describe('pushRange', () => {
-  const git = (over: Partial<{ has: (sha: string) => boolean; isAncestor: (a: string, b: string) => boolean; mergeBase: (a: string, b: string) => string }> = {}) => ({
+  const git = (
+    over: Partial<{
+      has: (sha: string) => boolean;
+      isAncestor: (a: string, b: string) => boolean;
+      mergeBase: (a: string, b: string) => string;
+    }> = {},
+  ) => ({
     has: () => true,
     isAncestor: () => true,
     mergeBase: () => 'base0000',
@@ -79,7 +108,10 @@ describe('pushRange', () => {
   });
 
   it('judges before..after when the pushed commits descend from what was there', () => {
-    expect(pushRange({ before: 'aaa1111', after: 'bbb2222' }, git())).toEqual({ range: 'aaa1111..bbb2222', reason: null });
+    expect(pushRange({ before: 'aaa1111', after: 'bbb2222' }, git())).toEqual({
+      range: 'aaa1111..bbb2222',
+      reason: null,
+    });
   });
 
   it('falls back to the merge-base on a force push, and says that is what happened', () => {
@@ -123,13 +155,18 @@ describe('pushRange', () => {
     const second = r.commit('second', ['README.md']);
     r.git('branch', '-f', 'origin/main', second); // stands in for the remote-tracking ref CI passes
     const queries = gitQueries(r.dir);
-    expect(pushRange({ before: first, after: second, defaultRef: 'origin/main' }, queries)).toEqual({ range: `${first}..${second}`, reason: null });
+    expect(pushRange({ before: first, after: second, defaultRef: 'origin/main' }, queries)).toEqual({
+      range: `${first}..${second}`,
+      reason: null,
+    });
 
     // Rewrite history: reset to the first commit and commit something else, as a force push would.
     r.git('reset', '-q', '--hard', first);
     const rewritten = r.commit('rewritten', ['README.md']);
     const forced = pushRange({ before: second, after: rewritten, defaultRef: 'origin/main' }, queries);
-    expect(forced.range, 'the discarded commit is not an ancestor, so the range is the merge-base').toBe(`${first}..${rewritten}`);
+    expect(forced.range, 'the discarded commit is not an ancestor, so the range is the merge-base').toBe(
+      `${first}..${rewritten}`,
+    );
     expect(forced.reason).toContain('not an ancestor');
     // And the fallback range is one a run can actually read.
     expect(mainIn(r.dir, forced.range!).status).toBe(0);
@@ -139,9 +176,19 @@ describe('pushRange', () => {
 describe('touchesRendering', () => {
   it('flags the frame-path modules and the scenes the budget measures, and nothing else', () => {
     expect(touchesRendering(['src/compiler/bake.ts'])).toEqual(['src/compiler/bake.ts']);
-    expect(touchesRendering(['src/ledger/DrawCallLedger.ts', 'docs/threeforge.md'])).toEqual(['src/ledger/DrawCallLedger.ts']);
+    expect(touchesRendering(['src/ledger/DrawCallLedger.ts', 'docs/threeforge.md'])).toEqual([
+      'src/ledger/DrawCallLedger.ts',
+    ]);
     expect(touchesRendering(['test/scenes/naive.ts'])).toEqual(['test/scenes/naive.ts']);
-    expect(touchesRendering(['docs/bench.md', 'README.md', '.github/workflows/ci.yml', 'scripts/commit-rules.mjs', 'test/unit/cli.test.ts'])).toEqual([]);
+    expect(
+      touchesRendering([
+        'docs/bench.md',
+        'README.md',
+        '.github/workflows/ci.yml',
+        'scripts/commit-rules.mjs',
+        'test/unit/cli.test.ts',
+      ]),
+    ).toEqual([]);
   });
 
   it('matches whole path segments, so a sibling named like a rendering directory is not swept in', () => {
@@ -155,7 +202,15 @@ describe('touchesRendering', () => {
   });
 
   it('leaves the excluded entries out, the DOM overlay among them', () => {
-    expect(touchesRendering(['src/overlay/index.ts', 'src/agent/expose.ts', 'src/cli/index.ts', 'src/index.ts', 'src/version.ts'])).toEqual([]);
+    expect(
+      touchesRendering([
+        'src/overlay/index.ts',
+        'src/agent/expose.ts',
+        'src/cli/index.ts',
+        'src/index.ts',
+        'src/version.ts',
+      ]),
+    ).toEqual([]);
   });
 });
 
@@ -165,7 +220,9 @@ describe('touchesRendering', () => {
  */
 describe('every top-level entry of src/ is classified', () => {
   const classified = (): string[] => [...RENDERING_PATHS, ...Object.keys(EXCLUDED_PATHS ?? {})];
-  const top = readdirSync('src').map((name) => (statSync(join('src', name)).isDirectory() ? `src/${name}/` : `src/${name}`));
+  const top = readdirSync('src').map((name) =>
+    statSync(join('src', name)).isDirectory() ? `src/${name}/` : `src/${name}`,
+  );
 
   it('as rendering or as excluded, never neither', () => {
     expect(top.filter((entry) => !classified().includes(entry))).toEqual([]);
@@ -189,9 +246,21 @@ describe('every top-level entry of src/ is classified', () => {
 
 describe('budgetDeclaration', () => {
   it('accepts a count or an n/a with a reason, on a body line', () => {
-    expect(budgetDeclaration('compiler: x\n\nwhy\nBudget: 28\n')).toEqual({ kind: 'count', value: 28, line: 'Budget: 28' });
-    expect(budgetDeclaration('compiler: x\n\nBudget: 28 (naive scene)\n')).toEqual({ kind: 'count', value: 28, line: 'Budget: 28 (naive scene)' });
-    expect(budgetDeclaration('compiler: x\n\nBudget: n/a comments only\n')).toEqual({ kind: 'n/a', reason: 'comments only', line: 'Budget: n/a comments only' });
+    expect(budgetDeclaration('compiler: x\n\nwhy\nBudget: 28\n')).toEqual({
+      kind: 'count',
+      value: 28,
+      line: 'Budget: 28',
+    });
+    expect(budgetDeclaration('compiler: x\n\nBudget: 28 (naive scene)\n')).toEqual({
+      kind: 'count',
+      value: 28,
+      line: 'Budget: 28 (naive scene)',
+    });
+    expect(budgetDeclaration('compiler: x\n\nBudget: n/a comments only\n')).toEqual({
+      kind: 'n/a',
+      reason: 'comments only',
+      line: 'Budget: n/a comments only',
+    });
   });
 
   it('rejects an empty value, a bare n/a, a non-numeric count, a miscased key and an indented line', () => {
@@ -210,7 +279,9 @@ describe('checkCommits', () => {
 
   it('passes a rendering commit that declares a budget, and any commit that touches no rendering path', () => {
     expect(checkCommits([{ ...rendering, message: 'compiler: x\n\nwhy\nBudget: 28\n' }])).toEqual([]);
-    expect(checkCommits([{ sha: 'f00', subject: 'docs: y', files: ['docs/bench.md'], message: 'docs: y\n\nwhy\n' }])).toEqual([]);
+    expect(
+      checkCommits([{ sha: 'f00', subject: 'docs: y', files: ['docs/bench.md'], message: 'docs: y\n\nwhy\n' }]),
+    ).toEqual([]);
   });
 
   it('reports a rendering commit with no declaration, naming the files that made it one', () => {
@@ -221,8 +292,12 @@ describe('checkCommits', () => {
   });
 
   it('says a declaration is malformed rather than missing, so the fix is obvious', () => {
-    expect(checkCommits([{ ...rendering, message: 'compiler: x\n\nBudget: n/a\n' }])[0]?.problem).toContain('Budget: n/a');
-    expect(checkCommits([{ ...rendering, message: 'compiler: x\n\nbudget: 28\n' }])[0]?.problem).toContain('budget: 28');
+    expect(checkCommits([{ ...rendering, message: 'compiler: x\n\nBudget: n/a\n' }])[0]?.problem).toContain(
+      'Budget: n/a',
+    );
+    expect(checkCommits([{ ...rendering, message: 'compiler: x\n\nbudget: 28\n' }])[0]?.problem).toContain(
+      'budget: 28',
+    );
   });
 });
 
@@ -238,7 +313,11 @@ describe('EXEMPT_COMMITS', () => {
     expect(shas()).toHaveLength(6);
     expect(shas().filter((sha) => !/^[0-9a-f]{40}$/.test(sha))).toEqual([]);
     expect(new Set(shas()).size).toBe(6);
-    expect(shas().map((sha) => sha.slice(0, 7)).sort()).toEqual(['2e9b125', '451ab9f', '4b61bd6', 'a485e57', 'b037656', 'efb7464']);
+    expect(
+      shas()
+        .map((sha) => sha.slice(0, 7))
+        .sort(),
+    ).toEqual(['2e9b125', '451ab9f', '4b61bd6', 'a485e57', 'b037656', 'efb7464']);
   });
 
   it('carries a date and a reason for each, so the exemption can be reviewed rather than trusted', () => {
@@ -250,7 +329,11 @@ describe('EXEMPT_COMMITS', () => {
 
   it('lets an exempt commit pass, and still fails a commit that is not on the list', () => {
     const exempt = shas()[0]!;
-    const rendering = { subject: 'ledger: x', files: ['src/ledger/hints.ts'], message: 'ledger: x\n\nno budget line\n' };
+    const rendering = {
+      subject: 'ledger: x',
+      files: ['src/ledger/hints.ts'],
+      message: 'ledger: x\n\nno budget line\n',
+    };
     expect(checkCommits([{ ...rendering, sha: exempt }])).toEqual([]);
     // The same commit under any other SHA, and a near-miss abbreviation of an exempt one, are still violations.
     expect(checkCommits([{ ...rendering, sha: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef' }])).toHaveLength(1);
@@ -261,7 +344,11 @@ describe('EXEMPT_COMMITS', () => {
     // Belt and braces: an exempt SHA must not be a way to skip the file scan or the declaration parse for other work.
     const exempt = shas()[0]!;
     expect(checkCommits([{ sha: exempt, subject: 'docs: y', files: ['docs/x.md'], message: 'docs: y\n' }])).toEqual([]);
-    expect(checkCommits([{ sha: exempt, subject: 'ledger: x', files: ['src/ledger/hints.ts'], message: 'ledger: x\n\nBudget: 28\n' }])).toEqual([]);
+    expect(
+      checkCommits([
+        { sha: exempt, subject: 'ledger: x', files: ['src/ledger/hints.ts'], message: 'ledger: x\n\nBudget: 28\n' },
+      ]),
+    ).toEqual([]);
   });
 });
 
@@ -273,7 +360,9 @@ describe('the exempt commits reported by the run', () => {
     const head = r.git('rev-parse', 'HEAD').trim();
     expect(run(r.dir, `${base}..HEAD`).status).toBe(1);
     // The same repository and the same commit, with that SHA on the list: it passes and the summary says so.
-    const exempted = mainIn(r.dir, `${base}..HEAD`, { [head]: { date: '2026-09-16', reason: 'a reason long enough to be reviewable' } });
+    const exempted = mainIn(r.dir, `${base}..HEAD`, {
+      [head]: { date: '2026-09-16', reason: 'a reason long enough to be reviewable' },
+    });
     expect(exempted.status, exempted.out).toBe(0);
     expect(exempted.out).toContain('1 exempt');
     expect(exempted.out).toContain(head.slice(0, 7));

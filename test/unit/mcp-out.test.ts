@@ -1,4 +1,14 @@
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -24,13 +34,17 @@ describe('resolveOptimizeOut (optimize_asset.out confinement and overwrite rules
     expect(resolveOptimizeOut(file, 'build/out.glb', false, cwd, never)).toBe('/repo/build/out.glb');
   });
 
-  it('accepts an absolute out nested inside the input file\'s own directory', () => {
-    expect(resolveOptimizeOut(file, '/repo/assets/Fox/other.gltf', false, cwd, never)).toBe('/repo/assets/Fox/other.gltf');
+  it("accepts an absolute out nested inside the input file's own directory", () => {
+    expect(resolveOptimizeOut(file, '/repo/assets/Fox/other.gltf', false, cwd, never)).toBe(
+      '/repo/assets/Fox/other.gltf',
+    );
   });
 
   it('rejects an out outside both the input directory and the working directory', () => {
     expect(() => resolveOptimizeOut(file, '/tmp/x.glb', false, cwd, never)).toThrow(UsageError);
-    expect(() => resolveOptimizeOut(file, '/tmp/x.glb', false, cwd, never)).toThrow(/working directory|input's directory/);
+    expect(() => resolveOptimizeOut(file, '/tmp/x.glb', false, cwd, never)).toThrow(
+      /working directory|input's directory/,
+    );
   });
 
   it('rejects an out that does not end in .glb or .gltf, even inside scope', () => {
@@ -84,15 +98,21 @@ describe('resolveOptimizeOut symlink confinement (real filesystem)', () => {
     setUp();
     // inputDir/escape -> outsideDir: lexically "assets/escape/evil.glb" looks contained, really is not.
     symlinkSync(outsideDir, join(inputDir, 'escape'), 'dir');
-    expect(() => resolveOptimizeOut(inputFile, join(inputDir, 'escape', 'evil.glb'), false, projectDir, () => false)).toThrow(UsageError);
-    expect(() => resolveOptimizeOut(inputFile, join(inputDir, 'escape', 'evil.glb'), false, projectDir, () => false)).toThrow(/input's directory|working directory/);
+    expect(() =>
+      resolveOptimizeOut(inputFile, join(inputDir, 'escape', 'evil.glb'), false, projectDir, () => false),
+    ).toThrow(UsageError);
+    expect(() =>
+      resolveOptimizeOut(inputFile, join(inputDir, 'escape', 'evil.glb'), false, projectDir, () => false),
+    ).toThrow(/input's directory|working directory/);
   });
 
   it('rejects an out that lexically sits inside the working directory but escapes through a symlink to outside both roots', () => {
     setUp();
     // projectDir/escape -> outsideDir: lexically "escape/evil.glb" looks contained in cwd, really is not.
     symlinkSync(outsideDir, join(projectDir, 'escape'), 'dir');
-    expect(() => resolveOptimizeOut(inputFile, join(projectDir, 'escape', 'evil.glb'), false, projectDir, () => false)).toThrow(/input's directory|working directory/);
+    expect(() =>
+      resolveOptimizeOut(inputFile, join(projectDir, 'escape', 'evil.glb'), false, projectDir, () => false),
+    ).toThrow(/input's directory|working directory/);
   });
 
   it('still accepts an out reached through a symlink that stays inside an allowed root', () => {
@@ -157,7 +177,9 @@ describe('resolveOptimizeOut symlink confinement (real filesystem)', () => {
     writeFileSync(join(inputDir, 'real.glb'), 'bytes');
     symlinkSync(join(inputDir, 'real.glb'), join(inputDir, 'alias.glb'));
     expect(() => resolveOptimizeOut(inputFile, join(inputDir, 'alias.glb'), false, projectDir)).toThrow(/exists/);
-    expect(resolveOptimizeOut(inputFile, join(inputDir, 'alias.glb'), true, projectDir)).toBe(join(inputDir, 'alias.glb'));
+    expect(resolveOptimizeOut(inputFile, join(inputDir, 'alias.glb'), true, projectDir)).toBe(
+      join(inputDir, 'alias.glb'),
+    );
   });
 
   /**
@@ -190,7 +212,10 @@ describe('resolveOptimizeOut symlink confinement (real filesystem)', () => {
     const out = `/X${cwd.slice(1)}/x.glb`;
     expect(existsSync(`/X${cwd.slice(1).split('/')[0]}`)).toBe(false);
     for (const overwrite of [false, true]) {
-      expect(() => resolveOptimizeOut(join(cwd, 'assets', 'Fox.glb'), out, overwrite, cwd), `overwrite: ${overwrite}`).toThrow(/out must sit inside/);
+      expect(
+        () => resolveOptimizeOut(join(cwd, 'assets', 'Fox.glb'), out, overwrite, cwd),
+        `overwrite: ${overwrite}`,
+      ).toThrow(/out must sit inside/);
     }
   });
 
@@ -216,11 +241,13 @@ describe('resolveOptimizeOut with cwd at the filesystem root', () => {
     expect(() => resolveOptimizeOut(file, '/anywhere/out.glb', false, '/', never)).toThrow(/input's directory/);
   });
 
-  it("the rejection at root does not claim a working-directory scope exists", () => {
+  it('the rejection at root does not claim a working-directory scope exists', () => {
     expect(() => resolveOptimizeOut(file, '/anywhere/out.glb', false, '/', never)).not.toThrow(/working directory/);
   });
 
-  it('still accepts an out inside the input\'s own directory when cwd is root', () => {
-    expect(resolveOptimizeOut(file, '/repo/assets/Fox/other.gltf', false, '/', never)).toBe('/repo/assets/Fox/other.gltf');
+  it("still accepts an out inside the input's own directory when cwd is root", () => {
+    expect(resolveOptimizeOut(file, '/repo/assets/Fox/other.gltf', false, '/', never)).toBe(
+      '/repo/assets/Fox/other.gltf',
+    );
   });
 });

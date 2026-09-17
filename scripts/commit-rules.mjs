@@ -45,10 +45,14 @@ export const RENDERING_PATHS = [
  * `Budget:` line; a reason that stops being true means the entry belongs in `RENDERING_PATHS`.
  */
 export const EXCLUDED_PATHS = {
-  'src/cli/': 'the agent CLI and MCP server: node-side tooling that drives a page from outside and never runs inside a frame',
-  'src/agent/': 'the exposeToAgents hook: forwards to the app\'s own renderer, world and ledger and defines no scene content, material, tag or pass of its own',
-  'src/overlay/': 'a fixed-position DOM text panel that reads ledger.frame() on a timer: type-only imports, no three.js object, no render, no submission',
-  'src/index.ts': 'the package barrel: export statements only, so it can change what is reachable but not what a frame draws',
+  'src/cli/':
+    'the agent CLI and MCP server: node-side tooling that drives a page from outside and never runs inside a frame',
+  'src/agent/':
+    "the exposeToAgents hook: forwards to the app's own renderer, world and ledger and defines no scene content, material, tag or pass of its own",
+  'src/overlay/':
+    'a fixed-position DOM text panel that reads ledger.frame() on a timer: type-only imports, no three.js object, no render, no submission',
+  'src/index.ts':
+    'the package barrel: export statements only, so it can change what is reachable but not what a frame draws',
   'src/version.ts': 'the version string, mirrored from package.json',
 };
 
@@ -71,7 +75,7 @@ export const EXEMPT_COMMITS = {
     date: '2026-09-16',
     reason: 'predates the rule: cleaned page errors and collapsed hints',
   },
-  'b037656f57dec0a203631151294edc98a74c0ae3': {
+  b037656f57dec0a203631151294edc98a74c0ae3: {
     date: '2026-09-16',
     reason: 'predates the rule: capped transparent-batch-order hint objects at five',
   },
@@ -79,24 +83,31 @@ export const EXEMPT_COMMITS = {
     date: '2026-09-16',
     reason: 'written after the rule with no Budget: line; registry stats() counting only, measured at 28 afterwards',
   },
-  'efb7464474e0e2028e4fad254d9bbfc520524ba3': {
+  efb7464474e0e2028e4fad254d9bbfc520524ba3: {
     date: '2026-09-16',
-    reason: 'written after the rule with no Budget: line; ledger record flags rewritten in place, measured at 28 afterwards',
+    reason:
+      'written after the rule with no Budget: line; ledger record flags rewritten in place, measured at 28 afterwards',
   },
-  'a485e5752fdf5959d342cfc22a3c1cd09cc34c06': {
+  a485e5752fdf5959d342cfc22a3c1cd09cc34c06: {
     date: '2026-09-16',
-    reason: 'written after the rule with no Budget: line; a canary around three\'s _frameBufferTargets, measured at 28 afterwards',
+    reason:
+      "written after the rule with no Budget: line; a canary around three's _frameBufferTargets, measured at 28 afterwards",
   },
 };
 
 /** The subset of `files` that lies under a rendering path (or is a listed rendering file), in the order given. */
 export function touchesRendering(files) {
-  return files.filter((file) => RENDERING_PATHS.some((path) => (path.endsWith('/') ? file.startsWith(path) : file === path)));
+  return files.filter((file) =>
+    RENDERING_PATHS.some((path) => (path.endsWith('/') ? file.startsWith(path) : file === path)),
+  );
 }
 
 /** Any line of the body that looks like a budget declaration, however malformed, so a typo is named, not ignored. */
 function declarationLines(message) {
-  return message.split('\n').slice(1).filter((line) => /^[ \t]*budget[ \t]*:/i.test(line));
+  return message
+    .split('\n')
+    .slice(1)
+    .filter((line) => /^[ \t]*budget[ \t]*:/i.test(line));
 }
 
 /**
@@ -133,7 +144,12 @@ function undeclared(commits) {
 export function exemptedCommits(commits, exempt = EXEMPT_COMMITS) {
   return undeclared(commits)
     .filter((commit) => Object.hasOwn(exempt ?? {}, commit.sha))
-    .map((commit) => ({ sha: commit.sha, subject: commit.subject, files: touchesRendering(commit.files), ...exempt[commit.sha] }));
+    .map((commit) => ({
+      sha: commit.sha,
+      subject: commit.subject,
+      files: touchesRendering(commit.files),
+      ...exempt[commit.sha],
+    }));
 }
 
 /**
@@ -195,9 +211,15 @@ export function pushRange({ before, after, defaultRef = 'origin/main' }, git) {
       : `${before} is not an ancestor of ${after}: a force push or a rewritten history`;
   const base = git.mergeBase(defaultRef, after);
   if (!base || base === after) {
-    return { range: null, reason: `commit-rules: skipped. ${why}, and ${defaultRef} gives no earlier base to compare ${after} against, so there is no range of added commits to judge.` };
+    return {
+      range: null,
+      reason: `commit-rules: skipped. ${why}, and ${defaultRef} gives no earlier base to compare ${after} against, so there is no range of added commits to judge.`,
+    };
   }
-  return { range: `${base}..${after}`, reason: `commit-rules: ${why}. Judging ${base}..${after} instead: the commits this push adds on top of the merge-base with ${defaultRef}.` };
+  return {
+    range: `${base}..${after}`,
+    reason: `commit-rules: ${why}. Judging ${base}..${after} instead: the commits this push adds on top of the merge-base with ${defaultRef}.`,
+  };
 }
 
 /** `pushRange`'s three queries against a real repository. Each answers rather than throwing, as `git` exit codes do. */
@@ -245,13 +267,17 @@ export function main(argv, cwd = process.cwd(), exempt = EXEMPT_COMMITS, git = n
     console.log(`commit rules: ${commits.length} commits in ${range}, every rendering change declares a budget`);
     return 0;
   }
-  console.error(`commit rules: ${violations.length} of ${commits.length} commits in ${range} touch rendering without a budget:\n`);
+  console.error(
+    `commit rules: ${violations.length} of ${commits.length} commits in ${range} touch rendering without a budget:\n`,
+  );
   for (const v of violations) {
     console.error(`  ${v.sha.slice(0, 7)} ${v.subject}`);
     console.error(`    rendering files: ${v.files.join(', ')}`);
     console.error(`    ${v.problem}\n`);
   }
-  console.error('CONTRIBUTING.md rule 4: run `pnpm budget` after every change that touches rendering and put the result in the commit message.');
+  console.error(
+    'CONTRIBUTING.md rule 4: run `pnpm budget` after every change that touches rendering and put the result in the commit message.',
+  );
   return 1;
 }
 

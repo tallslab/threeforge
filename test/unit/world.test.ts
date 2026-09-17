@@ -1,45 +1,45 @@
-import { describe, expect, it } from 'vitest';
 import {
   AnimationClip,
-  BatchedMesh,
+  BackSide,
+  type BatchedMesh,
   Box3,
   BoxGeometry,
+  type Camera,
   Color,
   CylinderGeometry,
   DataTexture,
   DirectionalLight,
   DodecahedronGeometry,
+  DoubleSide,
+  FrontSide,
   Group,
-  InstancedMesh,
+  type InstancedBufferGeometry,
+  type InstancedMesh,
+  type Material,
+  Matrix3,
   Matrix4,
   Mesh,
-  PerspectiveCamera,
   MeshStandardMaterial,
   NumberKeyframeTrack,
+  PerspectiveCamera,
   Raycaster,
   RGBAFormat,
   Scene,
   ShaderMaterial,
+  type Side,
   SkinnedMesh,
   Sprite,
   SpriteMaterial,
   Vector3,
   WebGLCoordinateSystem,
-  BackSide,
-  DoubleSide,
-  FrontSide,
-  Matrix3,
-  type Camera,
-  type Material,
-  type InstancedBufferGeometry,
-  type Side,
 } from 'three';
-import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
-import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
-import { FORGE_HIDDEN_LAYER, World } from '../../src/compiler/World.js';
+import { describe, expect, it } from 'vitest';
 import { FORGE_HOOK } from '../../src/compiler/culling.js';
 import type { CulledInstancedMesh } from '../../src/compiler/instancing.js';
 import type { SpriteBatch } from '../../src/compiler/spriteBatch.js';
+import { FORGE_HIDDEN_LAYER, World } from '../../src/compiler/World.js';
+import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
+import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 import { tag } from '../../src/tags.js';
 import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
 
@@ -65,7 +65,10 @@ function mixedScene() {
     m.position.set(i * 3, 0, 0);
     m.rotation.y = i;
   });
-  const textured = [tag.static(new Mesh(box, new MeshStandardMaterial({ map: texture }))), tag.static(new Mesh(box, new MeshStandardMaterial({ map: texture })))];
+  const textured = [
+    tag.static(new Mesh(box, new MeshStandardMaterial({ map: texture }))),
+    tag.static(new Mesh(box, new MeshStandardMaterial({ map: texture }))),
+  ];
   textured.forEach((m, i) => {
     m.name = `textured-${i}`;
     m.position.set(0, 0, 5 + i * 3);
@@ -207,7 +210,9 @@ describe('World.compile', () => {
     const transparent = batches.filter((b) => (b.material as MeshStandardMaterial).transparent);
     expect(transparent).toHaveLength(1);
     expect(transparent[0]!.sortObjects).toBe(true);
-    expect(batches.filter((b) => !(b.material as MeshStandardMaterial).transparent).every((b) => b.sortObjects === false)).toBe(true);
+    expect(
+      batches.filter((b) => !(b.material as MeshStandardMaterial).transparent).every((b) => b.sortObjects === false),
+    ).toBe(true);
   });
 
   it('annotates excluded statics in the ledger so their submissions carry the rule', () => {
@@ -242,7 +247,12 @@ describe('World.compile', () => {
     const batches = batchesIn(scene);
     expect(batches).toHaveLength(1);
     expect((batches[0]!.material as MeshStandardMaterial).transparent).toBe(false);
-    expect(report.skipped.filter((s) => s.rule === 'transparent-kept').map((s) => s.name).sort()).toEqual(['glass-a', 'glass-b']);
+    expect(
+      report.skipped
+        .filter((s) => s.rule === 'transparent-kept')
+        .map((s) => s.name)
+        .sort(),
+    ).toEqual(['glass-a', 'glass-b']);
 
     const items = ledger.frame({ items: true }).items ?? [];
     expect(items.find((i) => i.name === 'glass-a')?.reason).toBe('excluded:transparent-kept');
@@ -264,7 +274,8 @@ describe('World.compile', () => {
 });
 
 describe('World.compile that throws', () => {
-  const hookRestores = (world: World): number => (world as unknown as { sceneHookRestores: unknown[] }).sceneHookRestores.length;
+  const hookRestores = (world: World): number =>
+    (world as unknown as { sceneHookRestores: unknown[] }).sceneHookRestores.length;
 
   it('uninstalls the pass tracker hooks when resolving the animations throws, so a retry installs them once', () => {
     const { scene } = mixedScene();
@@ -272,7 +283,9 @@ describe('World.compile that throws', () => {
     const animations: AnimationClip[] = [clip];
     const world = new World(scene, { animations });
     expect(() => world.compile()).toThrow();
-    expect(OWN(scene, 'onBeforeRender') || OWN(scene, 'onAfterRender'), 'pass tracker hooks left installed').toBe(false);
+    expect(OWN(scene, 'onBeforeRender') || OWN(scene, 'onAfterRender'), 'pass tracker hooks left installed').toBe(
+      false,
+    );
     expect(hookRestores(world)).toBe(0);
     animations.length = 0;
     world.compile();
@@ -291,7 +304,9 @@ describe('World.compile that throws', () => {
     }
     const world = new World(scene, { registry: new Failing() });
     expect(() => world.compile()).toThrow('refused');
-    expect(OWN(scene, 'onBeforeRender') || OWN(scene, 'onAfterRender'), 'pass tracker hooks left installed').toBe(false);
+    expect(OWN(scene, 'onBeforeRender') || OWN(scene, 'onAfterRender'), 'pass tracker hooks left installed').toBe(
+      false,
+    );
     expect(hookRestores(world)).toBe(0);
   });
 });
@@ -321,7 +336,9 @@ describe('World.decompile', () => {
     scene.add(props);
     props.add(statics[0]!, statics[1]!);
     // A distinct material variant so it stays a singleton (a colour-only difference would join the batch).
-    const single = tag.static(new Mesh(box, new MeshStandardMaterial({ color: 0x999999, roughness: 0.1, metalness: 0.9 })));
+    const single = tag.static(
+      new Mesh(box, new MeshStandardMaterial({ color: 0x999999, roughness: 0.1, metalness: 0.9 })),
+    );
     single.name = 'single';
     scene.add(single);
     // An empty container, an anchor with no children, and a light's target: none is a static leaf, so none may be
@@ -391,7 +408,7 @@ describe('World.resolve', () => {
 
 describe('World culling', () => {
   const hasForgeHook = (b: BatchedMesh) =>
-    Object.prototype.hasOwnProperty.call(b, 'onBeforeRender') && (b.onBeforeRender as unknown as Record<symbol, unknown>)[FORGE_HOOK] === true;
+    Object.hasOwn(b, 'onBeforeRender') && (b.onBeforeRender as unknown as Record<symbol, unknown>)[FORGE_HOOK] === true;
 
   it('installs BVH culling on every batch by default and removes it on decompile', () => {
     const { scene } = mixedScene();
@@ -401,7 +418,7 @@ describe('World culling', () => {
     expect(batches.length).toBe(2);
     expect(batches.every(hasForgeHook)).toBe(true);
     world.decompile();
-    expect(batches.every((b) => !Object.prototype.hasOwnProperty.call(b, 'onBeforeRender'))).toBe(true);
+    expect(batches.every((b) => !Object.hasOwn(b, 'onBeforeRender'))).toBe(true);
   });
 
   it('leaves three\'s linear culling in place with culling: "linear"', () => {
@@ -455,7 +472,8 @@ describe('World instancing', () => {
     expect(batchesIn(scene)).toHaveLength(1);
 
     const transparent = new Scene();
-    for (let i = 0; i < 70; i++) transparent.add(tag.static(new Mesh(box, solid(1, { transparent: true, opacity: 0.5 }))));
+    for (let i = 0; i < 70; i++)
+      transparent.add(tag.static(new Mesh(box, solid(1, { transparent: true, opacity: 0.5 }))));
     new World(transparent).compile();
     expect(meshesIn(transparent).some((m) => (m as InstancedMesh).isInstancedMesh)).toBe(false);
     expect(batchesIn(transparent)).toHaveLength(1);
@@ -470,7 +488,14 @@ describe('World instancing', () => {
     camera.position.set(60, 20, 40);
     camera.lookAt(60, 0, 0);
     camera.updateMatrixWorld();
-    instanced.onBeforeRender({ coordinateSystem: 2000 } as never, scene, camera, instanced.geometry, instanced.material as never, null as never);
+    instanced.onBeforeRender(
+      { coordinateSystem: 2000 } as never,
+      scene,
+      camera,
+      instanced.geometry,
+      instanced.material as never,
+      null as never,
+    );
     // box-30 sits at x = 60, straight below the camera's look-at point, so it survives the cull above.
     const raycaster = new Raycaster(new Vector3(60, 10, 0), new Vector3(0, -1, 0));
     const hits = raycaster.intersectObject(instanced, false);
@@ -583,7 +608,11 @@ describe('World in a transformed scene', () => {
     batch.onBeforeRender(renderer as never, f.scene, f.camera, batch.geometry, batch.material as never, null as never);
     for (const m of [...f.batched, f.mover]) {
       batch.getMatrixAt(world.slotOf(m)!.instanceId, _row);
-      note(m === f.mover ? 'synced' : 'batched', m.name, offBy(new Matrix4().multiplyMatrices(batch.matrixWorld, _row).elements, m.matrixWorld.elements));
+      note(
+        m === f.mover ? 'synced' : 'batched',
+        m.name,
+        offBy(new Matrix4().multiplyMatrices(batch.matrixWorld, _row).elements, m.matrixWorld.elements),
+      );
     }
     const instanced = world.slotOf(f.instanced[0]!)!.batch as CulledInstancedMesh;
     for (const m of f.instanced) {
@@ -594,12 +623,20 @@ describe('World in a transformed scene', () => {
     const originals = new Box3();
     for (const m of f.baked) originals.expandByObject(m, true);
     const vertices = new Box3().setFromObject(bakedMesh, true);
-    note('baked', 'vertex box', offBy([...vertices.min.toArray(), ...vertices.max.toArray()], [...originals.min.toArray(), ...originals.max.toArray()]));
+    note(
+      'baked',
+      'vertex box',
+      offBy(
+        [...vertices.min.toArray(), ...vertices.max.toArray()],
+        [...originals.min.toArray(), ...originals.max.toArray()],
+      ),
+    );
     const sprites = (world as unknown as { spriteBatchList: SpriteBatch[] }).spriteBatchList[0]!;
     const mesh = sprites.mesh;
     mesh.onBeforeRender(renderer as never, f.scene, f.camera, mesh.geometry, mesh.material as never, null as never);
     const drawnSprites = (mesh.geometry as InstancedBufferGeometry).instanceCount;
-    if (drawnSprites !== f.sprites.length) note('sprites', 'instanceCount', `${drawnSprites} instead of ${f.sprites.length}`);
+    if (drawnSprites !== f.sprites.length)
+      note('sprites', 'instanceCount', `${drawnSprites} instead of ${f.sprites.length}`);
     const e = mesh.matrixWorld.elements;
     const batchScaleX = Math.hypot(e[0]!, e[1]!, e[2]!);
     const batchScaleY = Math.hypot(e[4]!, e[5]!, e[6]!);
@@ -607,9 +644,20 @@ describe('World in a transformed scene', () => {
     const s = sprites.scales.array;
     f.sprites.forEach((sprite, k) => {
       const centre = new Vector3(c[k * 3]!, c[k * 3 + 1]!, c[k * 3 + 2]!).applyMatrix4(mesh.matrixWorld);
-      note('sprites', `${sprite.name} centre`, offBy(centre.toArray(), new Vector3().setFromMatrixPosition(sprite.matrixWorld).toArray()));
+      note(
+        'sprites',
+        `${sprite.name} centre`,
+        offBy(centre.toArray(), new Vector3().setFromMatrixPosition(sprite.matrixWorld).toArray()),
+      );
       const m = sprite.matrixWorld.elements;
-      note('sprites', `${sprite.name} scale`, offBy([batchScaleX * s[k * 2]!, batchScaleY * s[k * 2 + 1]!], [Math.hypot(m[0]!, m[1]!, m[2]!), Math.hypot(m[4]!, m[5]!, m[6]!)]));
+      note(
+        'sprites',
+        `${sprite.name} scale`,
+        offBy(
+          [batchScaleX * s[k * 2]!, batchScaleY * s[k * 2 + 1]!],
+          [Math.hypot(m[0]!, m[1]!, m[2]!), Math.hypot(m[4]!, m[5]!, m[6]!)],
+        ),
+      );
     });
     expect(off, label).toEqual({ batched: [], synced: [], instanced: [], baked: [], sprites: [] });
   }
@@ -737,9 +785,18 @@ describe('World in a transformed scene', () => {
       scene.updateMatrixWorld();
       batch.onBeforeRender(renderer as never, scene, camera, batch.geometry, batch.material as never, null as never);
       batch.getMatrixAt(world.slotOf(anchored[0]!)!.instanceId, _row);
-      const batched = offBy(new Matrix4().multiplyMatrices(batch.matrixWorld, _row).elements, anchored[0]!.matrixWorld.elements);
+      const batched = offBy(
+        new Matrix4().multiplyMatrices(batch.matrixWorld, _row).elements,
+        anchored[0]!.matrixWorld.elements,
+      );
       const drawn = instancedWorld(instanced, world.slotOf(anchored[1]!)!.instanceId, scene, camera);
-      expect({ batched, instanced: drawn === null ? 'is not drawn' : offBy(drawn.elements, anchored[1]!.matrixWorld.elements) }, label).toEqual({ batched: null, instanced: null });
+      expect(
+        {
+          batched,
+          instanced: drawn === null ? 'is not drawn' : offBy(drawn.elements, anchored[1]!.matrixWorld.elements),
+        },
+        label,
+      ).toEqual({ batched: null, instanced: null });
     };
     expectAnchored('after compile');
     const before = anchored.map((m) => Array.from(m.matrixWorld.elements));
@@ -747,14 +804,22 @@ describe('World in a transformed scene', () => {
     scene.rotation.y = -0.5;
     scene.scale.setScalar(1.5);
     expectAnchored('after only the scene moved');
-    expect(anchored.map((m) => Array.from(m.matrixWorld.elements)), 'the movers never moved in the world').toEqual(before);
+    expect(
+      anchored.map((m) => Array.from(m.matrixWorld.elements)),
+      'the movers never moved in the world',
+    ).toEqual(before);
   });
 
   it('under a mirrored scene, batches children not mirrored relative to it and leaves children mirrored again unbatched', () => {
     const f = mirroredScene();
     const world = new World(f.scene);
     const report = world.compile();
-    expect(report.skipped.filter((s) => s.rule === 'mirrored').map((s) => s.name).sort()).toEqual(['again-0', 'again-1']);
+    expect(
+      report.skipped
+        .filter((s) => s.rule === 'mirrored')
+        .map((s) => s.name)
+        .sort(),
+    ).toEqual(['again-0', 'again-1']);
     for (const m of f.plain) {
       const slot = world.slotOf(m);
       expect((slot?.batch as BatchedMesh | undefined)?.isBatchedMesh, `${m.name} is batched`).toBe(true);
@@ -789,7 +854,14 @@ describe('World in a transformed scene', () => {
     camera.position.set(5, 30, 20);
     camera.lookAt(5, 0, 0);
     camera.updateMatrixWorld();
-    instanced.onBeforeRender(renderer as never, scene, camera, instanced.geometry, instanced.material as never, null as never);
+    instanced.onBeforeRender(
+      renderer as never,
+      scene,
+      camera,
+      instanced.geometry,
+      instanced.material as never,
+      null as never,
+    );
     const row = new Matrix4();
     for (const m of plain) {
       const slot = world.slotOf(m)!;
@@ -813,7 +885,10 @@ describe('World in a transformed scene', () => {
 
   it("swaps a sprite batch's FrontSide and BackSide while the scene is mirrored, so three culls the quads the way it culls the sprites", () => {
     const scene = new Scene();
-    const materials = [new SpriteMaterial({ color: 0xff0000, transparent: false }), new SpriteMaterial({ color: 0x00ff00, transparent: false, side: DoubleSide })];
+    const materials = [
+      new SpriteMaterial({ color: 0xff0000, transparent: false }),
+      new SpriteMaterial({ color: 0x00ff00, transparent: false, side: DoubleSide }),
+    ];
     materials.forEach((material, g) => {
       for (let i = 0; i < 4; i++) {
         const s = new Sprite(material);
@@ -832,12 +907,22 @@ describe('World in a transformed scene', () => {
     const batches = (world as unknown as { spriteBatchList: SpriteBatch[] }).spriteBatchList;
     // three r186 flips a Mesh's front face when its own world matrix mirrors (WebGPUPipelineUtils._getPrimitiveState,
     // WebGLState.setMaterial); a Sprite is not a Mesh and never flips. The side three effectively culls by:
-    const effectiveSide = (side: Side, flipped: boolean): Side => (side === DoubleSide ? DoubleSide : (side === BackSide) !== flipped ? BackSide : FrontSide);
+    const effectiveSide = (side: Side, flipped: boolean): Side =>
+      side === DoubleSide ? DoubleSide : (side === BackSide) !== flipped ? BackSide : FrontSide;
     const expectSides = (label: string): void => {
       scene.updateMatrixWorld();
       for (const b of batches) {
-        b.mesh.onBeforeRender(renderer as never, scene, camera, b.mesh.geometry, b.mesh.material as never, null as never);
-        expect(effectiveSide(b.material.side, b.mesh.matrixWorld.determinant() < 0), `${label}: ${b.mesh.name}`).toBe(effectiveSide(b.group.material.side, false));
+        b.mesh.onBeforeRender(
+          renderer as never,
+          scene,
+          camera,
+          b.mesh.geometry,
+          b.mesh.material as never,
+          null as never,
+        );
+        expect(effectiveSide(b.material.side, b.mesh.matrixWorld.determinant() < 0), `${label}: ${b.mesh.name}`).toBe(
+          effectiveSide(b.group.material.side, false),
+        );
       }
     };
     expectSides('mirrored at compile');
@@ -861,7 +946,11 @@ describe('World and the ledger under policy auto', () => {
     ledger.attach(renderer as never);
     new World(scene, { ledger, policy: 'auto' }).compile();
     renderer.render(scene, camera);
-    const reasons = Object.fromEntries((ledger.frame({ items: true }).items ?? []).filter((i) => i.reason !== 'renderer-internal').map((i) => [i.name, i.reason]));
+    const reasons = Object.fromEntries(
+      (ledger.frame({ items: true }).items ?? [])
+        .filter((i) => i.reason !== 'renderer-internal')
+        .map((i) => [i.name, i.reason]),
+    );
     expect(reasons).toEqual({ lonely: 'unique-material', other: 'unique-material' });
   });
 
@@ -880,7 +969,11 @@ describe('World and the ledger under policy auto', () => {
     expect(report.skipped.map((s) => s.rule)).toEqual(['singleton', 'singleton']);
     expect(caster.material).toBe(plain.material);
     renderer.render(scene, camera);
-    const reasons = Object.fromEntries((ledger.frame({ items: true }).items ?? []).filter((i) => i.reason !== 'renderer-internal').map((i) => [i.name, i.reason]));
+    const reasons = Object.fromEntries(
+      (ledger.frame({ items: true }).items ?? [])
+        .filter((i) => i.reason !== 'renderer-internal')
+        .map((i) => [i.name, i.reason]),
+    );
     expect(reasons).toEqual({ caster: 'static-unbatched', plain: 'static-unbatched' });
   });
 });
@@ -898,7 +991,7 @@ describe('World materials option', () => {
   });
 });
 
-const OWN = (object: object, key: string): boolean => Object.prototype.hasOwnProperty.call(object, key);
+const OWN = (object: object, key: string): boolean => Object.hasOwn(object, key);
 
 describe('World material ownership', () => {
   /** Counts the `dispose` events three's `Material.dispose()` dispatches, per material. */
@@ -917,7 +1010,12 @@ describe('World material ownership', () => {
     const sharedBatch = registry.register(solid(0xffffff, { roughness: 0.3 }));
     const sharedInstanced = registry.register(solid(0xffffff, { roughness: 0.5 }));
     const scene = new Scene();
-    const add = (material: Material, geometry: BoxGeometry | DodecahedronGeometry | CylinderGeometry, n: number, z: number): Mesh[] =>
+    const add = (
+      material: Material,
+      geometry: BoxGeometry | DodecahedronGeometry | CylinderGeometry,
+      n: number,
+      z: number,
+    ): Mesh[] =>
       Array.from({ length: n }, (_, i) => {
         const mesh = tag.static(new Mesh(geometry, material));
         mesh.position.set(i * 2, 0, z);
@@ -930,7 +1028,8 @@ describe('World material ownership', () => {
     const cylinder = new CylinderGeometry(0.4, 0.4, 1, 8);
     add(registry.register(solid(0xff0000, { roughness: 0.9 })), cylinder, 1, 8);
     add(registry.register(solid(0x00ff00, { roughness: 0.9 })), cylinder, 1, 10);
-    for (const color of [0x0000ff, 0xffff00]) add(registry.register(solid(color, { roughness: 0.1 })), box, 2, color === 0x0000ff ? 12 : 14);
+    for (const color of [0x0000ff, 0xffff00])
+      add(registry.register(solid(color, { roughness: 0.1 })), box, 2, color === 0x0000ff ? 12 : 14);
     const world = new World(scene, { registry, instanceThreshold: 4 });
     world.compile();
     const drawn = [...world.batchedMeshes, ...world.instancedMeshes].map((m) => m.material as Material);
@@ -941,21 +1040,36 @@ describe('World material ownership', () => {
     const counts = disposeCounts([sharedBatch, sharedInstanced, ...clones]);
 
     world.decompile();
-    expect([counts.get(sharedBatch), counts.get(sharedInstanced)], 'shared materials disposed on decompile').toEqual([0, 0]);
-    expect(clones.map((m) => counts.get(m)! > 0), 'clones disposed on decompile').toEqual([true, true]);
-    expect(batchOriginals.every((m) => m.material === sharedBatch) && instancedOriginals.every((m) => m.material === sharedInstanced)).toBe(true);
+    expect([counts.get(sharedBatch), counts.get(sharedInstanced)], 'shared materials disposed on decompile').toEqual([
+      0, 0,
+    ]);
+    expect(
+      clones.map((m) => counts.get(m)! > 0),
+      'clones disposed on decompile',
+    ).toEqual([true, true]);
+    expect(
+      batchOriginals.every((m) => m.material === sharedBatch) &&
+        instancedOriginals.every((m) => m.material === sharedInstanced),
+    ).toBe(true);
 
     // Still usable: the next compile shares them again, and dispose() leaves them alone but frees that compile's clones.
     world.compile();
     expect(world.batchedMeshes.map((b) => b.material)).toContain(sharedBatch);
     expect(world.instancedMeshes.map((m) => m.material)).toContain(sharedInstanced);
-    const secondClones = [...world.batchedMeshes, ...world.instancedMeshes].map((m) => m.material as Material).filter((m) => m !== sharedBatch && m !== sharedInstanced);
+    const secondClones = [...world.batchedMeshes, ...world.instancedMeshes]
+      .map((m) => m.material as Material)
+      .filter((m) => m !== sharedBatch && m !== sharedInstanced);
     expect(secondClones, 'the second compile made its own clones').toHaveLength(2);
     expect(secondClones.some((m) => clones.includes(m))).toBe(false);
     const secondCounts = disposeCounts(secondClones);
     world.dispose();
-    expect([counts.get(sharedBatch), counts.get(sharedInstanced)], 'shared materials disposed on dispose').toEqual([0, 0]);
-    expect(secondClones.map((m) => secondCounts.get(m)! > 0), "the second compile's clones disposed on dispose").toEqual([true, true]);
+    expect([counts.get(sharedBatch), counts.get(sharedInstanced)], 'shared materials disposed on dispose').toEqual([
+      0, 0,
+    ]);
+    expect(
+      secondClones.map((m) => secondCounts.get(m)! > 0),
+      "the second compile's clones disposed on dispose",
+    ).toEqual([true, true]);
   });
 
   it("never disposes the originals' own material: materials: 'keep' batches with it, and an unsupported ShaderMaterial is never batched", () => {
@@ -970,7 +1084,10 @@ describe('World material ownership', () => {
       const world = new World(scene, mode === 'keep' ? { materials: 'keep' } : {});
       const report = world.compile();
       if (mode === 'keep') {
-        expect(world.batchedMeshes.map((b) => b.material), "keep: the batch draws with the originals' material").toEqual([material]);
+        expect(
+          world.batchedMeshes.map((b) => b.material),
+          "keep: the batch draws with the originals' material",
+        ).toEqual([material]);
       } else {
         // classify excludes ShaderMaterial and RawShaderMaterial, the only materials the registry marks unsupported, so the
         // ownership pass's `o.material === material` branch is defensive: no World batch can draw with such a material.
@@ -1022,7 +1139,9 @@ describe('World.dispose', () => {
     });
     world.compile();
     world.dispose();
-    expect(OWN(scene, 'onBeforeRender') || OWN(scene, 'onAfterRender'), 'pass tracker hooks left installed').toBe(false);
+    expect(OWN(scene, 'onBeforeRender') || OWN(scene, 'onAfterRender'), 'pass tracker hooks left installed').toBe(
+      false,
+    );
     expect(batchesIn(scene)).toHaveLength(0);
     expect(errors).toEqual([expect.stringContaining('World is disposed')]);
     expect(() => world.compile()).toThrow('World is disposed');
@@ -1036,7 +1155,9 @@ describe('World.dispose', () => {
     expect(() => world.markDirty(statics[0]!)).toThrow('World is disposed');
     expect(() => world.setVisible(statics[0]!, false)).toThrow('World is disposed');
     expect(() => world.onDirty(() => {})).toThrow('World is disposed');
-    await expect(world.warmup(new FakeRenderer() as never, new PerspectiveCamera())).rejects.toThrow('World is disposed');
+    await expect(world.warmup(new FakeRenderer() as never, new PerspectiveCamera())).rejects.toThrow(
+      'World is disposed',
+    );
     expect(statics[0]!.visible).toBe(true);
   });
 });

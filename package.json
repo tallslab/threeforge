@@ -41,6 +41,9 @@
   "scripts": {
     "build": "pnpm build:lib && pnpm build:cli-app",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
@@ -68,6 +71,7 @@
     "zod": ">=3.23.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@playwright/test": "^1.63.0",
     "@types/node": "^22.0.0",

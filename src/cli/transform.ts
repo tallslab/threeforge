@@ -29,7 +29,11 @@ async function optional<T>(name: string): Promise<T | null> {
  * A missing sharp is an error only when textures were asked for explicitly; presets skip the step with a note.
  */
 export async function loadDeps(steps: Step[], explicitTextures: boolean): Promise<Deps> {
-  const [{ MeshoptDecoder }, { MeshoptEncoder }, { MeshoptSimplifier }] = await Promise.all([import('meshoptimizer/decoder'), import('meshoptimizer/encoder'), import('meshoptimizer/simplifier')]);
+  const [{ MeshoptDecoder }, { MeshoptEncoder }, { MeshoptSimplifier }] = await Promise.all([
+    import('meshoptimizer/decoder'),
+    import('meshoptimizer/encoder'),
+    import('meshoptimizer/simplifier'),
+  ]);
   await Promise.all([MeshoptDecoder.ready, MeshoptEncoder.ready, MeshoptSimplifier.ready]);
   let sharp: unknown = null;
   if (steps.some((s) => s.name === 'textures')) {
@@ -68,31 +72,57 @@ export function countsOf(doc: Document): Counts {
     }
   }
   const textures = root.listTextures();
-  return { nodes: root.listNodes().length, meshes: root.listMeshes().length, primitives, materials: root.listMaterials().length, textures: textures.length, textureBytes: textures.reduce((sum, t) => sum + (t.getImage()?.byteLength ?? 0), 0), accessors: root.listAccessors().length, vertices, triangles };
+  return {
+    nodes: root.listNodes().length,
+    meshes: root.listMeshes().length,
+    primitives,
+    materials: root.listMaterials().length,
+    textures: textures.length,
+    textureBytes: textures.reduce((sum, t) => sum + (t.getImage()?.byteLength ?? 0), 0),
+    accessors: root.listAccessors().length,
+    vertices,
+    triangles,
+  };
 }
 
 export function statsOf(doc: Document, bytes: number): AssetStats {
   const root = doc.getRoot();
   let morphTargets = 0;
-  for (const mesh of root.listMeshes()) for (const prim of mesh.listPrimitives()) morphTargets += prim.listTargets().length;
+  for (const mesh of root.listMeshes())
+    for (const prim of mesh.listPrimitives()) morphTargets += prim.listTargets().length;
   return {
     ...countsOf(doc),
     bytes,
     animations: root.listAnimations().length,
     skins: root.listSkins().length,
     morphTargets,
-    extensions: root.listExtensionsUsed().map((e) => e.extensionName).sort(),
+    extensions: root
+      .listExtensionsUsed()
+      .map((e) => e.extensionName)
+      .sort(),
   };
 }
 
 const LOADER_NEEDS: Record<string, Omit<Requirement, 'extension'>> = {
-  EXT_meshopt_compression: { needs: 'MeshoptDecoder', code: "import { MeshoptDecoder } from 'meshoptimizer/decoder'; loader.setMeshoptDecoder(MeshoptDecoder);" },
-  KHR_draco_mesh_compression: { needs: 'DRACOLoader', code: "const draco = new DRACOLoader().setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/'); loader.setDRACOLoader(draco);" },
-  KHR_texture_basisu: { needs: 'KTX2Loader', code: "const ktx2 = new KTX2Loader().setTranscoderPath('/basis/'); await renderer.init(); ktx2.detectSupport(renderer); loader.setKTX2Loader(ktx2);" },
+  EXT_meshopt_compression: {
+    needs: 'MeshoptDecoder',
+    code: "import { MeshoptDecoder } from 'meshoptimizer/decoder'; loader.setMeshoptDecoder(MeshoptDecoder);",
+  },
+  KHR_draco_mesh_compression: {
+    needs: 'DRACOLoader',
+    code: "const draco = new DRACOLoader().setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/'); loader.setDRACOLoader(draco);",
+  },
+  KHR_texture_basisu: {
+    needs: 'KTX2Loader',
+    code: "const ktx2 = new KTX2Loader().setTranscoderPath('/basis/'); await renderer.init(); ktx2.detectSupport(renderer); loader.setKTX2Loader(ktx2);",
+  },
   KHR_mesh_quantization: { needs: 'nothing: GLTFLoader reads quantized attributes', code: null },
   EXT_texture_webp: { needs: 'nothing: browsers decode WebP', code: null },
   EXT_texture_avif: { needs: 'nothing: browsers decode AVIF', code: null },
-  EXT_mesh_gpu_instancing: { needs: 'nothing: GLTFLoader creates InstancedMesh (threeforge reports it as already-instanced)', code: null },
+  EXT_mesh_gpu_instancing: {
+    needs: 'nothing: GLTFLoader creates InstancedMesh (threeforge reports it as already-instanced)',
+    code: null,
+  },
 };
 /** Extensions GLTFLoader implements without any setup; they are not requirements. */
 const BUILT_IN = /^KHR_(materials_|texture_transform|lights_punctual|xmp_json_ld|animation_pointer)/;
@@ -103,12 +133,23 @@ export function requirementsOf(extensions: string[]): Requirement[] {
   for (const extension of extensions) {
     const known = LOADER_NEEDS[extension];
     if (known) out.push({ extension, ...known });
-    else if (!BUILT_IN.test(extension)) out.push({ extension, needs: 'not known to threeforge; check that your loader supports it', code: null });
+    else if (!BUILT_IN.test(extension))
+      out.push({ extension, needs: 'not known to threeforge; check that your loader supports it', code: null });
   }
   return out;
 }
 
-export const COUNT_KEYS: ReadonlyArray<keyof Counts> = ['nodes', 'meshes', 'primitives', 'materials', 'textures', 'textureBytes', 'accessors', 'vertices', 'triangles'];
+export const COUNT_KEYS: ReadonlyArray<keyof Counts> = [
+  'nodes',
+  'meshes',
+  'primitives',
+  'materials',
+  'textures',
+  'textureBytes',
+  'accessors',
+  'vertices',
+  'triangles',
+];
 
 /** "materials 148 → 10, meshes 109 → 63" or "no change"; only the count keys, so asset stats can be passed too. */
 export function describeChange(before: Counts, after: Counts): string {
@@ -118,7 +159,12 @@ export function describeChange(before: Counts, after: Counts): string {
 }
 
 /** Runs the steps in order on the document, one report per step. */
-export async function applySteps(doc: Document, steps: Step[], deps: Deps, log: (line: string) => void): Promise<StepReport[]> {
+export async function applySteps(
+  doc: Document,
+  steps: Step[],
+  deps: Deps,
+  log: (line: string) => void,
+): Promise<StepReport[]> {
   const fns = await import('@gltf-transform/functions');
   const reports: StepReport[] = [];
   for (const step of steps) {
@@ -147,7 +193,9 @@ export async function applySteps(doc: Document, steps: Step[], deps: Deps, log: 
         await doc.transform(fns.weld());
         break;
       case 'simplify':
-        await doc.transform(fns.simplify({ simplifier: deps.simplifier, ratio: Number(o.ratio), error: Number(o.error) }));
+        await doc.transform(
+          fns.simplify({ simplifier: deps.simplifier, ratio: Number(o.ratio), error: Number(o.error) }),
+        );
         break;
       case 'resample':
         // The tolerance comes from the preset: 0 in `safe`, glTF-Transform's lossy 1e-4 default in the
@@ -164,7 +212,14 @@ export async function applySteps(doc: Document, steps: Step[], deps: Deps, log: 
           note = `skipped: texture compression needs sharp (${SHARP_INSTALL})`;
           break;
         }
-        await doc.transform(fns.textureCompress({ encoder: deps.sharp, targetFormat: o.format as TextureFormat, quality: Number(o.quality), ...(o.size ? { resize: [Number(o.size), Number(o.size)] as [number, number] } : {}) }));
+        await doc.transform(
+          fns.textureCompress({
+            encoder: deps.sharp,
+            targetFormat: o.format as TextureFormat,
+            quality: Number(o.quality),
+            ...(o.size ? { resize: [Number(o.size), Number(o.size)] as [number, number] } : {}),
+          }),
+        );
         break;
       case 'quantize':
         await doc.transform(fns.quantize());

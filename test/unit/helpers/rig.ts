@@ -1,4 +1,18 @@
-import { AnimationClip, Bone, BoxGeometry, Float32BufferAttribute, Group, Matrix4, MeshStandardMaterial, Quaternion, QuaternionKeyframeTrack, Skeleton, SkinnedMesh, Uint16BufferAttribute, Vector3 } from 'three';
+import {
+  AnimationClip,
+  Bone,
+  BoxGeometry,
+  Float32BufferAttribute,
+  Group,
+  Matrix4,
+  MeshStandardMaterial,
+  Quaternion,
+  QuaternionKeyframeTrack,
+  Skeleton,
+  SkinnedMesh,
+  Uint16BufferAttribute,
+  Vector3,
+} from 'three';
 
 /** Bone `a` at the origin and its child `b` one unit up. */
 function twoBones(): { a: Bone; b: Bone } {
@@ -32,7 +46,9 @@ function skinnedBox(name: string, color: number): SkinnedMesh {
 function spinClip(): AnimationClip {
   const q0 = new Quaternion();
   const q1 = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 2);
-  return new AnimationClip('spin', 1, [new QuaternionKeyframeTrack('b.quaternion', [0, 1], [q0.x, q0.y, q0.z, q0.w, q1.x, q1.y, q1.z, q1.w])]);
+  return new AnimationClip('spin', 1, [
+    new QuaternionKeyframeTrack('b.quaternion', [0, 1], [q0.x, q0.y, q0.z, q0.w, q1.x, q1.y, q1.z, q1.w]),
+  ]);
 }
 
 /**
@@ -57,7 +73,14 @@ export function buildRig(): { root: Group; mesh: SkinnedMesh; a: Bone; b: Bone; 
  * sit at different offsets from the root: the body 0.25 along x, the head raised 1.5, shifted and tilted 0.5 rad
  * about z. The same `spin` clip.
  */
-export function buildTwoPartRig(): { root: Group; body: SkinnedMesh; head: SkinnedMesh; a: Bone; b: Bone; clip: AnimationClip } {
+export function buildTwoPartRig(): {
+  root: Group;
+  body: SkinnedMesh;
+  head: SkinnedMesh;
+  a: Bone;
+  b: Bone;
+  clip: AnimationClip;
+} {
   const root = new Group();
   root.name = 'two-part-rig';
   const { a, b } = twoBones();
@@ -65,7 +88,13 @@ export function buildTwoPartRig(): { root: Group; body: SkinnedMesh; head: Skinn
   const body = skinnedBox('body', 0x336699);
   body.position.set(0.25, 0, 0);
   const head = skinnedBox('head', 0x993322);
-  new Matrix4().compose(new Vector3(-0.2, 1.5, 0.1), new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), 0.5), new Vector3(1, 1, 1)).decompose(head.position, head.quaternion, head.scale);
+  new Matrix4()
+    .compose(
+      new Vector3(-0.2, 1.5, 0.1),
+      new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), 0.5),
+      new Vector3(1, 1, 1),
+    )
+    .decompose(head.position, head.quaternion, head.scale);
   root.add(body, head);
   root.updateMatrixWorld(true);
   body.bind(new Skeleton([a, b]));

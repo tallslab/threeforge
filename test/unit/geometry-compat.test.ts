@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { BoxGeometry, BufferAttribute, BufferGeometry, DodecahedronGeometry, Float32BufferAttribute } from 'three';
+import { describe, expect, it } from 'vitest';
 import { attributeSignature, ensureIndexed, isBatchCompatible } from '../../src/compiler/geometryCompat.js';
 
 describe('attributeSignature', () => {

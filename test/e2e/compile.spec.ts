@@ -1,4 +1,4 @@
-import { expect, test, type ForgePage } from './fixtures.js';
+import { expect, type ForgePage, test } from './fixtures.js';
 import { differingPixels, pixelDiff, settle } from './pixels.js';
 
 /** Records a measurement on the test (visible in the JSON and HTML reports) instead of printing it. */
@@ -100,12 +100,15 @@ const TINTED_MODES = [
   ['bake: true', { bake: '1' }],
 ] as const;
 
-test('world.compile() takes the naive scene from 503 to 28 submissions, under 0.05 % of pixels changed at tolerance 4 from each of two cameras, and decompile() puts the picture back within 8 pixels', async ({ forge }) => {
+test('world.compile() takes the naive scene from 503 to 28 submissions, under 0.05 % of pixels changed at tolerance 4 from each of two cameras, and decompile() puts the picture back within 8 pixels', async ({
+  forge,
+}) => {
   await forge.open('naive');
   const before = await forge.page.evaluate(() => window.__forge.frame());
   expect(before.totals.sceneSubmissions).toBe(503);
   // Baseline image of the naive render; the compiled render must match it.
-  if (forge.pixelChecks) await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
+  if (forge.pixelChecks)
+    await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
   // Captured at the oblique camera, where the pixel diff is largest, and independently of whether screenshots work here.
   const naiveDraw = await drawSetAt(forge, VIEWS[1]!);
   const naiveShots = forge.pixelChecks ? await shootViews(forge) : null;
@@ -117,7 +120,14 @@ test('world.compile() takes the naive scene from 503 to 28 submissions, under 0.
     return { report, after, text: f.ledger.report() };
   });
   console.log(text);
-  console.log(JSON.stringify({ before: report.before, after: report.after, groups: report.groups.length, skipped: report.skipped.length }));
+  console.log(
+    JSON.stringify({
+      before: report.before,
+      after: report.after,
+      groups: report.groups.length,
+      skipped: report.skipped.length,
+    }),
+  );
 
   expect(report.after.batches).toBe(15);
   expect(after.totals.sceneSubmissions).toBe(28);
@@ -130,7 +140,8 @@ test('world.compile() takes the naive scene from 503 to 28 submissions, under 0.
     'renderer-internal': { submissions: 1 },
   });
   expect(after.totals.programSwitches).toBeLessThan(before.totals.programSwitches);
-  if (forge.pixelChecks) await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
+  if (forge.pixelChecks)
+    await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
   const compiledDraw = await drawSetAt(forge, VIEWS[1]!);
   const compiledShots = forge.pixelChecks ? await shootViews(forge) : null;
 
@@ -147,9 +158,13 @@ test('world.compile() takes the naive scene from 503 to 28 submissions, under 0.
   // prop-on-prop on both sides and no colour test can see it. Batching may reorder draws and change how many GPU draws
   // they cost, but it must never change which instances are drawn: a dropped prop shows up here at once, as fewer
   // triangles or fewer drawn instances.
-  expect(Object.keys(compiledDraw.byPass).sort(), 'oblique: the same passes').toEqual(Object.keys(naiveDraw.byPass).sort());
+  expect(Object.keys(compiledDraw.byPass).sort(), 'oblique: the same passes').toEqual(
+    Object.keys(naiveDraw.byPass).sort(),
+  );
   for (const pass of Object.keys(naiveDraw.byPass)) {
-    expect(compiledDraw.byPass[pass]!.instancesDrawn, `oblique, pass ${pass}: instances drawn`).toBe(naiveDraw.byPass[pass]!.instancesDrawn);
+    expect(compiledDraw.byPass[pass]!.instancesDrawn, `oblique, pass ${pass}: instances drawn`).toBe(
+      naiveDraw.byPass[pass]!.instancesDrawn,
+    );
   }
   expect(compiledDraw.triangles, 'oblique: triangles drawn').toBe(naiveDraw.triangles);
   // `expectedGpuDraws` used to be recorded in the annotation below and never asserted, so a backend-specific draw-count
@@ -184,7 +199,9 @@ test('world.compile() takes the naive scene from 503 to 28 submissions, under 0.
     for (const [pass, bucket] of Object.entries(set.byPass)) {
       const expected = set.multiDraw ? bucket.submissions : bucket.instancesDrawn;
       const law = set.multiDraw ? 'one draw per submission (multi-draw)' : 'one draw per drawn instance';
-      expect(bucket.expectedGpuDraws, `oblique, ${label}, pass ${pass}: multiDraw=${set.multiDraw} costs ${law}`).toBe(expected);
+      expect(bucket.expectedGpuDraws, `oblique, ${label}, pass ${pass}: multiDraw=${set.multiDraw} costs ${law}`).toBe(
+        expected,
+      );
     }
   }
   // And everything the compiler left as its own draw was drawn naively too, so nothing left the set under another name.
@@ -195,7 +212,9 @@ test('world.compile() takes the naive scene from 503 to 28 submissions, under 0.
   // naive 500. So the compiled side is pinned exactly as well: the ground (its material is unique), the ten movers and
   // the two skinned dummies, which is the same 13 the `byReason` block above counts at the default camera. A swap
   // moves a name in or out of this list and fails here.
-  expect(naiveDraw.named, 'oblique: an object the compiler kept was not drawn naively').toEqual(expect.arrayContaining(compiledDraw.named));
+  expect(naiveDraw.named, 'oblique: an object the compiler kept was not drawn naively').toEqual(
+    expect.arrayContaining(compiledDraw.named),
+  );
   expect(compiledDraw.named, 'oblique: exactly the submissions the compiler leaves as themselves').toEqual([
     'ground',
     'prop-136',
@@ -241,7 +260,9 @@ test('world.compile() takes the naive scene from 503 to 28 submissions, under 0.
   }
 });
 
-test("transparent: 'keep' leaves transparent statics unbatched: no unattributed draws, more submissions than the default 28", async ({ forge }) => {
+test("transparent: 'keep' leaves transparent statics unbatched: no unattributed draws, more submissions than the default 28", async ({
+  forge,
+}) => {
   await forge.open('naive', { transparent: 'keep', compile: '1' });
   const after = await forge.page.evaluate(() => window.__forge.frame());
 
@@ -254,7 +275,9 @@ test('resolve() maps a raycast against the compiled scene back to the original p
   const result = await forge.page.evaluate(() => {
     const f = window.__forge;
     // A static prop standing alone above the ground plane: pick the tallest static so nothing else is hit first.
-    const target = f.naive!.props.filter((p) => p.userData.forge === 'static').sort((a, b) => b.position.y - a.position.y)[0]!;
+    const target = f
+      .naive!.props.filter((p) => p.userData.forge === 'static')
+      .sort((a, b) => b.position.y - a.position.y)[0]!;
     return { ...f.raycastDown(target.position.x, target.position.z), targetName: target.name };
   });
   expect(result.hitCount).toBeGreaterThan(0);
@@ -262,7 +285,9 @@ test('resolve() maps a raycast against the compiled scene back to the original p
   expect(result.resolvedName).toBe(result.targetName);
 });
 
-test("dynamics: 'batch-sync' folds the 10 movers into their batches: 28 -> 18 submissions, a screenshot within 0.2 % of the naive baseline's pixels, and they still move", async ({ forge }) => {
+test("dynamics: 'batch-sync' folds the 10 movers into their batches: 28 -> 18 submissions, a screenshot within 0.2 % of the naive baseline's pixels, and they still move", async ({
+  forge,
+}) => {
   await forge.open('naive', { dynamics: 'batch-sync', compile: '1' });
   const result = await forge.page.evaluate(() => {
     const f = window.__forge;
@@ -282,10 +307,13 @@ test("dynamics: 'batch-sync' folds the 10 movers into their batches: 28 -> 18 su
   expect(result.totals.unattributed).toBe(0);
   expect(result.byReason.dynamic).toBeUndefined();
   expect(result.same).toBe(true);
-  if (forge.pixelChecks) await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
+  if (forge.pixelChecks)
+    await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
 });
 
-test('tinted node-material statics keep an instance setupOutput, alphaTest, a user-added property and a userData uniform node when a group clone carries the tints', async ({ forge }) => {
+test('tinted node-material statics keep an instance setupOutput, alphaTest, a user-added property and a userData uniform node when a group clone carries the tints', async ({
+  forge,
+}) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   for (const [mode, query] of TINTED_MODES) {
     await forge.open('empty', { ...query });
@@ -316,14 +344,29 @@ test('tinted node-material statics keep an instance setupOutput, alphaTest, a us
       map.needsUpdate = true;
       const extra = { darken: 0.35 };
       const glow = W.TSL.uniform(0.3);
-      const setupOutput = function (this: { extra: typeof extra; userData: { glow: typeof glow } }, builder: unknown, output: unknown) {
+      const setupOutput = function (
+        this: { extra: typeof extra; userData: { glow: typeof glow } },
+        builder: unknown,
+        output: unknown,
+      ) {
         const out = output as { rgb: { mul(value: number): unknown }; a: unknown };
-        const rgb = W.TSL.mix(out.rgb.mul(this.extra.darken) as never, W.TSL.vec3(1, 0.85, 0.2), this.userData.glow as never);
-        return (W.NodeMaterial.prototype.setupOutput as (...args: unknown[]) => unknown).call(this, builder, W.TSL.vec4(rgb as never, out.a as never));
+        const rgb = W.TSL.mix(
+          out.rgb.mul(this.extra.darken) as never,
+          W.TSL.vec3(1, 0.85, 0.2),
+          this.userData.glow as never,
+        );
+        return (W.NodeMaterial.prototype.setupOutput as (...args: unknown[]) => unknown).call(
+          this,
+          builder,
+          W.TSL.vec4(rgb as never, out.a as never),
+        );
       };
       const geometry = new T.BoxGeometry(1.4, 1.4, 1.4);
       [0xd04040, 0x40b060, 0x4060d0, 0xd0b040].forEach((color, i) => {
-        const material = Object.assign(new W.MeshStandardNodeMaterial({ color, map, roughness: 0.8 }), { setupOutput, extra });
+        const material = Object.assign(new W.MeshStandardNodeMaterial({ color, map, roughness: 0.8 }), {
+          setupOutput,
+          extra,
+        });
         material.alphaTest = 0.5;
         material.userData.glow = glow;
         const mesh = new T.Mesh(geometry, material);
@@ -351,13 +394,17 @@ test('tinted node-material statics keep an instance setupOutput, alphaTest, a us
     await settle(forge.page, 2);
     const after = await forge.page.screenshot({ type: 'png' });
     const diff = pixelDiff(before, after, { threshold: 4 });
-    note(`[${forge.backend}] tinted node materials with extra and a userData uniform node, ${mode}: ${r.after.batches} batches, ${r.after.baked} baked, pixel diff ${(diff * 100).toFixed(4)}%`);
+    note(
+      `[${forge.backend}] tinted node materials with extra and a userData uniform node, ${mode}: ${r.after.batches} batches, ${r.after.baked} baked, pixel diff ${(diff * 100).toFixed(4)}%`,
+    );
     expect(r.after.batches + r.after.baked, `${mode}: the tinted group is compiled`).toBe(1);
     expect(diff, mode).toBeLessThan(0.0005);
   }
 });
 
-test('tinted classic statics keep a custom onBeforeCompile, define, user-added property and a userData uniform animated through the source when a group clone carries the tints (drawn by WebGLRenderer, which runs them)', async ({ forge }) => {
+test('tinted classic statics keep a custom onBeforeCompile, define, user-added property and a userData uniform animated through the source when a group clone carries the tints (drawn by WebGLRenderer, which runs them)', async ({
+  forge,
+}) => {
   // three r186 runs material onBeforeCompile and defines only in renderers/WebGLRenderer.js; the harness's WebGPURenderer
   // (both backends) ignores them, so this cell draws the same scene with a classic WebGLRenderer inside the page.
   for (const [mode, query] of TINTED_MODES) {
@@ -368,7 +415,10 @@ test('tinted classic statics keep a custom onBeforeCompile, define, user-added p
       // The hook reads, through `this` (the drawn material), a user-added own property, which Material.copy() does not
       // carry, and a uniform kept in userData, which Material.copy() JSON-copies and so cuts loose from the source.
       const extra = { uTint: { value: new T.Color(0.6, 0.9, 0.75) } };
-      const onBeforeCompile = function (this: { extra: typeof extra; userData: { uWave: { value: number } } }, shader: { fragmentShader: string; uniforms: Record<string, unknown> }): void {
+      const onBeforeCompile = function (
+        this: { extra: typeof extra; userData: { uWave: { value: number } } },
+        shader: { fragmentShader: string; uniforms: Record<string, unknown> },
+      ): void {
         shader.uniforms.uTint = this.extra.uTint;
         shader.uniforms.uWave = this.userData.uWave;
         shader.fragmentShader = `uniform vec3 uTint;\nuniform float uWave;\n${shader.fragmentShader.replace('#include <dithering_fragment>', '#include <dithering_fragment>\n#ifdef MY_DEFINE\n\tgl_FragColor.rgb = vec3( 1.0 ) - gl_FragColor.rgb;\n#endif\n\tgl_FragColor.rgb = mix( gl_FragColor.rgb * uTint, vec3( 1.0, 0.85, 0.2 ), uWave );')}`;
@@ -376,7 +426,11 @@ test('tinted classic statics keep a custom onBeforeCompile, define, user-added p
       const wave = { value: 0 };
       const geometry = new T.BoxGeometry(1.4, 1.4, 1.4);
       const sources = [0xd04040, 0x40b060, 0x4060d0, 0xd0b040].map((color, i) => {
-        const material = Object.assign(new T.MeshStandardMaterial({ color, roughness: 0.8 }), { onBeforeCompile, extra, defines: { STANDARD: '', MY_DEFINE: '' } });
+        const material = Object.assign(new T.MeshStandardMaterial({ color, roughness: 0.8 }), {
+          onBeforeCompile,
+          extra,
+          defines: { STANDARD: '', MY_DEFINE: '' },
+        });
         material.userData.uWave = wave;
         const mesh = new T.Mesh(geometry, material);
         mesh.position.set(i * 2 - 3, 0.7, 0);
@@ -419,7 +473,9 @@ test('tinted classic statics keep a custom onBeforeCompile, define, user-added p
     const png = (dataUrl: string): Buffer => Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');
     const animated = pixelDiff(png(r.naive[0]!), png(r.naive[1]!), { threshold: 4 });
     const diffs = [0, 1].map((k) => pixelDiff(png(r.naive[k]!), png(r.compiled[k]!), { threshold: 4 }));
-    note(`[${forge.backend}] tinted classic materials with onBeforeCompile, MY_DEFINE, extra and a userData uniform (WebGLRenderer), ${mode}: ${r.after.batches} batches, ${r.after.baked} baked, the wave uniform changes the naive render by ${(animated * 100).toFixed(4)}%, pixel diff at wave 0 ${(diffs[0]! * 100).toFixed(4)}%, at wave 0.6 set through the source ${(diffs[1]! * 100).toFixed(4)}%`);
+    note(
+      `[${forge.backend}] tinted classic materials with onBeforeCompile, MY_DEFINE, extra and a userData uniform (WebGLRenderer), ${mode}: ${r.after.batches} batches, ${r.after.baked} baked, the wave uniform changes the naive render by ${(animated * 100).toFixed(4)}%, pixel diff at wave 0 ${(diffs[0]! * 100).toFixed(4)}%, at wave 0.6 set through the source ${(diffs[1]! * 100).toFixed(4)}%`,
+    );
     expect(r.after.batches + r.after.baked, `${mode}: the tinted group is compiled`).toBe(1);
     expect(animated, `${mode}: the wave uniform visibly changes the naive render`).toBeGreaterThan(0.01);
     expect(diffs[0], `${mode}, wave 0`).toBeLessThan(0.0005);

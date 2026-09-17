@@ -21,7 +21,8 @@ test('baseline: SceneOptimizer.toBatchedMesh() on the naive scene', async ({ for
   // The capability the ledger probes and reports (`frame.env.multiDraw`), not the Playwright project's name.
   const multiDraw = await forge.page.evaluate(() => window.__forge.frame().env.multiDraw);
   console.log('SPIKE ' + JSON.stringify({ ...result, multiDraw }));
-  if (forge.pixelChecks) await forge.page.screenshot({ path: `test-results/spike-scene-optimizer-${forge.backend}.png` });
+  if (forge.pixelChecks)
+    await forge.page.screenshot({ path: `test-results/spike-scene-optimizer-${forge.backend}.png` });
   expect(result.drawsBefore).toBe(504);
   expect(result.indexed.batchedMeshes).toBe(16);
   if (multiDraw) expect(result.indexed.drawsAfter).toBeLessThan(result.drawsBefore);

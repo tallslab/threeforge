@@ -1,24 +1,30 @@
-import { BVH, HybridBuilder, WebGLCoordinateSystem as BvhWebGL, WebGPUCoordinateSystem as BvhWebGPU, type BVHNode } from 'bvh.js';
+import {
+  BVH,
+  type BVHNode,
+  WebGLCoordinateSystem as BvhWebGL,
+  WebGPUCoordinateSystem as BvhWebGPU,
+  HybridBuilder,
+} from 'bvh.js';
 import {
   Box3,
-  Frustum,
-  InstancedBufferAttribute,
-  InstancedMesh,
-  Matrix4,
-  Sphere,
-  Vector3,
-  WebGLCoordinateSystem,
   type BufferAttribute,
   type BufferGeometry,
   type Camera,
   type Color,
   type CoordinateSystem,
+  Frustum,
+  InstancedBufferAttribute,
+  InstancedMesh,
   type Light,
   type Material,
+  Matrix4,
   type Object3D,
   type Scene,
+  Sphere,
+  Vector3,
+  WebGLCoordinateSystem,
 } from 'three';
-import { FORGE_HOOK, levelFor, PassLayers, type NestedPassPolicy } from './culling.js';
+import { FORGE_HOOK, levelFor, type NestedPassPolicy, PassLayers } from './culling.js';
 import type { PassTracker } from './passTracker.js';
 
 export { FORGE_HOOK };
@@ -172,7 +178,10 @@ export function createCulledInstancedMesh(
   if (geometry.boundingBox === null) geometry.computeBoundingBox();
   const geometryBox = geometry.boundingBox!;
   const bounds = new Box3();
-  const bvh = new BVH<object, number>(new HybridBuilder(), coordinateSystem === WebGLCoordinateSystem ? BvhWebGL : BvhWebGPU);
+  const bvh = new BVH<object, number>(
+    new HybridBuilder(),
+    coordinateSystem === WebGLCoordinateSystem ? BvhWebGL : BvhWebGPU,
+  );
   const nodes = new Map<number, BVHNode<object, number>>();
   const boxOf = (id: number, out: Float32Array): Float32Array => {
     _matrix.fromArray(masterMatrices, id * 16);
@@ -259,7 +268,8 @@ export function createCulledInstancedMesh(
       if (rows[row] === id) continue;
       rows[row] = id;
       for (let e = 0; e < 16; e++) matrixArray[row * 16 + e] = masterMatrices[id * 16 + e]!;
-      if (colorArray !== null && masterColors !== null) for (let e = 0; e < 3; e++) colorArray[row * 3 + e] = masterColors[id * 3 + e]!;
+      if (colorArray !== null && masterColors !== null)
+        for (let e = 0; e < 3; e++) colorArray[row * 3 + e] = masterColors[id * 3 + e]!;
       if (first < 0) first = row;
       last = row;
     }
@@ -443,7 +453,8 @@ export function createCulledInstancedMesh(
           const light = nextLights[i] as ShadowLight;
           const offset = 16 * (i + 1);
           queryBit = bitFor(i);
-          if (light.isPointLight) addCube(group, nextKey[offset]!, nextKey[offset + 1]!, nextKey[offset + 2]!, nextKey[offset + 3]!);
+          if (light.isPointLight)
+            addCube(group, nextKey[offset]!, nextKey[offset + 1]!, nextKey[offset + 2]!, nextKey[offset + 3]!);
           else addFrustum(group, light.shadow!.camera);
           poolLights[i] = light;
         }
@@ -548,7 +559,10 @@ export function createCulledInstancedMesh(
     const from = (layers.size - 1) * levelCount;
     const at = layers.push(depth) * levelCount;
     for (let L = 0; L < levelCount; L++) layerBase[at + L] = layerCount[from + L]!;
-    if (scene !== null && (scene.overrideMaterial as { isShadowPassMaterial?: boolean } | null)?.isShadowPassMaterial === true) {
+    if (
+      scene !== null &&
+      (scene.overrideMaterial as { isShadowPassMaterial?: boolean } | null)?.isShadowPassMaterial === true
+    ) {
       // `ensureCasterPool` must run before `appendCasters` reads the pool.
       const index = ensureCasterPool(renderer as RendererLike, scene, camera, this);
       appendCasters(at, this, camera, index);
@@ -603,7 +617,7 @@ export function createCulledInstancedMesh(
       detached = true;
       layers.clear();
       for (const mesh of levels) {
-        if (Object.prototype.hasOwnProperty.call(mesh, 'onBeforeRender')) delete (mesh as { onBeforeRender?: unknown }).onBeforeRender;
+        if (Object.hasOwn(mesh, 'onBeforeRender')) delete (mesh as { onBeforeRender?: unknown }).onBeforeRender;
       }
       const base = levels[0]!;
       base.instanceMatrix.array.set(masterMatrices);

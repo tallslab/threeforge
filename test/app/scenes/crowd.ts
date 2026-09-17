@@ -1,4 +1,14 @@
-import { AnimationMixer, Color, DirectionalLight, HemisphereLight, Mesh, MeshStandardMaterial, PlaneGeometry, type AnimationClip, type Group } from 'three';
+import {
+  type AnimationClip,
+  AnimationMixer,
+  Color,
+  DirectionalLight,
+  type Group,
+  HemisphereLight,
+  Mesh,
+  MeshStandardMaterial,
+  PlaneGeometry,
+} from 'three';
 import { AnimatedInstances, bakeAnimationTexture, tag } from 'threeforge';
 import type { BenchBuilder } from './index.js';
 
@@ -8,7 +18,16 @@ interface KitIndex {
   glbs?: string[];
 }
 
-const NAMES = ['character-male-a', 'character-male-b', 'character-male-c', 'character-female-a', 'character-female-b', 'character-female-c', 'character-male-d', 'character-female-d'];
+const NAMES = [
+  'character-male-a',
+  'character-male-b',
+  'character-male-c',
+  'character-female-a',
+  'character-female-b',
+  'character-female-c',
+  'character-male-d',
+  'character-female-d',
+];
 
 /**
  * 200 skinned Kenney mini characters on a grid, every one animating a different clip with its own time offset. The
@@ -19,7 +38,9 @@ export const crowd: BenchBuilder = async ({ camera, params, loader: makeLoader, 
   const count = Number(params.get('count') ?? '200');
   const loader = await makeLoader();
   const SkeletonUtils = await import('three/addons/utils/SkeletonUtils.js');
-  const kits = (await fetch(url('kits-index.json')).then((r) => (r.ok ? r.json() : [])).catch(() => [])) as KitIndex[];
+  const kits = (await fetch(url('kits-index.json'))
+    .then((r) => (r.ok ? r.json() : []))
+    .catch(() => [])) as KitIndex[];
   const kit = kits.find((k) => k.name === 'kenney-mini-characters' && !k.error);
   if (!kit?.glbs) throw new Error('kenney-mini-characters kit not found in test/assets/files (run pnpm assets)');
   const protos = await Promise.all(
@@ -34,7 +55,10 @@ export const crowd: BenchBuilder = async ({ camera, params, loader: makeLoader, 
   const scene = new Scene();
   scene.name = 'crowd';
   scene.background = new Color(0x1b2028);
-  const ground = new Mesh(new PlaneGeometry(80, 50), new MeshStandardMaterial({ color: 0x2f3a44, roughness: 1, metalness: 0 }));
+  const ground = new Mesh(
+    new PlaneGeometry(80, 50),
+    new MeshStandardMaterial({ color: 0x2f3a44, roughness: 1, metalness: 0 }),
+  );
   ground.name = 'ground';
   ground.rotation.x = -Math.PI / 2;
   tag.static(ground);
@@ -55,7 +79,12 @@ export const crowd: BenchBuilder = async ({ camera, params, loader: makeLoader, 
     mixer.clipAction(clip).play();
     mixers.push({ mixer, offset: i * 0.13 });
     animations.push({ root: character, clips: proto.animations });
-    characters.push({ object: character, proto: i % protos.length, clip: i % proto.animations.length, offset: i * 0.13 });
+    characters.push({
+      object: character,
+      proto: i % protos.length,
+      clip: i % proto.animations.length,
+      offset: i * 0.13,
+    });
   }
   const sun = new DirectionalLight(0xfff1e0, 2.5);
   sun.name = 'sun';

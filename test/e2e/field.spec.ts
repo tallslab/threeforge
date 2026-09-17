@@ -1,6 +1,8 @@
 import { expect, test } from './fixtures.js';
 
-test('20k-instance field: three instanced meshes, culling draws only what the camera sees, nothing unattributed', async ({ forge }) => {
+test('20k-instance field: three instanced meshes, culling draws only what the camera sees, nothing unattributed', async ({
+  forge,
+}) => {
   await forge.open('field', { count: '20000' });
   const result = await forge.page.evaluate(() => {
     const f = window.__forge;
@@ -14,7 +16,16 @@ test('20k-instance field: three instanced meshes, culling draws only what the ca
     const t1 = performance.now();
     for (let i = 0; i < 5; i++) f.renderOnce();
     const compiledMs = (performance.now() - t1) / 5;
-    return { visible, before: before.totals, after: after.totals, batches: report.after.batches, instanced: report.after.instanced, culling: report.culling, naiveMs, compiledMs };
+    return {
+      visible,
+      before: before.totals,
+      after: after.totals,
+      batches: report.after.batches,
+      instanced: report.after.instanced,
+      culling: report.culling,
+      naiveMs,
+      compiledMs,
+    };
   });
   console.log(JSON.stringify(result));
   expect(result.before.sceneSubmissions).toBe(result.visible);
@@ -31,17 +42,25 @@ test('20k-instance field: three instanced meshes, culling draws only what the ca
   expect(result.after.unattributed).toBe(0);
 });
 
-test('LODs on the field cut rendered triangles by more than half while drawing the same instances', async ({ forge }) => {
+test('LODs on the field cut rendered triangles by more than half while drawing the same instances', async ({
+  forge,
+}) => {
   await forge.open('field', { count: '20000', compile: '1' });
   const plain = await forge.page.evaluate(() => window.__forge.frame().totals);
   await forge.open('field', { count: '20000', compile: '1', lod: '1' });
   const lod = await forge.page.evaluate(() => {
     const f = window.__forge;
     const totals = f.frame().totals;
-    const levels = f.world.instancedMeshes.map((m) => ({ name: m.name, count: m.count, level: (m.userData.forge as { lodLevel: number }).lodLevel }));
+    const levels = f.world.instancedMeshes.map((m) => ({
+      name: m.name,
+      count: m.count,
+      level: (m.userData.forge as { lodLevel: number }).lodLevel,
+    }));
     return { totals, levels };
   });
-  console.log(JSON.stringify({ plainTriangles: plain.triangles, lodTriangles: lod.totals.triangles, levels: lod.levels }));
+  console.log(
+    JSON.stringify({ plainTriangles: plain.triangles, lodTriangles: lod.totals.triangles, levels: lod.levels }),
+  );
   expect(lod.levels.filter((l) => l.level > 0).length).toBe(6); // 3 geometries x 2 extra levels
   expect(lod.totals.triangles).toBeLessThan(plain.triangles * 0.5);
   expect(lod.totals.instancesDrawn).toBeGreaterThanOrEqual(plain.instancesDrawn * 0.97);

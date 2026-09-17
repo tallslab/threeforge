@@ -1,5 +1,17 @@
+import {
+  BufferGeometry,
+  Float32BufferAttribute,
+  InstancedBufferGeometry,
+  Mesh,
+  MeshBasicMaterial,
+  PlaneGeometry,
+  Points,
+  PointsMaterial,
+  Scene,
+  Sprite,
+  SpriteMaterial,
+} from 'three';
 import { describe, expect, it } from 'vitest';
-import { BufferGeometry, Float32BufferAttribute, InstancedBufferGeometry, Mesh, MeshBasicMaterial, PlaneGeometry, Points, PointsMaterial, Scene, Sprite, SpriteMaterial } from 'three';
 import { ParticleBudget } from '../../src/overdraw/ParticleBudget.js';
 
 function cloud(name: string, n: number, size = 2): Points {
@@ -82,7 +94,10 @@ describe('ParticleBudget', () => {
     const report = new ParticleBudget({ tier: 'phone-low', particles: 2502, pointSizeScale: 1 }).apply(s);
     expect(report.before).toBe(5002);
     expect(report.after).toBeLessThanOrEqual(2502);
-    expect(report.systems.filter((x) => x.kind === 'sprite')).toEqual([{ name: 'bar-0', kind: 'sprite', count: 1, drawn: 1 }, { name: '', kind: 'sprite', count: 1, drawn: 1 }]);
+    expect(report.systems.filter((x) => x.kind === 'sprite')).toEqual([
+      { name: 'bar-0', kind: 'sprite', count: 1, drawn: 1 },
+      { name: '', kind: 'sprite', count: 1, drawn: 1 },
+    ]);
     expect([a, b, c].map((p) => p.geometry.drawRange.count)).toEqual([500, 1000, 500]);
   });
 });

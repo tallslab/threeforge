@@ -1,8 +1,21 @@
+import {
+  BatchedMesh,
+  BoxGeometry,
+  DataTexture,
+  Group,
+  type Material,
+  Mesh,
+  MeshStandardMaterial,
+  RGBAFormat,
+  Scene,
+  SphereGeometry,
+  type Texture,
+  UnsignedByteType,
+} from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { BatchedMesh, BoxGeometry, DataTexture, Group, Mesh, MeshStandardMaterial, RGBAFormat, Scene, SphereGeometry, UnsignedByteType, type Material, type Texture } from 'three';
 import { ResourceTracker } from '../../src/memory/ResourceTracker.js';
-import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 import { collectResources, emptyResourceSets, unreferencedResources } from '../../src/memory/resources.js';
+import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 
 const tex = () => new DataTexture(new Uint8Array(16), 2, 2, RGBAFormat, UnsignedByteType);
 
@@ -13,7 +26,10 @@ describe('collectResources', () => {
     const env = tex();
     scene.background = env;
     const geometry = new BoxGeometry();
-    scene.add(new Mesh(geometry, [new MeshStandardMaterial({ map }), new MeshStandardMaterial()]), new Mesh(geometry, new MeshStandardMaterial({ map })));
+    scene.add(
+      new Mesh(geometry, [new MeshStandardMaterial({ map }), new MeshStandardMaterial()]),
+      new Mesh(geometry, new MeshStandardMaterial({ map })),
+    );
     const r = collectResources(scene);
     expect(r.geometries.size).toBe(1);
     expect(r.materials.size).toBe(3);
@@ -42,7 +58,9 @@ describe('collectResources', () => {
     for (let i = 0; i < 50; i++) root.add(new Mesh(geometry, i % 2 ? shared : [other, shared]));
     const values = vi.spyOn(Object, 'values');
     const r = collectResources(root);
-    const materialReads = values.mock.calls.filter(([v]) => (v as { isMaterial?: boolean } | null)?.isMaterial === true).length;
+    const materialReads = values.mock.calls.filter(
+      ([v]) => (v as { isMaterial?: boolean } | null)?.isMaterial === true,
+    ).length;
     values.mockRestore();
     expect(materialReads).toBe(2);
     expect(r.materials.size).toBe(2);
@@ -95,7 +113,10 @@ describe('unreferencedResources', () => {
     const scene = new Scene();
     scene.add(new Mesh(new BoxGeometry(), new MeshStandardMaterial({ map: tex() })));
     expect(unreferencedResources({ geometries: 3, textures: 4 }, scene)).toEqual({ geometries: 2, textures: 3 });
-    expect(unreferencedResources({ geometries: 3, textures: 4 }, scene, { textures: 2 })).toEqual({ geometries: 2, textures: 1 });
+    expect(unreferencedResources({ geometries: 3, textures: 4 }, scene, { textures: 2 })).toEqual({
+      geometries: 2,
+      textures: 1,
+    });
     expect(unreferencedResources({ geometries: 0, textures: 0 }, scene)).toEqual({ geometries: 0, textures: 0 });
   });
 });
@@ -123,7 +144,9 @@ describe('ResourceTracker and the material registry', () => {
     const root = new Group().add(new Mesh(new BoxGeometry(), canonical), new Mesh(new BoxGeometry(), duplicate));
     new ResourceTracker({ registry }).track(root).release(root);
     expect(registry.describe(duplicate).outcome).toBe('unregistered');
-    expect(registry.describe(canonical).outcome, 'forgotten last, once nothing merged into it was left').toBe('unregistered');
+    expect(registry.describe(canonical).outcome, 'forgotten last, once nothing merged into it was left').toBe(
+      'unregistered',
+    );
     expect(registry.stats().registered).toBe(0);
   });
 

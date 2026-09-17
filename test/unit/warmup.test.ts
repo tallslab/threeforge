@@ -1,6 +1,18 @@
-import { describe, expect, it } from 'vitest';
-import { BoxGeometry, DataTexture, DoubleSide, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, PerspectiveCamera, RGBAFormat, Scene, Vector4, WebGLCoordinateSystem } from 'three';
 import type { Camera, Material } from 'three';
+import {
+  BoxGeometry,
+  DataTexture,
+  DoubleSide,
+  Mesh,
+  MeshPhysicalMaterial,
+  MeshStandardMaterial,
+  PerspectiveCamera,
+  RGBAFormat,
+  Scene,
+  Vector4,
+  WebGLCoordinateSystem,
+} from 'three';
+import { describe, expect, it } from 'vitest';
 import { World } from '../../src/compiler/World.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
@@ -49,7 +61,9 @@ function fakeRenderer(options: { compileAsync?: boolean; renderAsync?: boolean; 
     };
   }
   if (options.compileAsync !== false) renderer.compileAsync = async () => void calls.push('compileAsync');
-  if (options.renderAsync) renderer.renderAsync = async () => void calls.push(`renderAsync scissor=${scissorTest ? scissor.toArray().join(',') : 'off'}`);
+  if (options.renderAsync)
+    renderer.renderAsync = async () =>
+      void calls.push(`renderAsync scissor=${scissorTest ? scissor.toArray().join(',') : 'off'}`);
   return renderer;
 }
 
@@ -62,12 +76,23 @@ function disposals(...materials: Material[]): () => string[] {
 describe('World.warmup', () => {
   it('renders one real frame inside a 1x1 scissor by default, then restores the scissor state', async () => {
     const scene = new Scene();
-    scene.add(tag.static(new Mesh(box, new MeshStandardMaterial({ map: new DataTexture(new Uint8Array(4), 1, 1, RGBAFormat) }))));
+    scene.add(
+      tag.static(
+        new Mesh(box, new MeshStandardMaterial({ map: new DataTexture(new Uint8Array(4), 1, 1, RGBAFormat) })),
+      ),
+    );
     const world = new World(scene);
     world.compile();
     const renderer = fakeRenderer();
     const result = await world.warmup(renderer as never, new PerspectiveCamera());
-    expect(renderer.calls).toEqual(['initTexture', 'setScissor(0,0,1,1)', 'setScissorTest(true)', 'render scissor=0,0,1,1', 'setScissorTest(false)', 'setScissor(0,0,800,600)']);
+    expect(renderer.calls).toEqual([
+      'initTexture',
+      'setScissor(0,0,1,1)',
+      'setScissorTest(true)',
+      'render scissor=0,0,1,1',
+      'setScissorTest(false)',
+      'setScissor(0,0,800,600)',
+    ]);
     expect(result).toEqual({ mode: 'frame', textures: 1, repaired: 0 });
   });
 
@@ -84,8 +109,17 @@ describe('World.warmup', () => {
       await world.warmup(renderer as never, new PerspectiveCamera(), { mode });
       calls[mode] = renderer.calls;
     }
-    const frame = ['setScissor(0,0,1,1)', 'setScissorTest(true)', 'render scissor=0,0,1,1', 'setScissorTest(false)', 'setScissor(0,0,800,600)'];
-    expect(calls).toEqual({ frame: ['init', 'init resolved', ...frame], async: ['init', 'init resolved', 'compileAsync', ...frame] });
+    const frame = [
+      'setScissor(0,0,1,1)',
+      'setScissorTest(true)',
+      'render scissor=0,0,1,1',
+      'setScissorTest(false)',
+      'setScissor(0,0,800,600)',
+    ];
+    expect(calls).toEqual({
+      frame: ['init', 'init resolved', ...frame],
+      async: ['init', 'init resolved', 'compileAsync', ...frame],
+    });
   });
 
   it('with a ledger attached, the warm-up frame is one main frame, the same as the render after it (both modes)', async () => {
@@ -110,27 +144,53 @@ describe('World.warmup', () => {
       const warm = ledger.frame();
       renderer.render(scene, camera);
       const next = ledger.frame();
-      outcome.push(`${result.mode}: warm-up passes ${warm.passes.map((p) => p.id).join(',')}, ${warm.totals.sceneSubmissions} scene submissions`);
-      outcome.push(`${result.mode}: next passes ${next.passes.map((p) => p.id).join(',')}, ${next.totals.sceneSubmissions} scene submissions`);
+      outcome.push(
+        `${result.mode}: warm-up passes ${warm.passes.map((p) => p.id).join(',')}, ${warm.totals.sceneSubmissions} scene submissions`,
+      );
+      outcome.push(
+        `${result.mode}: next passes ${next.passes.map((p) => p.id).join(',')}, ${next.totals.sceneSubmissions} scene submissions`,
+      );
       expect(warm.totals, `${mode}: warm-up totals`).toEqual(next.totals);
     }
-    expect(outcome).toEqual(['frame', 'async'].flatMap((mode) => [`${mode}: warm-up passes main, 1 scene submissions`, `${mode}: next passes main, 1 scene submissions`]));
+    expect(outcome).toEqual(
+      ['frame', 'async'].flatMap((mode) => [
+        `${mode}: warm-up passes main, 1 scene submissions`,
+        `${mode}: next passes main, 1 scene submissions`,
+      ]),
+    );
   });
 
   it('async mode pre-compiles with compileAsync, then rebuilds the materials three renders in two passes or through a viewport texture', async () => {
     const scene = new Scene();
     const foliage = new MeshStandardMaterial({ name: 'foliage', transparent: true, side: DoubleSide });
     const glass = new MeshPhysicalMaterial({ name: 'glass', transmission: 0.9 });
-    const singlePass = new MeshStandardMaterial({ name: 'single-pass', transparent: true, side: DoubleSide, forceSinglePass: true });
+    const singlePass = new MeshStandardMaterial({
+      name: 'single-pass',
+      transparent: true,
+      side: DoubleSide,
+      forceSinglePass: true,
+    });
     const opaque = new MeshStandardMaterial({ name: 'opaque' });
-    scene.add(new Mesh(box, foliage), new Mesh(box, glass), new Mesh(box, singlePass), tag.static(new Mesh(box, opaque)));
+    scene.add(
+      new Mesh(box, foliage),
+      new Mesh(box, glass),
+      new Mesh(box, singlePass),
+      tag.static(new Mesh(box, opaque)),
+    );
     const world = new World(scene);
     world.compile();
     const disposed = disposals(foliage, glass, singlePass, opaque);
     const renderer = fakeRenderer();
     const result = await world.warmup(renderer as never, new PerspectiveCamera(), { mode: 'async' });
     expect(disposed().sort()).toEqual(['foliage', 'glass']);
-    expect(renderer.calls).toEqual(['compileAsync', 'setScissor(0,0,1,1)', 'setScissorTest(true)', 'render scissor=0,0,1,1', 'setScissorTest(false)', 'setScissor(0,0,800,600)']);
+    expect(renderer.calls).toEqual([
+      'compileAsync',
+      'setScissor(0,0,1,1)',
+      'setScissorTest(true)',
+      'render scissor=0,0,1,1',
+      'setScissorTest(false)',
+      'setScissor(0,0,800,600)',
+    ]);
     expect(result).toEqual({ mode: 'async', textures: 0, repaired: 2 });
   });
 
@@ -153,7 +213,11 @@ describe('World.warmup', () => {
     await world.warmup(renderer as never, new PerspectiveCamera(), { mode: 'async' });
     const main = new PerspectiveCamera();
     let mainInside: Camera | null = null;
-    scene.add(Object.assign(new Mesh(box, new MeshStandardMaterial()), { onBeforeRender: () => void (mainInside = world.mainCamera) }));
+    scene.add(
+      Object.assign(new Mesh(box, new MeshStandardMaterial()), {
+        onBeforeRender: () => void (mainInside = world.mainCamera),
+      }),
+    );
     renderer.render(scene, main);
     expect(mainInside, 'the next render is an outermost render: its camera is the main camera').toBe(main);
     expect(world.mainCamera).toBe(main);
@@ -174,7 +238,9 @@ describe('World.warmup', () => {
         throw new Error('compile failed');
       },
     });
-    await expect(world.warmup(renderer as never, new PerspectiveCamera(), { mode: 'async' })).rejects.toThrow('compile failed');
+    await expect(world.warmup(renderer as never, new PerspectiveCamera(), { mode: 'async' })).rejects.toThrow(
+      'compile failed',
+    );
     const main = new PerspectiveCamera();
     renderer.render(scene, main);
     expect(world.mainCamera, 'the next render is an outermost render').toBe(main);

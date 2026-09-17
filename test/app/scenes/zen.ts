@@ -1,4 +1,26 @@
-import { BoxGeometry, Color, ConeGeometry, CylinderGeometry, DataTexture, DirectionalLight, Fog, HemisphereLight, IcosahedronGeometry, LinearFilter, LinearMipmapLinearFilter, Mesh, MeshStandardMaterial, OctahedronGeometry, PlaneGeometry, RGBAFormat, Scene, SRGBColorSpace, TetrahedronGeometry, UnsignedByteType, type BufferAttribute } from 'three';
+import {
+  BoxGeometry,
+  type BufferAttribute,
+  Color,
+  ConeGeometry,
+  CylinderGeometry,
+  DataTexture,
+  DirectionalLight,
+  Fog,
+  HemisphereLight,
+  IcosahedronGeometry,
+  LinearFilter,
+  LinearMipmapLinearFilter,
+  Mesh,
+  MeshStandardMaterial,
+  OctahedronGeometry,
+  PlaneGeometry,
+  RGBAFormat,
+  Scene,
+  SRGBColorSpace,
+  TetrahedronGeometry,
+  UnsignedByteType,
+} from 'three';
 import { Streamer, tag } from 'threeforge';
 import { mulberry32 } from '../../scenes/naive.js';
 import type { BenchBuilder, BenchScene } from './index.js';
@@ -51,16 +73,27 @@ export const zen: BenchBuilder = async ({ camera, params }) => {
       const position = geometry.attributes.position as BufferAttribute;
       const ox = (cx + 0.5) * CHUNK - WORLD / 2;
       const oz = (cz + 0.5) * CHUNK - WORLD / 2;
-      for (let i = 0; i < position.count; i++) position.setY(i, 0.5 * Math.sin((position.getX(i) + ox) / 40) * Math.cos((position.getZ(i) + oz) / 40));
+      for (let i = 0; i < position.count; i++)
+        position.setY(i, 0.5 * Math.sin((position.getX(i) + ox) / 40) * Math.cos((position.getZ(i) + oz) / 40));
       geometry.computeVertexNormals();
-      const tile = new Mesh(geometry, new MeshStandardMaterial({ map: tileTexture(cx, cz, rng), roughness: 1, metalness: 0 }));
+      const tile = new Mesh(
+        geometry,
+        new MeshStandardMaterial({ map: tileTexture(cx, cz, rng), roughness: 1, metalness: 0 }),
+      );
       tile.name = `tile-${cx}-${cz}`;
       tile.position.set(ox, 0, oz);
       tag.static(tile);
       scene.add(tile);
     }
   }
-  const shapes = [new IcosahedronGeometry(1, 0), new ConeGeometry(0.8, 2, 5), new BoxGeometry(1.2, 1.2, 1.2), new CylinderGeometry(0.4, 0.4, 1.5, 6), new TetrahedronGeometry(1.1), new OctahedronGeometry(1)];
+  const shapes = [
+    new IcosahedronGeometry(1, 0),
+    new ConeGeometry(0.8, 2, 5),
+    new BoxGeometry(1.2, 1.2, 1.2),
+    new CylinderGeometry(0.4, 0.4, 1.5, 6),
+    new TetrahedronGeometry(1.1),
+    new OctahedronGeometry(1),
+  ];
   const palette = [0xf2b5a7, 0xa7d8f2, 0xb8e0b0, 0xf2e2a7, 0xd9b8f2, 0xa7f2e6, 0xf2c8a7, 0xc4c9d6];
   const materials = palette.map((color) => new MeshStandardMaterial({ color, roughness: 0.85, metalness: 0 }));
   for (let i = 0; i < count; i++) {

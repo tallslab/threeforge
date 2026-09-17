@@ -12,7 +12,9 @@ import { pixelDiff, settle } from './pixels.js';
 
 const OUT = 'test-results/hidden-group';
 
-test('static meshes under an invisible ancestor Group stay excluded from batching: naive and compiled render the same pixels', async ({ forge }) => {
+test('static meshes under an invisible ancestor Group stay excluded from batching: naive and compiled render the same pixels', async ({
+  forge,
+}) => {
   test.skip(!forge.pixelChecks, 'pixel checks need a native WebGPU adapter');
   await forge.open('empty');
 
@@ -74,10 +76,17 @@ test('static meshes under an invisible ancestor Group stay excluded from batchin
     const f = window.__forge;
     const report = f.compile();
     const frame = await f.frameAsync({ items: true });
-    return { after: report.after, skipped: report.skipped.filter((s) => s.name.startsWith('hidden-')), totals: frame.totals, items: frame.items ?? [] };
+    return {
+      after: report.after,
+      skipped: report.skipped.filter((s) => s.name.startsWith('hidden-')),
+      totals: frame.totals,
+      items: frame.items ?? [],
+    };
   });
   // The classifier's new `invisible-ancestor` rule, not `static`+batched: every hidden box stays where it was.
-  expect(compiled.skipped).toEqual(Array.from({ length: 5 }, (_, i) => ({ name: `hidden-${i}`, rule: 'invisible-ancestor' })));
+  expect(compiled.skipped).toEqual(
+    Array.from({ length: 5 }, (_, i) => ({ name: `hidden-${i}`, rule: 'invisible-ancestor' })),
+  );
   expect(compiled.after.batches).toBe(1);
   expect(compiled.totals.unattributed).toBe(0);
   // The compiled scene submits no draw at all for the hidden subtree.
@@ -90,6 +99,14 @@ test('static meshes under an invisible ancestor Group stay excluded from batchin
   writeFileSync(`${OUT}/hidden-group-naive-${tag}.png`, before);
   writeFileSync(`${OUT}/hidden-group-compiled-${tag}.png`, after);
   const diff = pixelDiff(before, after, { threshold: 4, diffPath: `${OUT}/hidden-group-diff-${tag}.png` });
-  await test.info().attach('hidden-group', { body: JSON.stringify({ backend: forge.backend, naive: naive.totals, compiled: { after: compiled.after, totals: compiled.totals }, diffPct: (diff * 100).toFixed(4) }), contentType: 'application/json' });
+  await test.info().attach('hidden-group', {
+    body: JSON.stringify({
+      backend: forge.backend,
+      naive: naive.totals,
+      compiled: { after: compiled.after, totals: compiled.totals },
+      diffPct: (diff * 100).toFixed(4),
+    }),
+    contentType: 'application/json',
+  });
   expect(diff).toBeLessThan(0.0005);
 });

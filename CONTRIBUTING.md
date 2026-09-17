@@ -18,7 +18,7 @@ Read `docs/threeforge.md` (the complete reference: every module, option and mech
 
 ## Commands
 
-- `pnpm test`: Vitest units (node, imports from `three` only, no GPU). `pnpm typecheck` alongside it.
+- `pnpm test`: Vitest units (node, imports from `three` only, no GPU). `pnpm typecheck` and `pnpm lint` (Biome, also `pnpm lint:fix`) alongside it.
 - `pnpm e2e`: Playwright on `webgl2` (headless shell) and `webgpu` (`FORGE_WEBGPU=native` on macOS/Windows, SwiftShader on Linux; caveats in `docs/design.md`).
 - `pnpm budget`: fails above `FORGE_BUDGET` (default 30) scene submissions on the naive scene.
 - `pnpm bench [webgl2|webgpu]`: the eight-scene suite (`test/app/scenes`, naive and optimized variants); fails on a 10 % regression against `bench/baselines`. `pnpm bench:baseline` promotes results, `pnpm bench:table` regenerates `docs/bench.md`, `pnpm bench:devices` regenerates `docs/devices.md` from `bench/devices/*.json`.

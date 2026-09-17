@@ -1,9 +1,26 @@
+import {
+  type BatchedMesh,
+  Box3,
+  BoxGeometry,
+  type Camera,
+  DodecahedronGeometry,
+  FrontSide,
+  type InstancedMesh,
+  type Material,
+  Mesh,
+  MeshBasicMaterial,
+  MeshStandardMaterial,
+  type Object3D,
+  OrthographicCamera,
+  PerspectiveCamera,
+  PlaneGeometry,
+  Scene,
+} from 'three';
 import { describe, expect, it } from 'vitest';
-import { BatchedMesh, Box3, BoxGeometry, DodecahedronGeometry, FrontSide, InstancedMesh, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, OrthographicCamera, PerspectiveCamera, PlaneGeometry, Scene, type Camera, type Material } from 'three';
 import { World } from '../../src/compiler/World.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { tag } from '../../src/tags.js';
-import { FakeRenderer, sceneWithCamera, type FakeRendererOptions } from './helpers/fakeRenderer.js';
+import { FakeRenderer, type FakeRendererOptions, sceneWithCamera } from './helpers/fakeRenderer.js';
 import { QueryRenderer } from './helpers/queryRenderer.js';
 
 const box = new BoxGeometry(1, 1, 1);
@@ -25,7 +42,10 @@ function twoChunkScene() {
 }
 
 function proxiesIn(scene: Scene): Mesh[] {
-  return scene.children.filter((o): o is Mesh => (o as Mesh).isMesh && (o.userData.forge as { kind?: string } | undefined)?.kind === 'occlusion-proxy');
+  return scene.children.filter(
+    (o): o is Mesh =>
+      (o as Mesh).isMesh && (o.userData.forge as { kind?: string } | undefined)?.kind === 'occlusion-proxy',
+  );
 }
 
 function proxyOf(scene: Scene, target: Object3D): Mesh {
@@ -40,7 +60,11 @@ function leftAndRight(scene: Scene): [BatchedMesh, BatchedMesh] {
   return [left, batches.find((b) => b !== left)!];
 }
 
-function lookFrom<T extends Camera>(camera: T, [x, y, z]: [number, number, number], [tx, ty, tz]: [number, number, number]): T {
+function lookFrom<T extends Camera>(
+  camera: T,
+  [x, y, z]: [number, number, number],
+  [tx, ty, tz]: [number, number, number],
+): T {
   camera.position.set(x, y, z);
   camera.lookAt(tx, ty, tz);
   camera.updateMatrixWorld();
@@ -129,7 +153,7 @@ describe('World occlusion', () => {
     world.decompile();
     expect(proxiesIn(scene)).toHaveLength(0);
     expect(scene.children.every((o) => o.visible)).toBe(true);
-    expect(Object.prototype.hasOwnProperty.call(scene, 'onAfterRender')).toBe(false);
+    expect(Object.hasOwn(scene, 'onAfterRender')).toBe(false);
   });
 
   it('covers instanced groups too', () => {
@@ -176,7 +200,9 @@ describe('World occlusion with queries as three runs them', () => {
       }
       expect(hidden, `lag ${lag}: frames the batch around or in front of the camera was hidden`).toEqual([]);
       expect(fromInside, `lag ${lag}: queries of the proxy around the camera`).toBe(0);
-      expect(renderer.queries.filter((q) => q.object === leftProxy).length, `lag ${lag}: queries resume outside`).toBe(8);
+      expect(renderer.queries.filter((q) => q.object === leftProxy).length, `lag ${lag}: queries resume outside`).toBe(
+        8,
+      );
       expect(right.visible, `lag ${lag}: the chunk behind the wall is still hidden`).toBe(false);
     }
   });
@@ -199,14 +225,30 @@ describe('World occlusion with queries as three runs them', () => {
     };
     const cases: [string, Camera, boolean][] = [
       // The box's +z face is at z = 0.5; near 0.1.
-      ['eye 0.15 in front of a face', lookFrom(new PerspectiveCamera(60, 1, 0.1, 500), [3, 0, 0.65], [3, 0, -10]), false],
+      [
+        'eye 0.15 in front of a face',
+        lookFrom(new PerspectiveCamera(60, 1, 0.1, 500), [3, 0, 0.65], [3, 0, -10]),
+        false,
+      ],
       ['eye 2.5 in front of a face', lookFrom(new PerspectiveCamera(60, 1, 0.1, 500), [3, 0, 3], [3, 0, -10]), true],
       // Near 1, eye 2.5 from the face (beyond twice near), looking along it: the near plane's half-width is what reaches.
-      ['fov 170, looking along the face', lookFrom(new PerspectiveCamera(170, 2, 1, 500), [3, 0, 3], [-10, 0, 3]), false],
+      [
+        'fov 170, looking along the face',
+        lookFrom(new PerspectiveCamera(170, 2, 1, 500), [3, 0, 3], [-10, 0, 3]),
+        false,
+      ],
       ['fov 60, looking along the face', lookFrom(new PerspectiveCamera(60, 2, 1, 500), [3, 0, 3], [-10, 0, 3]), true],
       // Looking down from 23 units beside the box: the near plane lies at y = 0, through the box, and spans x -50..10.
-      ['orthographic, near plane through the box', lookFrom(down(new OrthographicCamera(-30, 30, 30, -30, 5, 100)), [-20, 5, 0], [-20, -10, 0]), false],
-      ['orthographic, near plane above the box', lookFrom(down(new OrthographicCamera(-30, 30, 30, -30, 5, 100)), [-20, 50, 0], [-20, -10, 0]), true],
+      [
+        'orthographic, near plane through the box',
+        lookFrom(down(new OrthographicCamera(-30, 30, 30, -30, 5, 100)), [-20, 5, 0], [-20, -10, 0]),
+        false,
+      ],
+      [
+        'orthographic, near plane above the box',
+        lookFrom(down(new OrthographicCamera(-30, 30, 30, -30, 5, 100)), [-20, 50, 0], [-20, -10, 0]),
+        true,
+      ],
     ];
     const outcome = cases.map(([name, camera]) => `${name}: ${queried(camera) ? 'queried' : 'no query'}`);
     expect(outcome).toEqual(cases.map(([name, , expected]) => `${name}: ${expected ? 'queried' : 'no query'}`));
@@ -243,7 +285,10 @@ describe('World occlusion with queries as three runs them', () => {
       renderer.render(scene, main);
       shown.push(left.visible);
     }
-    expect(renderer.queries.some((q) => q.object === leftProxy && q.depth === 1), 'the nested pass queried the proxy').toBe(true);
+    expect(
+      renderer.queries.some((q) => q.object === leftProxy && q.depth === 1),
+      'the nested pass queried the proxy',
+    ).toBe(true);
     expect(shown, 'hidden by nothing the main camera sees').toEqual([true, true, true, true, true, true]);
     // The other way round: hidden for the main camera, a nested pass that sees the box does not show it.
     renderer.wall = (object, camera) => object === leftProxy && camera === main;
@@ -267,7 +312,9 @@ describe('World occlusion with queries as three runs them', () => {
         const camera = lookFrom(new PerspectiveCamera(60, 2, 0.1, 500), [50, 10, 120], [50, 0, 0]);
         const result = await world.warmup(renderer, camera, { mode });
         const label = `${result.mode} lag ${lag}`;
-        outcome.push(`${label}: ${renderer.queries.length} queries in warmup, proxies ${proxiesIn(scene).every((p) => p.occlusionTest) ? 'on' : 'off'} after it`);
+        outcome.push(
+          `${label}: ${renderer.queries.length} queries in warmup, proxies ${proxiesIn(scene).every((p) => p.occlusionTest) ? 'on' : 'off'} after it`,
+        );
         for (let frame = 0; frame < 6; frame++) {
           renderer.render(scene, camera);
           batches.forEach((batch, i) => {
@@ -277,7 +324,12 @@ describe('World occlusion with queries as three runs them', () => {
         outcome.push(`${label}: ${renderer.queries.length > 0 ? 'queries resume' : 'no queries after warmup'}`);
       }
     }
-    expect(outcome).toEqual(['frame lag 2', 'frame lag 3', 'async lag 2', 'async lag 3'].flatMap((label) => [`${label}: 0 queries in warmup, proxies on after it`, `${label}: queries resume`]));
+    expect(outcome).toEqual(
+      ['frame lag 2', 'frame lag 3', 'async lag 2', 'async lag 3'].flatMap((label) => [
+        `${label}: 0 queries in warmup, proxies on after it`,
+        `${label}: queries resume`,
+      ]),
+    );
   });
 
   it('shows the targets and issues no query when the scene is rendered without its own hooks (under another root), and resumes once the scene is rendered itself', async () => {
@@ -304,7 +356,10 @@ describe('World occlusion with queries as three runs them', () => {
     expect(shown, 'shown after each render under the other root').toEqual([true, true, true, true]);
     expect(renderer.queries.length - before, 'queries issued under the other root').toBe(0);
     await Promise.resolve();
-    expect(proxiesIn(scene).every((p) => p.occlusionTest), 'on again once that render is over').toBe(true);
+    expect(
+      proxiesIn(scene).every((p) => p.occlusionTest),
+      'on again once that render is over',
+    ).toBe(true);
     root.remove(scene);
     for (let frame = 0; frame < 4; frame++) renderer.render(scene, camera);
     expect(left.visible, 'hidden again by its own renders').toBe(false);
@@ -325,7 +380,10 @@ describe('World occlusion with queries as three runs them', () => {
     root.updateMatrixWorld();
     renderer.render(root, camera); // depth 0: both proxies park and one re-enable is queued
     root.remove(scene);
-    expect(proxiesIn(scene).map((p) => p.occlusionTest), 'parked by the depth-0 render').toEqual([false, false]);
+    expect(
+      proxiesIn(scene).map((p) => p.occlusionTest),
+      'parked by the depth-0 render',
+    ).toEqual([false, false]);
     await world.warmup(renderer, camera, { mode: 'frame' }); // same task as the park
     const outcome = [`${renderer.queries.length} queries in warmup`];
     for (let frame = 0; frame < 6; frame++) {
@@ -335,7 +393,10 @@ describe('World occlusion with queries as three runs them', () => {
       });
     }
     expect(outcome).toEqual(['0 queries in warmup']);
-    expect(proxiesIn(scene).every((p) => p.occlusionTest), 'proxies on after warmup').toBe(true);
+    expect(
+      proxiesIn(scene).every((p) => p.occlusionTest),
+      'proxies on after warmup',
+    ).toBe(true);
   });
 
   it('decompile and dispose leave no proxy, parked query or queued re-enable behind', async () => {
@@ -351,18 +412,24 @@ describe('World occlusion with queries as three runs them', () => {
       root.add(scene);
       renderer.render(root, camera); // parks both proxies and queues their re-enable
       root.remove(scene);
-      expect(proxies.map((p) => p.occlusionTest), `${teardown}: parked`).toEqual([false, false]);
+      expect(
+        proxies.map((p) => p.occlusionTest),
+        `${teardown}: parked`,
+      ).toEqual([false, false]);
       const disposed: Mesh[] = [];
       for (const proxy of proxies) (proxy.material as Material).addEventListener('dispose', () => disposed.push(proxy));
       world[teardown]();
       expect(proxiesIn(scene), `${teardown}: proxies left in the scene`).toHaveLength(0);
       expect(disposed, `${teardown}: proxy materials disposed`).toHaveLength(2);
       await Promise.resolve();
-      expect(proxies.map((p) => p.occlusionTest), `${teardown}: the queued re-enable found no proxy`).toEqual([false, false]);
+      expect(
+        proxies.map((p) => p.occlusionTest),
+        `${teardown}: the queued re-enable found no proxy`,
+      ).toEqual([false, false]);
       const before = renderer.queries.length;
       renderer.render(scene, camera);
       expect(renderer.queries.length - before, `${teardown}: queries after teardown`).toBe(0);
-      expect(Object.prototype.hasOwnProperty.call(scene, 'onBeforeRender'), `${teardown}: scene hook left`).toBe(false);
+      expect(Object.hasOwn(scene, 'onBeforeRender'), `${teardown}: scene hook left`).toBe(false);
     }
   });
 
@@ -428,7 +495,11 @@ describe('World occlusion with queries as three runs them', () => {
     frames('unmirrored after compile');
     scene.scale.x = -1;
     frames('mirrored again');
-    expect(shown).toEqual(['mirrored at compile', 'unmirrored after compile', 'mirrored again'].flatMap((label) => [0, 1, 2, 3, 4].map((f) => `${label} ${f}: shown`)));
+    expect(shown).toEqual(
+      ['mirrored at compile', 'unmirrored after compile', 'mirrored again'].flatMap((label) =>
+        [0, 1, 2, 3, 4].map((f) => `${label} ${f}: shown`),
+      ),
+    );
     expect((leftProxy.material as Material).side).toBe(FrontSide);
   });
 });
@@ -462,13 +533,21 @@ describe('World occlusion proxies after markDirty', () => {
     world.markDirty(boxes[2]!);
     world.markDirty(dodecas[3]!);
     scene.updateMatrixWorld();
-    for (const [target, originals] of [[batch, boxes], [instanced, dodecas]] as const) {
+    for (const [target, originals] of [
+      [batch, boxes],
+      [instanced, dodecas],
+    ] as const) {
       const proxy = proxiesIn(scene).find((p) => p.name === `forge:occluder:${target.name}`)!;
       // The union of the instances' boxes, as the batch and the instanced group bound them (scene space is world space here).
       const expected = new Box3();
       for (const m of originals) expected.expandByObject(m);
       const actual = new Box3().setFromObject(proxy);
-      [...actual.min.toArray(), ...actual.max.toArray()].forEach((v, i) => expect(v, `${target.name} proxy [${i}]`).toBeCloseTo([...expected.min.toArray(), ...expected.max.toArray()][i]!, 4));
+      [...actual.min.toArray(), ...actual.max.toArray()].forEach((v, i) =>
+        expect(v, `${target.name} proxy [${i}]`).toBeCloseTo(
+          [...expected.min.toArray(), ...expected.max.toArray()][i]!,
+          4,
+        ),
+      );
     }
   });
 });

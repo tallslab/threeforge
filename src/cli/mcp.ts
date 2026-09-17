@@ -1,16 +1,16 @@
 import { realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, relative, resolve as resolvePath } from 'node:path';
+import { VERSION } from '../version.js';
 import { analyzeAsset } from './analyze.js';
 import { DEFAULT_PARITY, validateInput } from './args.js';
 import { EnvironmentError, exitCodeFor, UsageError } from './errors.js';
-import { entryExists } from './gltf-uris.js';
 import { explain, REMEDIES } from './explain.js';
+import { entryExists } from './gltf-uris.js';
 import { inspectApp } from './inspect.js';
-import { Resources, type CliDeps } from './lifecycle.js';
+import { type CliDeps, Resources } from './lifecycle.js';
 import { defaultOutputPath, optimizeAsset } from './optimize.js';
 import type { AnalyzeInput, InspectInput, OptimizeInput } from './types.js';
 import { cleanText } from './untrusted.js';
-import { VERSION } from '../version.js';
 
 const INSTALL = 'npm i -D @modelcontextprotocol/sdk zod';
 
@@ -48,7 +48,15 @@ export const ok = (value: unknown, note?: string): ToolResult => {
  * the run tools) becomes a second block, as in `ok`.
  */
 export const fail = (error: unknown, note?: string): ToolResult => {
-  const content: ToolResult['content'] = [{ type: 'text', text: JSON.stringify({ error: cleanText(error instanceof Error ? error.message : String(error)), code: exitCodeFor(error) }) }];
+  const content: ToolResult['content'] = [
+    {
+      type: 'text',
+      text: JSON.stringify({
+        error: cleanText(error instanceof Error ? error.message : String(error)),
+        code: exitCodeFor(error),
+      }),
+    },
+  ];
   if (note) content.push({ type: 'text', text: note });
   return { isError: true, content };
 };
@@ -96,7 +104,13 @@ function realish(target: string): string | null {
  * symlink that leads outside a root is refused even when lexically contained, and a dangling symlink is refused
  * outright; the filesystem root never counts as a working directory (`isFsRoot`). `cwd` and `exists` are injectable.
  */
-export function resolveOptimizeOut(file: string, out: string | null, overwrite: boolean, cwd: string = process.cwd(), exists: (path: string) => boolean = entryExists): string {
+export function resolveOptimizeOut(
+  file: string,
+  out: string | null,
+  overwrite: boolean,
+  cwd: string = process.cwd(),
+  exists: (path: string) => boolean = entryExists,
+): string {
   const resolvedFile = resolvePath(cwd, file);
   const target = resolvePath(cwd, out ?? defaultOutputPath(resolvedFile));
   if (!/\.(glb|gltf)$/i.test(target)) throw new UsageError(`out must end in .glb or .gltf (got ${out ?? target})`);
@@ -104,7 +118,8 @@ export function resolveOptimizeOut(file: string, out: string | null, overwrite: 
   const workingDir = resolvePath(cwd);
   const workingDirAllowed = !isFsRoot(workingDir);
   const realTarget = realish(target);
-  if (realTarget === null) throw new UsageError(`out is a symlink that cannot be resolved, which a write would follow (got ${target})`);
+  if (realTarget === null)
+    throw new UsageError(`out is a symlink that cannot be resolved, which a write would follow (got ${target})`);
   const insideRoot = (root: string): boolean => {
     const realRoot = realish(root);
     return realRoot !== null && isInside(realRoot, realTarget);
@@ -112,10 +127,13 @@ export function resolveOptimizeOut(file: string, out: string | null, overwrite: 
   const insideFileDir = insideRoot(fileDir);
   const insideWorkingDir = workingDirAllowed && insideRoot(workingDir);
   if (!insideFileDir && !insideWorkingDir) {
-    const scope = workingDirAllowed ? `the input's directory (${fileDir}) or the working directory (${workingDir})` : `the input's directory (${fileDir})`;
+    const scope = workingDirAllowed
+      ? `the input's directory (${fileDir}) or the working directory (${workingDir})`
+      : `the input's directory (${fileDir})`;
     throw new UsageError(`out must sit inside ${scope} (got ${target})`);
   }
-  if (exists(target) && !overwrite) throw new UsageError(`out already exists: ${target} (pass overwrite: true to replace it)`);
+  if (exists(target) && !overwrite)
+    throw new UsageError(`out already exists: ${target} (pass overwrite: true to replace it)`);
   return target;
 }
 
@@ -180,26 +198,59 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
     budget: z.number().optional().describe('Fail the verdict above this many scene submissions (an integer ≥ 0)'),
     frames: z.number().default(30).describe('Frames to measure (medians; an integer ≥ 1, default 30)'),
     compile: z.boolean().default(true).describe('Compile (batch) the scene and measure again'),
-    timeout: z.number().default(60000).describe('Bound in milliseconds on each page step: the load, every evaluate, the whole N-frame measurement, compile() (an integer from 1000 to 2147483647, default 60000)'),
+    timeout: z
+      .number()
+      .default(60000)
+      .describe(
+        'Bound in milliseconds on each page step: the load, every evaluate, the whole N-frame measurement, compile() (an integer from 1000 to 2147483647, default 60000)',
+      ),
   };
   server.registerTool(
     'analyze_asset',
     {
       title: 'Analyze a glTF asset',
-      description: 'Render a .glb/.gltf headlessly, measure every frame cost (draw calls, overdraw, skinning, lighting, js, memory), compile it with threeforge, measure again, compare pixels and return hints with a verdict.',
+      description:
+        'Render a .glb/.gltf headlessly, measure every frame cost (draw calls, overdraw, skinning, lighting, js, memory), compile it with threeforge, measure again, compare pixels and return hints with a verdict.',
       inputSchema: {
         file: z.string().describe('Path to a .glb or .gltf file'),
-        tier: tier.describe('Device tier for budgets and hints: auto, desktop, phone-mid or phone-low (default auto; auto detects from the machine)'),
+        tier: tier.describe(
+          'Device tier for budgets and hints: auto, desktop, phone-mid or phone-low (default auto; auto detects from the machine)',
+        ),
         ...runShape,
-        bake: z.string().default('off').describe('Bake finished groups into one mesh each: off, on or buried (default off); buried also removes faces solid geometry sits right in front of'),
-        views: z.number().default(0).describe('Extra orbit views for pixel parity (an integer from 0 to 64, default 0)'),
-        parity: z.number().default(DEFAULT_PARITY).describe(`Allowed percent of changed pixels between the render before and after compiling, from 0 to 100 (default ${DEFAULT_PARITY}); 0 means no pixel may change, judged on the raw changed-pixel count of every view`),
+        bake: z
+          .string()
+          .default('off')
+          .describe(
+            'Bake finished groups into one mesh each: off, on or buried (default off); buried also removes faces solid geometry sits right in front of',
+          ),
+        views: z
+          .number()
+          .default(0)
+          .describe('Extra orbit views for pixel parity (an integer from 0 to 64, default 0)'),
+        parity: z
+          .number()
+          .default(DEFAULT_PARITY)
+          .describe(
+            `Allowed percent of changed pixels between the render before and after compiling, from 0 to 100 (default ${DEFAULT_PARITY}); 0 means no pixel may change, judged on the raw changed-pixel count of every view`,
+          ),
       },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async (args: Record<string, unknown>) => {
       try {
-        const input: AnalyzeInput = { file: String(args.file), backend: args.backend as AnalyzeInput['backend'], tier: args.tier as AnalyzeInput['tier'], budget: typeof args.budget === 'number' ? args.budget : null, frames: Number(args.frames ?? 30), compile: args.compile !== false, bake: (args.bake as AnalyzeInput['bake']) ?? 'off', views: Number(args.views ?? 0), parity: typeof args.parity === 'number' ? args.parity : DEFAULT_PARITY, timeout: Number(args.timeout ?? 60000), headed: false };
+        const input: AnalyzeInput = {
+          file: String(args.file),
+          backend: args.backend as AnalyzeInput['backend'],
+          tier: args.tier as AnalyzeInput['tier'],
+          budget: typeof args.budget === 'number' ? args.budget : null,
+          frames: Number(args.frames ?? 30),
+          compile: args.compile !== false,
+          bake: (args.bake as AnalyzeInput['bake']) ?? 'off',
+          views: Number(args.views ?? 0),
+          parity: typeof args.parity === 'number' ? args.parity : DEFAULT_PARITY,
+          timeout: Number(args.timeout ?? 60000),
+          headed: false,
+        };
         validateInput('analyze', input, { names: 'fields' });
         return ok(await analyzeAsset(input, undefined, runDeps), DATA_NOTE);
       } catch (error) {
@@ -211,13 +262,23 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
     'inspect_app',
     {
       title: 'Inspect a running three.js app',
-      description: 'Open a URL whose app called exposeToAgents({ ledger, world, renderer, scene, camera }), measure frames through window.__threeforge, optionally compile, and return the same document as analyze_asset. There is no tier input: the app measures itself at the tier its own ledger detects.',
+      description:
+        'Open a URL whose app called exposeToAgents({ ledger, world, renderer, scene, camera }), measure frames through window.__threeforge, optionally compile, and return the same document as analyze_asset. There is no tier input: the app measures itself at the tier its own ledger detects.',
       inputSchema: { url: z.string().describe('URL of the running app (dev server)'), ...runShape },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
     async (args: Record<string, unknown>) => {
       try {
-        const input: InspectInput = { url: String(args.url), backend: args.backend as InspectInput['backend'], tier: 'auto', budget: typeof args.budget === 'number' ? args.budget : null, frames: Number(args.frames ?? 30), compile: args.compile !== false, timeout: Number(args.timeout ?? 60000), headed: false };
+        const input: InspectInput = {
+          url: String(args.url),
+          backend: args.backend as InspectInput['backend'],
+          tier: 'auto',
+          budget: typeof args.budget === 'number' ? args.budget : null,
+          frames: Number(args.frames ?? 30),
+          compile: args.compile !== false,
+          timeout: Number(args.timeout ?? 60000),
+          headed: false,
+        };
         validateInput('inspect', input, { names: 'fields' });
         return ok(await inspectApp(input, undefined, runDeps), DATA_NOTE);
       } catch (error) {
@@ -229,20 +290,53 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
     'optimize_asset',
     {
       title: 'Optimize a glTF asset at build time',
-      description: 'Rewrite a .glb/.gltf with glTF-Transform (safe preset: dedup, palette, prune, measured at 0 changed pixels on the Fox and the Buggy, where palette adds a UV attribute to every primitive whose flat materials it merges; balanced adds weld, resample, quantize and WebP textures; aggressive adds simplify), write <name>.forge.glb, render the original and the result through the same harness and compare pixels, compile both with threeforge, and return per-step counts, load-time requirements and a verdict.',
+      description:
+        'Rewrite a .glb/.gltf with glTF-Transform (safe preset: dedup, palette, prune, measured at 0 changed pixels on the Fox and the Buggy, where palette adds a UV attribute to every primitive whose flat materials it merges; balanced adds weld, resample, quantize and WebP textures; aggressive adds simplify), write <name>.forge.glb, render the original and the result through the same harness and compare pixels, compile both with threeforge, and return per-step counts, load-time requirements and a verdict.',
       inputSchema: {
         file: z.string().describe('Path to a .glb or .gltf file'),
-        out: z.string().optional().describe("Output path; must end in .glb or .gltf and sit inside the input's directory or the working directory (default <name>.forge.glb next to the input)"),
-        overwrite: z.boolean().default(false).describe('Allow out to replace a file that already exists (default false: an existing target is rejected)'),
-        preset: z.string().default('safe').describe('Step preset: safe (dedup, palette, prune; measured at 0 changed pixels on the Fox and the Buggy), balanced (quantizes and compresses textures) or aggressive (also simplifies to 50 % triangles); default safe'),
+        out: z
+          .string()
+          .optional()
+          .describe(
+            "Output path; must end in .glb or .gltf and sit inside the input's directory or the working directory (default <name>.forge.glb next to the input)",
+          ),
+        overwrite: z
+          .boolean()
+          .default(false)
+          .describe('Allow out to replace a file that already exists (default false: an existing target is rejected)'),
+        preset: z
+          .string()
+          .default('safe')
+          .describe(
+            'Step preset: safe (dedup, palette, prune; measured at 0 changed pixels on the Fox and the Buggy), balanced (quantizes and compresses textures) or aggressive (also simplifies to 50 % triangles); default safe',
+          ),
         simplify: z.number().optional().describe('Simplify ratio in (0, 1]; overrides the preset'),
-        compress: z.string().default('none').describe('none or meshopt (needs loader.setMeshoptDecoder in the app); default none'),
-        textures: z.string().optional().describe('Texture format: webp, avif or none (needs sharp); overrides the preset'),
+        compress: z
+          .string()
+          .default('none')
+          .describe('none or meshopt (needs loader.setMeshoptDecoder in the app); default none'),
+        textures: z
+          .string()
+          .optional()
+          .describe('Texture format: webp, avif or none (needs sharp); overrides the preset'),
         textureSize: z.number().optional().describe('Longest texture side in pixels'),
-        verify: z.boolean().default(true).describe('Render both files and compare pixels; false runs without a browser'),
-        parity: z.number().default(DEFAULT_PARITY).describe(`Allowed percent of changed pixels between the original and the optimized file, each rendered before compiling, from 0 to 100 (default ${DEFAULT_PARITY}); 0 means no pixel may change, judged on the raw changed-pixel count of every view. It governs the original-versus-optimized comparison only; each file's own compile check runs at ${DEFAULT_PARITY} whatever this is, and is reported in verify.optimized.parity (which fails the verdict) and verify.original.parity (reported only)`),
-        views: z.number().default(2).describe('Extra orbit views for the comparison (an integer from 0 to 64, default 2)'),
-        tier: tier.describe('Device tier for budgets and hints: auto, desktop, phone-mid or phone-low (default auto; auto detects from the machine)'),
+        verify: z
+          .boolean()
+          .default(true)
+          .describe('Render both files and compare pixels; false runs without a browser'),
+        parity: z
+          .number()
+          .default(DEFAULT_PARITY)
+          .describe(
+            `Allowed percent of changed pixels between the original and the optimized file, each rendered before compiling, from 0 to 100 (default ${DEFAULT_PARITY}); 0 means no pixel may change, judged on the raw changed-pixel count of every view. It governs the original-versus-optimized comparison only; each file's own compile check runs at ${DEFAULT_PARITY} whatever this is, and is reported in verify.optimized.parity (which fails the verdict) and verify.original.parity (reported only)`,
+          ),
+        views: z
+          .number()
+          .default(2)
+          .describe('Extra orbit views for the comparison (an integer from 0 to 64, default 2)'),
+        tier: tier.describe(
+          'Device tier for budgets and hints: auto, desktop, phone-mid or phone-low (default auto; auto detects from the machine)',
+        ),
         ...runShape,
       },
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
@@ -285,14 +379,19 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
     'explain_hint',
     {
       title: 'Explain a hint code',
-      description: 'What a threeforge hint code means, what to change and which API to use. Omit the code to list every remedy.',
-      inputSchema: { code: z.string().optional().describe('A hint code from a snapshot, e.g. untagged or point-light-shadow') },
+      description:
+        'What a threeforge hint code means, what to change and which API to use. Omit the code to list every remedy.',
+      inputSchema: {
+        code: z.string().optional().describe('A hint code from a snapshot, e.g. untagged or point-light-shadow'),
+      },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async (args: Record<string, unknown>) => {
       if (typeof args.code !== 'string' || args.code === '') return ok(REMEDIES);
       const remedy = explain(args.code);
-      return remedy ? ok(remedy) : fail(new UsageError(`unknown hint code "${args.code}"; known: ${Object.keys(REMEDIES).join(', ')}`));
+      return remedy
+        ? ok(remedy)
+        : fail(new UsageError(`unknown hint code "${args.code}"; known: ${Object.keys(REMEDIES).join(', ')}`));
     },
   );
 
@@ -314,7 +413,11 @@ interface ToolAnnotations {
   openWorldHint?: boolean;
 }
 interface McpServerLike {
-  registerTool(name: string, config: { title: string; description: string; inputSchema: Record<string, unknown>; annotations?: ToolAnnotations }, handler: (args: Record<string, unknown>) => Promise<ToolResult>): unknown;
+  registerTool(
+    name: string,
+    config: { title: string; description: string; inputSchema: Record<string, unknown>; annotations?: ToolAnnotations },
+    handler: (args: Record<string, unknown>) => Promise<ToolResult>,
+  ): unknown;
   connect(transport: unknown): Promise<void>;
   close(): Promise<void>;
 }
@@ -325,5 +428,9 @@ interface ZodLike {
     default(v: number): { describe(d: string): unknown };
   };
   boolean(): { default(v: boolean): { describe(d: string): unknown } };
-  string(): { describe(d: string): unknown; optional(): { describe(d: string): unknown }; default(v: string): { describe(d: string): unknown } };
+  string(): {
+    describe(d: string): unknown;
+    optional(): { describe(d: string): unknown };
+    default(v: string): { describe(d: string): unknown };
+  };
 }

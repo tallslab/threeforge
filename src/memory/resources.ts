@@ -35,9 +35,19 @@ export function collectResources(root: Object3D, into: ResourceSets = emptyResou
     texturesOf(material, into.textures);
   };
   root.traverse((o) => {
-    const mesh = o as Object3D & { geometry?: BufferGeometry; material?: Material | Material[]; isBatchedMesh?: boolean; _matricesTexture?: Texture | null; _indirectTexture?: Texture | null; _colorsTexture?: Texture | null; isSkinnedMesh?: boolean; skeleton?: { boneTexture?: Texture | null } };
+    const mesh = o as Object3D & {
+      geometry?: BufferGeometry;
+      material?: Material | Material[];
+      isBatchedMesh?: boolean;
+      _matricesTexture?: Texture | null;
+      _indirectTexture?: Texture | null;
+      _colorsTexture?: Texture | null;
+      isSkinnedMesh?: boolean;
+      skeleton?: { boneTexture?: Texture | null };
+    };
     if (mesh.geometry) into.geometries.add(mesh.geometry);
-    if (mesh.isBatchedMesh) for (const t of [mesh._matricesTexture, mesh._indirectTexture, mesh._colorsTexture]) if (t) into.textures.add(t);
+    if (mesh.isBatchedMesh)
+      for (const t of [mesh._matricesTexture, mesh._indirectTexture, mesh._colorsTexture]) if (t) into.textures.add(t);
     if (mesh.isSkinnedMesh && mesh.skeleton?.boneTexture) into.textures.add(mesh.skeleton.boneTexture);
     const material = mesh.material;
     if (Array.isArray(material)) {
@@ -48,7 +58,8 @@ export function collectResources(root: Object3D, into: ResourceSets = emptyResou
   });
   const scene = root as Object3D & { isScene?: boolean; background?: unknown; environment?: unknown };
   if (scene.isScene) {
-    for (const value of [scene.background, scene.environment]) if ((value as Texture | null)?.isTexture) into.textures.add(value as Texture);
+    for (const value of [scene.background, scene.environment])
+      if ((value as Texture | null)?.isTexture) into.textures.add(value as Texture);
   }
   return into;
 }
@@ -57,7 +68,11 @@ export function collectResources(root: Object3D, into: ResourceSets = emptyResou
  * Resources the renderer still holds (`renderer.info.memory` counts) that the scene no longer references: what was
  * removed without `dispose()`. `allowance` is what the renderer allocates for itself (render-target textures).
  */
-export function unreferencedResources(info: { geometries: number; textures: number }, scene: Object3D, allowance: { geometries?: number; textures?: number } = {}): { geometries: number; textures: number } {
+export function unreferencedResources(
+  info: { geometries: number; textures: number },
+  scene: Object3D,
+  allowance: { geometries?: number; textures?: number } = {},
+): { geometries: number; textures: number } {
   const reachable = collectResources(scene);
   return {
     geometries: Math.max(0, info.geometries - reachable.geometries.size - (allowance.geometries ?? 0)),

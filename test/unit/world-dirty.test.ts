@@ -1,7 +1,24 @@
+import {
+  type BatchedMesh,
+  Box3,
+  BoxGeometry,
+  CylinderGeometry,
+  DodecahedronGeometry,
+  Frustum,
+  Group,
+  Matrix4,
+  Mesh,
+  MeshStandardMaterial,
+  type Object3D,
+  PerspectiveCamera,
+  Scene,
+  type Sphere,
+  Vector3,
+  WebGLCoordinateSystem,
+} from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { Box3, BoxGeometry, CylinderGeometry, DodecahedronGeometry, Frustum, Group, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Scene, Vector3, WebGLCoordinateSystem, type BatchedMesh, type Object3D, type Sphere } from 'three';
-import { World } from '../../src/compiler/World.js';
 import type { CulledInstancedMesh } from '../../src/compiler/instancing.js';
+import { World } from '../../src/compiler/World.js';
 import { tag } from '../../src/tags.js';
 
 const box = new BoxGeometry(1, 1, 1);
@@ -20,7 +37,9 @@ function batchedScene() {
   a.position.set(1, 0, 0);
   b.position.set(4, 0, 0);
   props.add(a, b);
-  const single = tag.static(new Mesh(box, new MeshStandardMaterial({ color: 0x999999, roughness: 0.1, metalness: 0.9 })));
+  const single = tag.static(
+    new Mesh(box, new MeshStandardMaterial({ color: 0x999999, roughness: 0.1, metalness: 0.9 })),
+  );
   single.name = 'single';
   scene.add(props, single);
   return { scene, props, a, b, single };
@@ -33,7 +52,9 @@ describe('World.markDirty', () => {
     world.compile();
     const slot = world.slotOf(a)!;
     const batch = slot.batch as BatchedMesh;
-    const handle = (world as unknown as { cullingHandles: Map<BatchedMesh, { move(id: number): void }> }).cullingHandles.get(batch)!;
+    const handle = (
+      world as unknown as { cullingHandles: Map<BatchedMesh, { move(id: number): void }> }
+    ).cullingHandles.get(batch)!;
     const move = vi.spyOn(handle, 'move');
     expect(props.matrixAutoUpdate).toBe(false);
     props.position.x = 10;
@@ -55,7 +76,9 @@ describe('World.markDirty', () => {
       scene.add(m);
       return m;
     });
-    const single = tag.static(new Mesh(dodeca, new MeshStandardMaterial({ color: 0x999999, roughness: 0.1, metalness: 0.9 })));
+    const single = tag.static(
+      new Mesh(dodeca, new MeshStandardMaterial({ color: 0x999999, roughness: 0.1, metalness: 0.9 })),
+    );
     single.name = 'single';
     scene.add(single);
     const world = new World(scene, { instanceThreshold: 2 });
@@ -101,14 +124,20 @@ describe('World.markDirty bounds', () => {
     camera.position.set(x, 10, 0);
     camera.lookAt(x, 0, 0);
     camera.updateMatrixWorld();
-    return new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    return new Frustum().setFromProjectionMatrix(
+      new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+    );
   }
 
   function expectInside(box: Box3 | null, sphere: Sphere | null, moved: Box3, label: string): void {
-    expect(box!.containsBox(moved), `${label}: bounding box ${JSON.stringify(box)} holds ${JSON.stringify(moved)}`).toBe(true);
+    expect(
+      box!.containsBox(moved),
+      `${label}: bounding box ${JSON.stringify(box)} holds ${JSON.stringify(moved)}`,
+    ).toBe(true);
     for (const x of [moved.min.x, moved.max.x]) {
       for (const y of [moved.min.y, moved.max.y]) {
-        for (const z of [moved.min.z, moved.max.z]) expect(sphere!.distanceToPoint(new Vector3(x, y, z)), `${label}: bounding sphere`).toBeLessThanOrEqual(1e-4);
+        for (const z of [moved.min.z, moved.max.z])
+          expect(sphere!.distanceToPoint(new Vector3(x, y, z)), `${label}: bounding sphere`).toBeLessThanOrEqual(1e-4);
       }
     }
   }
@@ -158,8 +187,15 @@ describe('World.markDirty bounds', () => {
     const rest = new Box3();
     for (const m of meshes.slice(0, 3)) rest.expandByObject(m, true);
     for (const level of mesh.levels) {
-      expectInside(level.boundingBox, level.boundingSphere, new Box3().setFromObject(meshes[3]!, true), `level ${level.lodLevel}`);
-      expect(level.boundingBox!.containsBox(rest), `level ${level.lodLevel} still holds the undrawn instances`).toBe(true);
+      expectInside(
+        level.boundingBox,
+        level.boundingSphere,
+        new Box3().setFromObject(meshes[3]!, true),
+        `level ${level.lodLevel}`,
+      );
+      expect(level.boundingBox!.containsBox(rest), `level ${level.lodLevel} still holds the undrawn instances`).toBe(
+        true,
+      );
       expect(frustumAt(500).intersectsObject(level), `level ${level.lodLevel} in view at x = 500`).toBe(true);
     }
     const refresh = vi.spyOn(mesh.forgeCulling, 'refreshBounds');
@@ -221,7 +257,12 @@ describe('World.markDirty with originals: "detach"', () => {
   }
 
   /** What three draws for master instance `id` after a cull pass, or null when it is not drawn. */
-  function instancedWorld(mesh: CulledInstancedMesh, id: number, scene: Scene, camera: PerspectiveCamera): Matrix4 | null {
+  function instancedWorld(
+    mesh: CulledInstancedMesh,
+    id: number,
+    scene: Scene,
+    camera: PerspectiveCamera,
+  ): Matrix4 | null {
     mesh.onBeforeRender(renderer as never, scene, camera, mesh.geometry, mesh.material as never, null as never);
     const k = mesh.visibleIds.indexOf(id);
     if (k < 0) return null;
@@ -342,7 +383,9 @@ describe('World.markDirty with originals: "detach"', () => {
     world.markDirty(parent);
     const expectedParent = new Matrix4().multiplyMatrices(scene.matrixWorld, parent.matrix);
     parent.updateMatrixWorld(); // unforced, on the parentless original
-    parent.matrixWorld.elements.forEach((e, i) => expect(e, `parent matrixWorld[${i}]`).toBeCloseTo(expectedParent.elements[i]!, 5));
+    parent.matrixWorld.elements.forEach((e, i) =>
+      expect(e, `parent matrixWorld[${i}]`).toBeCloseTo(expectedParent.elements[i]!, 5),
+    );
 
     child.position.z += 1;
     world.markDirty(child); // composed from the detached parent's matrixWorld
@@ -386,13 +429,17 @@ describe('World.markDirty with originals: "detach"', () => {
       const v = new Vector3();
       for (let t = 0; t < index.count / 3; t++) {
         if (world.resolve({ object: baked, faceIndex: t } as never) !== modules[0]) continue;
-        for (let k = 0; k < 3; k++) drawn.expandByPoint(v.fromBufferAttribute(position, index.getX(t * 3 + k)).applyMatrix4(baked.matrixWorld));
+        for (let k = 0; k < 3; k++)
+          drawn.expandByPoint(v.fromBufferAttribute(position, index.getX(t * 3 + k)).applyMatrix4(baked.matrixWorld));
       }
       modules[0]!.updateMatrix();
-      const expected = new Box3().setFromBufferAttribute(box.getAttribute('position') as never).applyMatrix4(new Matrix4().multiplyMatrices(group.matrixWorld, modules[0]!.matrix));
+      const expected = new Box3()
+        .setFromBufferAttribute(box.getAttribute('position') as never)
+        .applyMatrix4(new Matrix4().multiplyMatrices(group.matrixWorld, modules[0]!.matrix));
       expect(drawn.isEmpty(), `${label}: module 0 has faces in the bake`).toBe(false);
       for (const corner of ['min', 'max'] as const) {
-        for (const axis of ['x', 'y', 'z'] as const) expect(drawn[corner][axis], `${label}: ${corner}.${axis}`).toBeCloseTo(expected[corner][axis], 4);
+        for (const axis of ['x', 'y', 'z'] as const)
+          expect(drawn[corner][axis], `${label}: ${corner}.${axis}`).toBeCloseTo(expected[corner][axis], 4);
       }
     };
     modules[0]!.position.y += 2;

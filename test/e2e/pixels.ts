@@ -8,8 +8,8 @@
  * no runtime dependency on Playwright and can be imported from `test/unit` under Vitest.
  */
 import { writeFileSync } from 'node:fs';
-import { PNG } from 'pngjs';
 import type { Page } from '@playwright/test';
+import { PNG } from 'pngjs';
 
 export interface PixelDiffOptions {
   /** Per-channel (R/G/B) difference above which a pixel counts as differing. Default 24. */
@@ -50,7 +50,11 @@ function countDiffering(a: Buffer, b: Buffer, options: PixelDiffOptions): { diff
   const n = pa.width * pa.height;
   for (let i = 0; i < n; i++) {
     const o = i * 4;
-    const d = Math.max(Math.abs(pa.data[o]! - pb.data[o]!), Math.abs(pa.data[o + 1]! - pb.data[o + 1]!), Math.abs(pa.data[o + 2]! - pb.data[o + 2]!));
+    const d = Math.max(
+      Math.abs(pa.data[o]! - pb.data[o]!),
+      Math.abs(pa.data[o + 1]! - pb.data[o + 1]!),
+      Math.abs(pa.data[o + 2]! - pb.data[o + 2]!),
+    );
     const hit = d > threshold;
     if (hit) differing++;
     if (out) {

@@ -97,7 +97,19 @@ export interface AgentDocument {
   timings: { totalMs: number };
 }
 
-export type StepName = 'dedup' | 'instance' | 'palette' | 'flatten' | 'join' | 'weld' | 'simplify' | 'resample' | 'prune' | 'textures' | 'quantize' | 'meshopt';
+export type StepName =
+  | 'dedup'
+  | 'instance'
+  | 'palette'
+  | 'flatten'
+  | 'join'
+  | 'weld'
+  | 'simplify'
+  | 'resample'
+  | 'prune'
+  | 'textures'
+  | 'quantize'
+  | 'meshopt';
 export type Preset = 'safe' | 'balanced' | 'aggressive';
 export type TextureFormat = 'webp' | 'avif';
 

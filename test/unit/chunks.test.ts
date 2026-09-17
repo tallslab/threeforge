@@ -1,5 +1,5 @@
+import { type BatchedMesh, BoxGeometry, Mesh, MeshStandardMaterial, Scene } from 'three';
 import { describe, expect, it } from 'vitest';
-import { BatchedMesh, BoxGeometry, Mesh, MeshStandardMaterial, Scene } from 'three';
 import { World } from '../../src/compiler/World.js';
 import { tag } from '../../src/tags.js';
 

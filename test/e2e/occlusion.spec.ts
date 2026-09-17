@@ -52,7 +52,12 @@ function windowScene(mirror: boolean): void {
       f.scene.add(m);
     }
   }
-  for (const [x, y] of [[-4.5, -4.5], [4.5, -4.5], [-4.5, 4.5], [4.5, 4.5]] as const) {
+  for (const [x, y] of [
+    [-4.5, -4.5],
+    [4.5, -4.5],
+    [-4.5, 4.5],
+    [4.5, 4.5],
+  ] as const) {
     const m = new T.Mesh(cube, colours[0]!);
     m.name = `corner-${x}-${y}`;
     m.position.set(x, y, 1);
@@ -60,7 +65,12 @@ function windowScene(mirror: boolean): void {
     f.scene.add(m);
   }
   const black = new T.MeshLambertMaterial({ color: 0x000000 });
-  for (const [w, h, x, y] of [[80, 40, 0, 23], [80, 40, 0, -23], [37, 6, -21.5, 0], [37, 6, 21.5, 0]] as const) {
+  for (const [w, h, x, y] of [
+    [80, 40, 0, 23],
+    [80, 40, 0, -23],
+    [37, 6, -21.5, 0],
+    [37, 6, 21.5, 0],
+  ] as const) {
     const m = new T.Mesh(new T.BoxGeometry(w, h, 0.5), black);
     m.name = `wall-${x}-${y}`;
     m.position.set(x, y, 5);
@@ -82,7 +92,9 @@ function windowScene(mirror: boolean): void {
   f.scene.updateMatrixWorld(true);
 }
 
-test('the camera inside a batch box keeps the batch visible, and queries issued from inside never hide it after the camera leaves', async ({ forge }) => {
+test('the camera inside a batch box keeps the batch visible, and queries issued from inside never hide it after the camera leaves', async ({
+  forge,
+}) => {
   await forge.open('empty', { occlusion: '1' });
   await forge.page.evaluate(() => {
     const f = window.__forge;
@@ -129,14 +141,22 @@ test('the camera inside a batch box keeps the batch visible, and queries issued 
   const inside = await forge.page.evaluate(async (frames) => {
     const f = window.__forge;
     const report = f.compile();
-    const ring = f.world.slotOf(f.scene.getObjectByName('ring-0') as never)!.batch as unknown as { visible: boolean; boundingBox: { containsPoint(p: unknown): boolean } };
+    const ring = f.world.slotOf(f.scene.getObjectByName('ring-0') as never)!.batch as unknown as {
+      visible: boolean;
+      boundingBox: { containsPoint(p: unknown): boolean };
+    };
     const hidden = f.world.slotOf(f.scene.getObjectByName('hidden-0') as never)!.batch;
     const visible: boolean[] = [];
     for (let i = 0; i < frames; i++) {
       await f.frameAsync();
       visible.push(ring.visible);
     }
-    return { proxies: report.occlusion?.proxies ?? 0, eyeInBox: ring.boundingBox.containsPoint(f.camera.position), visible, hiddenVisible: hidden.visible };
+    return {
+      proxies: report.occlusion?.proxies ?? 0,
+      eyeInBox: ring.boundingBox.containsPoint(f.camera.position),
+      visible,
+      hiddenVisible: hidden.visible,
+    };
   }, FRAMES);
   const compiledInside = await forge.page.screenshot({ type: 'png' });
   await place('outside');
@@ -167,18 +187,24 @@ test('the camera inside a batch box keeps the batch visible, and queries issued 
   expect(inside.eyeInBox).toBe(true);
   expect(inside.hiddenVisible, 'the group behind the wall is culled: queries run on this backend').toBe(false);
   expect(inside.visible, 'the batch around the camera, frame by frame').toEqual(new Array(FRAMES).fill(true));
-  expect(outside.visible, 'the same batch after the camera left its box, frame by frame').toEqual(new Array(FRAMES).fill(true));
+  expect(outside.visible, 'the same batch after the camera left its box, frame by frame').toEqual(
+    new Array(FRAMES).fill(true),
+  );
   if (forge.pixelChecks) {
     const diffInside = pixelDiff(naiveInside, compiledInside, { threshold: 4 });
     const diffOutside = pixelDiff(naiveOutside, compiledOutside, { threshold: 4 });
-    console.log(`camera inside a batch box: pixel diff inside ${(diffInside * 100).toFixed(4)}%, after leaving ${(diffOutside * 100).toFixed(4)}%`);
+    console.log(
+      `camera inside a batch box: pixel diff inside ${(diffInside * 100).toFixed(4)}%, after leaving ${(diffOutside * 100).toFixed(4)}%`,
+    );
     expect(diffInside).toBeLessThan(0.0005);
     expect(diffOutside).toBeLessThan(0.0005);
   }
 });
 
 for (const mirrored of [false, true] as const) {
-  test(`a batch seen through a window stays visible in ${mirrored ? 'a mirrored' : 'an unmirrored'} scene`, async ({ forge }) => {
+  test(`a batch seen through a window stays visible in ${mirrored ? 'a mirrored' : 'an unmirrored'} scene`, async ({
+    forge,
+  }) => {
     await forge.open('empty', { occlusion: '1' });
     await forge.page.evaluate(windowScene, mirrored);
     const r = await forge.page.evaluate(async (frames) => {
@@ -191,7 +217,12 @@ for (const mirrored of [false, true] as const) {
         await f.frameAsync();
         visible.push(slab.visible);
       }
-      return { proxies: report.occlusion?.proxies ?? 0, mirrored: f.scene.matrixWorld.determinant() < 0, visible, hiddenVisible: hidden.visible };
+      return {
+        proxies: report.occlusion?.proxies ?? 0,
+        mirrored: f.scene.matrixWorld.determinant() < 0,
+        visible,
+        hiddenVisible: hidden.visible,
+      };
     }, FRAMES);
     const compiled = await forge.page.screenshot({ type: 'png' });
     await forge.page.evaluate(async () => {
@@ -214,7 +245,9 @@ for (const mirrored of [false, true] as const) {
 }
 
 for (const mode of ['frame', 'async'] as const) {
-  test(`warmup (${mode}) issues no occlusion queries: a batch seen through a window stays visible in the frames after it`, async ({ forge }) => {
+  test(`warmup (${mode}) issues no occlusion queries: a batch seen through a window stays visible in the frames after it`, async ({
+    forge,
+  }) => {
     await forge.open('empty', { occlusion: '1' });
     await forge.page.evaluate(windowScene, false);
     const r = await forge.page.evaluate(
@@ -225,14 +258,22 @@ for (const mode of ['frame', 'async'] as const) {
         const hidden = f.world.slotOf(f.scene.getObjectByName('hidden-0') as never)!.batch;
         // The documented step after compile(): its frame renders under a 1x1 scissor.
         const warm = await f.world.warmup(f.renderer, f.camera, { mode: warmupMode });
-        const proxies = f.scene.children.filter((o) => (o.userData.forge as { kind?: string } | undefined)?.kind === 'occlusion-proxy');
+        const proxies = f.scene.children.filter(
+          (o) => (o.userData.forge as { kind?: string } | undefined)?.kind === 'occlusion-proxy',
+        );
         const proxiesOn = proxies.every((o) => (o as unknown as { occlusionTest: boolean }).occlusionTest === true);
         const visible: boolean[] = [];
         for (let i = 0; i < frames; i++) {
           await f.frameAsync();
           visible.push(slab.visible);
         }
-        return { mode: warm.mode, proxies: report.occlusion?.proxies ?? 0, proxiesOn, visible, hiddenVisible: hidden.visible };
+        return {
+          mode: warm.mode,
+          proxies: report.occlusion?.proxies ?? 0,
+          proxiesOn,
+          visible,
+          hiddenVisible: hidden.visible,
+        };
       },
       { frames: FRAMES, warmupMode: mode },
     );
@@ -248,7 +289,9 @@ for (const mode of ['frame', 'async'] as const) {
     expect(r.proxies, 'slab, wall and the hidden group').toBe(3);
     expect(r.proxiesOn, 'every proxy queries again after warmup').toBe(true);
     expect(r.hiddenVisible, 'the group behind the wall is culled: queries run on this backend').toBe(false);
-    expect(r.visible, 'the slab seen through the window, frame by frame after warmup').toEqual(new Array(FRAMES).fill(true));
+    expect(r.visible, 'the slab seen through the window, frame by frame after warmup').toEqual(
+      new Array(FRAMES).fill(true),
+    );
     if (forge.pixelChecks) {
       const diff = pixelDiff(naive, compiled, { threshold: 4 });
       console.log(`slab through a window after warmup (${mode}): pixel diff ${(diff * 100).toFixed(4)}%`);
@@ -257,7 +300,9 @@ for (const mode of ['frame', 'async'] as const) {
   });
 }
 
-test('a batch-synced mover that leaves its batch box stays visible: batches holding synced movers get no proxy', async ({ forge }) => {
+test('a batch-synced mover that leaves its batch box stays visible: batches holding synced movers get no proxy', async ({
+  forge,
+}) => {
   await forge.open('empty', { occlusion: '1', dynamics: 'batch-sync' });
   await forge.page.evaluate(() => {
     const f = window.__forge;
@@ -310,7 +355,13 @@ test('a batch-synced mover that leaves its batch box stays visible: batches hold
       await f.frameAsync();
       visible.push(holder.visible);
     }
-    return { synced: report.synced, occlusion: report.occlusion, sameBatch: holder === group, visible, hiddenVisible: hidden.visible };
+    return {
+      synced: report.synced,
+      occlusion: report.occlusion,
+      sameBatch: holder === group,
+      visible,
+      hiddenVisible: hidden.visible,
+    };
   }, FRAMES);
   const compiled = await forge.page.screenshot({ type: 'png' });
   await forge.page.evaluate(async () => {
@@ -329,5 +380,8 @@ test('a batch-synced mover that leaves its batch box stays visible: batches hold
     console.log(`synced mover out of its box: pixel diff ${(diff * 100).toFixed(4)}%`);
     expect(diff).toBeLessThan(0.0005);
   }
-  expect(r.occlusion, 'only the group without movers has a proxy; the mover batch is counted as skipped').toEqual({ proxies: 1, skippedSynced: 1 });
+  expect(r.occlusion, 'only the group without movers has a proxy; the mover batch is counted as skipped').toEqual({
+    proxies: 1,
+    skippedSynced: 1,
+  });
 });

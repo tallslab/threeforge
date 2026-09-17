@@ -54,7 +54,11 @@ export const daynight: BenchBuilder = async ({ renderer, camera, params, tier })
   setTime(t0);
   const prepare = (): void => {
     scene.remove(sun, sun.target, sky);
-    dayNight = new DayNight(scene, { dome: params.get('dome') === '1', shadow: { mapSize: 2048, extent: 140, near: 1, far: 400, everyDegrees: 0.4 }, fog: false });
+    dayNight = new DayNight(scene, {
+      dome: params.get('dome') === '1',
+      shadow: { mapSize: 2048, extent: 140, near: 1, far: 400, everyDegrees: 0.4 },
+      fog: false,
+    });
     new ShadowBudget({ tier }).apply(scene);
     setTime(t0);
   };

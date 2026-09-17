@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { describe, expect, it } from 'vitest';
 import {
   Bone,
   BoxGeometry,
   BufferGeometry,
+  type CoordinateSystem,
   DataTexture,
   DirectionalLight,
   DoubleSide,
@@ -13,17 +13,19 @@ import {
   Group,
   InstancedBufferGeometry,
   InstancedMesh,
+  type Material,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
+  type NormalMapTypes,
   ObjectSpaceNormalMap,
   PerspectiveCamera,
   PlaneGeometry,
+  PointLight,
   Points,
   PointsMaterial,
-  PointLight,
   Scene,
   ShaderMaterial,
   Skeleton,
@@ -31,17 +33,16 @@ import {
   Sprite,
   SpriteMaterial,
   TangentSpaceNormalMap,
-  Vector2,
+  type Texture,
+  type Vector2,
   VSMShadowMap,
   WebGLCoordinateSystem,
   WebGPUCoordinateSystem,
-  type CoordinateSystem,
-  type Material,
-  type NormalMapTypes,
-  type Texture,
 } from 'three';
 import { color, mix, positionLocal } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
+import { describe, expect, it } from 'vitest';
+import { hasNodeSlot } from '../../src/compiler/sprites.js';
 import { World, type WorldOptions } from '../../src/compiler/World.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import type { SubmissionRecord } from '../../src/ledger/snapshot.js';
@@ -49,8 +50,7 @@ import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 import { AnimatedInstances } from '../../src/skinning/AnimatedInstances.js';
 import { bakeAnimationTexture } from '../../src/skinning/bakeAnimationTexture.js';
 import { tag } from '../../src/tags.js';
-import { hasNodeSlot } from '../../src/compiler/sprites.js';
-import { FakeRenderer, batchedOf, sceneWithCamera, type FakeDraw } from './helpers/fakeRenderer.js';
+import { batchedOf, type FakeDraw, FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
 import { buildRig } from './helpers/rig.js';
 
 const box = new BoxGeometry(1, 1, 1);
@@ -147,7 +147,9 @@ describe('DrawCallLedger attribution', () => {
     camera.layers.enable(3); // the renderer skips objects the camera cannot see
     renderer.render(scene, camera);
     const item = ledger.frame({ items: true }).items?.[0];
-    expect(item?.flags).toEqual(expect.arrayContaining(['shadow-caster', 'double-sided-transparent', 'custom-hook', 'render-order', 'layers']));
+    expect(item?.flags).toEqual(
+      expect.arrayContaining(['shadow-caster', 'double-sided-transparent', 'custom-hook', 'render-order', 'layers']),
+    );
   });
 });
 
@@ -179,7 +181,10 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     scene.add(instanced);
     renderer.render(scene, camera);
     const frame = ledger.frame({ items: true });
-    expect(frame.items?.find((i) => i.name === 'empty-instanced')).toMatchObject({ expectedGpuDraws: 0, instancesDrawn: 0 });
+    expect(frame.items?.find((i) => i.name === 'empty-instanced')).toMatchObject({
+      expectedGpuDraws: 0,
+      instancesDrawn: 0,
+    });
     expect(frame.totals).toMatchObject({ sceneSubmissions: 1, gpuDraws: 1, reportedDrawCalls: 1, unattributed: 0 });
   });
 
@@ -199,7 +204,11 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
 
     const frame = ledger.frame({ items: true });
     // No `forge.instances` total to read, so the submitted count stands in for it, as it does for an untouched mesh.
-    expect(frame.items?.find((i) => i.name === 'debris')).toMatchObject({ reason: 'instanced', instances: 3, instancesDrawn: 3 });
+    expect(frame.items?.find((i) => i.name === 'debris')).toMatchObject({
+      reason: 'instanced',
+      instances: 3,
+      instancesDrawn: 3,
+    });
     expect(frame.totals).toMatchObject({ sceneSubmissions: 1, unattributed: 0 });
   });
 
@@ -228,11 +237,20 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     // (b) The golden scene's panel pattern — two groups over 36 vertices — with a drawRange over the first group only:
     // group 1 gets firstVertex 18 and lastVertex 10, so count is -8.
     const panel = new BufferGeometry();
-    panel.setAttribute('position', new Float32BufferAttribute(new Float32Array(36 * 3).map((_, i) => (i % 7) * 0.1), 3));
+    panel.setAttribute(
+      'position',
+      new Float32BufferAttribute(
+        new Float32Array(36 * 3).map((_, i) => (i % 7) * 0.1),
+        3,
+      ),
+    );
     panel.addGroup(0, 18, 0);
     panel.addGroup(18, 18, 1);
     panel.setDrawRange(0, 10);
-    const split = new Mesh(panel, [new MeshStandardMaterial({ name: 'front' }), new MeshStandardMaterial({ name: 'back' })]);
+    const split = new Mesh(panel, [
+      new MeshStandardMaterial({ name: 'front' }),
+      new MeshStandardMaterial({ name: 'back' }),
+    ]);
     split.name = 'panel';
     // (c) A drawRange that starts past the last vertex: firstVertex 100, lastVertex clamped to 36.
     const beyond = new BufferGeometry();
@@ -244,7 +262,8 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     renderer.render(scene, camera);
 
     const frame = ledger.frame({ items: true });
-    const draws = (name: string): number[] => frame.items!.filter((i) => i.name === name).map((i) => i.expectedGpuDraws);
+    const draws = (name: string): number[] =>
+      frame.items!.filter((i) => i.name === name).map((i) => i.expectedGpuDraws);
     expect(draws('ghost'), 'no index, no position, infinite drawRange').toEqual([0]);
     expect(draws('spectre'), 'no position but a finite drawRange: three draws it').toEqual([1]);
     expect(draws('panel'), 'the second group lies outside the drawRange').toEqual([1, 0]);
@@ -256,7 +275,10 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     expect(drawn('spectre'), 'a finite drawRange draws, so its instance is drawn').toEqual([1]);
     expect(drawn('panel')).toEqual([1, 0]);
     expect(drawn('gone')).toEqual([0]);
-    expect(frame.items!.filter((i) => i.name === 'ghost').map((i) => i.instances), 'the submission still covers its mesh').toEqual([1]);
+    expect(
+      frame.items!.filter((i) => i.name === 'ghost').map((i) => i.instances),
+      'the submission still covers its mesh',
+    ).toEqual([1]);
     // The parity assertion: predicting a draw three never makes takes this below zero.
     expect(frame.totals.unattributed).toBe(0);
     expect(frame.totals.gpuDraws).toBe(frame.totals.reportedDrawCalls);
@@ -266,14 +288,19 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     const { renderer, ledger, scene, camera } = attached();
     scene.add(tag.static(new Mesh(box, new MeshStandardMaterial({ transparent: true, side: DoubleSide }))));
     renderer.render(scene, camera);
-    expect(ledger.frame().totals).toMatchObject({ sceneSubmissions: 1, gpuDraws: 3, reportedDrawCalls: 3, unattributed: 0 });
+    expect(ledger.frame().totals).toMatchObject({
+      sceneSubmissions: 1,
+      gpuDraws: 3,
+      reportedDrawCalls: 3,
+      unattributed: 0,
+    });
   });
 
   it('reports a non-zero unattributed count when the renderer draws more than expected', () => {
     const renderer = new FakeRenderer();
     const original = renderer.renderObject.bind(renderer);
     // Simulate a backend quirk the ledger does not model: an extra draw per object.
-    (renderer as { renderObject: typeof renderer.renderObject }).renderObject = function (...args) {
+    (renderer as { renderObject: typeof renderer.renderObject }).renderObject = (...args) => {
       original(...args);
       renderer.info.render.drawCalls += 1;
     };
@@ -301,15 +328,26 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     const crowd = new AnimatedInstances({ animation: bakeAnimationTexture(root, [clip], { fps: 10 }), count: 0 });
     scene.add(...crowd.meshes);
     renderer.render(scene, camera);
-    expect(ledger.frame({ items: true }).items?.find((i) => i.reason === 'sprite-batch')).toMatchObject({ instancesDrawn: 6, expectedGpuDraws: 1 });
+    expect(ledger.frame({ items: true }).items?.find((i) => i.reason === 'sprite-batch')).toMatchObject({
+      instancesDrawn: 6,
+      expectedGpuDraws: 1,
+    });
     // Turned away from the rain: the batch's hook writes instanceCount 0 inside renderObject, and three draws nothing.
     camera.lookAt(0, 0, 100);
     camera.updateMatrixWorld();
     renderer.render(scene, camera);
     const frame = ledger.frame({ items: true });
     expect((world.spriteBatches[0]!.geometry as InstancedBufferGeometry).instanceCount).toBe(0);
-    expect(frame.items?.find((i) => i.reason === 'sprite-batch')).toMatchObject({ instances: 0, instancesDrawn: 0, expectedGpuDraws: 0 });
-    expect(frame.items?.find((i) => i.reason === 'vat-instanced')).toMatchObject({ instances: 0, instancesDrawn: 0, expectedGpuDraws: 0 });
+    expect(frame.items?.find((i) => i.reason === 'sprite-batch')).toMatchObject({
+      instances: 0,
+      instancesDrawn: 0,
+      expectedGpuDraws: 0,
+    });
+    expect(frame.items?.find((i) => i.reason === 'vat-instanced')).toMatchObject({
+      instances: 0,
+      instancesDrawn: 0,
+      expectedGpuDraws: 0,
+    });
     expect(frame.totals).toMatchObject({ sceneSubmissions: 2, unattributed: 0 });
   });
 
@@ -322,9 +360,15 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
       if (vsm) renderer.shadowMap.type = VSMShadowMap;
       const materials: Record<string, Material> = {
         'double-sided': new MeshStandardMaterial({ transparent: true, side: DoubleSide }),
-        'shadow-side-double': Object.assign(new MeshStandardMaterial({ transparent: true, side: FrontSide }), { shadowSide: DoubleSide }),
-        'shadow-side-front': Object.assign(new MeshStandardMaterial({ transparent: true, side: DoubleSide }), { shadowSide: FrontSide }),
-        'no-override': Object.assign(new MeshStandardMaterial({ transparent: true, side: DoubleSide }), { allowOverride: false }),
+        'shadow-side-double': Object.assign(new MeshStandardMaterial({ transparent: true, side: FrontSide }), {
+          shadowSide: DoubleSide,
+        }),
+        'shadow-side-front': Object.assign(new MeshStandardMaterial({ transparent: true, side: DoubleSide }), {
+          shadowSide: FrontSide,
+        }),
+        'no-override': Object.assign(new MeshStandardMaterial({ transparent: true, side: DoubleSide }), {
+          allowOverride: false,
+        }),
         'opaque-double-sided': new MeshStandardMaterial({ side: DoubleSide }),
       };
       scene.add(light);
@@ -336,7 +380,11 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
       }
       renderer.render(scene, camera);
       const frame = ledger.frame({ items: true });
-      const seen = Object.fromEntries(frame.items!.filter((i) => i.reason !== 'renderer-internal').map((i) => [`${i.pass} ${i.name}`, [i.expectedGpuDraws, i.flags.includes('double-sided-transparent')]]));
+      const seen = Object.fromEntries(
+        frame
+          .items!.filter((i) => i.reason !== 'renderer-internal')
+          .map((i) => [`${i.pass} ${i.name}`, [i.expectedGpuDraws, i.flags.includes('double-sided-transparent')]]),
+      );
       expect(seen, vsm ? 'VSM' : 'PCF').toEqual({
         'shadow:sun double-sided': [2, true],
         'shadow:sun shadow-side-double': [2, true],
@@ -359,7 +407,9 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     const materials: Record<string, Material> = {
       opaque: new MeshStandardMaterial({ side: FrontSide }),
       transparent: new MeshStandardMaterial({ transparent: true, side: FrontSide }),
-      'no-override': Object.assign(new MeshStandardMaterial({ transparent: true, side: FrontSide }), { allowOverride: false }),
+      'no-override': Object.assign(new MeshStandardMaterial({ transparent: true, side: FrontSide }), {
+        allowOverride: false,
+      }),
     };
     for (const [name, material] of Object.entries(materials)) {
       const mesh = tag.static(new Mesh(box, material));
@@ -369,8 +419,16 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     renderer.render(scene, camera);
     const frame = ledger.frame({ items: true });
     // renderer-internal items are left out: three draws the output quad on this canvas render too, the fake does not.
-    const seen = Object.fromEntries(frame.items!.filter((i) => i.reason !== 'renderer-internal').map((i) => [`${i.pass} ${i.name}`, [i.expectedGpuDraws, i.flags.includes('double-sided-transparent')]]));
-    expect(seen).toEqual({ 'override opaque': [1, false], 'override transparent': [2, true], 'override no-override': [1, false] });
+    const seen = Object.fromEntries(
+      frame
+        .items!.filter((i) => i.reason !== 'renderer-internal')
+        .map((i) => [`${i.pass} ${i.name}`, [i.expectedGpuDraws, i.flags.includes('double-sided-transparent')]]),
+    );
+    expect(seen).toEqual({
+      'override opaque': [1, false],
+      'override transparent': [2, true],
+      'override no-override': [1, false],
+    });
     expect(frame.totals).toMatchObject({ sceneSubmissions: 3, unattributed: 0 });
   });
 
@@ -381,14 +439,18 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     const { renderer, ledger, scene, camera } = attached({ shadowLight: light });
     const glass = tag.static(new Mesh(box, new MeshPhysicalMaterial({ transmission: 1, side: DoubleSide })));
     glass.name = 'glass';
-    const clear = tag.static(new Mesh(box, new MeshPhysicalMaterial({ transmission: 1, transparent: true, side: DoubleSide })));
+    const clear = tag.static(
+      new Mesh(box, new MeshPhysicalMaterial({ transmission: 1, transparent: true, side: DoubleSide })),
+    );
     clear.name = 'clear-glass';
     glass.castShadow = true;
     clear.castShadow = true;
     scene.add(light, glass, clear);
     renderer.render(scene, camera);
     const frame = ledger.frame({ items: true });
-    const items = frame.items!.filter((i) => i.reason !== 'renderer-internal').map((i) => [i.pass, i.name, i.expectedGpuDraws, i.flags.includes('double-sided-transparent')]);
+    const items = frame
+      .items!.filter((i) => i.reason !== 'renderer-internal')
+      .map((i) => [i.pass, i.name, i.expectedGpuDraws, i.flags.includes('double-sided-transparent')]);
     expect(items).toEqual([
       ['shadow:sun', 'glass', 1, false],
       ['shadow:sun', 'clear-glass', 1, false],
@@ -470,7 +532,14 @@ describe('DrawCallLedger and multi-draw slots a nested pass zeroed', () => {
       const { scene, light, camera } = rows(cs);
       const ledger = new DrawCallLedger();
       new World(scene, { instanceThreshold: 1000, ledger }).compile({ coordinateSystem: cs });
-      const renderer = new FakeRenderer({ webgpu, multiDraw, sceneHooks: true, shadowTrigger: 'first-receiver', record: true, shadowLights: [light] });
+      const renderer = new FakeRenderer({
+        webgpu,
+        multiDraw,
+        sceneHooks: true,
+        shadowTrigger: 'first-receiver',
+        record: true,
+        shadowLights: [light],
+      });
       ledger.attach(renderer as never);
       renderer.render(scene, camera);
       const frame = ledger.frame({ items: true });
@@ -479,16 +548,27 @@ describe('DrawCallLedger and multi-draw slots a nested pass zeroed', () => {
         const draws = renderer.passes.filter((p) => p.kind === kind).flatMap((p) => p.draws.filter(isBatch));
         const items = batches.filter((i) => i.pass.startsWith('shadow:') === (kind === 'shadow'));
         expect(draws.length, `${label} ${kind}: batch draws`).toBe(2);
-        expect(items.map((i) => i.expectedGpuDraws), `${label} ${kind}: GPU draws`).toEqual(draws.map((d) => d.drawCalls));
-        expect(items.map((i) => i.instancesDrawn), `${label} ${kind}: drawn instances`).toEqual(draws.map((d) => d.batchIds!.length));
+        expect(
+          items.map((i) => i.expectedGpuDraws),
+          `${label} ${kind}: GPU draws`,
+        ).toEqual(draws.map((d) => d.drawCalls));
+        expect(
+          items.map((i) => i.instancesDrawn),
+          `${label} ${kind}: drawn instances`,
+        ).toEqual(draws.map((d) => d.batchIds!.length));
       }
-      const commands = renderer.passes.flatMap((p) => p.draws).reduce((n, d) => n + (isBatch(d) ? d.batchIds!.length : d.drawCalls), 0);
+      const commands = renderer.passes
+        .flatMap((p) => p.draws)
+        .reduce((n, d) => n + (isBatch(d) ? d.batchIds!.length : d.drawCalls), 0);
       expect(frame.totals.drawCommands, `${label}: draw commands`).toBe(commands);
       expect(frame.totals.unattributed, `${label}: unattributed`).toBe(0);
       if (!multiDraw) {
         // One call per slot: each shadow draw issued more calls than it drew instances, so the pass did zero slots.
         const shadow = batches.filter((i) => i.pass.startsWith('shadow:'));
-        expect(shadow.every((i) => i.expectedGpuDraws > i.instancesDrawn), `${label}: zeroed slots`).toBe(true);
+        expect(
+          shadow.every((i) => i.expectedGpuDraws > i.instancesDrawn),
+          `${label}: zeroed slots`,
+        ).toBe(true);
       }
       drawn[label] = batches.map((i) => i.instancesDrawn);
     }
@@ -497,7 +577,8 @@ describe('DrawCallLedger and multi-draw slots a nested pass zeroed', () => {
   });
 
   it('predicts a compacted InstancedMesh from the count each pass draws, so a shadow pass appending only its own light stays attributed', () => {
-    const isInstanced = (draw: FakeDraw): boolean => (draw.object as { isInstancedMesh?: boolean }).isInstancedMesh === true;
+    const isInstanced = (draw: FakeDraw): boolean =>
+      (draw.object as { isInstancedMesh?: boolean }).isInstancedMesh === true;
     for (const webgpu of [false, true]) {
       const cs = webgpu ? WebGPUCoordinateSystem : WebGLCoordinateSystem;
       const { scene, light, camera } = rows(cs);
@@ -505,13 +586,21 @@ describe('DrawCallLedger and multi-draw slots a nested pass zeroed', () => {
       // The default instanceThreshold compacts each row of 101 repeats into a CulledInstancedMesh.
       const report = new World(scene, { ledger }).compile({ coordinateSystem: cs });
       expect(report.after, `webgpu ${webgpu}: two instanced rows`).toMatchObject({ batches: 0, instanced: 2 });
-      const renderer = new FakeRenderer({ webgpu, sceneHooks: true, shadowTrigger: 'first-receiver', record: true, shadowLights: [light] });
+      const renderer = new FakeRenderer({
+        webgpu,
+        sceneHooks: true,
+        shadowTrigger: 'first-receiver',
+        record: true,
+        shadowLights: [light],
+      });
       ledger.attach(renderer as never);
       renderer.render(scene, camera);
       const frame = ledger.frame({ items: true });
       for (const kind of ['render', 'shadow'] as const) {
         const draws = renderer.passes.filter((p) => p.kind === kind).flatMap((p) => p.draws.filter(isInstanced));
-        const items = frame.items!.filter((i) => i.reason === 'instanced' && i.pass.startsWith('shadow:') === (kind === 'shadow'));
+        const items = frame.items!.filter(
+          (i) => i.reason === 'instanced' && i.pass.startsWith('shadow:') === (kind === 'shadow'),
+        );
         expect(draws.length, `webgpu ${webgpu} ${kind}: instanced draws`).toBe(2);
         // getDrawParameters takes instanceCount from object.count, which the pass's append set and its end restores
         // after the ledger has read it: the prediction is that count, whatever subset of the frame's casters it holds.
@@ -533,7 +622,8 @@ describe('DrawCallLedger and multi-draw slots a nested pass zeroed', () => {
     // set, so the test above would still pass against a pass that appended the frame's whole union. Two lights whose
     // shadow cameras cover different slices of the rows separate the two, so a pass narrowed relative to the other
     // light is actually exercised.
-    const isInstanced = (draw: FakeDraw): boolean => (draw.object as { isInstancedMesh?: boolean }).isInstancedMesh === true;
+    const isInstanced = (draw: FakeDraw): boolean =>
+      (draw.object as { isInstancedMesh?: boolean }).isInstancedMesh === true;
     for (const webgpu of [false, true]) {
       const cs = webgpu ? WebGPUCoordinateSystem : WebGLCoordinateSystem;
       const { scene, light, camera } = rows(cs);
@@ -553,7 +643,13 @@ describe('DrawCallLedger and multi-draw slots a nested pass zeroed', () => {
       const ledger = new DrawCallLedger();
       const report = new World(scene, { ledger }).compile({ coordinateSystem: cs });
       expect(report.after, `webgpu ${webgpu}: two instanced rows`).toMatchObject({ batches: 0, instanced: 2 });
-      const renderer = new FakeRenderer({ webgpu, sceneHooks: true, shadowTrigger: 'first-receiver', record: true, shadowLights: [light, east] });
+      const renderer = new FakeRenderer({
+        webgpu,
+        sceneHooks: true,
+        shadowTrigger: 'first-receiver',
+        record: true,
+        shadowLights: [light, east],
+      });
       ledger.attach(renderer as never);
       renderer.render(scene, camera);
 
@@ -616,7 +712,7 @@ describe('DrawCallLedger frames and passes', () => {
     const mirror = camera.clone();
     const original = renderer.render.bind(renderer);
     let nested = false;
-    (renderer as { render: typeof renderer.render }).render = function (s, c) {
+    (renderer as { render: typeof renderer.render }).render = (s, c) => {
       if (!nested) {
         nested = true;
         renderer.renderTarget = { name: 'reflection' };
@@ -657,7 +753,7 @@ describe('DrawCallLedger frames and passes', () => {
     const mirror = camera.clone();
     const original = renderer.render.bind(renderer);
     let nested = false;
-    (renderer as { render: typeof renderer.render }).render = function (s, c) {
+    (renderer as { render: typeof renderer.render }).render = (s, c) => {
       if (!nested) {
         nested = true;
         // Two water reflectors, each with its own render target, both named `reflection`.
@@ -675,7 +771,13 @@ describe('DrawCallLedger frames and passes', () => {
     ledger.attach(renderer as never);
     renderer.render(scene, camera);
     const frame = ledger.frame({ items: true });
-    expect(frame.passes.map((p) => p.id)).toEqual(['nested:reflection', 'nested:reflection#2', 'scene:portal', 'scene:portal#2', 'main']);
+    expect(frame.passes.map((p) => p.id)).toEqual([
+      'nested:reflection',
+      'nested:reflection#2',
+      'scene:portal',
+      'scene:portal#2',
+      'main',
+    ]);
     // One row each, and every record carries its own pass, so per-pass submissions are not summed under one label.
     // A reflector's render into a target draws no "Output Color Transform" quad; a portal Scene rendered to the default
     // target does, so those passes are the mesh plus the quad.
@@ -732,7 +834,10 @@ const depthOf = (ledger: DrawCallLedger): number => (ledger as unknown as { dept
 
 describe('DrawCallLedger and renderAsync', () => {
   it("relies on three's renderAsync awaiting init() and then calling this.render() (Renderer.js, r186), so it does not patch renderAsync", () => {
-    const source = readFileSync(createRequire(import.meta.url).resolve('three/src/renderers/common/Renderer.js'), 'utf8');
+    const source = readFileSync(
+      createRequire(import.meta.url).resolve('three/src/renderers/common/Renderer.js'),
+      'utf8',
+    );
     const start = source.indexOf('\tasync renderAsync( scene, camera ) {');
     expect(start, 'Renderer.renderAsync( scene, camera ) is defined').toBeGreaterThan(-1);
     const body = source.slice(start, source.indexOf('\n\t}\n', start));
@@ -776,7 +881,10 @@ describe('DrawCallLedger and renderAsync', () => {
 
   it('a render() while renderAsync awaits init() is a frame of its own, and so is the render renderAsync then makes: two main frames', async () => {
     const { renderer, ledger, scene, camera } = attached();
-    scene.add(tag.static(new Mesh(box, new MeshStandardMaterial())), tag.static(new Mesh(box, new MeshStandardMaterial())));
+    scene.add(
+      tag.static(new Mesh(box, new MeshStandardMaterial())),
+      tag.static(new Mesh(box, new MeshStandardMaterial())),
+    );
     const other = new Scene();
     other.add(tag.static(new Mesh(box, new MeshStandardMaterial())));
     const pending = renderer.renderAsync(scene, camera); // suspended at `await this.init()`
@@ -786,8 +894,14 @@ describe('DrawCallLedger and renderAsync', () => {
     const between = ledger.frame();
     await pending;
     const after = ledger.frame();
-    expect([between.passes.map((p) => p.id), between.totals.sceneSubmissions], 'the frame the interleaved render() completed').toEqual([['main'], 1]);
-    expect([after.passes.map((p) => p.id), after.totals.sceneSubmissions], 'the frame renderAsync completed').toEqual([['main'], 2]);
+    expect(
+      [between.passes.map((p) => p.id), between.totals.sceneSubmissions],
+      'the frame the interleaved render() completed',
+    ).toEqual([['main'], 1]);
+    expect([after.passes.map((p) => p.id), after.totals.sceneSubmissions], 'the frame renderAsync completed').toEqual([
+      ['main'],
+      2,
+    ]);
   });
 
   it('depth is back at 0 after renderAsync, after an interleaved render() and after a render or renderAsync that throws', async () => {
@@ -811,13 +925,16 @@ describe('DrawCallLedger and renderAsync', () => {
     expect.soft(depthOf(ledger), 'after a renderAsync that rejects').toBe(0);
     scene.remove(throwing);
     renderer.render(scene, camera);
-    expect([ledger.frame().passes.map((p) => p.id), ledger.frame().totals.sceneSubmissions], 'the next render() is a frame of its own').toEqual([['main'], 1]);
+    expect(
+      [ledger.frame().passes.map((p) => p.id), ledger.frame().totals.sceneSubmissions],
+      'the next render() is a frame of its own',
+    ).toEqual([['main'], 1]);
   });
 
   it('attach() and detach() leave renderAsync untouched: no own property shadows the prototype method', () => {
     const renderer = new FakeRenderer();
     const original = renderer.renderAsync;
-    const own = () => Object.prototype.hasOwnProperty.call(renderer, 'renderAsync');
+    const own = () => Object.hasOwn(renderer, 'renderAsync');
     const ledger = new DrawCallLedger();
     ledger.attach(renderer as never);
     expect([renderer.renderAsync === original, own()], 'attached').toEqual([true, false]);
@@ -856,7 +973,19 @@ describe('DrawCallLedger snapshot, report and budget', () => {
     expect(json).not.toContain(`"id":${mesh.id}`);
     const frame = ledger.frame();
     expect(frame.schemaVersion).toBe(3);
-    expect(Object.keys(frame.totals).sort()).toEqual(['drawCommands', 'gpuDraws', 'instances', 'instancesDrawn', 'programSwitches', 'programs', 'reportedDrawCalls', 'sceneSubmissions', 'submissions', 'triangles', 'unattributed']);
+    expect(Object.keys(frame.totals).sort()).toEqual([
+      'drawCommands',
+      'gpuDraws',
+      'instances',
+      'instancesDrawn',
+      'programSwitches',
+      'programs',
+      'reportedDrawCalls',
+      'sceneSubmissions',
+      'submissions',
+      'triangles',
+      'unattributed',
+    ]);
   });
 
   it('names unnamed objects by their scene path', () => {
@@ -895,7 +1024,8 @@ describe('DrawCallLedger snapshot, report and budget', () => {
 
   it('counts particles (points honouring drawRange, sprites, sprite batches) and drawing-buffer pixels', () => {
     const { renderer, ledger, scene, camera } = attached();
-    (renderer as unknown as { getDrawingBufferSize: (t: Vector2) => Vector2 }).getDrawingBufferSize = (t: Vector2) => t.set(800, 600);
+    (renderer as unknown as { getDrawingBufferSize: (t: Vector2) => Vector2 }).getDrawingBufferSize = (t: Vector2) =>
+      t.set(800, 600);
     const cloud = new BufferGeometry();
     cloud.setAttribute('position', new Float32BufferAttribute(new Float32Array(1000 * 3), 3));
     cloud.setDrawRange(0, 250);
@@ -918,11 +1048,15 @@ describe('DrawCallLedger snapshot, report and budget', () => {
     expect(frame.overdraw.pixels).toBe(480_000);
     expect(frame.byReason['sprite-batch']?.submissions).toBe(1);
     expect(frame.items?.find((i) => i.name === 'smoke')?.vertices).toBe(250);
-    expect(frame.items?.find((i) => i.name === 'forge:sprites:abcd:0')).toMatchObject({ instances: 40, instancesDrawn: 40, expectedGpuDraws: 1 });
+    expect(frame.items?.find((i) => i.name === 'forge:sprites:abcd:0')).toMatchObject({
+      instances: 40,
+      instancesDrawn: 40,
+      expectedGpuDraws: 1,
+    });
     expect(frame.totals.unattributed).toBe(0);
   });
 
-  it('counts hidden originals on layer 31 and reports the attached scheduler\'s skipped ticks', () => {
+  it("counts hidden originals on layer 31 and reports the attached scheduler's skipped ticks", () => {
     const { renderer, ledger, scene, camera } = attached();
     const a = new Mesh(box, new MeshStandardMaterial());
     const b = new Mesh(box, new MeshStandardMaterial());
@@ -1018,15 +1152,24 @@ describe('DrawCallLedger shared materials: unique-material and static-unbatched'
   };
   /** name → reason of the frame's scene items in `pass` (renderer-internal work left out). */
   const reasonsIn = (ledger: DrawCallLedger, pass = 'main') =>
-    Object.fromEntries((ledger.frame({ items: true }).items ?? []).filter((i) => i.pass === pass && i.reason !== 'renderer-internal').map((i) => [i.name, i.reason]));
-  const indexOf = (ledger: DrawCallLedger, name: string) => ledger.frame({ items: true }).items!.find((i) => i.name === name)!.material;
+    Object.fromEntries(
+      (ledger.frame({ items: true }).items ?? [])
+        .filter((i) => i.pass === pass && i.reason !== 'renderer-internal')
+        .map((i) => [i.name, i.reason]),
+    );
+  const indexOf = (ledger: DrawCallLedger, name: string) =>
+    ledger.frame({ items: true }).items!.find((i) => i.name === name)!.material;
 
   it('calls two statics sharing one built-in material static-unbatched, without a World; a material instance drawn once stays unique-material', () => {
     const { renderer, ledger, scene, camera } = attached();
     const shared = new MeshStandardMaterial({ color: 0x336699 });
     // Equal by value, but its own instance and never registered: nothing else draws it.
     const own = new MeshStandardMaterial({ color: 0x336699 });
-    scene.add(named(tag.static(new Mesh(box, shared)), 'a'), named(tag.static(new Mesh(new PlaneGeometry(1, 1), shared)), 'b'), named(tag.static(new Mesh(box, own)), 'alone'));
+    scene.add(
+      named(tag.static(new Mesh(box, shared)), 'a'),
+      named(tag.static(new Mesh(new PlaneGeometry(1, 1), shared)), 'b'),
+      named(tag.static(new Mesh(box, own)), 'alone'),
+    );
     renderer.render(scene, camera);
     const frame = ledger.frame();
     expect(reasonsIn(ledger)).toEqual({ a: 'static-unbatched', b: 'static-unbatched', alone: 'unique-material' });
@@ -1036,7 +1179,7 @@ describe('DrawCallLedger shared materials: unique-material and static-unbatched'
     expect(indexOf(ledger, 'alone')).not.toBe(indexOf(ledger, 'a'));
   });
 
-  it("counts uses per registry canonical: identical registered built-ins share one, materials differing only in an instance onBeforeRender do not", () => {
+  it('counts uses per registry canonical: identical registered built-ins share one, materials differing only in an instance onBeforeRender do not', () => {
     const { renderer, registry, ledger, scene, camera } = attached();
     const first = new MeshStandardMaterial({ color: 0x884422 });
     const second = new MeshStandardMaterial({ color: 0x884422 });
@@ -1058,14 +1201,21 @@ describe('DrawCallLedger shared materials: unique-material and static-unbatched'
       named(tag.static(new Mesh(box, hooked[1]!)), 'hooked-2'),
     );
     renderer.render(scene, camera);
-    expect(reasonsIn(ledger)).toEqual({ 'merged-1': 'static-unbatched', 'merged-2': 'static-unbatched', 'hooked-1': 'unique-material', 'hooked-2': 'unique-material' });
+    expect(reasonsIn(ledger)).toEqual({
+      'merged-1': 'static-unbatched',
+      'merged-2': 'static-unbatched',
+      'hooked-1': 'unique-material',
+      'hooked-2': 'unique-material',
+    });
     expect(indexOf(ledger, 'merged-1')).toBe(indexOf(ledger, 'merged-2'));
     expect(indexOf(ledger, 'hooked-1')).not.toBe(indexOf(ledger, 'hooked-2'));
   });
 
   it('counts uses per object: a static the main pass draws twice (the back-side pass of a double-sided transmissive material) is not shared with itself', () => {
     const { renderer, ledger, scene, camera } = attached();
-    scene.add(named(tag.static(new Mesh(box, new MeshPhysicalMaterial({ transmission: 1, side: DoubleSide }))), 'glass'));
+    scene.add(
+      named(tag.static(new Mesh(box, new MeshPhysicalMaterial({ transmission: 1, side: DoubleSide }))), 'glass'),
+    );
     renderer.render(scene, camera);
     const glass = ledger.frame({ items: true }).items!.filter((i) => i.pass === 'main' && i.name === 'glass');
     expect(glass).toHaveLength(2);
@@ -1096,7 +1246,11 @@ describe('DrawCallLedger shared materials: unique-material and static-unbatched'
     }) as Mesh['onBeforeRender'];
     scene.add(sun, caster, named(tag.static(new Mesh(box, stone)), 'plinth'), portal);
     renderer.render(scene, camera);
-    expect(reasonsIn(ledger)).toEqual({ caster: 'static-unbatched', plinth: 'static-unbatched', portal: 'unique-material' });
+    expect(reasonsIn(ledger)).toEqual({
+      caster: 'static-unbatched',
+      plinth: 'static-unbatched',
+      portal: 'unique-material',
+    });
     expect(reasonsIn(ledger, 'shadow:sun')).toEqual({ caster: 'static-unbatched' });
     expect(reasonsIn(ledger, 'scene:room')).toEqual({ 'far-wall': 'unique-material' });
   });
@@ -1119,7 +1273,7 @@ describe('DrawCallLedger shared materials: unique-material and static-unbatched'
     expect(reasonsIn(ledger)).toEqual({ alone: 'unique-material' });
   });
 
-  it("counts no use from a measureOverdraw() a hook of the frame starts: its count renders are not submissions", async () => {
+  it('counts no use from a measureOverdraw() a hook of the frame starts: its count renders are not submissions', async () => {
     const { renderer, ledger, scene, camera } = attached();
     const stone = new MeshStandardMaterial({ color: 0x777777 });
     const a = named(tag.static(new Mesh(box, stone)), 'a');
@@ -1158,7 +1312,8 @@ describe('DrawCallLedger shared materials: unique-material and static-unbatched'
     const other = named(tag.static(new Mesh(box, blue)), 'other');
     scene.add(lead, twin, other);
     renderer.render(scene, camera);
-    const scene1 = (items: SubmissionRecord[]) => items.filter((i) => i.reason !== 'renderer-internal').map((i) => [i.name, i.material, i.reason]);
+    const scene1 = (items: SubmissionRecord[]) =>
+      items.filter((i) => i.reason !== 'renderer-internal').map((i) => [i.name, i.material, i.reason]);
     const first = ledger.frame({ items: true }).items!;
     expect(scene1(first)).toEqual([
       ['lead', 0, 'unique-material'],
@@ -1201,7 +1356,9 @@ describe('DrawCallLedger hints count objects, not submissions', () => {
       scene.add(mesh);
     }
     renderer.render(scene, camera);
-    expect(hint(ledger, 'unique-materials')?.message).toBe('21 meshes each with a material used once: share materials through the registry');
+    expect(hint(ledger, 'unique-materials')?.message).toBe(
+      '21 meshes each with a material used once: share materials through the registry',
+    );
   });
 
   it('counts one untagged caster under a point light as one untagged mesh, not seven', () => {
@@ -1239,7 +1396,9 @@ describe('DrawCallLedger hints count objects, not submissions', () => {
     scene.add(lamp, panel);
     renderer.render(scene, camera);
     expect(ledger.frame().byReason['unsupported-material']?.submissions, 'the main pass and six cube faces').toBe(7);
-    expect(hint(ledger, 'unsupported-material')?.message).toBe('1 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer');
+    expect(hint(ledger, 'unsupported-material')?.message).toBe(
+      '1 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer',
+    );
     // On a layer the main camera does not see, so only the six shadow faces draw it. Its material renders nowhere on
     // WebGPU either, so it is still a mesh this error hint names, although no main-pass record carries it.
     const offCamera = tag.static(new Mesh(box, new ShaderMaterial()));
@@ -1252,9 +1411,13 @@ describe('DrawCallLedger hints count objects, not submissions', () => {
     const drawn = ledger.frame({ items: true }).items!.filter((i) => i.name === 'off-camera');
     expect(drawn.map((i) => i.pass)).toEqual(Array(6).fill('shadow:lamp'));
     expect(ledger.frame().byReason['unsupported-material']?.submissions).toBe(13);
-    expect(hint(ledger, 'unsupported-material')?.message).toBe('2 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer');
+    expect(hint(ledger, 'unsupported-material')?.message).toBe(
+      '2 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer',
+    );
     ledger.rescan();
-    expect(hint(ledger, 'unsupported-material')?.message).toBe('2 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer');
+    expect(hint(ledger, 'unsupported-material')?.message).toBe(
+      '2 ShaderMaterial/RawShaderMaterial meshes do not render on WebGPURenderer',
+    );
   });
 
   it('counts sprites drawn one by one as objects for sprites-unbatched, and keeps the counts on a rescan between frames', () => {
@@ -1262,9 +1425,13 @@ describe('DrawCallLedger hints count objects, not submissions', () => {
     const material = new SpriteMaterial();
     for (let i = 0; i < 8; i++) scene.add(new Sprite(material));
     renderer.render(scene, camera);
-    expect(hint(ledger, 'sprites-unbatched')?.message).toBe('8 sprites drawn one by one: World batches sprites that share a material (sprites: \'batch\')');
+    expect(hint(ledger, 'sprites-unbatched')?.message).toBe(
+      "8 sprites drawn one by one: World batches sprites that share a material (sprites: 'batch')",
+    );
     ledger.rescan();
-    expect(hint(ledger, 'sprites-unbatched')?.message).toBe('8 sprites drawn one by one: World batches sprites that share a material (sprites: \'batch\')');
+    expect(hint(ledger, 'sprites-unbatched')?.message).toBe(
+      "8 sprites drawn one by one: World batches sprites that share a material (sprites: 'batch')",
+    );
   });
 });
 
@@ -1278,15 +1445,25 @@ describe('DrawCallLedger hints count objects, not submissions', () => {
 describe('DrawCallLedger batch-local-space hint', () => {
   const CODE = 'batch-local-space';
   const hint = (ledger: DrawCallLedger) => ledger.frame().hints.find((h) => h.code === CODE);
-  const gradient = (): Material => Object.assign(new MeshStandardNodeMaterial(), { name: 'gradient', colorNode: mix(color(0x2040ff), color(0xff8020), positionLocal.y.add(0.5)) });
+  const gradient = (): Material =>
+    Object.assign(new MeshStandardNodeMaterial(), {
+      name: 'gradient',
+      colorNode: mix(color(0x2040ff), color(0xff8020), positionLocal.y.add(0.5)),
+    });
   const hashed = (): Material => new MeshStandardMaterial({ name: 'hashed', alphaHash: true, opacity: 0.5 });
-  const engraved = (normalMapType: NormalMapTypes = ObjectSpaceNormalMap, normalMap: Texture | null = new DataTexture(new Uint8Array([128, 128, 255, 255]), 1, 1)): Material => new MeshStandardMaterial({ name: 'engraved', normalMap, normalMapType });
+  const engraved = (
+    normalMapType: NormalMapTypes = ObjectSpaceNormalMap,
+    normalMap: Texture | null = new DataTexture(new Uint8Array([128, 128, 255, 255]), 1, 1),
+  ): Material => new MeshStandardMaterial({ name: 'engraved', normalMap, normalMapType });
 
   /**
    * `count` transformed boxes sharing `material` (or the material `material(registry)` returns, given the ledger's registry,
    * which World uses too), tagged static (or dynamic), compiled by World, then one frame rendered (the first frame rescans).
    */
-  function compiled(source: Material | ((registry: MaterialRegistry) => Material), options: { count?: number; dynamic?: boolean; world?: WorldOptions; geometry?: BufferGeometry } = {}) {
+  function compiled(
+    source: Material | ((registry: MaterialRegistry) => Material),
+    options: { count?: number; dynamic?: boolean; world?: WorldOptions; geometry?: BufferGeometry } = {},
+  ) {
     const { renderer, registry, ledger, scene, camera } = attached();
     const material = typeof source === 'function' ? source(registry) : source;
     for (let i = 0; i < (options.count ?? 4); i++) {
@@ -1311,7 +1488,8 @@ describe('DrawCallLedger batch-local-space hint', () => {
       category: 'drawCalls',
       severity: 'warn',
       code: CODE,
-      message: "1 threeforge batched, instanced or baked draw uses a node in a material slot, custom material code, alphaHash or an object-space normal map, which threeforge cannot rule out reading mesh-local space, now the scene's: shading can change — tag them dynamic (materials: gradient)",
+      message:
+        "1 threeforge batched, instanced or baked draw uses a node in a material slot, custom material code, alphaHash or an object-space normal map, which threeforge cannot rule out reading mesh-local space, now the scene's: shading can change — tag them dynamic (materials: gradient)",
       objects: [report.groups[0]!.name],
     });
     expect(report.groups[0]!.name.startsWith('forge:batch:')).toBe(true);
@@ -1329,7 +1507,10 @@ describe('DrawCallLedger batch-local-space hint', () => {
     expect(report.after.batches).toBe(1);
     expect(hint(ledger)).toMatchObject({ severity: 'warn', objects: [report.groups[0]!.name] });
     expect(hint(ledger)?.message.endsWith('(materials: engraved)')).toBe(true);
-    for (const [label, material] of [['a tangent-space normal map', engraved(TangentSpaceNormalMap)], ['ObjectSpaceNormalMap without a normalMap', engraved(ObjectSpaceNormalMap, null)]] as Array<[string, Material]>) {
+    for (const [label, material] of [
+      ['a tangent-space normal map', engraved(TangentSpaceNormalMap)],
+      ['ObjectSpaceNormalMap without a normalMap', engraved(ObjectSpaceNormalMap, null)],
+    ] as Array<[string, Material]>) {
       const silent = compiled(material);
       expect(silent.report.after.batches, label).toBe(1);
       expect(hint(silent.ledger), label).toBeUndefined();
@@ -1342,7 +1523,10 @@ describe('DrawCallLedger batch-local-space hint', () => {
     leveled.userData.forgeLods = [new BoxGeometry(1, 1, 1)];
     const node = compiled(gradient(), { geometry: leveled, world: { instanceThreshold: 4, lod: { distances: [30] } } });
     expect(node.report.after).toEqual(expect.objectContaining({ batches: 0, instanced: 2, baked: 0 }));
-    expect(node.world.instancedMeshes.map((m) => m.material)).toEqual([node.world.instancedMeshes[0]!.material, node.world.instancedMeshes[0]!.material]);
+    expect(node.world.instancedMeshes.map((m) => m.material)).toEqual([
+      node.world.instancedMeshes[0]!.material,
+      node.world.instancedMeshes[0]!.material,
+    ]);
     expect(hint(node.ledger)?.objects).toEqual([node.report.groups[0]!.name]);
     expect(hint(node.ledger)?.message.startsWith('1 threeforge batched, instanced or baked draw uses')).toBe(true);
     expect(node.report.groups[0]!.name.startsWith('forge:instanced:')).toBe(true);
@@ -1372,7 +1556,9 @@ describe('DrawCallLedger batch-local-space hint', () => {
    */
   it('fires for a batch whose material is a subclass or carries an own function, even with no node slot set', () => {
     class Ripple extends MeshStandardNodeMaterial {
-      override setupPosition(...args: Parameters<MeshStandardNodeMaterial['setupPosition']>): ReturnType<MeshStandardNodeMaterial['setupPosition']> {
+      override setupPosition(
+        ...args: Parameters<MeshStandardNodeMaterial['setupPosition']>
+      ): ReturnType<MeshStandardNodeMaterial['setupPosition']> {
         void args;
         return positionLocal.add(positionLocal.y.mul(0.1)) as ReturnType<MeshStandardNodeMaterial['setupPosition']>;
       }
@@ -1395,8 +1581,12 @@ describe('DrawCallLedger batch-local-space hint', () => {
   });
 
   it('stays silent for batches of a plain registered standard material and of a node material with every slot empty', () => {
-    const plain = (registry: MaterialRegistry): Material => registry.register(new MeshStandardMaterial({ color: 0x808080 }));
-    for (const [label, material] of [['registered MeshStandardMaterial', plain], ['MeshStandardNodeMaterial without nodes', new MeshStandardNodeMaterial()]] as Array<[string, Material | typeof plain]>) {
+    const plain = (registry: MaterialRegistry): Material =>
+      registry.register(new MeshStandardMaterial({ color: 0x808080 }));
+    for (const [label, material] of [
+      ['registered MeshStandardMaterial', plain],
+      ['MeshStandardNodeMaterial without nodes', new MeshStandardNodeMaterial()],
+    ] as Array<[string, Material | typeof plain]>) {
       const { ledger, report } = compiled(material);
       expect(report.after.batches, label).toBe(1);
       expect(hint(ledger), label).toBeUndefined();
@@ -1406,7 +1596,11 @@ describe('DrawCallLedger batch-local-space hint', () => {
   });
 
   it('stays silent for dynamic meshes carrying such materials, which World leaves individual (it names them once batch-sync batches them)', () => {
-    for (const [label, material] of [['node slot', gradient()], ['alphaHash', hashed()], ['object-space normal map', engraved()]] as Array<[string, Material]>) {
+    for (const [label, material] of [
+      ['node slot', gradient()],
+      ['alphaHash', hashed()],
+      ['object-space normal map', engraved()],
+    ] as Array<[string, Material]>) {
       const separate = compiled(material, { dynamic: true });
       expect(separate.report.after, label).toEqual(expect.objectContaining({ batches: 0, instanced: 0, baked: 0 }));
       expect(separate.ledger.frame().byReason.dynamic?.submissions, label).toBe(4);

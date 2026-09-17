@@ -10,7 +10,9 @@ export interface BudgetViolation {
   files: string[];
   problem: string;
 }
-export type BudgetDeclaration = { kind: 'count'; value: number; line: string } | { kind: 'n/a'; reason: string; line: string };
+export type BudgetDeclaration =
+  | { kind: 'count'; value: number; line: string }
+  | { kind: 'n/a'; reason: string; line: string };
 
 /** Rendering paths: an entry ending in `/` matches its whole directory, any other entry that one file exactly. */
 export const RENDERING_PATHS: readonly string[];
@@ -34,9 +36,15 @@ export interface ExemptedCommit extends CommitExemption {
 /** The dated allow-list of full SHAs that are past rule 4 by decision. The only way past it. */
 export const EXEMPT_COMMITS: Readonly<Record<string, CommitExemption>>;
 /** The commits `exempt` excused: would-be violations whose full SHA is a key of it. */
-export function exemptedCommits(commits: readonly CommitRecord[], exempt?: Readonly<Record<string, CommitExemption>>): ExemptedCommit[];
+export function exemptedCommits(
+  commits: readonly CommitRecord[],
+  exempt?: Readonly<Record<string, CommitExemption>>,
+): ExemptedCommit[];
 /** Every commit that touches rendering without a usable declaration and without an exemption. */
-export function checkCommits(commits: readonly CommitRecord[], exempt?: Readonly<Record<string, CommitExemption>>): BudgetViolation[];
+export function checkCommits(
+  commits: readonly CommitRecord[],
+  exempt?: Readonly<Record<string, CommitExemption>>,
+): BudgetViolation[];
 /** Reads `range` out of the repository in `cwd`, merges excluded. */
 export function readCommits(range: string, cwd?: string): CommitRecord[];
 /** What a push event sends as `before` when it created the ref. */
@@ -53,8 +61,16 @@ export interface PushRangeResult {
   reason: string | null;
 }
 /** The commits a push adds: before..after when it fast-forwarded, else the merge-base with the default ref. */
-export function pushRange(event: { before: string; after: string; defaultRef?: string }, git: PushRangeGit): PushRangeResult;
+export function pushRange(
+  event: { before: string; after: string; defaultRef?: string },
+  git: PushRangeGit,
+): PushRangeResult;
 /** `pushRange`'s queries against a real repository; each answers instead of throwing. */
 export function gitQueries(cwd?: string): PushRangeGit;
 /** Runs the check; returns the process exit code (0 ok, 1 violations, 2 usage). `argv` may be `--push <before> <after>`. */
-export function main(argv: readonly string[], cwd?: string, exempt?: Readonly<Record<string, CommitExemption>>, git?: PushRangeGit | null): number;
+export function main(
+  argv: readonly string[],
+  cwd?: string,
+  exempt?: Readonly<Record<string, CommitExemption>>,
+  git?: PushRangeGit | null,
+): number;

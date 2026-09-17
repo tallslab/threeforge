@@ -1,4 +1,4 @@
-import { expect, test, type ForgePage } from './fixtures.js';
+import { expect, type ForgePage, test } from './fixtures.js';
 import { differingPixels, pixelDiff, settle } from './pixels.js';
 
 /**
@@ -37,7 +37,10 @@ const TOLERANCE = 4;
  * tagged static, so `compile()` batches them (the default `instanceThreshold` is 64, so four boxes batch rather than
  * instance) and `bake` stays off.
  */
-async function buildBoxes(forge: ForgePage, kind: 'gradient' | 'alphaHash' | 'objectSpaceNormalMap' | 'plain'): Promise<void> {
+async function buildBoxes(
+  forge: ForgePage,
+  kind: 'gradient' | 'alphaHash' | 'objectSpaceNormalMap' | 'plain',
+): Promise<void> {
   await forge.page.evaluate((which) => {
     const f = window.__forge;
     const T = f.three;
@@ -52,7 +55,15 @@ async function buildBoxes(forge: ForgePage, kind: 'gradient' | 'alphaHash' | 'ob
         const nx = Math.sin((x / size) * Math.PI * 2) * 0.6;
         const ny = Math.cos((y / size) * Math.PI * 2) * 0.6;
         const nz = Math.sqrt(Math.max(0.05, 1 - nx * nx - ny * ny));
-        data.set([Math.round((nx * 0.5 + 0.5) * 255), Math.round((ny * 0.5 + 0.5) * 255), Math.round((nz * 0.5 + 0.5) * 255), 255], i * 4);
+        data.set(
+          [
+            Math.round((nx * 0.5 + 0.5) * 255),
+            Math.round((ny * 0.5 + 0.5) * 255),
+            Math.round((nz * 0.5 + 0.5) * 255),
+            255,
+          ],
+          i * 4,
+        );
       }
       const texture = new T.DataTexture(data, size, size);
       texture.needsUpdate = true;
@@ -68,11 +79,23 @@ async function buildBoxes(forge: ForgePage, kind: 'gradient' | 'alphaHash' | 'ob
       material = node as unknown as InstanceType<typeof T.Material>;
     } else if (which === 'alphaHash') {
       // getAlphaHashThreshold hashes positionLocal (NodeMaterial.js:893) to choose the pixels it discards.
-      material = new T.MeshStandardMaterial({ name: 'hashed', color: 0xd8c0a0, roughness: 0.8, alphaHash: true, opacity: 0.5 });
+      material = new T.MeshStandardMaterial({
+        name: 'hashed',
+        color: 0xd8c0a0,
+        roughness: 0.8,
+        alphaHash: true,
+        opacity: 0.5,
+      });
     } else if (which === 'objectSpaceNormalMap') {
       // Object-space normals go through the draw's model normal matrix (NormalMapNode.js:120-122): the batch's, not
       // each box's, so a rotated box is lit as if unrotated.
-      material = new T.MeshStandardMaterial({ name: 'engraved', color: 0xb0b4c0, roughness: 0.55, normalMap: normalMap(), normalMapType: T.ObjectSpaceNormalMap });
+      material = new T.MeshStandardMaterial({
+        name: 'engraved',
+        color: 0xb0b4c0,
+        roughness: 0.55,
+        normalMap: normalMap(),
+        normalMapType: T.ObjectSpaceNormalMap,
+      });
     } else {
       material = new T.MeshStandardMaterial({ name: 'plain', color: 0xb0b4c0, roughness: 0.55 });
     }
@@ -109,7 +132,12 @@ async function compileAndSettle(forge: ForgePage) {
     // within a second of compiling, a four-frame test would not, so ask for the rescan rather than render 60 frames.
     f.ledger.rescan();
     const frame = await f.frameAsync();
-    return { after: report.after, hints: frame.hints.map((h) => ({ code: h.code, severity: h.severity })), submissions: frame.totals.sceneSubmissions, unattributed: frame.totals.unattributed };
+    return {
+      after: report.after,
+      hints: frame.hints.map((h) => ({ code: h.code, severity: h.severity })),
+      submissions: frame.totals.sceneSubmissions,
+      unattributed: frame.totals.unattributed,
+    };
   });
 }
 
@@ -128,15 +156,23 @@ for (const [kind, label] of [
     const after = await forge.page.screenshot({ type: 'png' });
     const changedPixels = differingPixels(before, after, { threshold: TOLERANCE });
     const share = pixelDiff(before, after, { threshold: TOLERANCE });
-    note(`[${forge.backend}] ${kind}: ${r.after.batches} batch, ${changedPixels} changed pixels, ${(share * 100).toFixed(4)}% of the frame`);
+    note(
+      `[${forge.backend}] ${kind}: ${r.after.batches} batch, ${changedPixels} changed pixels, ${(share * 100).toFixed(4)}% of the frame`,
+    );
     // The four boxes really did batch, and nothing else moved: the diff below is batching's.
     expect(r.after.batches, 'the four boxes did not batch').toBe(1);
     expect(r.after.baked, 'bake must stay off for this measurement').toBe(0);
     expect(r.unattributed).toBe(0);
     // Both halves of the documented claim.
-    expect(r.hints.map((h) => h.code), 'batch-local-space did not fire').toContain('batch-local-space');
+    expect(
+      r.hints.map((h) => h.code),
+      'batch-local-space did not fire',
+    ).toContain('batch-local-space');
     expect(r.hints.find((h) => h.code === 'batch-local-space')?.severity).toBe('warn');
-    expect(changedPixels, 'batching preserved every pixel: the hint and the documented percentage are now wrong').toBeGreaterThan(0);
+    expect(
+      changedPixels,
+      'batching preserved every pixel: the hint and the documented percentage are now wrong',
+    ).toBeGreaterThan(0);
   });
 }
 

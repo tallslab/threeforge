@@ -1,5 +1,5 @@
-import { fileURLToPath } from 'node:url';
 import { PassThrough } from 'node:stream';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { serveMcp } from '../../src/cli/mcp.js';
 
@@ -52,74 +52,84 @@ describe('serveMcp aborts an in-flight tool call and closes its resources on std
     };
   }
 
-  it(
-    'closes the fake browser and static server opened by a stuck analyze_asset call, and serveMcp still resolves',
-    async () => {
-      const stdin = new PassThrough(); // the server's stdin: the hand-rolled client writes requests here
-      const stdout = new PassThrough(); // the server's stdout: the hand-rolled client reads responses here
-      const incoming = reader(stdout);
+  it('closes the fake browser and static server opened by a stuck analyze_asset call, and serveMcp still resolves', async () => {
+    const stdin = new PassThrough(); // the server's stdin: the hand-rolled client writes requests here
+    const stdout = new PassThrough(); // the server's stdout: the hand-rolled client reads responses here
+    const incoming = reader(stdout);
 
-      const closeServer = vi.fn().mockResolvedValue(undefined);
-      const closeBrowser = vi.fn().mockResolvedValue(undefined);
-      let newPageCalled = false;
+    const closeServer = vi.fn().mockResolvedValue(undefined);
+    const closeBrowser = vi.fn().mockResolvedValue(undefined);
+    let newPageCalled = false;
 
-      // A real, existing file — analyzeAssetWithShots only needs it to exist; the fake launch/serve below mean it
-      // is never actually read by a browser.
-      const realFile = fileURLToPath(new URL('../../package.json', import.meta.url));
+    // A real, existing file — analyzeAssetWithShots only needs it to exist; the fake launch/serve below mean it
+    // is never actually read by a browser.
+    const realFile = fileURLToPath(new URL('../../package.json', import.meta.url));
 
-      const served = serveMcp({
-        stdin,
-        stdout,
-        // Ignored by the fake `serve` below, but analyzeAssetWithShots (src/cli/analyze.ts) computes it eagerly
-        // (cliAppDir()) before calling deps.serve — and that throws when running against source (not dist),
-        // where the shipped harness page does not exist next to src/cli/. Any real directory does.
-        appDir: fileURLToPath(new URL('.', import.meta.url)),
-        serve: async () => ({ url: 'http://127.0.0.1:1', close: closeServer }),
-        launch: async () => ({
-          newPage: () => {
-            newPageCalled = true;
-            return new Promise(() => {}); // never resolves: the call is stuck exactly like a real hung render
-          },
-          close: closeBrowser,
-        }),
-      });
-      let servedResolved = false;
-      void served.then(() => {
-        servedResolved = true;
-      });
-
-      await vi.waitFor(() => {
-        if (stdin.listenerCount('end') === 0) throw new Error('serveMcp has not attached its end listener yet');
-      });
-
-      writeMessage(stdin, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'threeforge-abort-test', version: '0' } } });
-      const initResponse = await incoming.next();
-      expect(initResponse.result).toBeDefined();
-      writeMessage(stdin, { jsonrpc: '2.0', method: 'notifications/initialized' });
-
-      // Fire the call and deliberately do not await its response: it is designed to hang.
-      writeMessage(stdin, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'analyze_asset', arguments: { file: realFile, frames: 5 } } });
-
-      // Wait until the call has actually reached the blocking point: by the time newPage() is invoked, the real
-      // code (src/cli/analyze.ts) has already run both `resources.add('the static server', ...)` and
-      // `resources.add('the browser', ...)`, so both fakes are guaranteed to be on the stack to close.
-      await vi.waitFor(
-        () => {
-          if (!newPageCalled) throw new Error('the call has not reached newPage() yet');
+    const served = serveMcp({
+      stdin,
+      stdout,
+      // Ignored by the fake `serve` below, but analyzeAssetWithShots (src/cli/analyze.ts) computes it eagerly
+      // (cliAppDir()) before calling deps.serve — and that throws when running against source (not dist),
+      // where the shipped harness page does not exist next to src/cli/. Any real directory does.
+      appDir: fileURLToPath(new URL('.', import.meta.url)),
+      serve: async () => ({ url: 'http://127.0.0.1:1', close: closeServer }),
+      launch: async () => ({
+        newPage: () => {
+          newPageCalled = true;
+          return new Promise(() => {}); // never resolves: the call is stuck exactly like a real hung render
         },
-        { timeout: 3000, interval: 10 },
-      );
-      expect(closeServer).not.toHaveBeenCalled();
-      expect(closeBrowser).not.toHaveBeenCalled();
-      expect(servedResolved).toBe(false);
+        close: closeBrowser,
+      }),
+    });
+    let servedResolved = false;
+    void served.then(() => {
+      servedResolved = true;
+    });
 
-      stdin.end();
-      await served;
+    await vi.waitFor(() => {
+      if (stdin.listenerCount('end') === 0) throw new Error('serveMcp has not attached its end listener yet');
+    });
 
-      expect(servedResolved).toBe(true);
-      expect(closeBrowser).toHaveBeenCalledTimes(1);
-      expect(closeServer).toHaveBeenCalledTimes(1);
-    },
-    15_000,
-  );
+    writeMessage(stdin, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'threeforge-abort-test', version: '0' },
+      },
+    });
+    const initResponse = await incoming.next();
+    expect(initResponse.result).toBeDefined();
+    writeMessage(stdin, { jsonrpc: '2.0', method: 'notifications/initialized' });
+
+    // Fire the call and deliberately do not await its response: it is designed to hang.
+    writeMessage(stdin, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'analyze_asset', arguments: { file: realFile, frames: 5 } },
+    });
+
+    // Wait until the call has actually reached the blocking point: by the time newPage() is invoked, the real
+    // code (src/cli/analyze.ts) has already run both `resources.add('the static server', ...)` and
+    // `resources.add('the browser', ...)`, so both fakes are guaranteed to be on the stack to close.
+    await vi.waitFor(
+      () => {
+        if (!newPageCalled) throw new Error('the call has not reached newPage() yet');
+      },
+      { timeout: 3000, interval: 10 },
+    );
+    expect(closeServer).not.toHaveBeenCalled();
+    expect(closeBrowser).not.toHaveBeenCalled();
+    expect(servedResolved).toBe(false);
+
+    stdin.end();
+    await served;
+
+    expect(servedResolved).toBe(true);
+    expect(closeBrowser).toHaveBeenCalledTimes(1);
+    expect(closeServer).toHaveBeenCalledTimes(1);
+  }, 15_000);
 });

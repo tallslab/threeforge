@@ -1,4 +1,12 @@
-import { DynamicDrawUsage, PropertyBinding, StreamDrawUsage, type AnimationClip, type Material, type Mesh, type Object3D } from 'three';
+import {
+  type AnimationClip,
+  DynamicDrawUsage,
+  type Material,
+  type Mesh,
+  type Object3D,
+  PropertyBinding,
+  StreamDrawUsage,
+} from 'three';
 import { effectiveTag } from '../ledger/reasons.js';
 import { ancestorExclusionRule, isVisibleInGraph } from './sprites.js';
 
@@ -35,7 +43,9 @@ type MeshLike = Mesh & { isSkinnedMesh?: boolean; isInstancedMesh?: boolean; mor
 const OWN = Object.prototype.hasOwnProperty;
 
 function isShader(material: Material | Material[]): boolean {
-  const m = (Array.isArray(material) ? material[0] : material) as (Material & { isShaderMaterial?: boolean; isRawShaderMaterial?: boolean }) | undefined;
+  const m = (Array.isArray(material) ? material[0] : material) as
+    | (Material & { isShaderMaterial?: boolean; isRawShaderMaterial?: boolean })
+    | undefined;
   return Boolean(m?.isShaderMaterial || m?.isRawShaderMaterial);
 }
 
@@ -60,7 +70,9 @@ export function exclusionRule(mesh: Mesh, root?: Object3D): string | null {
   }
   // Geometry rewritten at runtime (trails, ribbons, soft bodies): a batch copies vertices once.
   const geometry = mesh.geometry;
-  const attributes = [...Object.values(geometry.attributes), ...(geometry.index ? [geometry.index] : [])] as Array<{ usage?: number }>;
+  const attributes = [...Object.values(geometry.attributes), ...(geometry.index ? [geometry.index] : [])] as Array<{
+    usage?: number;
+  }>;
   if (attributes.some((a) => a.usage === DynamicDrawUsage || a.usage === StreamDrawUsage)) return 'dynamic-geometry';
   if (Array.isArray(mesh.material)) return 'multi-material';
   if (mesh.layers.mask !== 1) return 'layers';
@@ -135,9 +147,15 @@ function underAnimated(object: Object3D, animated: Set<Object3D>): boolean {
   return false;
 }
 
-function decide(mesh: MeshLike, policy: 'tagged' | 'auto', animated: Set<Object3D>, root: Object3D): { kind: MeshKind; rule: string } {
+function decide(
+  mesh: MeshLike,
+  policy: 'tagged' | 'auto',
+  animated: Set<Object3D>,
+  root: Object3D,
+): { kind: MeshKind; rule: string } {
   if (mesh.isSkinnedMesh) return { kind: 'skinned', rule: 'skinned-mesh' };
-  if (mesh.morphTargetInfluences && mesh.morphTargetInfluences.length > 0) return { kind: 'morph', rule: 'morph-targets' };
+  if (mesh.morphTargetInfluences && mesh.morphTargetInfluences.length > 0)
+    return { kind: 'morph', rule: 'morph-targets' };
   if (isShader(mesh.material)) return { kind: 'unsupported', rule: 'shader-material' };
   const tag = effectiveTag(mesh);
   if (tag === 'dynamic') return { kind: 'dynamic', rule: 'tag:dynamic' };
@@ -150,4 +168,3 @@ function decide(mesh: MeshLike, policy: 'tagged' | 'auto', animated: Set<Object3
   if (policy === 'auto') return { kind: 'static', rule: 'auto' };
   return { kind: 'untagged', rule: 'untagged' };
 }
-

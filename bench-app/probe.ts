@@ -9,7 +9,13 @@ export async function probeFillRate(renderer: WebGPURenderer, seconds = 2): Prom
   const scene = new Scene();
   const camera = new OrthographicCamera(-1, 1, 1, -1, 0, 10);
   const geometry = new PlaneGeometry(2, 2);
-  const material = new MeshBasicMaterial({ color: 0x406080, transparent: true, opacity: 0.5, depthWrite: false, depthTest: false });
+  const material = new MeshBasicMaterial({
+    color: 0x406080,
+    transparent: true,
+    opacity: 0.5,
+    depthWrite: false,
+    depthTest: false,
+  });
   const layers: Mesh[] = [];
   const setLayers = (n: number): void => {
     while (layers.length < n) {

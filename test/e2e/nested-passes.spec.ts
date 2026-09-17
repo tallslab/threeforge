@@ -13,7 +13,7 @@
  * pixel comparison are skipped.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { expect, test, type ForgePage } from './fixtures.js';
+import { expect, type ForgePage, test } from './fixtures.js';
 import { pixelDiff, settle } from './pixels.js';
 
 const OUT = 'test-results/nested-passes';
@@ -35,16 +35,27 @@ const nestedQuery = (nested: Nested): Record<string, string> => (nested === 'aut
  */
 async function skipIfDeviceLost(forge: ForgePage): Promise<void> {
   if (forge.pixelChecks) return;
-  const { lost, timing } = await forge.page.evaluate(async () => ({ lost: await window.__forge.deviceLost(), timing: window.__forge.deviceLostTiming() }));
-  test.skip(lost !== null, `the ${forge.backend} adapter dropped the device (${lost}), ${deviceLostOrder(timing)}; the count assertions from here on cannot run`);
+  const { lost, timing } = await forge.page.evaluate(async () => ({
+    lost: await window.__forge.deviceLost(),
+    timing: window.__forge.deviceLostTiming(),
+  }));
+  test.skip(
+    lost !== null,
+    `the ${forge.backend} adapter dropped the device (${lost}), ${deviceLostOrder(timing)}; the count assertions from here on cannot run`,
+  );
 }
 
 /** When a device loss was recorded against threeforge's first compile, in words for a skip reason. */
-function deviceLostOrder(timing: { lostAt: number | null; lostAtIsUpperBound: boolean; compileStartedAt: number | null }): string {
+function deviceLostOrder(timing: {
+  lostAt: number | null;
+  lostAtIsUpperBound: boolean;
+  compileStartedAt: number | null;
+}): string {
   const { lostAt, lostAtIsUpperBound, compileStartedAt } = timing;
   const noticed = lostAtIsUpperBound ? ' (noticed then; it may have happened earlier)' : '';
   if (lostAt === null) return 'at an unrecorded time';
-  if (compileStartedAt === null) return `before threeforge compiled anything (no compile() yet): an environment limit${noticed}`;
+  if (compileStartedAt === null)
+    return `before threeforge compiled anything (no compile() yet): an environment limit${noticed}`;
   const ms = Math.round(lostAt - compileStartedAt);
   if (ms < 0) return `${-ms} ms before threeforge's first compile() started: an environment limit${noticed}`;
   return `${ms} ms after threeforge's first compile() started: check whether threeforge caused it${noticed}`;
@@ -56,7 +67,9 @@ async function attachNumbers(name: string, value: unknown): Promise<void> {
 }
 
 for (const nested of POLICIES) {
-  test(`tall casters out of view shadow a receiving batch through a narrow sun frustum (nestedPasses: ${nested})`, async ({ forge }) => {
+  test(`tall casters out of view shadow a receiving batch through a narrow sun frustum (nestedPasses: ${nested})`, async ({
+    forge,
+  }) => {
     // threshold=1000 keeps the 289 repeated tiles in the BatchedMesh (the default 64 would make them an InstancedMesh).
     await forge.open('empty', { threshold: '1000', ...nestedQuery(nested) });
     const built = await forge.page.evaluate(async () => {
@@ -124,7 +137,11 @@ for (const nested of POLICIES) {
       scene.updateMatrixWorld(true);
       await f.frameAsync(); // sets both cameras' coordinate system for this backend and places the shadow camera
       const frustumOf = (c: typeof camera | typeof sc) =>
-        new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(c.projectionMatrix, c.matrixWorldInverse), c.coordinateSystem, c.reversedDepth);
+        new T.Frustum().setFromProjectionMatrix(
+          new T.Matrix4().multiplyMatrices(c.projectionMatrix, c.matrixWorldInverse),
+          c.coordinateSystem,
+          c.reversedDepth,
+        );
       const view = frustumOf(camera);
       const light = frustumOf(sc);
       return {
@@ -159,7 +176,10 @@ for (const nested of POLICIES) {
       ['shadow:sun', built.castersInShadow],
       ['main', naive.mainTiles + naive.mainOthers.length],
     ]);
-    expect({ mainTiles: naive.mainTiles, mainOthers: naive.mainOthers }).toEqual({ mainTiles: built.tilesInView, mainOthers: ['ground', 'Output Color Transform'] });
+    expect({ mainTiles: naive.mainTiles, mainOthers: naive.mainOthers }).toEqual({
+      mainTiles: built.tilesInView,
+      mainOthers: ['ground', 'Output Color Transform'],
+    });
     await settle(forge.page, 2);
     const before = forge.pixelChecks ? await forge.page.screenshot({ type: 'png' }) : null;
 
@@ -168,7 +188,12 @@ for (const nested of POLICIES) {
       const report = f.compile();
       await f.world.warmup(f.renderer, f.camera);
       const frame = await f.frameAsync();
-      return { after: report.after, nestedPasses: report.nestedPasses, passes: frame.passes.map((p) => [p.id, p.submissions]), unattributed: frame.totals.unattributed };
+      return {
+        after: report.after,
+        nestedPasses: report.nestedPasses,
+        passes: frame.passes.map((p) => [p.id, p.submissions]),
+        unattributed: frame.totals.unattributed,
+      };
     });
     await skipIfDeviceLost(forge);
     expect(compiled.nestedPasses).toBe(policyOf(nested));
@@ -187,11 +212,18 @@ for (const nested of POLICIES) {
     writeFileSync(`${OUT}/pillars-naive-${tag}.png`, before);
     writeFileSync(`${OUT}/pillars-compiled-${tag}.png`, after);
     const diff = pixelDiff(before, after, { threshold: 4, diffPath: `${OUT}/pillars-diff-${tag}.png` });
-    await attachNumbers('pillars', { backend: forge.backend, nestedPasses: compiled.nestedPasses, built, diffPct: (diff * 100).toFixed(4) });
+    await attachNumbers('pillars', {
+      backend: forge.backend,
+      nestedPasses: compiled.nestedPasses,
+      built,
+      diffPct: (diff * 100).toFixed(4),
+    });
     expect(diff).toBeLessThan(0.0005);
   });
 
-  test(`reproduction: the shadowed naive scene seen from (24, 10, 18) compiles with the same pixels (nestedPasses: ${nested})`, async ({ forge }) => {
+  test(`reproduction: the shadowed naive scene seen from (24, 10, 18) compiles with the same pixels (nestedPasses: ${nested})`, async ({
+    forge,
+  }) => {
     test.setTimeout(180_000);
     // transparent=keep: transparent statics stay individual meshes, so their draw order does not enter the comparison.
     await forge.open('naive', { shadows: '1', transparent: 'keep', ...nestedQuery(nested) });
@@ -222,17 +254,23 @@ for (const nested of POLICIES) {
       // Which ids every batch draws in the sun's shadow pass, read once three has issued the draw (onAfterRender,
       // composed with whatever hook the batch has and put back afterwards).
       const shadowCamera = (f.scene.getObjectByName('sun') as InstanceType<typeof T.DirectionalLight>).shadow.camera;
-      type Spied = { onAfterRender: (...args: unknown[]) => void; _multiDrawCount: number; _multiDrawCounts: Int32Array; _indirectTexture: { image: { data: Uint32Array } } };
+      type Spied = {
+        onAfterRender: (...args: unknown[]) => void;
+        _multiDrawCount: number;
+        _multiDrawCounts: Int32Array;
+        _indirectTexture: { image: { data: Uint32Array } };
+      };
       const drawnInShadow = new Map<object, Set<number>>();
       const restores: (() => void)[] = [];
       for (const batch of f.world.batchedMeshes) {
         const b = batch as unknown as Spied;
-        const hadOwn = Object.prototype.hasOwnProperty.call(b, 'onAfterRender');
+        const hadOwn = Object.hasOwn(b, 'onAfterRender');
         const original = b.onAfterRender;
         b.onAfterRender = function (this: unknown, ...args: unknown[]) {
           if (args[2] === shadowCamera) {
             const ids = new Set<number>();
-            for (let i = 0; i < b._multiDrawCount; i++) if (b._multiDrawCounts[i]! > 0) ids.add(b._indirectTexture.image.data[i]!);
+            for (let i = 0; i < b._multiDrawCount; i++)
+              if (b._multiDrawCounts[i]! > 0) ids.add(b._indirectTexture.image.data[i]!);
             drawnInShadow.set(batch, ids);
           }
           original.apply(this, args);
@@ -278,7 +316,15 @@ for (const nested of POLICIES) {
     expect(compiled.shadow.sample, 'batched casters missing from the shadow pass').toEqual([]);
     await settle(forge.page, 2);
     if (!before) {
-      await attachNumbers('reproduction', { backend: forge.backend, nestedPasses: compiled.nestedPasses, after: compiled.after, naive: naive.passes, passes: compiled.passes, shadow: compiled.shadow, diffPct: null });
+      await attachNumbers('reproduction', {
+        backend: forge.backend,
+        nestedPasses: compiled.nestedPasses,
+        after: compiled.after,
+        naive: naive.passes,
+        passes: compiled.passes,
+        shadow: compiled.shadow,
+        diffPct: null,
+      });
       return;
     }
     const after = await forge.page.screenshot({ type: 'png' });
@@ -287,12 +333,22 @@ for (const nested of POLICIES) {
     writeFileSync(`${OUT}/reproduction-naive-${tag}.png`, before);
     writeFileSync(`${OUT}/reproduction-compiled-${tag}.png`, after);
     const diff = pixelDiff(before, after, { threshold: 4, diffPath: `${OUT}/reproduction-diff-${tag}.png` });
-    await attachNumbers('reproduction', { backend: forge.backend, nestedPasses: compiled.nestedPasses, after: compiled.after, naive: naive.passes, passes: compiled.passes, shadow: compiled.shadow, diffPct: (diff * 100).toFixed(4) });
+    await attachNumbers('reproduction', {
+      backend: forge.backend,
+      nestedPasses: compiled.nestedPasses,
+      after: compiled.after,
+      naive: naive.passes,
+      passes: compiled.passes,
+      shadow: compiled.shadow,
+      diffPct: (diff * 100).toFixed(4),
+    });
     expect(diff).toBeLessThan(0.001);
   });
 
   for (const receiver of ['instanced', 'ground'] as const) {
-    test(`1,500 tall instanced boxes shadow themselves through a sun and a spot light with casters out of view (first receiver: ${receiver}, nestedPasses: ${nested})`, async ({ forge }) => {
+    test(`1,500 tall instanced boxes shadow themselves through a sun and a spot light with casters out of view (first receiver: ${receiver}, nestedPasses: ${nested})`, async ({
+      forge,
+    }) => {
       test.setTimeout(180_000);
       await forge.open('empty', nestedQuery(nested));
       const built = await forge.page.evaluate(buildInstancedField, { groundFirst: receiver === 'ground', spot: true });
@@ -300,7 +356,9 @@ for (const nested of POLICIES) {
       expect(built.inView).toBeGreaterThan(100);
       expect(built.sunOutOfView, 'boxes the sun sees outside the view').toBeGreaterThan(50);
       expect(built.spotOutOfView, 'boxes the spot light sees outside the view').toBeGreaterThan(50);
-      const naive = await forge.page.evaluate(async () => (await window.__forge.frameAsync()).passes.map((p) => [p.id, p.submissions]));
+      const naive = await forge.page.evaluate(async () =>
+        (await window.__forge.frameAsync()).passes.map((p) => [p.id, p.submissions]),
+      );
       await skipIfDeviceLost(forge);
       expect(naive.map(([id]) => id)).toEqual(expect.arrayContaining(['shadow:sun', 'shadow:spot', 'main']));
       await settle(forge.page, 2);
@@ -313,10 +371,21 @@ for (const nested of POLICIES) {
       expect(compiled.unattributed).toBe(0);
       expect(compiled.needed.sun, 'instances inside the sun frustum').toBeGreaterThan(100);
       expect(compiled.needed.spot, 'instances inside the spot frustum').toBeGreaterThan(100);
-      expect(compiled.sample, 'instances missing from the pass that needs them').toEqual({ main: [], sun: [], spot: [] });
+      expect(compiled.sample, 'instances missing from the pass that needs them').toEqual({
+        main: [],
+        sun: [],
+        spot: [],
+      });
       await settle(forge.page, 2);
       if (!before) {
-        await attachNumbers('instanced-field', { backend: forge.backend, receiver, built, naive, compiled: { ...report, ...compiled }, diffPct: null });
+        await attachNumbers('instanced-field', {
+          backend: forge.backend,
+          receiver,
+          built,
+          naive,
+          compiled: { ...report, ...compiled },
+          diffPct: null,
+        });
         return;
       }
       const after = await forge.page.screenshot({ type: 'png' });
@@ -325,12 +394,21 @@ for (const nested of POLICIES) {
       writeFileSync(`${OUT}/${tag}-naive.png`, before);
       writeFileSync(`${OUT}/${tag}-compiled.png`, after);
       const diff = pixelDiff(before, after, { threshold: 4, diffPath: `${OUT}/${tag}-diff.png` });
-      await attachNumbers('instanced-field', { backend: forge.backend, receiver, built, naive, compiled: { ...report, ...compiled }, diffPct: (diff * 100).toFixed(4) });
+      await attachNumbers('instanced-field', {
+        backend: forge.backend,
+        receiver,
+        built,
+        naive,
+        compiled: { ...report, ...compiled },
+        diffPct: (diff * 100).toFixed(4),
+      });
       expect(diff).toBeLessThan(0.0005);
     });
   }
 
-  test(`1,500 tall instanced boxes stay exact when the camera moves after the first compiled frame, the boxes receiving the sun's shadows first (nestedPasses: ${nested})`, async ({ forge }) => {
+  test(`1,500 tall instanced boxes stay exact when the camera moves after the first compiled frame, the boxes receiving the sun's shadows first (nestedPasses: ${nested})`, async ({
+    forge,
+  }) => {
     test.setTimeout(180_000);
     await forge.open('empty', nestedQuery(nested));
     // The sun only. In three r186 Attributes.update keeps a version per attribute object, and every render object builds its
@@ -358,7 +436,12 @@ for (const nested of POLICIES) {
     expect(moved.sample, 'instances missing from the pass that needs them').toEqual({ main: [], sun: [] });
     await settle(forge.page, 2);
     if (!before) {
-      await attachNumbers('instanced-field-moved', { backend: forge.backend, built, compiled: { ...report, ...moved }, diffPct: null });
+      await attachNumbers('instanced-field-moved', {
+        backend: forge.backend,
+        built,
+        compiled: { ...report, ...moved },
+        diffPct: null,
+      });
       return;
     }
     const after = await forge.page.screenshot({ type: 'png' });
@@ -367,7 +450,12 @@ for (const nested of POLICIES) {
     writeFileSync(`${OUT}/${tag}-naive.png`, before);
     writeFileSync(`${OUT}/${tag}-compiled.png`, after);
     const diff = pixelDiff(before, after, { threshold: 4, diffPath: `${OUT}/${tag}-diff.png` });
-    await attachNumbers('instanced-field-moved', { backend: forge.backend, built, compiled: { ...report, ...moved }, diffPct: (diff * 100).toFixed(4) });
+    await attachNumbers('instanced-field-moved', {
+      backend: forge.backend,
+      built,
+      compiled: { ...report, ...moved },
+      diffPct: (diff * 100).toFixed(4),
+    });
     expect(diff).toBeLessThan(0.0005);
   });
 }
@@ -413,10 +501,11 @@ async function spyInstancedField() {
   const restores: (() => void)[] = [];
   for (const mesh of f.world.instancedMeshes) {
     const m = mesh as unknown as Spied;
-    const hadOwn = Object.prototype.hasOwnProperty.call(m, 'onAfterRender');
+    const hadOwn = Object.hasOwn(m, 'onAfterRender');
     const original = m.onAfterRender;
     m.onAfterRender = function (this: unknown, ...args: unknown[]) {
-      for (const key of keys) if (args[2] === cameras[key]) for (let k = 0; k < m.count; k++) drawn[key].add(m.visibleIds[k]!);
+      for (const key of keys)
+        if (args[2] === cameras[key]) for (let k = 0; k < m.count; k++) drawn[key].add(m.visibleIds[k]!);
       original.apply(this, args);
     };
     restores.push(() => {
@@ -429,7 +518,14 @@ async function spyInstancedField() {
   const frusta = Object.fromEntries(
     keys.map((key) => {
       const c = cameras[key]!;
-      return [key, new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(c.projectionMatrix, c.matrixWorldInverse), c.coordinateSystem, c.reversedDepth)];
+      return [
+        key,
+        new T.Frustum().setFromProjectionMatrix(
+          new T.Matrix4().multiplyMatrices(c.projectionMatrix, c.matrixWorldInverse),
+          c.coordinateSystem,
+          c.reversedDepth,
+        ),
+      ];
     }),
   ) as Record<Key, InstanceType<typeof T.Frustum>>;
   const needed: Record<string, number> = Object.fromEntries(keys.map((key) => [key, 0]));
@@ -475,7 +571,14 @@ async function buildInstancedField({ groundFirst, spot: withSpot }: { groundFirs
   sun.position.set(150, 50, 0);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 40, bottom: -40, near: 1, far: 400 }).updateProjectionMatrix();
+  Object.assign(sun.shadow.camera, {
+    left: -12,
+    right: 12,
+    top: 40,
+    bottom: -40,
+    near: 1,
+    far: 400,
+  }).updateProjectionMatrix();
   // A narrow spot light low on the left: boxes left of the view shadow it toward +x.
   const spot = new T.SpotLight(0xffe8d0, 4000, 0, Math.PI / 12, 0.2, 2);
   spot.name = 'spot';
@@ -488,7 +591,10 @@ async function buildInstancedField({ groundFirst, spot: withSpot }: { groundFirs
   if (withSpot) scene.add(spot, spot.target);
   // A lit ground that receives and does not cast. Its renderOrder decides which receiver three draws first, and so
   // which draw renders the shadow maps: the boxes (just culled for the main camera) or the ground (before that cull).
-  const ground = new T.Mesh(new T.PlaneGeometry(400, 400), new T.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 1 }));
+  const ground = new T.Mesh(
+    new T.PlaneGeometry(400, 400),
+    new T.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 1 }),
+  );
   ground.name = 'ground';
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
@@ -517,7 +623,11 @@ async function buildInstancedField({ groundFirst, spot: withSpot }: { groundFirs
   scene.updateMatrixWorld(true);
   await f.frameAsync(); // places the shadow cameras and gives them this backend's coordinate system
   const frustumOf = (c: typeof camera | typeof sun.shadow.camera | typeof spot.shadow.camera) =>
-    new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(c.projectionMatrix, c.matrixWorldInverse), c.coordinateSystem, c.reversedDepth);
+    new T.Frustum().setFromProjectionMatrix(
+      new T.Matrix4().multiplyMatrices(c.projectionMatrix, c.matrixWorldInverse),
+      c.coordinateSystem,
+      c.reversedDepth,
+    );
   const view = frustumOf(camera);
   const sunView = frustumOf(sun.shadow.camera);
   const spotView = frustumOf(spot.shadow.camera);

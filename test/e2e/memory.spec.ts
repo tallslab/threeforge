@@ -7,7 +7,9 @@ function note(description: string): void {
 
 /** createLoader decodes Draco and meshopt content; a tracked subtree, released, returns the renderer's counts to where they were. */
 for (const asset of ['Duck-Draco', 'BrainStem-Meshopt']) {
-  test(`memory: ${asset} loads through createLoader and releases without leaks`, { tag: '@corpus' }, async ({ forge }) => {
+  test(`memory: ${asset} loads through createLoader and releases without leaks`, { tag: '@corpus' }, async ({
+    forge,
+  }) => {
     await forge.open('empty');
     const r = await forge.page.evaluate(async (name) => {
       const f = window.__forge;
@@ -40,13 +42,21 @@ for (const asset of ['Duck-Draco', 'BrainStem-Meshopt']) {
  * texture (nodes/functions/BSDF/DFGLUT.js), which nothing in the scene reaches and the ledger must still allow.
  */
 
-test('memory: measuring overdraw adds the count target to info.memory.textures and nothing to memory.unreferenced', async ({ forge }) => {
+test('memory: measuring overdraw adds the count target to info.memory.textures and nothing to memory.unreferenced', async ({
+  forge,
+}) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
     const T = f.three;
-    f.scene.add(new T.Mesh(new T.BoxGeometry(1, 1, 1), new T.MeshStandardMaterial({ color: 0xc0a080 })), new T.AmbientLight(0xffffff, 1));
-    const read = () => ({ textures: f.renderer.info.memory.textures, unreferenced: f.ledger.measureMemory().unreferenced });
+    f.scene.add(
+      new T.Mesh(new T.BoxGeometry(1, 1, 1), new T.MeshStandardMaterial({ color: 0xc0a080 })),
+      new T.AmbientLight(0xffffff, 1),
+    );
+    const read = () => ({
+      textures: f.renderer.info.memory.textures,
+      unreferenced: f.ledger.measureMemory().unreferenced,
+    });
     for (let i = 0; i < 3; i++) await f.frameAsync();
     const before = read();
     await f.measureOverdraw();
@@ -61,7 +71,9 @@ test('memory: measuring overdraw adds the count target to info.memory.textures a
     return { before, measured, again, resized };
   });
   const added = r.measured.textures - r.before.textures;
-  note(`[${forge.backend}] the overdraw count target adds ${added} texture(s) to info.memory.textures: ${JSON.stringify(r)}`);
+  note(
+    `[${forge.backend}] the overdraw count target adds ${added} texture(s) to info.memory.textures: ${JSON.stringify(r)}`,
+  );
   console.log(`memory [${forge.backend}] overdraw count target textures: ${added}`, JSON.stringify(r));
   expect(r.before.unreferenced).toEqual({ geometries: 0, textures: 0 });
   // RenderTarget({ depthBuffer: false }): Textures.updateRenderTarget creates its colour texture and no depth texture.
@@ -71,11 +83,16 @@ test('memory: measuring overdraw adds the count target to info.memory.textures a
   expect(r.resized.unreferenced).toEqual({ geometries: 0, textures: 0 });
 });
 
-test('memory: on the naive scene the overdraw count target adds one texture to info.memory and nothing to memory.unreferenced', async ({ forge }) => {
+test('memory: on the naive scene the overdraw count target adds one texture to info.memory and nothing to memory.unreferenced', async ({
+  forge,
+}) => {
   await forge.open('naive');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
-    const read = () => ({ textures: f.renderer.info.memory.textures, unreferenced: f.ledger.measureMemory().unreferenced });
+    const read = () => ({
+      textures: f.renderer.info.memory.textures,
+      unreferenced: f.ledger.measureMemory().unreferenced,
+    });
     for (let i = 0; i < 3; i++) await f.frameAsync();
     const before = read();
     await f.measureOverdraw();
@@ -111,7 +128,13 @@ test('memory: one shadow light with a [0, 0] viewport reports no unreferenced te
     f.ledger.setEnvironment({ viewport: [0, 0] });
     for (let i = 0; i < 3; i++) await f.frameAsync();
     const m = f.ledger.measureMemory();
-    return { built: sun.shadow.map !== null, textures: f.renderer.info.memory.textures, viewport: f.frame().env.viewport, unreferenced: m.unreferenced, renderTargets: m.renderTargets };
+    return {
+      built: sun.shadow.map !== null,
+      textures: f.renderer.info.memory.textures,
+      viewport: f.frame().env.viewport,
+      unreferenced: m.unreferenced,
+      renderTargets: m.renderTargets,
+    };
   });
   note(`[${forge.backend}] one shadow light, viewport [0, 0]: ${JSON.stringify(r)}`);
   expect(r.built).toBe(true);
@@ -120,7 +143,9 @@ test('memory: one shadow light with a [0, 0] viewport reports no unreferenced te
   expect(r.renderTargets).toEqual({ count: 1, bytes: 512 * 512 * 4 });
 });
 
-test('memory: a casting light whose shadow map three never built is not allowed for, so a texture removed without dispose() still counts', async ({ forge }) => {
+test('memory: a casting light whose shadow map three never built is not allowed for, so a texture removed without dispose() still counts', async ({
+  forge,
+}) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -140,7 +165,12 @@ test('memory: a casting light whose shadow map three never built is not allowed 
     await f.frameAsync();
     probe.removeFromParent(); // without dispose(): three keeps its texture and geometry
     await f.frameAsync();
-    return { enabled: f.renderer.shadowMap.enabled, built: sun.shadow.map !== null, clean, leaked: f.ledger.measureMemory().unreferenced };
+    return {
+      enabled: f.renderer.shadowMap.enabled,
+      built: sun.shadow.map !== null,
+      clean,
+      leaked: f.ledger.measureMemory().unreferenced,
+    };
   });
   expect([r.enabled, r.built]).toEqual([false, false]);
   expect(r.clean).toEqual({ geometries: 0, textures: 0 });
@@ -154,16 +184,31 @@ test("memory.measured is three's own renderer.info.memory", async ({ forge }) =>
     for (let i = 0; i < 2; i++) await f.frameAsync();
     const measured = f.ledger.measureMemory().measured;
     const m = f.renderer.info.memory as unknown as Record<string, number>;
-    const info = { textures: m.textures!, texturesSize: m.texturesSize!, geometries: m.geometries!, attributesSize: m.attributesSize!, indexAttributesSize: m.indexAttributesSize!, renderTargets: m.renderTargets!, total: m.total! };
+    const info = {
+      textures: m.textures!,
+      texturesSize: m.texturesSize!,
+      geometries: m.geometries!,
+      attributesSize: m.attributesSize!,
+      indexAttributesSize: m.indexAttributesSize!,
+      renderTargets: m.renderTargets!,
+      total: m.total!,
+    };
     return { measured, info, snapshot: f.frame().memory.measured };
   });
   note(`[${forge.backend}] memory.measured on the naive scene: ${JSON.stringify(r.measured)}`);
-  expect(r.measured).toEqual({ textures: { count: r.info.textures, bytes: r.info.texturesSize }, geometries: { count: r.info.geometries, bytes: r.info.attributesSize + r.info.indexAttributesSize }, renderTargets: { count: r.info.renderTargets }, bytes: r.info.total });
+  expect(r.measured).toEqual({
+    textures: { count: r.info.textures, bytes: r.info.texturesSize },
+    geometries: { count: r.info.geometries, bytes: r.info.attributesSize + r.info.indexAttributesSize },
+    renderTargets: { count: r.info.renderTargets },
+    bytes: r.info.total,
+  });
   expect(r.measured!.textures.bytes).toBeGreaterThan(0);
   expect(r.snapshot).toEqual(r.measured);
 });
 
-test('memory: bakeDebug() twice, attached and then disposed: reachable while attached, and the counts return to where they were', async ({ forge }) => {
+test('memory: bakeDebug() twice, attached and then disposed: reachable while attached, and the counts return to where they were', async ({
+  forge,
+}) => {
   await forge.open('empty', { bake: '1' });
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -198,7 +243,13 @@ test('memory: bakeDebug() twice, attached and then disposed: reachable while att
       });
     }
     for (let i = 0; i < 2; i++) await f.frameAsync();
-    return { baked: report.after.baked, debugMeshes: debug.map((g) => g.children.length), start, attached, disposed: counts() };
+    return {
+      baked: report.after.baked,
+      debugMeshes: debug.map((g) => g.children.length),
+      start,
+      attached,
+      disposed: counts(),
+    };
   });
   note(`[${forge.backend}] bakeDebug twice: ${JSON.stringify(r)}`);
   expect(r.baked).toBeGreaterThan(0);
@@ -209,7 +260,9 @@ test('memory: bakeDebug() twice, attached and then disposed: reachable while att
   expect(r.disposed).toEqual(r.start);
 });
 
-test('memory: a tinted group batches with a clone sharing the source texture, counted once, and decompile() and world.dispose() return the counts to the naive ones', async ({ forge }) => {
+test('memory: a tinted group batches with a clone sharing the source texture, counted once, and decompile() and world.dispose() return the counts to the naive ones', async ({
+  forge,
+}) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -231,13 +284,23 @@ test('memory: a tinted group batches with a clone sharing the source texture, co
     const counts = () => {
       const m = f.renderer.info.memory;
       const info = f.memory.info();
-      return { geometries: m.geometries, textures: m.textures, reachableTextures: info.reachable.textures, unreferenced: info.unreferenced };
+      return {
+        geometries: m.geometries,
+        textures: m.textures,
+        reachableTextures: info.reachable.textures,
+        unreferenced: info.unreferenced,
+      };
     };
     for (let i = 0; i < 3; i++) await f.frameAsync();
     const naive = counts();
     const report = f.compile();
     for (let i = 0; i < 3; i++) await f.frameAsync();
-    type Batch = { material: { map?: unknown; addEventListener(type: 'dispose', listener: () => void): void }; _matricesTexture?: unknown; _indirectTexture?: unknown; _colorsTexture?: unknown };
+    type Batch = {
+      material: { map?: unknown; addEventListener(type: 'dispose', listener: () => void): void };
+      _matricesTexture?: unknown;
+      _indirectTexture?: unknown;
+      _colorsTexture?: unknown;
+    };
     const disposed: string[] = [];
     const batchOf = (label: string) => {
       const batch = f.world.batchedMeshes[0] as unknown as Batch | undefined;
@@ -245,8 +308,16 @@ test('memory: a tinted group batches with a clone sharing the source texture, co
       return batch;
     };
     const batch = batchOf('clone released by decompile()');
-    const batchTextures = batch ? [batch._matricesTexture, batch._indirectTexture, batch._colorsTexture].filter(Boolean).length : 0;
-    const compiled = { ...counts(), batches: report.after.batches, isClone: !!batch && !sources.includes(batch.material), sharesMap: batch?.material.map === map, batchTextures };
+    const batchTextures = batch
+      ? [batch._matricesTexture, batch._indirectTexture, batch._colorsTexture].filter(Boolean).length
+      : 0;
+    const compiled = {
+      ...counts(),
+      batches: report.after.batches,
+      isClone: !!batch && !sources.includes(batch.material),
+      sharesMap: batch?.material.map === map,
+      batchTextures,
+    };
     f.decompile();
     for (let i = 0; i < 3; i++) await f.frameAsync();
     const decompiled = counts();
@@ -272,7 +343,9 @@ test('memory: a tinted group batches with a clone sharing the source texture, co
   expect(r.disposed).toEqual(['clone released by decompile()', 'clone released by dispose()']);
 });
 
-test('memory: occlusion proxies add nothing unreferenced while compiled, and decompile() returns the counts to the naive ones', async ({ forge }) => {
+test('memory: occlusion proxies add nothing unreferenced while compiled, and decompile() returns the counts to the naive ones', async ({
+  forge,
+}) => {
   await forge.open('naive', { chunk: '40', occlusion: '1', wall: '1' });
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -297,7 +370,9 @@ test('memory: occlusion proxies add nothing unreferenced while compiled, and dec
   expect(r.decompiled).toEqual(r.naive);
 });
 
-test('memory: a VSM shadow light: its map, depth and two blur targets are allowed, so nothing reads as unreferenced', async ({ forge }) => {
+test('memory: a VSM shadow light: its map, depth and two blur targets are allowed, so nothing reads as unreferenced', async ({
+  forge,
+}) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -338,7 +413,9 @@ test('memory: a VSM shadow light: its map, depth and two blur targets are allowe
  * - morph targets: one float DataArrayTexture per morphed geometry (nodes/accessors/Morph.js ~93);
  * - post-processing: PassNode's and BloomNode's render targets, drawn into every frame.
  */
-test("memory: three's own PMREM, background, morph and post-processing resources are not unreferenced, while a real leak still is", async ({ forge }) => {
+test("memory: three's own PMREM, background, morph and post-processing resources are not unreferenced, while a real leak still is", async ({
+  forge,
+}) => {
   await forge.open('empty', { bloom: '1' });
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -361,12 +438,16 @@ test("memory: three's own PMREM, background, morph and post-processing resources
     const body = new T.BoxGeometry(1, 1, 1);
     const position = body.attributes.position!;
     const inflated = new Float32Array(position.count * 3);
-    for (let i = 0; i < position.count; i++) inflated.set([position.getX(i) * 1.3, position.getY(i) * 1.3, position.getZ(i) * 1.3], i * 3);
+    for (let i = 0; i < position.count; i++)
+      inflated.set([position.getX(i) * 1.3, position.getY(i) * 1.3, position.getZ(i) * 1.3], i * 3);
     body.morphAttributes.position = [new T.Float32BufferAttribute(inflated, 3)];
     const blob = new T.Mesh(body, new T.MeshStandardMaterial({ color: 0x8090c0, roughness: 0.2, metalness: 0.8 }));
     blob.morphTargetInfluences = [0.5];
     blob.position.set(-1, 0, 0);
-    const ball = new T.Mesh(new T.SphereGeometry(0.6, 32, 16), new T.MeshStandardMaterial({ color: 0xc09060, roughness: 0.4 }));
+    const ball = new T.Mesh(
+      new T.SphereGeometry(0.6, 32, 16),
+      new T.MeshStandardMaterial({ color: 0xc09060, roughness: 0.4 }),
+    );
     ball.position.set(1, 0, 0);
     f.scene.add(blob, ball);
     f.camera.position.set(0, 1, 4);
@@ -374,7 +455,12 @@ test("memory: three's own PMREM, background, morph and post-processing resources
     f.camera.updateMatrixWorld();
     for (let i = 0; i < 4; i++) await f.frameAsync();
     const memory = f.renderer.info.memory;
-    const clean = { unreferenced: f.ledger.measureMemory().unreferenced, textures: memory.textures, geometries: memory.geometries, hints: f.frame().hints.map((h) => h.code) };
+    const clean = {
+      unreferenced: f.ledger.measureMemory().unreferenced,
+      textures: memory.textures,
+      geometries: memory.geometries,
+      hints: f.frame().hints.map((h) => h.code),
+    };
     const map = new T.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
     map.needsUpdate = true;
     const probe = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ map }));

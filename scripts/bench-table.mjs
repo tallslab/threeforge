@@ -7,9 +7,13 @@ const sections = [];
 for (const backend of ['webgl2', 'webgpu']) {
   if (!existsSync(baselinePath(backend))) continue;
   const b = JSON.parse(readFileSync(baselinePath(backend), 'utf8'));
-  sections.push(`### ${backend}\n\n${b.env?.gpu ?? 'unknown GPU'} · tier ${b.env?.tier ?? '?'} · three ${b.env?.three ?? '?'}\n\n${table(b)}`);
+  sections.push(
+    `### ${backend}\n\n${b.env?.gpu ?? 'unknown GPU'} · tier ${b.env?.tier ?? '?'} · three ${b.env?.three ?? '?'}\n\n${table(b)}`,
+  );
 }
-const body = sections.length ? sections.join('\n\n') : '_No baselines yet: run `pnpm bench` then `pnpm bench:baseline`._';
+const body = sections.length
+  ? sections.join('\n\n')
+  : '_No baselines yet: run `pnpm bench` then `pnpm bench:baseline`._';
 // Notes on what the gated numbers mean. They live here, not in docs/bench.md, because this script rewrites that file
 // whole.
 const notes = [

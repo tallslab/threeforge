@@ -2,8 +2,19 @@
  * PassTracker (render nesting through the scene hooks) and the parts of the stable-prefix culling that need a tracker
  * driven by hand: the LOD of appended ids and restoring the counts after a render that threw.
  */
+
+import {
+  BatchedMesh,
+  BoxGeometry,
+  type Camera,
+  DirectionalLight,
+  Matrix4,
+  MeshStandardMaterial,
+  PerspectiveCamera,
+  Scene,
+  WebGLCoordinateSystem,
+} from 'three';
 import { describe, expect, it } from 'vitest';
-import { BatchedMesh, BoxGeometry, DirectionalLight, Matrix4, MeshStandardMaterial, PerspectiveCamera, Scene, WebGLCoordinateSystem, type Camera } from 'three';
 import { attachBvhCulling, FORGE_HOOK } from '../../src/compiler/culling.js';
 import { PassTracker } from '../../src/compiler/passTracker.js';
 import { FakeRenderer } from './helpers/fakeRenderer.js';
@@ -33,7 +44,14 @@ function sun(): DirectionalLight {
   light.castShadow = true;
   light.position.set(50, 60, 10);
   light.target.position.set(50, 0, 0);
-  Object.assign(light.shadow.camera, { left: -50, right: 50, top: 20, bottom: -20, near: 1, far: 200 }).updateProjectionMatrix();
+  Object.assign(light.shadow.camera, {
+    left: -50,
+    right: 50,
+    top: 20,
+    bottom: -20,
+    near: 1,
+    far: 200,
+  }).updateProjectionMatrix();
   return light;
 }
 
@@ -88,7 +106,7 @@ describe('PassTracker', () => {
     const t = new PassTracker();
     const uninstall = t.install(scene);
     for (const name of ['onBeforeRender', 'onAfterRender'] as const) {
-      expect(Object.prototype.hasOwnProperty.call(scene, name)).toBe(true);
+      expect(Object.hasOwn(scene, name)).toBe(true);
       expect((scene[name] as unknown as Record<symbol, unknown>)[FORGE_HOOK]).toBe(true);
     }
     const c = camera();
@@ -128,7 +146,12 @@ describe('PassTracker', () => {
 
 describe('stable-prefix culling driven by a PassTracker', () => {
   function rowBatch(xs: number[], extraGeometry = false): { batch: BatchedMesh; g0: number; g1: number } {
-    const batch = new BatchedMesh(xs.length, box.attributes.position!.count + denseBox.attributes.position!.count, box.index!.count + denseBox.index!.count, new MeshStandardMaterial());
+    const batch = new BatchedMesh(
+      xs.length,
+      box.attributes.position!.count + denseBox.attributes.position!.count,
+      box.index!.count + denseBox.index!.count,
+      new MeshStandardMaterial(),
+    );
     const g0 = batch.addGeometry(box);
     const g1 = extraGeometry ? batch.addGeometry(denseBox) : -1;
     const m = new Matrix4();
@@ -150,8 +173,17 @@ describe('stable-prefix culling driven by a PassTracker', () => {
     scene.updateMatrixWorld(true);
     const tracker = new PassTracker();
     tracker.install(scene);
-    attachBvhCulling(batch, WebGLCoordinateSystem, { nestedPasses: 'per-pass', passes: tracker, lod: { distances: [55], geometryIds: new Map([[g0, [g0, g1]]]) } });
-    const renderer = new FakeRenderer({ sceneHooks: true, shadowTrigger: 'first-receiver', record: true, shadowLights: [light] });
+    attachBvhCulling(batch, WebGLCoordinateSystem, {
+      nestedPasses: 'per-pass',
+      passes: tracker,
+      lod: { distances: [55], geometryIds: new Map([[g0, [g0, g1]]]) },
+    });
+    const renderer = new FakeRenderer({
+      sceneHooks: true,
+      shadowTrigger: 'first-receiver',
+      record: true,
+      shadowLights: [light],
+    });
     renderer.render(scene, main);
     expect(renderer.passes.map((p) => p.kind)).toEqual(['render', 'shadow']);
     const shadowDraw = renderer.passes[1]!.draws.find((d) => d.object === batch)!;
@@ -159,7 +191,8 @@ describe('stable-prefix culling driven by a PassTracker', () => {
     const b = internals(batch);
     // The appended rows stay in the arrays after the pass (only the counts of the prefix are restored).
     const slotOf = (id: number): number => Array.from(b._indirectTexture.image.data.subarray(0, 3)).indexOf(id);
-    const geometryOf = (id: number): number => b._geometryInfo.findIndex((info) => info.count === b._multiDrawCounts[slotOf(id)]);
+    const geometryOf = (id: number): number =>
+      b._geometryInfo.findIndex((info) => info.count === b._multiDrawCounts[slotOf(id)]);
     expect(geometryOf(0), 'x = 0 (35 from the main camera)').toBe(g0);
     expect(geometryOf(1), 'x = 40 (51.6 from the main camera, 60.7 from the sun)').toBe(g0);
     expect(geometryOf(2), 'x = 80 (86 from the main camera)').toBe(g1);
@@ -174,7 +207,8 @@ describe('stable-prefix culling driven by a PassTracker', () => {
     const { batch } = rowBatch(Array.from({ length: 101 }, (_, i) => -100 + 2 * i));
     const tracker = new PassTracker();
     attachBvhCulling(batch, WebGLCoordinateSystem, { nestedPasses: 'per-pass', passes: tracker });
-    const cull = (c: Camera): void => batch.onBeforeRender({} as never, new Scene(), c, batch.geometry, batch.material as never, null as never);
+    const cull = (c: Camera): void =>
+      batch.onBeforeRender({} as never, new Scene(), c, batch.geometry, batch.material as never, null as never);
     const b = internals(batch);
     const info = { frame: 1 };
     tracker.begin(main, { info });
@@ -185,7 +219,10 @@ describe('stable-prefix culling driven by a PassTracker', () => {
     tracker.begin(light.shadow.camera, { info });
     cull(light.shadow.camera);
     expect(b._multiDrawCount, 'the shadow pass appended').toBeGreaterThan(mainCount);
-    expect(Array.from(b._multiDrawCounts.subarray(0, mainCount)).some((c) => c === 0), 'and zeroed prefix slots').toBe(true);
+    expect(
+      Array.from(b._multiDrawCounts.subarray(0, mainCount)).some((c) => c === 0),
+      'and zeroed prefix slots',
+    ).toBe(true);
     // The shadow render throws: neither end() runs. The next animation frame begins.
     info.frame = 2;
     tracker.begin(main, { info });

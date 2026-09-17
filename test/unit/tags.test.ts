@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { Mesh, Object3D } from 'three';
+import { describe, expect, it } from 'vitest';
 import { tag } from '../../src/tags.js';
 
 describe('tag', () => {

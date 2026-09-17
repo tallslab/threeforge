@@ -1,10 +1,10 @@
-import { PerspectiveCamera, REVISION, type Material, type Mesh, type Object3D, type Texture } from 'three';
+import { type Material, type Mesh, type Object3D, PerspectiveCamera, REVISION, type Texture } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
-import { DrawCallLedger, MaterialRegistry, World, detectTier, tierInputFromNavigator, type Tier } from 'threeforge';
+import { DrawCallLedger, detectTier, MaterialRegistry, type Tier, tierInputFromNavigator, World } from 'threeforge';
+import { type BenchMetrics, MEASURED, metricsOf, type SceneId, WARM } from '../test/app/benchMetrics.js';
 import { BENCH_SCENES } from '../test/app/scenes/index.js';
-import { MEASURED, metricsOf, WARM, type BenchMetrics, type SceneId } from '../test/app/benchMetrics.js';
 import { probeFillRate } from './probe.js';
-import { normalizeEnvString, resultId, type Backend, type DeviceEnv, type DeviceResult } from './submit.js';
+import { type Backend, type DeviceEnv, type DeviceResult, normalizeEnvString, resultId } from './submit.js';
 
 export interface RunOptions {
   sceneIds: SceneId[];
@@ -47,16 +47,25 @@ export async function createHost(want: Backend | 'auto', mount: HTMLElement): Pr
       renderer.setPixelRatio(1);
       renderer.setSize(800, 600, false);
       mount.replaceChildren(canvas);
-      const b = renderer.backend as { isWebGPUBackend?: boolean; device?: { adapterInfo?: { description?: string; device?: string; vendor?: string; architecture?: string } }; gl?: WebGL2RenderingContext; hasFeature?: (n: string) => boolean };
+      const b = renderer.backend as {
+        isWebGPUBackend?: boolean;
+        device?: { adapterInfo?: { description?: string; device?: string; vendor?: string; architecture?: string } };
+        gl?: WebGL2RenderingContext;
+        hasFeature?: (n: string) => boolean;
+      };
       let gpu: string = backend;
       if (b.isWebGPUBackend) {
         const info = b.device?.adapterInfo;
-        gpu = info?.description || info?.device || [info?.vendor, info?.architecture].filter(Boolean).join(' ') || 'webgpu';
+        gpu =
+          info?.description || info?.device || [info?.vendor, info?.architecture].filter(Boolean).join(' ') || 'webgpu';
       } else if (b.gl) {
         const ext = b.gl.getExtension('WEBGL_debug_renderer_info');
         gpu = ext ? String(b.gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : 'webgl2';
       }
-      const multiDraw = backend === 'webgl2' && typeof b.hasFeature === 'function' ? b.hasFeature.call(renderer.backend, 'WEBGL_multi_draw') : false;
+      const multiDraw =
+        backend === 'webgl2' && typeof b.hasFeature === 'function'
+          ? b.hasFeature.call(renderer.backend, 'WEBGL_multi_draw')
+          : false;
       const tier = detectTier(tierInputFromNavigator(gpu, navigator));
       return { renderer, canvas, backend, gpu, multiDraw, tier };
     } catch (error) {
@@ -78,7 +87,8 @@ function disposeScene(root: Object3D): void {
     for (const mat of mats) materials.add(mat);
   });
   for (const mat of materials) {
-    for (const value of Object.values(mat as unknown as Record<string, unknown>)) if ((value as Texture | null)?.isTexture) textures.add(value as Texture);
+    for (const value of Object.values(mat as unknown as Record<string, unknown>))
+      if ((value as Texture | null)?.isTexture) textures.add(value as Texture);
     mat.dispose();
   }
   for (const t of textures) t.dispose();
@@ -90,7 +100,12 @@ const median = (a: number[]): number => {
 };
 
 async function makeLoader(renderer: WebGPURenderer) {
-  const [{ GLTFLoader }, { DRACOLoader }, { KTX2Loader }, { MeshoptDecoder }] = await Promise.all([import('three/addons/loaders/GLTFLoader.js'), import('three/addons/loaders/DRACOLoader.js'), import('three/addons/loaders/KTX2Loader.js'), import('meshoptimizer/decoder')]);
+  const [{ GLTFLoader }, { DRACOLoader }, { KTX2Loader }, { MeshoptDecoder }] = await Promise.all([
+    import('three/addons/loaders/GLTFLoader.js'),
+    import('three/addons/loaders/DRACOLoader.js'),
+    import('three/addons/loaders/KTX2Loader.js'),
+    import('meshoptimizer/decoder'),
+  ]);
   const loader = new GLTFLoader();
   const draco = new DRACOLoader();
   draco.setDecoderPath(url('_decoders/draco/'));
@@ -104,7 +119,13 @@ async function makeLoader(renderer: WebGPURenderer) {
 }
 
 /** One scene, one variant: build, (optimized: prepare, compile, after, warmup), warm frames, measured frames, overdraw. */
-async function runOne(host: Host, id: SceneId, variant: 'naive' | 'optimized', measured: number, onProgress: (t: string) => void): Promise<BenchMetrics> {
+async function runOne(
+  host: Host,
+  id: SceneId,
+  variant: 'naive' | 'optimized',
+  measured: number,
+  onProgress: (t: string) => void,
+): Promise<BenchMetrics> {
   const { renderer } = host;
   const registry = new MaterialRegistry();
   const ledger = new DrawCallLedger({ registry });
@@ -113,7 +134,14 @@ async function runOne(host: Host, id: SceneId, variant: 'naive' | 'optimized', m
   camera.position.set(0, 110, 150);
   camera.lookAt(0, 0, 0);
   camera.updateMatrixWorld();
-  const bench = await BENCH_SCENES[id]!({ renderer, camera, params: new URLSearchParams(), loader: () => makeLoader(renderer), url, tier: host.tier });
+  const bench = await BENCH_SCENES[id]!({
+    renderer,
+    camera,
+    params: new URLSearchParams(),
+    loader: () => makeLoader(renderer),
+    url,
+    tier: host.tier,
+  });
   const width = bench.portrait ? 450 : 800;
   const height = bench.portrait ? 800 : 600;
   renderer.setSize(width, height, false);
@@ -121,7 +149,13 @@ async function runOne(host: Host, id: SceneId, variant: 'naive' | 'optimized', m
   camera.updateProjectionMatrix();
   ledger.setEnvironment({ tier: host.tier, gpu: host.gpu, dpr: 1, viewport: [width, height] });
   const scene = bench.scene;
-  const world = new World(scene, { registry, ledger, policy: 'tagged', animations: bench.animations ?? [], ...(bench.worldOptions ?? {}) });
+  const world = new World(scene, {
+    registry,
+    ledger,
+    policy: 'tagged',
+    animations: bench.animations ?? [],
+    ...(bench.worldOptions ?? {}),
+  });
   try {
     if (variant === 'optimized') {
       await bench.prepare?.(scene);
@@ -161,7 +195,14 @@ async function runOne(host: Host, id: SceneId, variant: 'naive' | 'optimized', m
     const overdraw = await ledger.measureOverdraw(scene, camera);
     ledger.rescan();
     const frame = await frameAsync();
-    return metricsOf({ ...frame, overdraw: { ...frame.overdraw, ...overdraw, measured: true } }, median(render), median(frames), shadowPasses.reduce((a, b) => a + b, 0) / Math.max(1, shadowPasses.length), shadowTexels, programs);
+    return metricsOf(
+      { ...frame, overdraw: { ...frame.overdraw, ...overdraw, measured: true } },
+      median(render),
+      median(frames),
+      shadowPasses.reduce((a, b) => a + b, 0) / Math.max(1, shadowPasses.length),
+      shadowTexels,
+      programs,
+    );
   } finally {
     world.decompile();
     disposeScene(scene);
@@ -197,7 +238,11 @@ export async function runBench(host: Host, options: RunOptions): Promise<DeviceR
     dpr: devicePixelRatio,
     viewport: [innerWidth, innerHeight],
     ua: normalizeEnvString(navigator.userAgent),
-    platform: normalizeEnvString((navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform || navigator.platform || 'unknown'),
+    platform: normalizeEnvString(
+      (navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform ||
+        navigator.platform ||
+        'unknown',
+    ),
     cores: navigator.hardwareConcurrency ?? null,
     deviceMemory: (navigator as { deviceMemory?: number }).deviceMemory ?? null,
     fillRateGPix,

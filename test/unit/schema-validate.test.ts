@@ -1,19 +1,27 @@
-import { Document, NodeIO } from '@gltf-transform/core';
-import { Ajv2020 } from 'ajv/dist/2020.js';
-import type { ValidateFunction } from 'ajv';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { Document, NodeIO } from '@gltf-transform/core';
+import type { ValidateFunction } from 'ajv';
+import { Ajv2020 } from 'ajv/dist/2020.js';
 import { BoxGeometry, Mesh, MeshStandardMaterial } from 'three';
-import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
-import { emptyFrame, type FrameEnv, type FrameSnapshot } from '../../src/ledger/snapshot.js';
-import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
+import { describe, expect, it } from 'vitest';
 import { parseArgs } from '../../src/cli/args.js';
 import { optimizeAsset } from '../../src/cli/optimize.js';
 import { ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA, SNAPSHOT_SCHEMA } from '../../src/cli/schema.js';
-import type { AgentDocument, AnalyzeInput, AssetStats, Counts, InspectInput, OptimizeDocument, OptimizeInput } from '../../src/cli/types.js';
+import type {
+  AgentDocument,
+  AnalyzeInput,
+  AssetStats,
+  Counts,
+  InspectInput,
+  OptimizeDocument,
+  OptimizeInput,
+} from '../../src/cli/types.js';
 import { verdictOf } from '../../src/cli/verdict.js';
+import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
+import { emptyFrame, type FrameEnv, type FrameSnapshot } from '../../src/ledger/snapshot.js';
+import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
 
 /**
@@ -26,7 +34,15 @@ function compile(schema: object): ValidateFunction {
   return ajv.compile(schema);
 }
 
-const env: FrameEnv = { three: '186', backend: 'webgl2', multiDraw: true, tier: 'desktop', gpu: 'test', dpr: 1, viewport: [800, 600] };
+const env: FrameEnv = {
+  three: '186',
+  backend: 'webgl2',
+  multiDraw: true,
+  tier: 'desktop',
+  gpu: 'test',
+  dpr: 1,
+  viewport: [800, 600],
+};
 
 /** A real snapshot from the ledger and a FakeRenderer, not a hand-built object. */
 function realFrame(): FrameSnapshot {
@@ -35,7 +51,10 @@ function realFrame(): FrameSnapshot {
   const renderer = new FakeRenderer();
   ledger.attach(renderer as never);
   const { scene, camera } = sceneWithCamera();
-  scene.add(new Mesh(new BoxGeometry(), new MeshStandardMaterial()), new Mesh(new BoxGeometry(), new MeshStandardMaterial()));
+  scene.add(
+    new Mesh(new BoxGeometry(), new MeshStandardMaterial()),
+    new Mesh(new BoxGeometry(), new MeshStandardMaterial()),
+  );
   renderer.render(scene, camera);
   ledger.measureMemory();
   return ledger.frame({ items: true });
@@ -45,7 +64,19 @@ function analyzeFixture(): AgentDocument {
   const before = realFrame();
   const after = emptyFrame(env);
   after.totals.sceneSubmissions = 4;
-  const input: AnalyzeInput = { file: 'fixture.glb', backend: 'webgl2', tier: 'auto', budget: 100, frames: 5, compile: true, bake: 'on', views: 1, parity: 0.5, timeout: 60_000, headed: false };
+  const input: AnalyzeInput = {
+    file: 'fixture.glb',
+    backend: 'webgl2',
+    tier: 'auto',
+    budget: 100,
+    frames: 5,
+    compile: true,
+    bake: 'on',
+    views: 1,
+    parity: 0.5,
+    timeout: 60_000,
+    headed: false,
+  };
   return {
     schemaVersion: 2,
     tool: 'threeforge',
@@ -57,7 +88,12 @@ function analyzeFixture(): AgentDocument {
     before,
     after,
     compile: null,
-    parity: { diffPct: 0.02, threshold: 0.5, pass: true, views: [{ view: 'default', diffPct: 0.02, changedPixels: 184 }] },
+    parity: {
+      diffPct: 0.02,
+      threshold: 0.5,
+      pass: true,
+      views: [{ view: 'default', diffPct: 0.02, changedPixels: 184 }],
+    },
     hints: after.hints,
     verdict: verdictOf(after, before, 100, null),
     timings: { totalMs: 120 },
@@ -66,7 +102,16 @@ function analyzeFixture(): AgentDocument {
 
 function inspectFixture(): AgentDocument {
   const before = realFrame();
-  const input: InspectInput = { url: 'http://127.0.0.1:5173/', backend: 'webgl2', tier: 'auto', budget: null, frames: 3, compile: false, timeout: 20_000, headed: false };
+  const input: InspectInput = {
+    url: 'http://127.0.0.1:5173/',
+    backend: 'webgl2',
+    tier: 'auto',
+    budget: null,
+    frames: 3,
+    compile: false,
+    timeout: 20_000,
+    headed: false,
+  };
   return {
     schemaVersion: 2,
     tool: 'threeforge',
@@ -86,9 +131,40 @@ function inspectFixture(): AgentDocument {
 }
 
 function optimizeFixture(): OptimizeDocument {
-  const counts: Counts = { nodes: 4, meshes: 2, primitives: 2, materials: 1, textures: 0, textureBytes: 0, accessors: 6, vertices: 48, triangles: 24 };
+  const counts: Counts = {
+    nodes: 4,
+    meshes: 2,
+    primitives: 2,
+    materials: 1,
+    textures: 0,
+    textureBytes: 0,
+    accessors: 6,
+    vertices: 48,
+    triangles: 24,
+  };
   const assetStats: AssetStats = { ...counts, bytes: 2048, animations: 0, skins: 0, morphTargets: 0, extensions: [] };
-  const input: OptimizeInput = { file: 'fixture.glb', out: null, preset: 'safe', steps: {}, simplify: null, simplifyError: 0.01, compress: 'none', textures: null, textureSize: null, textureQuality: 0.8, verify: true, parity: 0.5, views: 1, backend: 'webgl2', tier: 'auto', budget: null, frames: 5, compile: true, timeout: 60_000, headed: false };
+  const input: OptimizeInput = {
+    file: 'fixture.glb',
+    out: null,
+    preset: 'safe',
+    steps: {},
+    simplify: null,
+    simplifyError: 0.01,
+    compress: 'none',
+    textures: null,
+    textureSize: null,
+    textureQuality: 0.8,
+    verify: true,
+    parity: 0.5,
+    views: 1,
+    backend: 'webgl2',
+    tier: 'auto',
+    budget: null,
+    frames: 5,
+    compile: true,
+    timeout: 60_000,
+    headed: false,
+  };
   const original = analyzeFixture();
   const optimized = analyzeFixture();
   return {
@@ -103,10 +179,23 @@ function optimizeFixture(): OptimizeDocument {
     requires: [],
     verify: {
       backend: 'webgl2',
-      parity: { diffPct: 0.01, threshold: 0.5, pass: true, views: [{ view: 'default', diffPct: 0.01, changedPixels: 92 }] },
+      parity: {
+        diffPct: 0.01,
+        threshold: 0.5,
+        pass: true,
+        views: [{ view: 'default', diffPct: 0.01, changedPixels: 92 }],
+      },
       original,
       optimized,
-      delta: { bytes: -1024, materials: 0, vertices: 0, triangles: 0, sceneSubmissions: { naive: 4, compiled: 4 }, loadMs: 0, memoryBytes: 0 },
+      delta: {
+        bytes: -1024,
+        materials: 0,
+        vertices: 0,
+        triangles: 0,
+        sceneSubmissions: { naive: 4, compiled: 4 },
+        loadMs: 0,
+        memoryBytes: 0,
+      },
     },
     verdict: verdictOf(optimized.after, optimized.before, null, null),
     timings: { transformMs: 10, verifyMs: 20, totalMs: 30 },
@@ -131,13 +220,16 @@ describe('schema-validate: every exported schema is self-contained', () => {
   });
 
   it("the compile report's description says which rule keeps each counted face (BakeSummary's own docs)", () => {
-    const description = (ANALYZE_SCHEMA.properties.compile as { anyOf: Array<{ description?: string }> }).anyOf[0]!.description!;
+    const description = (ANALYZE_SCHEMA.properties.compile as { anyOf: Array<{ description?: string }> }).anyOf[0]!
+      .description!;
     // keptCoincidentFaces is the seam rule's count (BakeSummary.keptCoincidentFaces), never the buried pass's.
     expect(description).not.toContain('buried pass kept');
     expect(description).toContain('`keptCoincidentFaces` (coincident faces the seam guard kept)');
     expect(description).toContain('`keptDuplicateFaces`');
     // unbakeableEntries counts every mesh the bake left to batching (BakeSummary.unbakeableEntries): the material gate first.
-    expect(description).toContain('`unbakeableEntries` (meshes batched instead of baked because the bake cannot prove the merged mesh draws what they drew: a node in any slot, an instance function, a subclass or a `displacementMap` in their material, or an attribute the bake does not carry)');
+    expect(description).toContain(
+      '`unbakeableEntries` (meshes batched instead of baked because the bake cannot prove the merged mesh draws what they drew: a node in any slot, an instance function, a subclass or a `displacementMap` in their material, or an attribute the bake does not carry)',
+    );
   });
 });
 
@@ -157,7 +249,15 @@ describe('schema-validate: every exported schema compiles standalone in ajv and 
   it("SNAPSHOT_SCHEMA validates a frame whose memory.measured carries three's counts, and rejects a malformed one", () => {
     const validate = compile(SNAPSHOT_SCHEMA);
     const renderer = new FakeRenderer();
-    Object.assign(renderer.info.memory, { textures: 5, texturesSize: 5_592_409, geometries: 3, attributesSize: 4096, indexAttributesSize: 1024, renderTargets: 1, total: 5_600_000 });
+    Object.assign(renderer.info.memory, {
+      textures: 5,
+      texturesSize: 5_592_409,
+      geometries: 3,
+      attributesSize: 4096,
+      indexAttributesSize: 1024,
+      renderTargets: 1,
+      total: 5_600_000,
+    });
     const ledger = new DrawCallLedger({ registry: new MaterialRegistry() });
     ledger.attach(renderer as never);
     const { scene, camera } = sceneWithCamera();
@@ -165,7 +265,12 @@ describe('schema-validate: every exported schema compiles standalone in ajv and 
     renderer.render(scene, camera);
     ledger.measureMemory();
     const frame = ledger.frame({ items: true });
-    expect(frame.memory.measured).toEqual({ textures: { count: 5, bytes: 5_592_409 }, geometries: { count: 3, bytes: 5120 }, renderTargets: { count: 1 }, bytes: 5_600_000 });
+    expect(frame.memory.measured).toEqual({
+      textures: { count: 5, bytes: 5_592_409 },
+      geometries: { count: 3, bytes: 5120 },
+      renderTargets: { count: 1 },
+      bytes: 5_600_000,
+    });
     expect(validate(frame), JSON.stringify(validate.errors)).toBe(true);
     expect(validate({ ...frame, memory: { ...frame.memory, measured: { textures: { count: 5 } } } })).toBe(false);
   });
@@ -224,8 +329,18 @@ describe('schema-validate: real optimize documents', () => {
     try {
       const doc = new Document();
       const buffer = doc.createBuffer();
-      const position = doc.createAccessor().setType('VEC3').setArray(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0])).setBuffer(buffer);
-      doc.createScene().addChild(doc.createNode('n').setMesh(doc.createMesh('m').addPrimitive(doc.createPrimitive().setAttribute('POSITION', position))));
+      const position = doc
+        .createAccessor()
+        .setType('VEC3')
+        .setArray(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]))
+        .setBuffer(buffer);
+      doc
+        .createScene()
+        .addChild(
+          doc
+            .createNode('n')
+            .setMesh(doc.createMesh('m').addPrimitive(doc.createPrimitive().setAttribute('POSITION', position))),
+        );
       const file = join(dir, 'triangle.glb');
       writeFileSync(file, await new NodeIO().writeBinary(doc));
       const command = parseArgs(['optimize', file, '--no-verify']);

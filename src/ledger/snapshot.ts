@@ -1,5 +1,5 @@
 import type { Flag, Reason, SubmissionKind } from './reasons.js';
-import { lightingOf, skinningOf, NO_SHADOW_WORK, type LightInfo, type ShadowWork } from './sections.js';
+import { type LightInfo, lightingOf, NO_SHADOW_WORK, type ShadowWork, skinningOf } from './sections.js';
 import { capName } from './text.js';
 
 export interface SubmissionRecord {
@@ -210,10 +210,34 @@ export type FrameSections = Pick<FrameSnapshot, 'overdraw' | 'skinning' | 'light
 export function emptySections(): FrameSections {
   return {
     overdraw: { opaque: 0, transparent: 0, transparentSubmissions: 0, particles: 0, pixels: 0, measured: false },
-    skinning: { submissions: 0, vertices: 0, bones: 0, skeletons: 0, maxBones: 0, morphTargets: 0, vatInstances: 0, vatVertices: 0 },
-    lighting: { lights: { directional: 0, point: 0, spot: 0, hemisphere: 0, ambient: 0, other: 0 }, shadowLights: 0, shadowPasses: 0, shadowCasters: 0, shadowTexels: 0, shadowSubmissions: 0 },
+    skinning: {
+      submissions: 0,
+      vertices: 0,
+      bones: 0,
+      skeletons: 0,
+      maxBones: 0,
+      morphTargets: 0,
+      vatInstances: 0,
+      vatVertices: 0,
+    },
+    lighting: {
+      lights: { directional: 0, point: 0, spot: 0, hemisphere: 0, ambient: 0, other: 0 },
+      shadowLights: 0,
+      shadowPasses: 0,
+      shadowCasters: 0,
+      shadowTexels: 0,
+      shadowSubmissions: 0,
+    },
     js: { renderMs: 0, ledgerMs: 0, frameMs: 0, objects: 0, autoUpdatedMatrices: 0, hiddenOriginals: 0, skipped: 0 },
-    memory: { textures: { count: 0, bytes: 0 }, geometries: { count: 0, bytes: 0 }, renderTargets: { count: 0, bytes: 0 }, unreferenced: { geometries: 0, textures: 0 }, chunks: { total: 0, resident: 0 }, measured: null, estimated: true },
+    memory: {
+      textures: { count: 0, bytes: 0 },
+      geometries: { count: 0, bytes: 0 },
+      renderTargets: { count: 0, bytes: 0 },
+      unreferenced: { geometries: 0, textures: 0 },
+      chunks: { total: 0, resident: 0 },
+      measured: null,
+      estimated: true,
+    },
     hints: [],
   };
 }
@@ -237,7 +261,19 @@ export function emptyFrame(env: FrameSnapshot['env']): FrameSnapshot {
   return {
     schemaVersion: 3,
     env,
-    totals: { submissions: 0, sceneSubmissions: 0, gpuDraws: 0, reportedDrawCalls: 0, unattributed: 0, programSwitches: 0, programs: 0, triangles: 0, instances: 0, instancesDrawn: 0, drawCommands: 0 },
+    totals: {
+      submissions: 0,
+      sceneSubmissions: 0,
+      gpuDraws: 0,
+      reportedDrawCalls: 0,
+      unattributed: 0,
+      programSwitches: 0,
+      programs: 0,
+      triangles: 0,
+      instances: 0,
+      instancesDrawn: 0,
+      drawCommands: 0,
+    },
     passes: [],
     byReason: {},
     programs: {},
@@ -261,7 +297,19 @@ export interface FrameInput {
   overdraw?: OverdrawSnapshot;
 }
 
-export function buildFrame({ env, items, reportedDrawCalls, triangles, programs, descriptions, lights = [], shadows = NO_SHADOW_WORK, js, memory, overdraw }: FrameInput): FrameSnapshot {
+export function buildFrame({
+  env,
+  items,
+  reportedDrawCalls,
+  triangles,
+  programs,
+  descriptions,
+  lights = [],
+  shadows = NO_SHADOW_WORK,
+  js,
+  memory,
+  overdraw,
+}: FrameInput): FrameSnapshot {
   const passes = new Map<string, PassSnapshot>();
   const byReason = new Map<string, ReasonSnapshot>();
   const programMap = new Map<string, ProgramSnapshot>();
@@ -307,7 +355,14 @@ export function buildFrame({ env, items, reportedDrawCalls, triangles, programs,
     let program = programMap.get(item.programHash);
     if (!program) {
       const d = descriptions.get(item.programHash);
-      programMap.set(item.programHash, (program = { type: d?.type ?? item.materialType, description: d?.description ?? item.materialType, submissions: 0 }));
+      programMap.set(
+        item.programHash,
+        (program = {
+          type: d?.type ?? item.materialType,
+          description: d?.description ?? item.materialType,
+          submissions: 0,
+        }),
+      );
     }
     program.submissions++;
   }

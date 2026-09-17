@@ -1,4 +1,18 @@
-import { AnimationMixer, DataTexture, FloatType, LoopOnce, Matrix4, NearestFilter, Quaternion, RGBAFormat, Vector3, type AnimationClip, type Object3D, type Skeleton, type SkinnedMesh } from 'three';
+import {
+  type AnimationClip,
+  AnimationMixer,
+  DataTexture,
+  FloatType,
+  LoopOnce,
+  type Matrix4,
+  NearestFilter,
+  type Object3D,
+  Quaternion,
+  RGBAFormat,
+  type Skeleton,
+  type SkinnedMesh,
+  Vector3,
+} from 'three';
 
 export interface AnimationClipRange {
   name: string;
@@ -43,7 +57,11 @@ const _scale = new Vector3();
  * frame, skeleton after skeleton. `AnimatedInstances` reads those rows per instance. The prototype's transform and
  * pose are restored.
  */
-export function bakeAnimationTexture(prototype: Object3D, clips: AnimationClip[], options: BakeAnimationOptions = {}): AnimationTexture {
+export function bakeAnimationTexture(
+  prototype: Object3D,
+  clips: AnimationClip[],
+  options: BakeAnimationOptions = {},
+): AnimationTexture {
   const fps = options.fps ?? 30;
   const parts: SkinnedMesh[] = [];
   prototype.traverse((o) => {
@@ -96,7 +114,10 @@ export function bakeAnimationTexture(prototype: Object3D, clips: AnimationClip[]
       prototype.updateMatrixWorld(true);
       skeletons.forEach((skeleton, k) => {
         skeleton.update();
-        data.set(skeleton.boneMatrices!.subarray(0, skeleton.bones.length * 16), ((range.start + f) * width + offsets[k]! * 4) * 4);
+        data.set(
+          skeleton.boneMatrices!.subarray(0, skeleton.bones.length * 16),
+          ((range.start + f) * width + offsets[k]! * 4) * 4,
+        );
       });
     }
     action.stop();
@@ -117,5 +138,16 @@ export function bakeAnimationTexture(prototype: Object3D, clips: AnimationClip[]
   texture.generateMipmaps = false;
   texture.flipY = false;
   texture.needsUpdate = true;
-  return { texture, fps, bones, clips: ranges, parts: parts.map((mesh, i) => ({ mesh, matrix: partMatrices[i]!, boneOffset: mesh.userData.forgeBoneOffset as number })), skeletons };
+  return {
+    texture,
+    fps,
+    bones,
+    clips: ranges,
+    parts: parts.map((mesh, i) => ({
+      mesh,
+      matrix: partMatrices[i]!,
+      boneOffset: mesh.userData.forgeBoneOffset as number,
+    })),
+    skeletons,
+  };
 }

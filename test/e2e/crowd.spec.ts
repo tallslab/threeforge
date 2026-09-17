@@ -2,7 +2,9 @@ import { expect, test } from './fixtures.js';
 import { pixelDiff } from './pixels.js';
 
 /** The crowd as animated instances: 200 skinned characters become one draw per prototype part, still moving. */
-test('crowd: animated instances replace 200 skinned draws with 16, animate, and look like the mixers', { tag: '@corpus' }, async ({ forge }) => {
+test('crowd: animated instances replace 200 skinned draws with 16, animate, and look like the mixers', {
+  tag: '@corpus',
+}, async ({ forge }) => {
   test.setTimeout(300_000);
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   const at = async (variant: 'naive' | 'optimized', t: number) => {
@@ -12,7 +14,16 @@ test('crowd: animated instances replace 200 skinned draws with 16, animate, and 
       f.bench!.setTime!(time);
       for (let i = 0; i < 3; i++) await f.frameAsync();
       const frame = await f.frameAsync();
-      return { submissions: frame.totals.sceneSubmissions, vat: frame.byReason['vat-instanced']?.submissions ?? 0, skinned: frame.byReason.skinned?.submissions ?? 0, vertices: frame.skinning.vertices, vatInstances: frame.skinning.vatInstances, vatVertices: frame.skinning.vatVertices, unattributed: frame.totals.unattributed, hints: frame.hints.map((h) => h.code) };
+      return {
+        submissions: frame.totals.sceneSubmissions,
+        vat: frame.byReason['vat-instanced']?.submissions ?? 0,
+        skinned: frame.byReason.skinned?.submissions ?? 0,
+        vertices: frame.skinning.vertices,
+        vatInstances: frame.skinning.vatInstances,
+        vatVertices: frame.skinning.vatVertices,
+        unattributed: frame.totals.unattributed,
+        hints: frame.hints.map((h) => h.code),
+      };
     }, t);
     return { frame, png: await forge.page.screenshot({ type: 'png' }) };
   };

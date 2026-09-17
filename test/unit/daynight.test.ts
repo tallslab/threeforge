@@ -1,5 +1,5 @@
+import { BackSide, type BufferAttribute, Color, Fog, type Mesh, type MeshBasicMaterial, Scene, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { BackSide, Color, Fog, Mesh, MeshBasicMaterial, Scene, Vector3, type BufferAttribute } from 'three';
 import { DayNight } from '../../src/lighting/DayNight.js';
 import { tag } from '../../src/tags.js';
 
@@ -12,7 +12,8 @@ function setup(everyDegrees = 1) {
 }
 const domeColors = (dome: Mesh): number[] => Array.from(dome.geometry.getAttribute('color').array as Float32Array);
 /** The direction the sun shades from: its world position relative to its target's. */
-const sunDirection = (dn: DayNight): Vector3 => dn.sun.getWorldPosition(new Vector3()).sub(dn.sun.target.getWorldPosition(new Vector3())).normalize();
+const sunDirection = (dn: DayNight): Vector3 =>
+  dn.sun.getWorldPosition(new Vector3()).sub(dn.sun.target.getWorldPosition(new Vector3())).normalize();
 
 describe('DayNight', () => {
   it('adds a sun with its target, a static gradient dome and a hemisphere light', () => {
@@ -81,7 +82,12 @@ describe('DayNight', () => {
     const written = domeColors(dn.dome!);
     const version = attribute.version;
     dn.setTime(3);
-    const night = { position: dn.sun.position.clone(), direction: sunDirection(dn), intensity: dn.sun.intensity, color: dn.sun.color.getHex() };
+    const night = {
+      position: dn.sun.position.clone(),
+      direction: sunDirection(dn),
+      intensity: dn.sun.intensity,
+      color: dn.sun.color.getHex(),
+    };
     dn.setTime(15);
     expect(attribute.version, 'unchanged colours write nothing').toBe(version);
     expect(domeColors(dn.dome!)).toEqual(written);
@@ -108,7 +114,9 @@ describe('DayNight', () => {
     // `dome` is public: a caller rewrites its colours (or swaps the geometry) behind the cache's back.
     (attribute.array as Float32Array).fill(0);
     dn.setTime(9);
-    expect(domeColors(dn.dome!), 'cached: an equal palette leaves the overwritten dome alone').toEqual(written.map(() => 0));
+    expect(domeColors(dn.dome!), 'cached: an equal palette leaves the overwritten dome alone').toEqual(
+      written.map(() => 0),
+    );
     dn.refreshDome();
     dn.setTime(9);
     expect(domeColors(dn.dome!), 'after refreshDome the next setTime writes it back').toEqual(written);
@@ -118,7 +126,9 @@ describe('DayNight', () => {
     const { scene, dn } = setup();
     dn.setTime(12);
     dn.dispose();
-    expect(scene.children.some((c) => c === dn.sun || c === dn.dome || c === dn.hemisphere || c === dn.sun.target)).toBe(false);
+    expect(
+      scene.children.some((c) => c === dn.sun || c === dn.dome || c === dn.hemisphere || c === dn.sun.target),
+    ).toBe(false);
     expect((scene.fog as Fog).color.getHex()).toBe(0x123456);
     expect((scene.background as Color).getHex()).toBe(0x654321);
   });

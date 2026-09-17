@@ -1,5 +1,16 @@
+import {
+  AnimationClip,
+  BoxGeometry,
+  Group,
+  InstancedMesh,
+  Mesh,
+  MeshStandardMaterial,
+  NumberKeyframeTrack,
+  PropertyBinding,
+  Scene,
+  VectorKeyframeTrack,
+} from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { AnimationClip, BoxGeometry, Group, InstancedMesh, Mesh, MeshStandardMaterial, NumberKeyframeTrack, PropertyBinding, Scene, VectorKeyframeTrack } from 'three';
 import { animatedRoots, classify } from '../../src/compiler/classify.js';
 import { World } from '../../src/compiler/World.js';
 import { tag } from '../../src/tags.js';
@@ -18,7 +29,9 @@ describe('classify with animation clips', () => {
     const still = new Mesh(box, mat());
     still.name = 'still';
     scene.add(spinner, still);
-    const clip = new AnimationClip('spin', 1, [new VectorKeyframeTrack('spinner.position', [0, 1], [0, 0, 0, 1, 0, 0])]);
+    const clip = new AnimationClip('spin', 1, [
+      new VectorKeyframeTrack('spinner.position', [0, 1], [0, 0, 0, 1, 0, 0]),
+    ]);
     const result = classify(scene, { policy: 'auto', animations: [clip] });
     expect(result.find((c) => c.object === blade)).toMatchObject({ kind: 'dynamic', rule: 'animated' });
     expect(result.find((c) => c.object === still)).toMatchObject({ kind: 'static', rule: 'auto' });
@@ -29,10 +42,18 @@ describe('classify with animation clips', () => {
     const mesh = new Mesh(box, mat());
     mesh.name = 'cube';
     scene.add(mesh);
-    const byUuid = new AnimationClip('a', 1, [new VectorKeyframeTrack(`${mesh.uuid}.scale`, [0, 1], [1, 1, 1, 2, 2, 2])]);
-    expect(classify(scene, { policy: 'auto', animations: [byUuid] })[0]).toMatchObject({ kind: 'dynamic', rule: 'animated' });
+    const byUuid = new AnimationClip('a', 1, [
+      new VectorKeyframeTrack(`${mesh.uuid}.scale`, [0, 1], [1, 1, 1, 2, 2, 2]),
+    ]);
+    expect(classify(scene, { policy: 'auto', animations: [byUuid] })[0]).toMatchObject({
+      kind: 'dynamic',
+      rule: 'animated',
+    });
     const morph = new AnimationClip('m', 1, [new NumberKeyframeTrack('cube.morphTargetInfluences[0]', [0, 1], [0, 1])]);
-    expect(classify(scene, { policy: 'auto', animations: [morph] })[0]).toMatchObject({ kind: 'dynamic', rule: 'animated' });
+    expect(classify(scene, { policy: 'auto', animations: [morph] })[0]).toMatchObject({
+      kind: 'dynamic',
+      rule: 'animated',
+    });
   });
 
   it('flows through World options so compile leaves animated meshes alone', () => {
@@ -104,7 +125,9 @@ describe("World with originals: 'detach' and animations", () => {
     leaf.name = 'leaf';
     group.add(leaf);
     scene.add(group);
-    const clip = new AnimationClip('spin', 1, [new VectorKeyframeTrack('spinner.position', [0, 1], [0, 0, 0, 1, 1, 1])]);
+    const clip = new AnimationClip('spin', 1, [
+      new VectorKeyframeTrack('spinner.position', [0, 1], [0, 0, 0, 1, 1, 1]),
+    ]);
 
     const before = animatedRoots(scene, [clip]);
     const world = new World(scene, { animations: [clip], originals: 'detach' });

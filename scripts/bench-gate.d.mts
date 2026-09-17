@@ -18,7 +18,11 @@ export interface CompareRow {
 }
 export const DETERMINISTIC: string[];
 export const TIMING: string[];
-export function compare(baseline: BenchFile, result: BenchFile, options: { gateTiming: boolean; tolerance: number }): { rows: CompareRow[]; failures: string[] };
+export function compare(
+  baseline: BenchFile,
+  result: BenchFile,
+  options: { gateTiming: boolean; tolerance: number },
+): { rows: CompareRow[]; failures: string[] };
 export function table(result: BenchFile): string;
 export function resultPath(backend: string): string;
 export function baselinePath(backend: string): string;

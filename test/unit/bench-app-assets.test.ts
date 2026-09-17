@@ -33,12 +33,17 @@ function run(cwd: string, env: NodeJS.ProcessEnv = {}): { status: number; out: s
 
 /** The kit layout the script expects, with placeholder bytes: it only copies these files, never parses them. */
 function withKits(dir: string): void {
-  const glbs = ['male-a', 'male-b', 'male-c', 'male-d', 'female-a', 'female-b', 'female-c', 'female-d'].map((n) => `kenney-mini-characters/Models/GLB format/character-${n}.glb`);
+  const glbs = ['male-a', 'male-b', 'male-c', 'male-d', 'female-a', 'female-b', 'female-c', 'female-d'].map(
+    (n) => `kenney-mini-characters/Models/GLB format/character-${n}.glb`,
+  );
   for (const rel of [...glbs, 'waternormals/waternormals.jpg']) {
     mkdirSync(dirname(join(dir, 'test/assets/files', rel)), { recursive: true });
     writeFileSync(join(dir, 'test/assets/files', rel), 'x');
   }
-  writeFileSync(join(dir, 'test/assets/files/kits-index.json'), JSON.stringify([{ name: 'kenney-mini-characters', glbs, textures: [] }]));
+  writeFileSync(
+    join(dir, 'test/assets/files/kits-index.json'),
+    JSON.stringify([{ name: 'kenney-mini-characters', glbs, textures: [] }]),
+  );
 }
 
 describe('bench-app-assets without the Kenney kits', () => {
@@ -68,10 +73,14 @@ describe('bench-app-assets without the Kenney kits', () => {
       const r = run(dir, env);
       expect(r.out, r.out).not.toContain('FORGE_BENCH_APP_OPTIONAL=1)');
       expect(r.status).toBe(0);
-      const index = JSON.parse(readFileSync(join(dir, 'bench-app/public/kits-index.json'), 'utf8')) as Array<{ glbs: string[] }>;
+      const index = JSON.parse(readFileSync(join(dir, 'bench-app/public/kits-index.json'), 'utf8')) as Array<{
+        glbs: string[];
+      }>;
       expect(index[0]?.glbs).toHaveLength(8);
       expect(existsSync(join(dir, 'bench-app/public/waternormals/waternormals.jpg'))).toBe(true);
-      expect(existsSync(join(dir, 'bench-app/public/kenney-mini-characters/Models/GLB format/character-male-a.glb'))).toBe(true);
+      expect(
+        existsSync(join(dir, 'bench-app/public/kenney-mini-characters/Models/GLB format/character-male-a.glb')),
+      ).toBe(true);
     }
   });
 });

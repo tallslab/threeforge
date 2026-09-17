@@ -1,6 +1,21 @@
-import { AddEquation, Color, CustomBlending, DataUtils, HalfFloatType, OneFactor, RenderTarget, Vector2, type Camera, type Material, type Object3D, type Scene, type Side, type Texture } from 'three';
+import {
+  AddEquation,
+  type Camera,
+  Color,
+  CustomBlending,
+  DataUtils,
+  HalfFloatType,
+  type Material,
+  type Object3D,
+  OneFactor,
+  RenderTarget,
+  type Scene,
+  type Side,
+  type Texture,
+  Vector2,
+} from 'three';
 import { vec4 } from 'three/tsl';
-import { MeshBasicNodeMaterial, SpriteNodeMaterial, type Node } from 'three/webgpu';
+import { MeshBasicNodeMaterial, type Node, SpriteNodeMaterial } from 'three/webgpu';
 
 /** Renderer.setRenderObjectFunction's callback: the arguments of Renderer.renderObject. */
 type RenderObjectFunction = (
@@ -31,7 +46,13 @@ export interface OverdrawRenderer {
   getClearColor(target: Color): Color;
   getClearAlpha(): number;
   setClearColor(color: Color, alpha?: number): void;
-  readRenderTargetPixelsAsync(target: RenderTarget, x: number, y: number, width: number, height: number): Promise<ArrayLike<number>>;
+  readRenderTargetPixelsAsync(
+    target: RenderTarget,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): Promise<ArrayLike<number>>;
   getDrawingBufferSize(target: Vector2): Vector2;
   autoClear: boolean;
   autoClearColor: boolean;
@@ -123,7 +144,12 @@ const _black = new Color(0, 0, 0);
  * `disposeOverdraw(renderer)`, which waits for running count renders to end. Two low-resolution renders: call it on
  * demand, not every frame.
  */
-export function measureOverdraw(renderer: OverdrawRenderer, scene: Scene, camera: Camera, options: OverdrawOptions = {}): Promise<OverdrawResult> {
+export function measureOverdraw(
+  renderer: OverdrawRenderer,
+  scene: Scene,
+  camera: Camera,
+  options: OverdrawOptions = {},
+): Promise<OverdrawResult> {
   let state: CountState;
   try {
     state = stateOf(renderer);
@@ -152,7 +178,13 @@ export function measureOverdraw(renderer: OverdrawRenderer, scene: Scene, camera
 }
 
 /** The two count renders, run and restored synchronously; the returned promise settles with the read-backs. */
-function countOverdraw(renderer: OverdrawRenderer, scene: Scene, camera: Camera, options: OverdrawOptions, state: CountState): Promise<OverdrawResult> {
+function countOverdraw(
+  renderer: OverdrawRenderer,
+  scene: Scene,
+  camera: Camera,
+  options: OverdrawOptions,
+  state: CountState,
+): Promise<OverdrawResult> {
   const scale = options.scale ?? 1 / 8;
   renderer.getDrawingBufferSize(_size);
   // Width in multiples of 32 texels: 8 bytes per half-float texel makes each row a multiple of 256 bytes, so the
@@ -222,7 +254,10 @@ function countOverdraw(renderer: OverdrawRenderer, scene: Scene, camera: Camera,
       count.alphaMap = null;
     }
   }
-  return Promise.all(reads).then(([opaque, transparent]) => ({ opaque: averageRed(opaque!, width, height), transparent: averageRed(transparent!, width, height) }));
+  return Promise.all(reads).then(([opaque, transparent]) => ({
+    opaque: averageRed(opaque!, width, height),
+    transparent: averageRed(transparent!, width, height),
+  }));
 }
 
 /** Releases the count target and materials `measureOverdraw` keeps for this renderer. `DrawCallLedger.detach()` calls it. */
@@ -259,7 +294,14 @@ function stateOf(renderer: OverdrawRenderer): CountState {
   if (!state) {
     const material = countMaterial(new MeshBasicNodeMaterial(), 'forge:overdraw-count');
     const sprite = countMaterial(new SpriteNodeMaterial(), 'forge:overdraw-count-sprite');
-    state = { target: null, material, sprite, renderObject: countObject(renderer, material, sprite), measuring: null, disposeRequested: false };
+    state = {
+      target: null,
+      material,
+      sprite,
+      renderObject: countObject(renderer, material, sprite),
+      measuring: null,
+      disposeRequested: false,
+    };
     states.set(renderer, state);
   }
   return state;
@@ -287,14 +329,28 @@ function countMaterial<T extends MeshBasicNodeMaterial | SpriteNodeMaterial>(mat
  * The render-object function of the count renders: skip what adds no colour to a real frame, then draw with a count
  * material. Draws of a scene rendered inside a count draw with another override, or none, pass straight through.
  */
-function countObject(renderer: OverdrawRenderer, meshCount: MeshBasicNodeMaterial, spriteCount: SpriteNodeMaterial): RenderObjectFunction {
+function countObject(
+  renderer: OverdrawRenderer,
+  meshCount: MeshBasicNodeMaterial,
+  spriteCount: SpriteNodeMaterial,
+): RenderObjectFunction {
   return (object, scene, camera, geometry, material, group, lightsNode, clippingContext = null, passId = null) => {
     const override = scene.overrideMaterial;
     // Renderer._renderScene installs this function for nested renders too (Renderer.js ~1736). A scene a hook renders
     // during a count draw (a render-to-texture onBeforeRender, which three runs before its override copies, ~3721) keeps
     // its own override, or none: its draws are the app's, and must not touch the count material under the draw around them.
     if (override !== meshCount && override !== spriteCount) {
-      return renderer.renderObject(object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId);
+      return renderer.renderObject(
+        object,
+        scene,
+        camera,
+        geometry,
+        material,
+        group,
+        lightsNode,
+        clippingContext,
+        passId,
+      );
     }
     if (material.allowOverride !== true || material.colorWrite === false) return;
     if ((object.userData?.forge as { kind?: string } | undefined)?.kind === 'occlusion-proxy') return;
@@ -325,7 +381,14 @@ function countObject(renderer: OverdrawRenderer, meshCount: MeshBasicNodeMateria
       alphaMap: count.alphaMap,
       alphaTest: count.alphaTest,
     };
-    const savedSprite = sprite ? { rotation: spriteCount.rotation, sizeAttenuation: spriteCount.sizeAttenuation, scaleNode: spriteCount.scaleNode, rotationNode: spriteCount.rotationNode } : null;
+    const savedSprite = sprite
+      ? {
+          rotation: spriteCount.rotation,
+          sizeAttenuation: spriteCount.sizeAttenuation,
+          scaleNode: spriteCount.scaleNode,
+          rotationNode: spriteCount.rotationNode,
+        }
+      : null;
     // Read off the material three hands over, which may differ from a canonical one (a sprite batch's swapped side).
     count.map = source.map ?? null;
     count.opacity = source.opacity;
@@ -345,7 +408,17 @@ function countObject(renderer: OverdrawRenderer, meshCount: MeshBasicNodeMateria
     const swap = override !== count;
     if (swap) scene.overrideMaterial = count;
     try {
-      return renderer.renderObject(object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId);
+      return renderer.renderObject(
+        object,
+        scene,
+        camera,
+        geometry,
+        material,
+        group,
+        lightsNode,
+        clippingContext,
+        passId,
+      );
     } finally {
       if (swap) scene.overrideMaterial = override;
       Object.assign(count, saved);
@@ -356,7 +429,12 @@ function countObject(renderer: OverdrawRenderer, meshCount: MeshBasicNodeMateria
 
 /** Mean of the red channel. Half-float targets read back as raw 16-bit halves on both backends; bytes for RGBA8 targets. */
 function averageRed(px: ArrayLike<number>, width: number, height: number): number {
-  const decode = px instanceof Uint16Array ? (v: number) => DataUtils.fromHalfFloat(v) : px instanceof Uint8Array ? (v: number) => v / 255 : (v: number) => v;
+  const decode =
+    px instanceof Uint16Array
+      ? (v: number) => DataUtils.fromHalfFloat(v)
+      : px instanceof Uint8Array
+        ? (v: number) => v / 255
+        : (v: number) => v;
   let sum = 0;
   for (let i = 0; i < width * height; i++) sum += decode(px[i * 4]!);
   return sum / (width * height);

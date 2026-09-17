@@ -1,5 +1,27 @@
-import { BVH, HybridBuilder, WebGLCoordinateSystem as BvhWebGL, WebGPUCoordinateSystem as BvhWebGPU, type BVHNode } from 'bvh.js';
-import { Box3, Frustum, FrustumArray, Matrix4, Sphere, Vector3, WebGLCoordinateSystem, type ArrayCamera, type BatchedMesh, type BufferGeometry, type Camera, type CoordinateSystem, type Material, type Object3D, type Scene } from 'three';
+import {
+  BVH,
+  type BVHNode,
+  WebGLCoordinateSystem as BvhWebGL,
+  WebGPUCoordinateSystem as BvhWebGPU,
+  HybridBuilder,
+} from 'bvh.js';
+import {
+  type ArrayCamera,
+  type BatchedMesh,
+  Box3,
+  type BufferGeometry,
+  type Camera,
+  type CoordinateSystem,
+  Frustum,
+  FrustumArray,
+  type Material,
+  Matrix4,
+  type Object3D,
+  type Scene,
+  Sphere,
+  Vector3,
+  WebGLCoordinateSystem,
+} from 'three';
 import type { PassTracker } from './passTracker.js';
 
 /** Functions threeforge installs as own-property hooks carry this marker so the ledger does not flag them. */
@@ -198,13 +220,20 @@ function pushItem(start: number, count: number, z: number, index: number): void 
  * nested pass issues `n + k` draw commands on WebGPU, zero-count ones included.
  * The hook is the batch's own `onBeforeRender`: it replaces three's scan, so it cannot compose with it.
  */
-export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: CoordinateSystem, options: CullingOptions = {}): CullingHandle {
+export function attachBvhCulling(
+  batch: BatchedMesh,
+  coordinateSystem: CoordinateSystem,
+  options: CullingOptions = {},
+): CullingHandle {
   const target = batch as Internals;
   const margin = options.margin ?? 0;
   const lod = options.lod;
   const reuseMain = options.nestedPasses === 'reuse-main';
   const passes = options.passes;
-  const bvh = new BVH<object, number>(new HybridBuilder(), coordinateSystem === WebGLCoordinateSystem ? BvhWebGL : BvhWebGPU);
+  const bvh = new BVH<object, number>(
+    new HybridBuilder(),
+    coordinateSystem === WebGLCoordinateSystem ? BvhWebGL : BvhWebGPU,
+  );
   const nodes = new Map<number, BVHNode<object, number>>();
 
   const boxOf = (id: number, out: Float32Array): Float32Array => {
@@ -363,7 +392,14 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
   };
 
   /** A fresh list for the camera: three's algorithm over BVH candidates, or three's own scan for the cameras it handles differently. */
-  const cullPlain = (renderer: unknown, scene: Scene, camera: Camera, geometry: BufferGeometry, material: Material, group: unknown): void => {
+  const cullPlain = (
+    renderer: unknown,
+    scene: Scene,
+    camera: Camera,
+    geometry: BufferGeometry,
+    material: Material,
+    group: unknown,
+  ): void => {
     const cam = camera as CullCamera;
     if (!target.perObjectFrustumCulled || cam.isArrayCamera || cam.reversedDepth) {
       prototypeHook.call(target, renderer as never, scene, camera, geometry, material, group as never);
@@ -395,7 +431,13 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
   };
 
   /** The nested cull on top of the rows `[0, base)` (see the doc comment above); returns the new list length. */
-  const appendFor = (camera: Camera, geometry: BufferGeometry, material: Material, base: number, layer: number): number => {
+  const appendFor = (
+    camera: Camera,
+    geometry: BufferGeometry,
+    material: Material,
+    base: number,
+    layer: number,
+  ): number => {
     const cam = camera as CullCamera;
     const info = target._instanceInfo;
     const counts = target._multiDrawCounts;
@@ -491,7 +533,14 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
     return slot;
   };
 
-  const hook = function (renderer: unknown, scene: Scene, camera: Camera, geometry: BufferGeometry, material: Material, group: unknown): void {
+  const hook = (
+    renderer: unknown,
+    scene: Scene,
+    camera: Camera,
+    geometry: BufferGeometry,
+    material: Material,
+    group: unknown,
+  ): void => {
     ensureCapacity();
     const depth = passes === undefined ? 0 : passes.depth;
     // Drop the layers of passes that are over (their end already restored them, unless a render threw) and this pass's
@@ -546,7 +595,7 @@ export function attachBvhCulling(batch: BatchedMesh, coordinateSystem: Coordinat
     },
     detach() {
       layers.clear();
-      if (Object.prototype.hasOwnProperty.call(batch, 'onBeforeRender')) delete (batch as { onBeforeRender?: unknown }).onBeforeRender;
+      if (Object.hasOwn(batch, 'onBeforeRender')) delete (batch as { onBeforeRender?: unknown }).onBeforeRender;
       bvh.clear();
       nodes.clear();
     },
@@ -559,16 +608,26 @@ const OWN = Object.prototype.hasOwnProperty;
  * Runs `fn` before whatever `onBeforeRender` the object currently has (three's prototype method or a
  * threeforge hook), as a marked own-property hook. Returns a function that restores the previous state.
  */
-export function prependRenderHook(object: Object3D, fn: (...args: Parameters<Object3D['onBeforeRender']>) => void): () => void {
+export function prependRenderHook(
+  object: Object3D,
+  fn: (...args: Parameters<Object3D['onBeforeRender']>) => void,
+): () => void {
   return prependHook(object, 'onBeforeRender', fn);
 }
 
 /** Same as `prependRenderHook` for `onAfterRender`; `fn` receives the renderer, scene and camera. */
-export function prependAfterRenderHook(object: Object3D, fn: (...args: Parameters<Object3D['onAfterRender']>) => void): () => void {
+export function prependAfterRenderHook(
+  object: Object3D,
+  fn: (...args: Parameters<Object3D['onAfterRender']>) => void,
+): () => void {
   return prependHook(object, 'onAfterRender', fn);
 }
 
-function prependHook<K extends 'onBeforeRender' | 'onAfterRender'>(object: Object3D, name: K, fn: (...args: Parameters<Object3D[K]>) => void): () => void {
+function prependHook<K extends 'onBeforeRender' | 'onAfterRender'>(
+  object: Object3D,
+  name: K,
+  fn: (...args: Parameters<Object3D[K]>) => void,
+): () => void {
   const hadOwn = OWN.call(object, name);
   const previous = object[name] as (...args: Parameters<Object3D[K]>) => void;
   const hook = function (this: Object3D, ...args: Parameters<Object3D[K]>): void {

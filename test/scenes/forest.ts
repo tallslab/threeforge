@@ -3,7 +3,23 @@
  * per species, trunk and crown coloured by vertex colour) and 2 000 grass patches. Everything static; the
  * naive assembly is one mesh per tree and per patch. Imports from 'three' and the pure BufferGeometryUtils addon.
  */
-import { AmbientLight, BufferAttribute, ConeGeometry, CylinderGeometry, DirectionalLight, DoubleSide, Float32BufferAttribute, HemisphereLight, IcosahedronGeometry, Mesh, MeshStandardMaterial, PlaneGeometry, Scene, SphereGeometry, type BufferGeometry } from 'three';
+import {
+  AmbientLight,
+  BufferAttribute,
+  type BufferGeometry,
+  ConeGeometry,
+  CylinderGeometry,
+  DirectionalLight,
+  DoubleSide,
+  Float32BufferAttribute,
+  HemisphereLight,
+  IcosahedronGeometry,
+  Mesh,
+  MeshStandardMaterial,
+  PlaneGeometry,
+  Scene,
+  SphereGeometry,
+} from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { tag } from '../../src/tags.js';
 import { mulberry32 } from './naive.js';
@@ -35,7 +51,14 @@ function colored(geometry: BufferGeometry, rgb: [number, number, number]): Buffe
 }
 
 /** Trunk plus crown merged into one indexed geometry; the crown is lifted onto the trunk. */
-function tree(trunk: BufferGeometry, trunkHeight: number, crown: BufferGeometry, crownLift: number, bark: [number, number, number], leaf: [number, number, number]): BufferGeometry {
+function tree(
+  trunk: BufferGeometry,
+  trunkHeight: number,
+  crown: BufferGeometry,
+  crownLift: number,
+  bark: [number, number, number],
+  leaf: [number, number, number],
+): BufferGeometry {
   trunk.translate(0, trunkHeight / 2, 0);
   crown.translate(0, crownLift, 0);
   // Polyhedra come non-indexed; merging needs every part indexed (and LOD generation prefers it).
@@ -51,7 +74,14 @@ export function makeSpecies(): BufferGeometry[] {
   return [
     tree(new CylinderGeometry(0.25, 0.35, 3, 7), 3, new ConeGeometry(2, 7, 9), 6.2, bark, [0.12, 0.38, 0.18]),
     tree(new CylinderGeometry(0.4, 0.5, 4, 7), 4, new IcosahedronGeometry(3, 1), 6, bark, [0.25, 0.5, 0.2]),
-    tree(new CylinderGeometry(0.15, 0.2, 5, 6), 5, new SphereGeometry(1.8, 8, 6), 6, [0.85, 0.85, 0.8], [0.55, 0.7, 0.25]),
+    tree(
+      new CylinderGeometry(0.15, 0.2, 5, 6),
+      5,
+      new SphereGeometry(1.8, 8, 6),
+      6,
+      [0.85, 0.85, 0.8],
+      [0.55, 0.7, 0.25],
+    ),
   ];
 }
 
@@ -80,11 +110,17 @@ export function makeGrassTuft(): BufferGeometry {
   return g;
 }
 
-export function buildForestScene({ trees = 5000, grass = 2000, area = 900, seed = 7 }: ForestOptions = {}): ForestScene {
+export function buildForestScene({
+  trees = 5000,
+  grass = 2000,
+  area = 900,
+  seed = 7,
+}: ForestOptions = {}): ForestScene {
   const rng = mulberry32(seed);
   const scene = new Scene();
   scene.name = 'forest';
-  const heightAt = (x: number, z: number): number => 6 * Math.sin(x / 90) * Math.cos(z / 110) + 2 * Math.sin((x + z) / 37);
+  const heightAt = (x: number, z: number): number =>
+    6 * Math.sin(x / 90) * Math.cos(z / 110) + 2 * Math.sin((x + z) / 37);
 
   const terrainGeometry = new PlaneGeometry(area, area, 96, 96);
   terrainGeometry.rotateX(-Math.PI / 2);
@@ -98,7 +134,9 @@ export function buildForestScene({ trees = 5000, grass = 2000, area = 900, seed 
   scene.add(terrain);
 
   const species = makeSpecies();
-  const speciesMaterials = species.map(() => new MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 }));
+  const speciesMaterials = species.map(
+    () => new MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 }),
+  );
   const treeMeshes: Mesh[] = [];
   const half = area / 2;
   for (let i = 0; i < trees; i++) {
@@ -137,5 +175,13 @@ export function buildForestScene({ trees = 5000, grass = 2000, area = 900, seed 
   sun.name = 'sun';
   sun.position.set(200, 300, 100);
   scene.add(new AmbientLight(0xffffff, 0.3), new HemisphereLight(0xbfd7ff, 0x3a4a2a, 0.5), sun);
-  return { scene, terrain, trees: treeMeshes, grass: grassMeshes, species, counts: { trees, grass, species: species.length }, heightAt };
+  return {
+    scene,
+    terrain,
+    trees: treeMeshes,
+    grass: grassMeshes,
+    species,
+    counts: { trees, grass, species: species.length },
+    heightAt,
+  };
 }

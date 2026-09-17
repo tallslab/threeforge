@@ -1,5 +1,5 @@
+import { Bone, type BufferAttribute, Skeleton, SkinnedMesh, Vector2 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { Bone, Skeleton, SkinnedMesh, Vector2, type BufferAttribute } from 'three';
 import { assembleCharacter } from '../../src/character/assembleCharacter.js';
 import { BONE_NAMES, buildCharacter } from '../../test/scenes/character.js';
 
@@ -14,7 +14,9 @@ describe('assembleCharacter', () => {
     expect(character.mesh).toBeInstanceOf(SkinnedMesh);
     expect(character.mesh.skeleton).toBe(skeleton);
     expect(vertexCount(character.mesh)).toBe(vertexCount(body) + vertexCount(gear[0]!) + vertexCount(gear[1]!));
-    expect(character.mesh.geometry.index!.count).toBe(body.geometry.index!.count + gear[0]!.geometry.index!.count + gear[1]!.geometry.index!.count);
+    expect(character.mesh.geometry.index!.count).toBe(
+      body.geometry.index!.count + gear[0]!.geometry.index!.count + gear[1]!.geometry.index!.count,
+    );
     expect(character.report).toMatchObject({ parts: 3, wardrobe: 5, materials: 1 });
     expect(Array.isArray(character.mesh.material)).toBe(false);
   });
@@ -40,9 +42,14 @@ describe('assembleCharacter', () => {
     }
   });
 
-  it('packs every wardrobe texture into one atlas and remaps UVs into each part\'s cell', () => {
+  it("packs every wardrobe texture into one atlas and remaps UVs into each part's cell", () => {
     const { body, gear, skeleton } = buildCharacter();
-    const character = assembleCharacter({ skeleton, wardrobe: [body, ...gear], equipped: [body, ...gear], atlas: { size: 64 } });
+    const character = assembleCharacter({
+      skeleton,
+      wardrobe: [body, ...gear],
+      equipped: [body, ...gear],
+      atlas: { size: 64 },
+    });
     const material = character.mesh.material as unknown as { map: { image: { width: number; height: number } } };
     expect(material.map.image.width).toBe(64);
     expect(material.map.image.height).toBe(64);
@@ -69,9 +76,14 @@ describe('assembleCharacter', () => {
     }
   });
 
-  it('writes each part\'s texels into its atlas cell', () => {
+  it("writes each part's texels into its atlas cell", () => {
     const { body, gear, skeleton } = buildCharacter();
-    const character = assembleCharacter({ skeleton, wardrobe: [body, gear[1]!], equipped: [body, gear[1]!], atlas: { size: 8 } });
+    const character = assembleCharacter({
+      skeleton,
+      wardrobe: [body, gear[1]!],
+      equipped: [body, gear[1]!],
+      atlas: { size: 8 },
+    });
     const data = (character.mesh.material as unknown as { map: { image: { data: Uint8Array } } }).map.image.data;
     const cell = character.cellOf(gear[1]!)!; // chest: [150, 40, 40]
     const px = Math.floor((cell.x + cell.size / 2) * 8);
@@ -106,7 +118,9 @@ describe('assembleCharacter', () => {
     const stray = new SkinnedMesh(body.geometry.clone(), body.material);
     stray.name = 'tail-part';
     stray.bind(new Skeleton([alien]));
-    expect(() => assembleCharacter({ skeleton, wardrobe: [body, stray], equipped: [body, stray] })).toThrow(/tail-part.*tail/);
+    expect(() => assembleCharacter({ skeleton, wardrobe: [body, stray], equipped: [body, stray] })).toThrow(
+      /tail-part.*tail/,
+    );
   });
 
   it('rejects wardrobe parts that are not in the wardrobe when equipping', () => {

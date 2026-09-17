@@ -10,7 +10,20 @@
  * asset (see the afterAll below); a partial run's rows still land in the JSON, stamped as its own.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { corpusPlan, currentStamp, markdownBlock, markdownTarget, mergeRows, onlyOf, renderReport, reportFor, rowsForReport, stampRow, type GateInput, type ReportRow } from './assets-report.js';
+import {
+  corpusPlan,
+  currentStamp,
+  type GateInput,
+  markdownBlock,
+  markdownTarget,
+  mergeRows,
+  onlyOf,
+  type ReportRow,
+  renderReport,
+  reportFor,
+  rowsForReport,
+  stampRow,
+} from './assets-report.js';
 import { expect, test } from './fixtures.js';
 import { pixelDiff } from './pixels.js';
 
@@ -47,13 +60,20 @@ for (const name of plan.unknown) {
 for (const asset of plan.attempt) {
   test(`asset ${asset.name}`, { tag: '@corpus' }, async ({ forge }) => {
     // No row is saved: a download failure is not a measurement, and without a row the gate reports it missing.
-    if (asset.error !== undefined) throw new Error(`${asset.name} was never downloaded (${asset.error}); rerun pnpm assets`);
+    if (asset.error !== undefined)
+      throw new Error(`${asset.name} was never downloaded (${asset.error}); rerun pnpm assets`);
     test.setTimeout(180_000);
-    const row: ReportRow = { name: asset.name, tags: (asset.tags ?? []).join(' '), ...(materialsOverride ? { materialsOverride } : {}) };
+    const row: ReportRow = {
+      name: asset.name,
+      tags: (asset.tags ?? []).join(' '),
+      ...(materialsOverride ? { materialsOverride } : {}),
+    };
     try {
       await forge.open('gltf', { asset: asset.name, ...(materialsOverride ? { materials: materialsOverride } : {}) });
     } catch (error) {
-      row.error = String(error instanceof Error ? error.message : error).split('\n')[0]!.slice(0, 200);
+      row.error = String(error instanceof Error ? error.message : error)
+        .split('\n')[0]!
+        .slice(0, 200);
       saveRow(row, forge.backend);
       throw error;
     }
@@ -63,7 +83,14 @@ for (const asset of plan.attempt) {
       const frame = f.frame();
       return { totals: frame.totals, byReason: frame.byReason, info: f.gltf! };
     });
-    Object.assign(row, { meshes: naive.info.meshes, materials: naive.info.materials, triangles: naive.info.triangles, animations: naive.info.animations, naive: naive.totals.sceneSubmissions, loadMs: naive.info.loadMs });
+    Object.assign(row, {
+      meshes: naive.info.meshes,
+      materials: naive.info.materials,
+      triangles: naive.info.triangles,
+      animations: naive.info.animations,
+      naive: naive.totals.sceneSubmissions,
+      loadMs: naive.info.loadMs,
+    });
     const before = await forge.page.screenshot({ type: 'png' });
 
     const compiled = await forge.page.evaluate(async () => {
@@ -74,7 +101,17 @@ for (const asset of plan.attempt) {
       const frame = f.frame();
       const skipped = new Map<string, number>();
       for (const s of report.skipped) skipped.set(s.rule, (skipped.get(s.rule) ?? 0) + 1);
-      return { report: { batches: report.after.batches, instanced: report.after.instanced, meshes: report.after.meshes, groups: report.groups.length }, totals: frame.totals, byReason: frame.byReason, skipped: [...skipped.entries()] };
+      return {
+        report: {
+          batches: report.after.batches,
+          instanced: report.after.instanced,
+          meshes: report.after.meshes,
+          groups: report.groups.length,
+        },
+        totals: frame.totals,
+        byReason: frame.byReason,
+        skipped: [...skipped.entries()],
+      };
     });
     const after = await forge.page.screenshot({ type: 'png' });
     const diff = pixelDiff(before, after);
@@ -89,15 +126,26 @@ for (const asset of plan.attempt) {
       unattributed: compiled.totals.unattributed,
       diff: Number((diff * 100).toFixed(2)),
       restored,
-      skipped: compiled.skipped.sort((a, b) => b[1] - a[1]).map(([r, n]) => `${r}:${n}`).join(' '),
-      reasons: Object.entries(compiled.byReason).filter(([r]) => r !== 'renderer-internal').sort((a, b) => b[1].submissions - a[1].submissions).map(([r, v]) => `${r}:${v.submissions}`).join(' '),
+      skipped: compiled.skipped
+        .sort((a, b) => b[1] - a[1])
+        .map(([r, n]) => `${r}:${n}`)
+        .join(' '),
+      reasons: Object.entries(compiled.byReason)
+        .filter(([r]) => r !== 'renderer-internal')
+        .sort((a, b) => b[1].submissions - a[1].submissions)
+        .map(([r, v]) => `${r}:${v.submissions}`)
+        .join(' '),
     });
     saveRow(row, forge.backend);
-    console.log(`${asset.name}: ${row.naive} -> ${row.compiled} submissions, diff ${row.diff}%, unattributed ${row.unattributed}`);
+    console.log(
+      `${asset.name}: ${row.naive} -> ${row.compiled} submissions, diff ${row.diff}%, unattributed ${row.unattributed}`,
+    );
     expect.soft(compiled.totals.unattributed, 'unattributed draws').toBe(0);
     expect.soft(diff, 'pixel diff ratio after compile').toBeLessThan(0.005);
     expect.soft(restored, 'submissions after decompile').toBe(naive.totals.sceneSubmissions);
-    expect.soft(compiled.totals.sceneSubmissions, 'compile never increases submissions').toBeLessThanOrEqual(naive.totals.sceneSubmissions);
+    expect
+      .soft(compiled.totals.sceneSubmissions, 'compile never increases submissions')
+      .toBeLessThanOrEqual(naive.totals.sceneSubmissions);
   });
 }
 

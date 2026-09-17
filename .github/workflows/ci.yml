@@ -64,6 +64,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm lint
       # `test/unit/ledger-hot-path.test.ts` carries the suite's one wall-clock measurement (µs per submission at 20k
       # vs 2k, under 3x). It is best-of-7 per size across 3 interleaved attempts, taking each size's own
       # minimum, so a stall has to land on the fast half of every attempt to matter. No CI retry or skip is wired

@@ -3,35 +3,19 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": [
-      "ES2022",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "skipLibCheck": true,
-    "types": [
-      "node"
-    ],
+    "types": ["node"],
     "paths": {
-      "threeforge": [
-        "./src/index.ts"
-      ],
-      "threeforge/overlay": [
-        "./src/overlay/index.ts"
-      ]
+      "threeforge": ["./src/index.ts"],
+      "threeforge/overlay": ["./src/overlay/index.ts"]
     },
     "noEmit": true
   },
-  "include": [
-    "src",
-    "test",
-    "cli-app",
-    "*.ts",
-    "bench-app"
-  ]
+  "include": ["src", "test", "cli-app", "*.ts", "bench-app"]
 }

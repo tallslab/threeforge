@@ -17,7 +17,11 @@ const MAX_DELAY_MS = 2 ** 31 - 1;
  * always cleared. `ms <= 0` sets no deadline, as in Playwright. A function is called here, so a synchronous throw
  * becomes the rejection.
  */
-export async function withTimeout<T>(what: string, ms: number, work: PromiseLike<T> | (() => PromiseLike<T>)): Promise<T> {
+export async function withTimeout<T>(
+  what: string,
+  ms: number,
+  work: PromiseLike<T> | (() => PromiseLike<T>),
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const pending = Promise.resolve(typeof work === 'function' ? work() : work);
@@ -120,7 +124,10 @@ export interface CliDeps {
  * unref'd timer that exits if something (a socket, a child process) still holds the event loop after `ms`. A process
  * that drains on its own exits first and the timer never fires.
  */
-export async function armExitWatchdog(ms = EXIT_WATCHDOG_MS, exit: () => void = () => process.exit()): Promise<ReturnType<typeof setTimeout>> {
+export async function armExitWatchdog(
+  ms = EXIT_WATCHDOG_MS,
+  exit: () => void = () => process.exit(),
+): Promise<ReturnType<typeof setTimeout>> {
   await flushed(process.stdout);
   await flushed(process.stderr);
   const timer = setTimeout(exit, ms);

@@ -5,7 +5,10 @@ import type { BenchBuilder } from './index.js';
 
 /** Terrain, 5 000 trees of three species and 2 000 grass patches seen from above the canopy edge. */
 export const forest: BenchBuilder = async ({ camera, params }) => {
-  const f = buildForestScene({ trees: Number(params.get('trees') ?? '5000'), grass: Number(params.get('grass') ?? '2000') });
+  const f = buildForestScene({
+    trees: Number(params.get('trees') ?? '5000'),
+    grass: Number(params.get('grass') ?? '2000'),
+  });
   f.scene.background = new Color(0x9fb8d8);
   camera.near = 0.5;
   camera.far = 2000;
