@@ -118,25 +118,25 @@ function isDesktopPlatform(platform: string | undefined): boolean {
  * A coarse device tier: budgets and later modules key off it.
  *
  * GPU-first decision order, so a touch-capable desktop (a Windows laptop with a discrete GPU and a
- * touchscreen) is not mistaken for a phone. All seven steps live here (Ruling R56 —
- * `tierInputFromNavigator` only resolves `mobile`/`touch`, it does not itself decide a tier), so
+ * touchscreen) is not mistaken for a phone. All seven steps live here (`tierInputFromNavigator` only
+ * resolves `mobile`/`touch`, it does not itself decide a tier), so
  * `detectTier` never disagrees with what the helper feeds it. A mobile GPU *family name* is the weakest
  * of the signals, so it decides only after the three that contradict it directly:
  *   1. `LOW_END` matches -> `phone-low`. These families ship in no laptop, so nothing outranks them.
- *   2. Any "Apple" name with `touch` -> `phone-mid`, or `phone-low` under `deviceMemory <= 2` (Ruling
- *      R57). Before step 3, because an M-series with a touchscreen is an iPad, not a Mac.
+ *   2. Any "Apple" name with `touch` -> `phone-mid`, or `phone-low` under `deviceMemory <= 2`.
+ *      Before step 3, because an M-series with a touchscreen is an iPad, not a Mac.
  *   3. `DESKTOP_GPU` matches -> `desktop`, whatever `touch`/`mobile` say.
  *   4. `DESKTOP_DRIVER` matches (an ANGLE Direct3D or Windows renderer string) -> `desktop`. A
  *      Windows-on-ARM laptop reports a mobile GPU family (Adreno, Qualcomm) and is not mobile.
  *   5. `MOBILE_GPU` matches -> `desktop` when `platform` names an OS no phone or tablet runs (Windows, macOS,
- *      Linux, ChromeOS), else `phone-mid`, or `phone-low` when `deviceMemory <= 2` (Ruling R57). Before the
+ *      Linux, ChromeOS), else `phone-mid`, or `phone-low` when `deviceMemory <= 2`. Before the
  *      `mobile` step, because Chrome reports an Android **tablet** as `userAgentData.mobile: false`: taking
  *      that as "desktop" gave a Mali tablet desktop budgets. What tells the tablet from the Windows-on-ARM
  *      laptop is the graphics API in the renderer string on WebGL2 (steps 3-4 have already had their say on
  *      it) and `platform` on WebGPU, where the adapter string names no API at all. With neither — no platform
  *      reported — the GPU family name decides, as it did before `platform` existed.
  *   6. `mobile`, when defined (set by `tierInputFromNavigator` from `userAgentData.mobile` or a user agent
- *      sniff): `true` -> `phone-mid` (or `phone-low` under `deviceMemory <= 2`, Ruling R57); `false` ->
+ *      sniff): `true` -> `phone-mid` (or `phone-low` under `deviceMemory <= 2`); `false` ->
  *      `desktop`. For a GPU string none of steps 1-5 recognised, the browser's own answer is the best signal.
  *   7. Otherwise the old touch-only rule: no `touch` -> `desktop`; `touch` and `deviceMemory <= 2` ->
  *      `phone-low`; `touch` otherwise -> `phone-mid`.

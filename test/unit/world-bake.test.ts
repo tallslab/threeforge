@@ -166,15 +166,15 @@ describe('World with bake', () => {
     ['instance setup and setupOutput on a MeshStandardNodeMaterial', () => Object.assign(new MeshStandardNodeMaterial(), { setup: callThrough(MeshStandardNodeMaterial, 'setup'), setupOutput: callThrough(MeshStandardNodeMaterial, 'setupOutput') })],
     ['an instance onBeforeRender on a MeshStandardMaterial', () => Object.assign(new MeshStandardMaterial(), { onBeforeRender: () => {} })],
     ['a MeshStandardMaterial subclass overriding a method', () => new (subclassOverriding(MeshStandardMaterial, 'onBeforeRender'))()],
-  ] as Array<[string, () => Material]>)("leaves the group to batching for %s: only three's own material types with no own functions bake (Ruling R162)", (_label, material) => {
-    // Before R162 these baked with every face kept (the opacity allowlist); the bake now cannot prove what such code reads.
+  ] as Array<[string, () => Material]>)("leaves the group to batching for %s: only three's own material types with no own functions bake", (_label, material) => {
+    // These used to bake with every face kept (the opacity allowlist); the bake cannot prove what such code reads.
     const report = bakeSealed(material());
     expect(report.after.baked).toBe(0);
     expect(report.bake).toEqual(expect.objectContaining({ groups: 0, contactFaces: 0, buriedFaces: 0, unbakeableEntries: 4 }));
   });
 
   it('does not pair outlines shortened by an edge used three times: the top of a longer box beside a doubled box stays covered', () => {
-    // The reviewer's probe: above y = 0 a unit box at x in [0,1], one at [1,2] and a copy of it turned about y; below,
+    // The probe: above y = 0 a unit box at x in [0,1], one at [1,2] and a copy of it turned about y; below,
     // a unit box at [0,1], a 2x1x1 box at [1,3] and a 1x1x2 box turned about y into the same place.
     const scene = new Scene();
     const material = new MeshStandardMaterial();
@@ -366,7 +366,7 @@ describe('World with bake', () => {
   });
 
   /**
-   * Final re-review B, L3: `vertexColors: false` is what three's own code reads (NodeMaterial.setupDiffuseColor, the only
+   * `vertexColors: false` is what three's own code reads (NodeMaterial.setupDiffuseColor, the only
    * reader of the attribute in r186), but a node graph, an instance function or a subclass can read `color` anyway, and
    * the bake drops a colour the flag ignores: the baked mesh drew the default white. Only a material whose attribute reads
    * are all three's own may lose the attribute; any other goes to batching, which keeps every attribute, and is counted.
@@ -398,7 +398,7 @@ describe('World with bake', () => {
   });
 
   /**
-   * Final rule-6 round (Ruling R162): the bake writes every module's geometry in scene space. three's own node-free
+   * CONTRIBUTING.md rule 6: the bake writes every module's geometry in scene space. three's own node-free
    * materials read it in ways that survive that (model-view and normal matrices, world normals, uvs), except a
    * `displacementMap`, which displaces along the local normal in local units (NodeMaterial.setupPosition). A node in any
    * slot, an instance function or a subclass may read `positionLocal`, `normalLocal` or `positionGeometry` inside a

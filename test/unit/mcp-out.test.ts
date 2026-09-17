@@ -53,7 +53,7 @@ describe('resolveOptimizeOut (optimize_asset.out confinement and overwrite rules
 });
 
 /**
- * Finding 1 (Critical, Task 8 fix round 1): the confinement check compared paths lexically only, so a symlink
+ * The confinement check compared paths lexically only, so a symlink
  * under an allowed root that resolves outside it was wrongly accepted. These use a real temp directory with a
  * real symlink (no `cwd`/`exists` fakes for the path itself — `resolveOptimizeOut`'s own `realpathSync` must do
  * the work), matching `src/cli/server.ts`'s existing defense against the same class of escape.
@@ -104,7 +104,7 @@ describe('resolveOptimizeOut symlink confinement (real filesystem)', () => {
   });
 
   /**
-   * Final review area 3, F1 (High): a dangling symlink at the out path. `realpathSync` throws on it just as on a path
+   * A dangling symlink at the out path. `realpathSync` throws on it just as on a path
    * that does not exist, so the old walk-up appended the link's own name lexically, the check passed, and `existsSync`
    * (which follows the link) said nothing was there. `writeFileSync` then followed the link and created its target
    * outside both roots. These use a real dangling link and the real default `exists`.
@@ -161,7 +161,7 @@ describe('resolveOptimizeOut symlink confinement (real filesystem)', () => {
   });
 
   /**
-   * Final re-review A, L3(b): a final-component link to an existing file outside both roots. `realpathSync` follows it
+   * A final-component link to an existing file outside both roots. `realpathSync` follows it
    * today; a change that stopped following the final link (while still refusing dangling ones) would let
    * `overwrite: true` write through it.
    */
@@ -179,7 +179,7 @@ describe('resolveOptimizeOut symlink confinement (real filesystem)', () => {
   });
 
   /**
-   * Final re-review A, L1: the walk up to the nearest existing ancestor sliced each missing segment off its parent's
+   * The walk up to the nearest existing ancestor sliced each missing segment off its parent's
    * path by length, which drops a character when the parent is the filesystem root (`/`, length 1, plus a separator
    * that is not there). `/Xprivate/var/…/x.glb` then canonicalised to `/private/var/…/x.glb` and passed as inside the
    * working directory. The working directory is canonical here (`realpathSync`), so the mangled path would match it.
@@ -202,7 +202,7 @@ describe('resolveOptimizeOut symlink confinement (real filesystem)', () => {
 });
 
 /**
- * Finding 2 (Important, Task 8 fix round 1): `isInside('/', target)` is true for any absolute target, so at
+ * `isInside('/', target)` is true for any absolute target, so at
  * `cwd === '/'` the "or the working directory" clause was vacuous — the rule collapsed to "must end in
  * .glb/.gltf". The filesystem root is now never treated as an allowed working directory (a specific directory
  * like the user's home is not exempted the same way: it is still bounded, unlike "/", so it is not special-cased).

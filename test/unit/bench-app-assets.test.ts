@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 /**
  * `scripts/bench-app-assets.mjs` fills the device bench page's public dir. Playwright runs it as the port-5180
  * `webServer` command, and a `webServer` that exits non-zero fails the *whole* Playwright run, not one spec — so on
- * a runner without the Kenney kits this script used to take the entire e2e suite down with it (Ruling R101).
+ * a runner without the Kenney kits this script used to take the entire e2e suite down with it.
  * `FORGE_BENCH_APP_OPTIONAL=1` is the opt-in that lets it degrade instead; `pnpm build:bench-app` (the Pages
  * deploy) and `pnpm bench:app` never set it, so a real build still fails loudly.
  */

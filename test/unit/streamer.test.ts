@@ -137,7 +137,7 @@ describe('Streamer construction cost', () => {
 
   /**
    * How many collection walks `run` performs. `place()` has to know which chunk an object already sits in; before the
-   * object index (d614d4e) it found that by iterating every chunk and running `findIndex` over that chunk's `placed`
+   * object index it found that by iterating every chunk and running `findIndex` over that chunk's `placed`
    * array, so a construction walked every chunk once per object and its cost grew with the world. Counting the two
    * primitives such a walk needs — iterating a Map, and `Array.findIndex` — measures exactly that, with no clock in it:
    * deterministic, instant, and unaffected by what else the machine is doing.

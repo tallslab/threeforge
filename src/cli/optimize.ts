@@ -105,10 +105,10 @@ interface InputFiles {
 }
 
 /**
- * Refuses to replace an existing file at `path` unless `overwrite` — the general rule (Ruling R21) behind both the
+ * Refuses to replace an existing file at `path` unless `overwrite` — the general rule behind both the
  * `out` file itself and every resource target `writeOutput` is about to write. A symlink counts as existing, dangling or
  * not (`lstat`): `existsSync` follows it, so a dangling link read as free and the write then created the link's target
- * wherever it pointed (final review F1). Runs before any write, so it must be
+ * wherever it pointed. Runs before any write, so it must be
  * called for every target (`out`, then each resource) before any of them is touched: a clash discovered on the
  * third resource must not have let the first two through already. `overwrite` defaults to `true` (`OptimizeInput`'s
  * own default) so the CLI keeps replacing; only an explicit `false` (MCP's `optimize_asset.overwrite`) enforces it.
@@ -127,7 +127,7 @@ function assertNotClobbering(path: string, overwrite: boolean): void {
  * device and inode), and only then writes the same JSON and resources itself, the way `_writeGLTF` does. Its skip of
  * `http:` resource URIs never applies: `assertConfinedUri` refuses any scheme first.
  *
- * `overwrite` (Ruling R21) is checked last, after the input-clash checks above and before any write, for `out`
+ * `overwrite` is checked last, after the input-clash checks above and before any write, for `out`
  * itself and every resource target: an unrelated pre-existing file whose name happens to match a resource this run
  * would write (resource names derive from the out basename, e.g. a single buffer becomes `<basename>.bin`) is
  * refused exactly like `out` already existing, not silently replaced. `resolveOptimizeOut` (`src/cli/mcp.ts`)
@@ -181,12 +181,13 @@ function writeExclusive(path: string, data: string | Uint8Array, flag: 'w' | 'wx
  * The input each of the two files is analyzed with. `input.parity` is the threshold between the two *files* and stays
  * there; each file's own compile check is a **different question** and keeps the `analyze` default.
  *
- * R156 was reopened by the independent review and then closed again, deliberately, against a measurement. Carrying a
+ * This is deliberate, and settled against a measurement. Carrying a
  * stricter `--parity` into the inner checks (`Math.min`) looks like a free tightening and is not: `--parity 0` asks
  * "is the optimized asset exactly the original?", and for the Buggy the answer is yes — `verify.parity` is 0 changed
  * pixels in every view on both backends — while compiling *either* file moves 1 px (webgl2) or 2 px (webgpu) of
  * 921,600, identically, because that is what threeforge's batching does to that asset. Bounding the inner checks made
- * the run answer "no" to a question whose answer is yes, on one of the two assets CONTRIBUTING.md rule 7 anchors. The drift
+ * the run answer "no" to a question whose answer is yes, on one of the two assets `safe` is held pixel-identical
+ * on (`test/e2e/cli.spec.ts`). The drift
  * is not hidden by keeping the default: it is reported in `verify.optimized.parity`, which an agent needing compile
  * exactness reads, and `analyze --parity 0` asks that question directly.
  *
@@ -212,7 +213,7 @@ async function verifyPair(original: string, optimized: string, input: OptimizeIn
     const diff = comparePixels(shot.png, b.shots[i]!.png);
     return { view: shot.view, diffPct: Number(diff.diffPct.toFixed(3)), changedPixels: diff.changedPixels };
   });
-  // `--parity 0` is judged on the raw counts, not the rounded percentage (Ruling R108): see `parityOf`.
+  // `--parity 0` is judged on the raw counts, not the rounded percentage: see `parityOf`.
   const parity: Parity = parityOf(views, input.parity);
   if (!parity.pass) log(`pixel parity lost between the files: ${failingViews(views, input.parity).map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct}%)`).join(', ')}`);
   const verify: OptimizeVerify = { backend: input.backend, parity, original: a.doc, optimized: b.doc, delta: deltaOf(a.doc, b.doc, statSync(original).size, statSync(optimized).size) };
@@ -252,7 +253,7 @@ export function judgeOptimize(before: AssetStats, after: AssetStats, verify: Opt
     if (b.skinned < a.skinned) reasons.push(`the harness loaded ${b.skinned} of ${a.skinned} skinned meshes`);
     if (b.morph < a.morph) reasons.push(`the harness loaded ${b.morph} of ${a.morph} morph meshes`);
   }
-  // The raw count as well as the percent (Ruling R108): `diffPct` is rounded to two decimals here, so a compile that
+  // The raw count as well as the percent: `diffPct` is rounded to two decimals here, so a compile that
   // moved a few pixels of 921,600 would report "0.00%" and say nothing about what actually moved. The count is what
   // tells a reader whether this is threeforge's own sub-pixel batching drift or a real loss from the rewrite.
   if (verify.optimized.parity && !verify.optimized.parity.pass) {

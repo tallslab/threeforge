@@ -11,7 +11,7 @@ import { emptyFrame } from '../../src/ledger/snapshot.js';
 import { glbBytes } from './helpers/gltf-files.js';
 
 /**
- * Independent review C1. `analyze` serves the asset's directory to a headless browser and points the page at it, but
+ * `analyze` serves the asset's directory to a headless browser and points the page at it, but
  * three r186's `LoaderUtils.resolveURL` (`node_modules/three/src/loaders/LoaderUtils.js:44`) returns an absolute
  * `http(s)://` or protocol-relative `//host/` URI *unchanged*, so `GLTFLoader` fetches it directly instead of through
  * the confined static server. An untrusted `.gltf` therefore made Chromium issue requests from this machine's network

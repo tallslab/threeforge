@@ -165,7 +165,7 @@ describe('pixelDiffPct (the CLI parity tolerance)', () => {
    * `src/cli/analyze.ts` and `src/cli/optimize.ts` — so a view reported as 0 is not proof that no pixel moved. At
    * the CLI harness's 1280x720 canvas (921,600 pixels) the rounding absorbs anything below 0.0005 %, which is
    * 4.608 pixels, so an asserted `diffPct === 0` only means "at most 4 pixels moved by more than 24 on a channel".
-   * That is why each view also carries `changedPixels` (Ruling R104): the exact count, which this pins alongside
+   * That is why each view also carries `changedPixels`: the exact count, which this pins alongside
    * the rounding it exists to defeat. `--parity 0` plus `changedPixels === 0` is the pair that proves parity.
    */
   it('rounds to three decimals at the call sites, so 4 changed pixels of 921,600 still report 0', () => {

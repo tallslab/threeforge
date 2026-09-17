@@ -42,8 +42,7 @@ export interface DrawGroup {
 /**
  * Whether three's vertex range for this submission is empty, so `RenderObject.getDrawParameters()` returns null and the
  * backend draws nothing (`RenderObject.js:640-671`): `count = min(lastVertex, itemCount) - max(firstVertex, 0)`, and
- * `count < 0 || count === Infinity` draws nothing. Three reachable ways to get there, none of them modelled before
- * (independent review M4):
+ * `count < 0 || count === Infinity` draws nothing. Three reachable ways to get there:
  * - no index and no `position` attribute, so `itemCount` is `Infinity`, under the default `drawRange` of
  *   `{ start: 0, count: Infinity }` (`BufferGeometry.js:188`) — geometry driven from storage buffers whose author did
  *   not call `setDrawRange`. A finite `drawRange` on the same geometry does draw;

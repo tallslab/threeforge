@@ -1,5 +1,5 @@
 /**
- * The ledger's lighting section and shadow pass ids (Task 32), through the fake renderer's model of three r186:
+ * The ledger's lighting section and shadow pass ids, through the fake renderer's model of three r186:
  *
  * - Lights: the lights three projected for the main pass (`lightsNode.getLights()`, renderObject's argument 7, set by
  *   RenderList.finish before the first draw), else a walk of the main scene's world-visible lights.

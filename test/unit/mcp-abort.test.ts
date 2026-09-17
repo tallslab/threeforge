@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { serveMcp } from '../../src/cli/mcp.js';
 
 /**
- * Finding 3 (Important, Task 8 fix round 1): shutdown closed only the `Resources` `serveMcp` owns itself (the MCP
+ * Shutdown closed only the `Resources` `serveMcp` owns itself (the MCP
  * connection) — not a `Resources` an in-flight `analyze_asset`/`inspect_app`/`optimize_asset` call had opened
  * internally (`src/cli/analyze.ts`/`inspect.ts`/`optimize.ts`), so a call still running when the client
  * disconnected kept its browser and static server open and ran to completion instead of being cancelled promptly.

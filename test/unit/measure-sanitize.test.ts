@@ -29,7 +29,7 @@ describe('evaluateWithin sanitizes what the page returns', () => {
     expect(out.meshes).toBe(3);
   });
 
-  it('keeps a hint message the ledger capped at MAX_MESSAGE_LENGTH whole, actionable tail included (final review F6)', async () => {
+  it('keeps a hint message the ledger capped at MAX_MESSAGE_LENGTH whole, actionable tail included', async () => {
     const tail = ': use spot lights or freeze their maps';
     const message = 'x'.repeat(MAX_MESSAGE_LENGTH - tail.length) + tail;
     expect(Array.from(message)).toHaveLength(300);
@@ -89,7 +89,7 @@ describe('waitFor cleans an error surfaced from a rejected waitForFunction', () 
 });
 
 /**
- * Final review area 3, F3: `sanitizeDeep` cuts an object array at 256 entries with no marker (a string marker would
+ * `sanitizeDeep` cuts an object array at 256 entries with no marker (a string marker would
  * break a typed array), so a compile report with 300 skipped objects reached the document as 256 and the summary
  * printed "256 skipped". The cap stays (it bounds what a hostile page can put in a document); the true lengths are
  * measured in the page, before the cap, and reported as `skippedCount` and `groupCount`.

@@ -22,7 +22,7 @@ three things:
 Everything is measured on a fixed benchmark suite of eight scenes, on both backends, with a regression gate that
 fails the build on a 10 % regression, and on a corpus of public glTF assets (`docs/assets-report.md`,
 `docs/assets-report-webgpu.md`). The corpus report is regenerated deliberately, from a clean tree (`docs/release.md`,
-step 3); the current one was generated from 0.9.0 code at commit `a485e57`, run `fix-audit-0.9.0-corpus-20260916`, and
+step 3); the current one was generated from 0.9.0 code at commit `a485e57`, run `corpus-20260916`, and
 passes 104 of 104 models on each backend: 0 unattributed draws, decompile restoring the naive count, and under 0.5 %
 of the pixels of one view changed at a per-channel tolerance of 24. Its `diff` column is that percentage rounded to
 two decimals, so the 0 every row reads means under 0.005 %, not zero changed pixels. Pixel claims below state the
@@ -393,12 +393,12 @@ back-to-back runs (a range where the runs differ; bytes move by under 1 KB betwe
 | 10k | 0.30 | 17.1–17.3 | 1.7–2.0 | 1.84 | 11.4 |
 | 20k | 0.35 | 27.3–27.4 | 4.9–5.6 | 3.07 | 23.1 |
 
-Two later back-to-back runs of the same invocation on the same machine, at `e567797` (after the final fixes), measured
+Two later back-to-back runs of the same invocation on the same machine measured
 the nested scene at 15.5–25.7 KB per frame and the shadow scene at 19.1–29.5 KB; their flat rows read 0.22, 0.30–0.32
 and 0.40–0.41 µs per submission and 23.4–23.6, 17.1–17.3 and 27.1–27.5 KB per frame at 2k, 10k and 20k. Before the
 flags were rewritten in place, the flat scene allocated 0.10, 0.40 and 0.79 MB per frame at 2k, 10k and 20k. The
-`0.8.0` columns are the audit numbers recorded before the hot-path work, on the machine of the day: they show the
-scale of that change rather than a same-run comparison. (The 0.8.0 audit also quoted 3.8 µs and 8.7 MB at 10k from
+`0.8.0` columns are the numbers recorded on 0.8.0 before the hot-path work, on the machine of the day: they show the
+scale of that change rather than a same-run comparison. (Another 0.8.0 measurement quoted 3.8 µs and 8.7 MB at 10k from
 another run: two 0.8.0 baselines exist, and neither is a same-machine comparison. The script prints neither; its
 footer gives only the targets.)
 
@@ -1136,8 +1136,7 @@ is carried and compared by the weld):
    at a per-channel tolerance of 4.
 
 **Groups the bake leaves to batching**: `World` batches, rather than bakes, a group whose material the bake cannot
-prove draws the merged, scene-space geometry as it drew each module (`bakeProvesReads` in `src/compiler/batchStatics.ts`,
-Ruling R162): one that is not exactly one of three's own material classes, has a function assigned to the instance,
+prove draws the merged, scene-space geometry as it drew each module (`bakeProvesReads` in `src/compiler/batchStatics.ts`): one that is not exactly one of three's own material classes, has a function assigned to the instance,
 has a node in any slot, or has a `displacementMap`. A node graph can read `positionLocal`, `normalLocal` or
 `positionGeometry` inside a `Fn` closure nothing inspects before it builds, and three displaces along the local normal
 in local units, so all of these may change once the geometry is in scene space (a `normalLocal` colour node and a
@@ -1324,10 +1323,10 @@ swaps change data, not draw calls.
 - **Presets**: `safe` = dedup, palette, prune. `balanced` = safe + weld + resample + quantize + textures webp
   2048 px; being lossy, its Fox e2e states a measured tolerance of 0.05 %, about 3x the worst view measured.
   `aggressive` = balanced + simplify 0.5 + textures 1024 px. Two steps were measured out of `safe`, for opposite
-  reasons. `weld` merges only bitwise-identical vertices and changes no drawn value, but it left (Ruling R100)
+  reasons. `weld` merges only bitwise-identical vertices and changes no drawn value, but it left
   because welding the Fox's primitive moves up to 0.014 % of pixels on WebGPU; measured the same way it also moves
   pixels on PotOfCoals (0.004 %) and VirtualCity (0.011 %), which are indexed and carry normals, so the effect is
-  not tied to either property. `resample` left because it can make a file *bigger* (Ruling R105): at `tolerance: 0`
+  not tied to either property. `resample` left because it can make a file *bigger*: at `tolerance: 0`
   it is pixel-exact but keeps every keyframe that is not an exact duplicate, and swept over the 79 readable corpus
   assets against a re-serialized baseline the median asset is 0.000 % while Xbot grows 1.248 % and the Fox 0.100 %.
   It pays for itself in the lossy presets, where the 1e-4 default applies — Soldier −18.9 %, BrainStem −14.9 %,
@@ -1349,7 +1348,7 @@ swaps change data, not draw calls.
   0 — the claim is "nothing visibly moved", not bitwise equality of the framebuffer. The e2e asserts that raw
   `changedPixels` count per view rather than the percent, because `diffPct` is rounded to three decimals and at
   1280x720 that absorbs up to 4 changed pixels of 921,600; the percent-based assertion could not have caught a
-  handful of moved pixels, and did not. `--parity 0` is judged the same way (Ruling R108), so the shipped tool
+  handful of moved pixels, and did not. `--parity 0` is judged the same way, so the shipped tool
   means zero when it says zero, for the comparison `--parity` governs (see Report and Verdict). On the Buggy,
   `safe` takes 148 materials to one; the Fox has one material, so `palette` does nothing there. `--<step>` / `--no-<step>` override a preset; `--simplify`,
   `--textures`, `--compress meshopt` enable their step with the given value. `--instance`, `--join` and
@@ -1385,7 +1384,7 @@ swaps change data, not draw calls.
   original's compile parity is reported and never judged. So `--parity 0` guarantees zero changed pixels between the
   two files as loaded, not after compiling: a compile of the optimized file that moves up to 0.5 % of its pixels
   still passes, visible only in `verify.optimized.parity.views[].changedPixels`. That separation is deliberate and is
-  pinned by the Buggy e2e (R156): `--preset safe` is pixel-identical between its two files, every view exactly 0
+  pinned by the Buggy e2e: `--preset safe` is pixel-identical between its two files, every view exactly 0
   changed pixels on both backends, while compiling *either* file — the original as much as the optimized one — moves
   1 px on webgl2 and 2 px of 921,600 on webgpu, because that is what threeforge's batching does to that asset.
   Tightening the compile checks with `--parity 0` was tried and reverted: it made the run answer "no" to the question
@@ -1514,14 +1513,13 @@ gated.
 ## 14. Limits and roadmap
 
 Overdraw modules shipped in 0.4.0, per-frame JS (freezing, `markDirty`, `RenderScheduler`) in 0.5.0, lighting
-(`DayNight`, `ShadowBudget`, lightmap path) in 0.6.0 and skinning (`bakeAnimationTexture`, `AnimatedInstances`)
-in 0.7.0 (section 7); animated instances play one clip per instance without blending or root motion; soft-particle materials are documented, not built (`docs/vfx.md`); cascaded
-shadow maps (three's `CSMShadowNode`) are not wired yet; per-frame JS (`RenderScheduler`, static-subtree matrix
-freezing) is SP6; memory and load (`createLoader`, `ResourceTracker`, chunk `Streamer`) shipped in 0.8.0 (section 7):
-the Streamer keeps CPU copies and re-uploads, it does not fetch chunk data on demand (that needs incremental compile);
+(`DayNight`, `ShadowBudget`, lightmap path) in 0.6.0, skinning (`bakeAnimationTexture`, `AnimatedInstances`) in
+0.7.0 and memory and load (`createLoader`, `ResourceTracker`, chunk `Streamer`) in 0.8.0 (section 7);
 `threeforge optimize` shipped in 0.3.0 (section 10) and the device bench page with GitHub-native results is in
-section 11. Specs live in `docs/superpowers/specs`, plans in
-`docs/superpowers/plans`.
+section 11. What is not built: animated instances play one clip per instance without blending or root motion;
+soft-particle materials are documented, not built (`docs/vfx.md`); cascaded shadow maps (three's `CSMShadowNode`)
+are not wired yet; the Streamer keeps CPU copies and re-uploads, it does not fetch chunk data on demand (that needs
+incremental compile). Design notes live in `docs/design.md`.
 
 ### Known limitations of 0.9.0
 
@@ -1559,19 +1557,19 @@ Each is documented where the mechanism is, and none has a fix in this release.
 - **`optimize --parity 0` is zero only between the two files as loaded** (section 10, "Verdict"): each file's own
   compile check stays at 0.5 % whatever `--parity` is, and is reported in `verify.optimized.parity`. Run
   `analyze --parity 0` to ask about a compile directly.
-- **`palette` is the one `safe` step never swept across the corpus** (independent review L6). `weld` and `resample`
+- **`palette` is the one `safe` step never swept across the corpus**. `weld` and `resample`
   were each swept and moved out of `safe` on what the sweep showed; `palette` was not, and it is the step in `safe`
   that quantises — it writes material factors into 8-bit palette textures and adds a float UV attribute once five or
   more untextured materials differ (`src/cli/transform.ts`, `min: 5`). Its lossless proof is two assets: the Fox and
   the Buggy's 148 materials, at zero changed pixels on both backends (`test/e2e/cli.spec.ts`). If any preset step
   deserves the corpus sweep next, it is this one. `--no-palette` drops it from any preset.
-- **A shadow pass's `#k` suffix is positional** (independent review L7, section 3, "Passes"): `shadowPassIds` numbers
+- **A shadow pass's `#k` suffix is positional** (section 3, "Passes"): `shadowPassIds` numbers
   lights that share a name in scene order, so `shadow:DirectionalLight#1` and `#2` can swap between frames when the
   scene order changes. The counts stay right; the labels move. Name shadow-casting lights distinctly to pin them. The
   `#k` on a `nested:` or `scene:` id is positional in the same way and for the same reason — it is handed out in the
   order the frame enters those passes — so two render targets or two scenes sharing a name can swap ids when the order
   of the renders changes.
-- **Two lights sharing one `shadow.camera` object collapse into one pass** (independent review L7): the ledger keys
+- **Two lights sharing one `shadow.camera` object collapse into one pass**: the ledger keys
   shadow passes by camera identity (`Map<Camera, ShadowPass>`), which is what makes a nested pass attributable at all,
   so an app that assigns one light's `shadow.camera` onto another loses the second light's pass and its texels from
   the frame. three itself renders both maps.

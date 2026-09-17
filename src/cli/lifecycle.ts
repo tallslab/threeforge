@@ -46,7 +46,7 @@ export class Resources {
    * Register `close` for `what` (e.g. `'the browser'`) right after opening it. If the armed signal has already aborted
    * — the MCP client disconnected while this resource was still opening, after `armAbort` had closed everything
    * registered so far — nothing would ever close it: it is closed at once (bounded, errors ignored) and a
-   * `PageError` stops the caller before it uses it (final review F8).
+   * `PageError` stops the caller before it uses it.
    */
   add(what: string, close: () => unknown): void {
     if (this.signal?.aborted) {

@@ -68,8 +68,8 @@ describe('js section', () => {
   });
 
   /**
-   * M7 (independent review): the golden snapshot pins `js.renderMs: 12` and `js.ledgerMs: 0` with a clock that ticks
-   * only inside `render`, so it can never fail on the split — which is the accounting the audit's defect 22 is about.
+   * The golden snapshot pins `js.renderMs: 12` and `js.ledgerMs: 0` with a clock that ticks
+   * only inside `render`, so it can never fail on the split — which is the accounting this case is about.
    * The case above charges the ledger's filing time through `rescan()`, which happens on 2 of 61 frames; this one
    * charges it on **every** frame, so the ordinary filing path (the item walk, `buildFrame`, the hints) is covered too.
    *

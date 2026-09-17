@@ -115,7 +115,7 @@ describe('MaterialUses', () => {
   it('keeps the canonical the frame started with when register() merges a material without moving keysRevision', () => {
     // register() files a material against an existing canonical but never moves keysRevision — only invalidate() and
     // forget() do. So within a frame the answer stays the one the frame started with, exactly as the ledger's hash
-    // reads behave (Ruling R6). This is the one place an output could differ from the pre-memo ledger, so it is pinned.
+    // reads behave. This is the one place an output could differ from the pre-memo ledger, so it is pinned.
     const registry = new FakeRegistry();
     const canonical = material();
     const other = material();

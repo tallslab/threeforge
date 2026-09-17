@@ -3,7 +3,7 @@
 // and devices.json (the ingested device results). Needs the kits: FORGE_KITS_ONLY=1 pnpm assets:kits
 //
 // FORGE_BENCH_APP_OPTIONAL=1 turns a missing kit from an exit-1 into a warning, writing an empty kits-index.json
-// instead. Playwright's port-5180 `webServer` sets it (Ruling R101): a `webServer` command that exits non-zero
+// instead. Playwright's port-5180 `webServer` sets it: a `webServer` command that exits non-zero
 // fails the entire Playwright run rather than one spec, so without this a kit-less runner loses all 91 non-corpus
 // tests per project, not just `bench-app.spec.ts`. The degraded page still serves `village` and `rpg` — the only
 // two scenes `bench-app.spec.ts` runs, both fully procedural — while `crowd` (`kenney-mini-characters kit not

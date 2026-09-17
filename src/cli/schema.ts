@@ -21,7 +21,7 @@ const hint = obj({ category: { enum: ['drawCalls', 'overdraw', 'skinning', 'ligh
 const programHash: Schema = {
   type: 'string',
   description:
-    'Groups submissions sharing one material program. Stable within a single run only, not across runs or processes, for materials with instance code, a non-built-in prototype, or identity-keyed own data (since v0.8.0 / Task 23b).',
+    'Groups submissions sharing one material program. Stable within a single run only, not across runs or processes, for materials with instance code, a non-built-in prototype, or identity-keyed own data (since v0.8.0).',
 };
 /** Groups submissions sharing one program *and* the same uniform values (colour, map, ...). */
 const variantHash: Schema = {
@@ -72,7 +72,7 @@ export const SNAPSHOT_SCHEMA = {
 
 /**
  * The `schemaVersion` of the analyze, inspect and optimize documents. Their `$id` and title are built from it, so a
- * consumer caching schemas by `$id` never validates a v2 document against the v1 schema (final review F9).
+ * consumer caching schemas by `$id` never validates a v2 document against the v1 schema.
  */
 const DOCUMENT_SCHEMA_VERSION = 2;
 
@@ -88,8 +88,8 @@ const compileReport: Schema = {
     skippedCount: { type: 'integer', minimum: 0, description: 'How many objects compile() skipped; `skipped` lists at most 256 of them.' },
     groupCount: { type: 'integer', minimum: 0, description: 'How many groups compile() built; `groups` lists at most 256 of them.' },
   },
-  // These two joined v2's `required` list in `aafedf5`, after `fc36d45` had already minted v2 — the exact "required
-  // field added without a bump" pattern the bump exists to prevent (independent review L4). No bump is needed and
+  // These two joined v2's `required` list after v2 had already been minted — the exact "required field added
+  // without a bump" pattern the bump exists to prevent. No bump is needed and
   // none was made: document schema v2 first *ships* in 0.9.0, and 0.8.0 emitted v1, so no consumer ever saw a v2
   // document without them. Adding a required field to v2 after 0.9.0 is out would need a bump to v3.
   required: ['skippedCount', 'groupCount'],

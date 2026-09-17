@@ -48,7 +48,7 @@ describe('parseArgs', () => {
   });
 
   /**
-   * Ruling R149 (final review area 5, H1): `analyze` judged compile parity at a hard-coded 0.5 % and had no way to
+   * `analyze` judged compile parity at a hard-coded 0.5 % and had no way to
    * demand zero. `--parity` now works exactly as `optimize`'s: default 0.5, a number from 0 to 100, 0 judged on raw
    * changed-pixel counts (`parityOf`).
    */
@@ -80,7 +80,7 @@ describe('verdict', () => {
     bad.hints = [{ category: 'drawCalls', severity: 'error', code: 'unsupported-material', message: 'x', objects: [] }];
     expect(verdictOf(bad, bad, null, null).errors).toEqual(['unsupported-material']);
     expect(verdictOf(clean, clean, null, { diffPct: 2, threshold: 0.5, pass: false, views: [] }).reasons).toContain('pixel parity 2.00% > 0.5%');
-    // R114: at `--parity 0` a sub-rounding failure reads `pixel parity 0.00% > 0%`, which looks like a passing run.
+    // At `--parity 0` a sub-rounding failure reads `pixel parity 0.00% > 0%`, which looks like a passing run.
     // The counts are in the adjacent log line only, so the reason itself has to carry one.
     const subRounding = { diffPct: 0, threshold: 0, pass: false, views: [{ view: 'default', diffPct: 0, changedPixels: 3 }, { view: 'orbit-0', diffPct: 0, changedPixels: 1 }] };
     expect(verdictOf(clean, clean, null, subRounding).reasons).toContain('pixel parity 0.00% > 0% (3 changed pixels in the worst view)');
@@ -88,7 +88,7 @@ describe('verdict', () => {
   });
 
   /**
-   * Ruling R108: `--parity 0` has to mean zero in the shipped tool, not "rounds to zero". Both call sites round
+   * `--parity 0` has to mean zero in the shipped tool, not "rounds to zero". Both call sites round
    * each view's percentage to three decimals before judging it, and at the CLI harness's 1280x720 canvas that reads
    * 0.000 for anything up to 4 changed pixels of 921,600 — so a run that moved pixels reported `pass: true`, a
    * passing verdict and exit 0. That is the defect the e2e's own per-view assertion covered while the product did
@@ -176,7 +176,7 @@ describe('schema', () => {
     for (const s of [ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA]) expect(s.properties.schemaVersion).toEqual({ const: 2 });
   });
 
-  it('names each document schema by the schemaVersion it validates, so a cache keyed by $id cannot serve the v1 schema (final review F9)', () => {
+  it('names each document schema by the schemaVersion it validates, so a cache keyed by $id cannot serve the v1 schema', () => {
     for (const [command, s] of [['analyze', ANALYZE_SCHEMA], ['inspect', INSPECT_SCHEMA], ['optimize', OPTIMIZE_SCHEMA]] as const) {
       const version = (s.properties.schemaVersion as { const: number }).const;
       expect(s.$id, command).toBe(`https://threeforge.dev/schema/${command}-v${version}.json`);
@@ -211,7 +211,7 @@ describe('summarize', () => {
     return { schemaVersion: 2, tool: 'threeforge', version: '0.2.0', command: 'analyze', input, env, asset: null, before, after, compile, parity: null, hints: [], verdict: verdictOf(after, before, null, null), timings: { totalMs: 10 } };
   };
 
-  it('prints the true skipped count, not the length of the capped skipped list (final review F3)', () => {
+  it('prints the true skipped count, not the length of the capped skipped list', () => {
     const doc = bakeDoc({ groups: 0, inputTriangles: 0, triangles: 0, contactFaces: 0, keptCoincidentFaces: 0, duplicateFaces: 0, buriedFaces: 0, weldedVertices: 0, excludedEntries: 0, keptDuplicateFaces: 0, unbakeableEntries: 0 });
     const compile = doc.compile as unknown as { skipped: unknown[]; skippedCount: number };
     compile.skipped = Array.from({ length: 256 }, (_, i) => ({ name: `mesh-${i}`, rule: 'singleton' }));

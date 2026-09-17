@@ -17,7 +17,7 @@ import { verdictOf } from '../../src/cli/verdict.js';
 import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
 
 /**
- * `threeforge schema` embeds every `$ref` as `$defs` (Task 29): each of the four exported schemas must compile and
+ * `threeforge schema` embeds every `$ref` as `$defs`: each of the four exported schemas must compile and
  * validate on its own, in a fresh ajv instance, with no `addSchema` of any other — exactly what an agent gets from
  * `threeforge schema <name>` alone (or from a bundled copy of just that one file).
  */
@@ -188,7 +188,7 @@ describe('schema-validate: every exported schema compiles standalone in ajv and 
     expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
   });
 
-  it('ANALYZE_SCHEMA requires the true skippedCount and groupCount beside a compile report (final review F3)', () => {
+  it('ANALYZE_SCHEMA requires the true skippedCount and groupCount beside a compile report', () => {
     const validate = compile(ANALYZE_SCHEMA);
     const doc = analyzeFixture() as unknown as { compile: Record<string, unknown> | null };
     doc.compile = { skipped: [{ name: 'a', rule: 'singleton' }], groups: [], skippedCount: 1, groupCount: 0 };
@@ -197,7 +197,7 @@ describe('schema-validate: every exported schema compiles standalone in ajv and 
     expect(validate(doc)).toBe(false);
   });
 
-  it('ANALYZE_SCHEMA requires the parity threshold in the input (R149: analyze --parity)', () => {
+  it('ANALYZE_SCHEMA requires the parity threshold in the input', () => {
     const validate = compile(ANALYZE_SCHEMA);
     const doc = analyzeFixture() as unknown as { input: Record<string, unknown> };
     expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
@@ -214,7 +214,7 @@ describe('schema-validate: every exported schema compiles standalone in ajv and 
 });
 
 /**
- * Final review area 3, F2: `optimize_asset` always sets `input.overwrite`, the document echoes its input, and the
+ * `optimize_asset` always sets `input.overwrite`, the document echoes its input, and the
  * schema's `optimizeInput` (additionalProperties: false) had no `overwrite`, so every MCP result failed the published
  * schema. The fixtures above never set it. These validate real `optimizeAsset` documents (no browser: verify off).
  */

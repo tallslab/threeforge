@@ -18,7 +18,7 @@ export interface Step {
 }
 
 /**
- * `weld` is deliberately not in `safe` (Ruling R100). It merges only bitwise-identical vertices, so it changes no
+ * `weld` is deliberately not in `safe`. It merges only bitwise-identical vertices, so it changes no
  * drawn value — the drawn triangle stream stays order- and value-identical — yet welding the Fox reproducibly moves
  * up to 0.014 % of its pixels on WebGPU, where the same run reports 0 on WebGL2. Measured the same way, weld also
  * moves pixels on PotOfCoals (0.004 %) and VirtualCity (0.011 %), both fully indexed and carrying normals, so the
@@ -29,7 +29,7 @@ export interface Step {
  * Measured cost of this move over 66 readable corpus assets: weld merges vertices on 11 and shrinks the file by
  * more than 0.5 % on 9, median 0.00 %.
  *
- * `resample` is not in `safe` either, for the opposite reason (Ruling R105). At `tolerance: 0` it is pixel-exact,
+ * `resample` is not in `safe` either, for the opposite reason. At `tolerance: 0` it is pixel-exact,
  * but it then keeps every keyframe that is not an exact duplicate, which can make a file *bigger*: swept over the
  * 79 readable corpus assets against a re-serialized baseline, the median asset is 0.000 % but Xbot grows 1.248 %
  * and the Fox 0.100 %. The rule applied was "keep it only if the median is <= 0 and nothing grows by more than
@@ -53,8 +53,8 @@ const PRESET_STEPS: Record<Preset, StepName[]> = {
  * `resample` drops a keyframe when it sits within `tolerance` of the value interpolated from its neighbours.
  * glTF-Transform's default is **1e-4, not 0** (`RESAMPLE_DEFAULTS`, `@gltf-transform/functions`), so the default is
  * lossy however its docstring reads: on the Fox it shifted the posed silhouette by 1-5 pixels of 921,600 on *both*
- * backends (Ruling R104). Setting the tolerance to 0 fixed that but removed the step's reason to be in `safe` at
- * all, so R105 measured it and moved it out (see `PRESET_STEPS`). The map stays because `--resample` may still be
+ * backends. Setting the tolerance to 0 fixed that but removed the step's reason to be in `safe` at all, so it was
+ * measured and moved out (see `PRESET_STEPS`). The map stays because `--resample` may still be
  * asked for explicitly: inside `safe` it then runs lossless, and in the lossy presets it keeps the default.
  */
 const PRESET_RESAMPLE_TOLERANCE: Record<Preset, number> = { safe: 0, balanced: 1e-4, aggressive: 1e-4 };

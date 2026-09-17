@@ -139,7 +139,7 @@ describe('ingest', () => {
    *
    * The guard used to be `performance.now() < 50 ms` around one 4,000-character body. Its failure mode was another
    * vitest worker holding the CPU, and, worse, it would pass on a fast machine at the one size it tried even if the
-   * scan had gone quadratic again (Ruling R97). Counted instead, with no clock in it: whatever `extractJson` does, it
+   * scan had gone quadratic again. Counted instead, with no clock in it: whatever `extractJson` does, it
    * must be a fixed number of native linear passes over the body — one `indexOf` per fence — and no regular
    * expression at all, and that number must not grow with the body. A reintroduced regex registers as regex work
    * whatever its shape, and a hand-rolled rescan registers as extra passes.
@@ -231,7 +231,7 @@ describe('renderDevices', () => {
 });
 
 /**
- * Final review area 3, F7: the schema's safe charset admits `[ ] ( ) ! < >`, so a submitted GPU or platform string
+ * The schema's safe charset admits `[ ] ( ) ! < >`, so a submitted GPU or platform string
  * could render as a live link, image or HTML element in docs/devices.md. Free-form env strings now sit in code spans
  * (backticks are banned by the schema, so a value cannot close its span), where GitHub renders nothing.
  */

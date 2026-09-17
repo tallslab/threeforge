@@ -4,6 +4,15 @@
   "description": "Frame-budget compiler and diagnostics for three.js games: batches naive scenes, measures every frame cost, explains what to fix. CLI and MCP for AI agents.",
   "type": "module",
   "license": "MIT",
+  "author": "tallslab",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tallslab/threeforge.git"
+  },
+  "homepage": "https://github.com/tallslab/threeforge#readme",
+  "bugs": {
+    "url": "https://github.com/tallslab/threeforge/issues"
+  },
   "sideEffects": false,
   "files": [
     "dist",

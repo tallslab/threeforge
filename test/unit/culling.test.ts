@@ -54,7 +54,7 @@ function field(count: number, area = 2000) {
  * work a cull that stops using its tree multiplies: three's own scan reads one sphere for every instance in the batch,
  * the BVH reads one per candidate leaf its frustum query reaches. Counting it replaces a `performance.now()` guard
  * ("at least twice as fast as the linear scan") whose failure mode was another vitest worker holding the CPU, and
- * which on a fast enough machine would have passed a cull that had quietly become linear (Ruling R97).
+ * which on a fast enough machine would have passed a cull that had quietly become linear.
  */
 function sphereTests(batch: BatchedMesh, run: () => void): number {
   let tests = 0;
@@ -166,7 +166,6 @@ describe('attachBvhCulling', () => {
     attachBvhCulling(f.batch, WebGLCoordinateSystem);
     const bvhTests = sphereTests(f.batch, f.cull);
     const bvh = f.drawn();
-    console.log(`culling 20k instances: linear ${linearTests} sphere tests, bvh ${bvhTests}`);
     // three's scan reads one sphere per instance, always. That is the cost the tree exists to remove, and the number
     // a cull that stopped using its tree -- a frustum query that visits every leaf, an `attachBvhCulling` that fell
     // back to the prototype hook, a tree built so wide that nothing prunes -- would go straight back to.

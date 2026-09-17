@@ -204,11 +204,11 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
   });
 
   /**
-   * M4 (independent review): three r186 `RenderObject.getDrawParameters()` returns null — and the backend draws
+   * three r186 `RenderObject.getDrawParameters()` returns null — and the backend draws
    * nothing — whenever `count < 0 || count === Infinity` (RenderObject.js:671), not only when the instance count is
    * zero. `count = min(lastVertex, itemCount) - max(firstVertex, 0)` with `itemCount = Infinity` when the geometry has
    * neither an index nor a `position` attribute (:653-663). Predicting 1 draw for either drives `totals.unattributed`
-   * negative, which is the audited failure mode from an input the first fix did not model. The FakeRenderer already
+   * negative, the same failure mode from an input the first fix did not model. The FakeRenderer already
    * follows three's rule (`test/unit/helpers/fakeRendererRules.ts`), so these two scenes are a parity check.
    */
   it('expects no GPU draw where three draws nothing: no index and no position under an infinite drawRange, a drawRange disjoint from a group, and a drawRange past the end', () => {
@@ -257,7 +257,7 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     expect(drawn('panel')).toEqual([1, 0]);
     expect(drawn('gone')).toEqual([0]);
     expect(frame.items!.filter((i) => i.name === 'ghost').map((i) => i.instances), 'the submission still covers its mesh').toEqual([1]);
-    // The parity assertion the review points at: predicting a draw three never makes takes this below zero.
+    // The parity assertion: predicting a draw three never makes takes this below zero.
     expect(frame.totals.unattributed).toBe(0);
     expect(frame.totals.gpuDraws).toBe(frame.totals.reportedDrawCalls);
   });
@@ -368,7 +368,7 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     }
     renderer.render(scene, camera);
     const frame = ledger.frame({ items: true });
-    // renderer-internal items are left out: three draws the output quad on this canvas render too, the fake does not (Task 41).
+    // renderer-internal items are left out: three draws the output quad on this canvas render too, the fake does not.
     const seen = Object.fromEntries(frame.items!.filter((i) => i.reason !== 'renderer-internal').map((i) => [`${i.pass} ${i.name}`, [i.expectedGpuDraws, i.flags.includes('double-sided-transparent')]]));
     expect(seen).toEqual({ 'override opaque': [1, false], 'override transparent': [2, true], 'override no-override': [1, false] });
     expect(frame.totals).toMatchObject({ sceneSubmissions: 3, unattributed: 0 });
@@ -639,7 +639,7 @@ describe('DrawCallLedger frames and passes', () => {
   });
 
   /**
-   * M5 (independent review): `shadowPasses.ts` disambiguates two lights of one name against a frame-wide `taken` set;
+   * `shadowPasses.ts` disambiguates two lights of one name against a frame-wide `taken` set;
    * the `nested:` and `scene:` ids did not, so two reflectors whose targets are both named `reflection` (or two portal
    * Scenes both named `portal`) collapsed into one row of `frame().passes` and one `pass` string on every record. The
    * totals stayed right; the attribution the ledger exists to give did not.
@@ -1269,7 +1269,7 @@ describe('DrawCallLedger hints count objects, not submissions', () => {
 });
 
 /**
- * `batch-local-space` (Ruling R164): three r186 gives a batched or instanced draw `positionLocal` multiplied by its
+ * `batch-local-space`: three r186 gives a batched or instanced draw `positionLocal` multiplied by its
  * instance matrix (Batch.js:148, Instance.js:206-207), and a baked mesh's positions are written in scene space, so a node
  * reading `positionLocal` and `alphaHash` (which hashes it, NodeMaterial.js:893) may draw differently than the individual
  * meshes. The ledger names World's compiled draws whose material has a node in a slot (`hasNodeSlot`, the test
@@ -1364,10 +1364,10 @@ describe('DrawCallLedger batch-local-space hint', () => {
   });
 
   /**
-   * M1 (independent review): a subclass can read `positionLocal` from an overridden `setup*` without ever assigning a
+   * A subclass can read `positionLocal` from an overridden `setup*` without ever assigning a
    * `*Node` property, so `hasNodeSlot` alone misses it — the same class `bakeProvesReads` (`batchStatics.ts:381`)
    * already refuses and `spriteRule` already names `sprite-custom-material` before `sprite-node-material`. The
-   * subclass here is what the review describes: `setupPosition` displaces along `positionLocal`, which batching
+   * subclass here is the shape that matters: `setupPosition` displaces along `positionLocal`, which batching
    * replaces with the scene-space position.
    */
   it('fires for a batch whose material is a subclass or carries an own function, even with no node slot set', () => {

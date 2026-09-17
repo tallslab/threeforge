@@ -765,7 +765,7 @@ describe('World in a transformed scene', () => {
   });
 
   it('under a mirrored scene, instances children not mirrored relative to it, with a positive instance determinant', () => {
-    // Regression guard (Task 19 re-review): a repeated, non-mirrored-relative-to-root child must still compile into
+    // Regression guard: a repeated, non-mirrored-relative-to-root child must still compile into
     // an InstancedMesh under a mirrored scene, and its instance matrix (three flips the mesh's front face by the
     // group's own world determinant, never per instance) must keep a positive determinant, like a batched one.
     const scene = new Scene();

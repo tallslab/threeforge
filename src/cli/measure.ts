@@ -32,8 +32,8 @@ export function evaluateWithin<R>(page: PlaywrightPage, what: string, timeout: n
 
 /**
  * `window.__threeforge.compile()`, with the true lengths of `skipped` and `groups` counted in the page, before
- * `evaluateWithin` caps every array at 256 entries (final review F3: a 300-object report reached the document as 256
- * and the summary printed "256 skipped"). The lists stay capped, bounding what a page can put in a document; the
+ * `evaluateWithin` caps every array at 256 entries (without them a 300-object report reaches the document as 256
+ * and the summary prints "256 skipped"). The lists stay capped, bounding what a page can put in a document; the
  * counts say how many there really were.
  */
 export function compileViaHook(page: PlaywrightPage, timeout: number): Promise<CliCompileReport> {
@@ -70,7 +70,7 @@ const unsupported = (version: string): string => `${UNSUPPORTED_PREFIX}${version
  * The same message for a *frame* whose own `schemaVersion` is not the one this CLI reads. The hook's advertised
  * version is checked separately (`assertHookVersion`, and the in-page guard in `measureViaHook`), but a target that
  * advertises 3 and hands back a differently-shaped frame would otherwise produce a document that violates the CLI's
- * own published `SNAPSHOT_SCHEMA` (`schema.ts`, `{ const: 3 }`) with nothing to notice (independent review L3).
+ * own published `SNAPSHOT_SCHEMA` (`schema.ts`, `{ const: 3 }`) with nothing to notice.
  */
 const unsupportedFrame = (version: string): string => `window.__threeforge returned a frame with unsupported schemaVersion ${version}${UNSUPPORTED_SUFFIX}`;
 
@@ -78,7 +78,7 @@ const unsupportedFrame = (version: string): string => `window.__threeforge retur
  * `page.screenshot`, bounded by `timeout` ms twice over: the bound is handed to Playwright so the operation itself is
  * cancelled rather than merely abandoned, and `withTimeout` covers a call that never settles at all. Without it the
  * shot fell back to Playwright's 30 s page default, which `--timeout` could not shorten — about 130 un-governed waits
- * at `--views 64` (independent review M2). A Playwright rejection carries driver text, so it is cleaned and re-thrown
+ * at `--views 64`. A Playwright rejection carries driver text, so it is cleaned and re-thrown
  * as a `PageError` exactly as `evaluateWithin` does.
  */
 export function screenshotWithin(page: PlaywrightPage, what: string, timeout: number): Promise<Buffer> {

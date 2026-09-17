@@ -2,7 +2,7 @@ import { expect, test, type ForgePage } from './fixtures.js';
 import { differingPixels, pixelDiff, settle } from './pixels.js';
 
 /**
- * The measurements Ruling R164/R167 rests on, as a test instead of a comment (independent review M3).
+ * The measurements the `batch-local-space` hint and its docs rest on, pinned as a test instead of a comment.
  *
  * `docs/threeforge.md`, `src/compiler/batchStatics.ts` and `src/ledger/DrawCallLedger.ts` say that batching changes
  * the picture on **default settings** (bake off, `dynamics: 'separate'`) for three kinds of material, and cite this

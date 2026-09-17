@@ -63,7 +63,7 @@ describe('tinted-group material clones keep the source material code', () => {
   } as const;
   /**
    * The paths a source with an instance function reaches: under `bake: true` such a group is batched, since the bake cannot
-   * prove what the function reads (Ruling R162, `bakeProvesReads`), so the clone these cases check is the batch's.
+   * prove what the function reads (`bakeProvesReads`), so the clone these cases check is the batch's.
    */
   const functionPaths = ['batched', 'instanced'] as const;
 

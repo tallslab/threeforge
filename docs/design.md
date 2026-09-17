@@ -1,6 +1,8 @@
-# threeforge design (Phases 1 to 6)
+# threeforge design
 
-> v2 (frame-budget compiler and benchmark suite) is specified in `docs/superpowers/specs/2026-09-13-frame-budget-design.md`; this document records phases 1–6 (the draw-call category).
+Phases 1 to 6 built the draw-call category and are recorded first. The frame-budget work that followed (0.2.0 to
+0.8.0) organised the library by cost category; the decisions each of those sub-projects made are recorded under
+"Sub-project design notes" at the end. `docs/threeforge.md` is the reference for every option named here.
 
 ## The problem
 
@@ -292,3 +294,176 @@ confirming the backend cost model the ledger uses.
 - Instanced meshes are re-compacted for every camera that renders them (a shadow pass costs a second upload).
 - `culling: 'linear'` only affects batches; instanced meshes always use BVH compaction (it is their only culling).
 - Phase 5 puts Wanderer on it: real assets will decide what the ledger flags next.
+
+## Sub-project design notes
+
+Each note records what a sub-project chose, what it rejected and the numbers that resulted. The version is the
+release that shipped it; where a later release changed a decision, the note says so.
+
+### Frame budget and ledger v2 (0.2.0)
+
+A tool for every genre has to own the whole frame: a forest cut from 400 calls to 30 still drops frames on a phone
+because of fill rate, and a VFX-heavy fight is killed by overdraw. The library is therefore organised by cost
+category and the ledger measures all six in one snapshot: draw calls, overdraw, skinning, lighting, per-frame JS
+and memory. The ledger is the product; every module built after 0.2.0 had to move a benchmark scene's numbers,
+which is why the benchmark shipped before any of them.
+
+Device tiers replace reference phones: `desktop`, `phone-mid` (iPhone 12/13, Pixel 6 class) and `phone-low`
+(Adreno 610, Mali-G52 class), detected at runtime from the GPU string, device memory, cores, touch and platform,
+and overridable with `tier`. Every budget keys off the tier (`src/ledger/budgets.ts`): scene submissions
+400/150/80, triangles 5 M/1.5 M/500 k, transparent overdraw 3/2/1.5 fragments per pixel, skinned vertices
+400 k/150 k/60 k, shadow texels 4 M/1 M/262 k, texture bytes 512/192/96 MB, frame time 16.6/16.6/33 ms.
+
+Overdraw is measured, not estimated: the scene renders twice into a 1/8-resolution half-float target under a
+counting override material, once with only opaque and once with only transparent objects, and the red channel
+averages to fragments per pixel; it runs on demand, never every frame. Memory is estimated (`estimated: true`)
+because three r186 initialises `info.memory.texturesSize` and friends but never writes them; the counts are real
+and drive the leak check. The v1 totals stay under `drawCalls` so existing assertions keep working.
+
+Eight benchmark scenes (`forest`, `village`, `crowd`, `bossfight`, `lake`, `daynight`, `zen`, `rpg`) each build a
+naive assembly and an optimized one, and each stresses one category. `pnpm bench` runs 10 warm-up and 60
+measured frames per variant on both backends and fails when any deterministic metric worsens by 10 % against
+`bench/baselines/`; timing metrics are recorded everywhere but gated only on a native GPU, because GitHub runners
+render on SwiftShader. Rejected: a hosted results service, per-genre presets, an editor.
+
+### Agent CLI and app hook (0.2.0)
+
+Most people building three.js games now do it with an agent, so the surface is a terminal. `npx threeforge
+analyze <file>` renders an asset headlessly in a harness page shipped inside the package, measures, compiles with
+`policy: 'auto'`, measures again and compares screenshots. `inspect <url>` drives the agent's own dev server
+through `exposeToAgents()`, which publishes `window.__threeforge` and never renders on its own unless the app
+handed it renderer, scene and camera; it reports no parity because the CLI does not know the app's camera.
+`explain <code>` has a remedy for every hint code (a unit test enforces coverage) and `mcp` wraps the same
+functions as a stdio server. Exit codes: 0 pass, 1 verdict failed, 2 usage, 3 environment (the message carries
+the install command), 4 the page threw or timed out. Playwright and the MCP SDK are optional peers imported
+lazily, so game code importing the library never pays for them.
+
+The bake (`World({ bake })`) shipped with this release. It merges each finished static group into one world-space
+mesh, removing contact seams (coplanar islands with identical boundaries and opposite winding), duplicate faces
+and, opt-in through `removeBuried`, faces whose sampled front hemisphere is blocked within `distance` (default
+0.1, so room interiors survive). The rule it set for everything after it: a wrong deletion is visible and a
+missed one is invisible, so every removal is counted in the report and proven by pixel parity on both backends.
+
+### `threeforge optimize` (0.3.0)
+
+The build-time glTF pipeline is glTF-Transform 4.5 in a fixed order (dedup, instance, palette, flatten, join,
+weld, simplify, resample, prune, textures, then quantize or meshopt); the value added is the defaults, the
+per-step report, the `requires` list of load-time needs and the verification. `sharp` and `draco3dgltf` are
+optional peers; a preset's texture step without `sharp` is skipped with a note, so a preset runs everywhere.
+
+The bake's rule applies: the default preset changes nothing an eye can see. `safe` is `dedup`, `palette`,
+`prune`, held to 0 changed pixels on the Fox and the Buggy on both backends. `weld` was measured out of it: it
+merges only bitwise-identical vertices yet moves up to 0.014 % of the Fox's pixels on WebGPU for a reason not
+established. `resample` was measured out for the opposite reason: at tolerance 0 it is pixel-exact but keeps
+every non-duplicate keyframe and grew Xbot by 1.2 %. Both ride with the lossy steps in `balanced` (adds quantize
+and WebP at 2048 px) and `aggressive` (adds simplify at ratio 0.5 and 1024 px textures); `--weld` or
+`--resample` adds either back to any preset. `--instance`, `--join` (which implies flatten) and `--compress
+meshopt` are never in a preset: the first two change the node graph game code addresses by name, the third needs
+a decoder in the loader. Output is one `.glb` and never uses Draco.
+
+Verification is on by default: the harness renders the original and the output from the default framing plus
+`--views` orbit views, the worst per-view difference is the parity (threshold 0.5 %), both files are compiled and
+measured, and a lost clip, skin or morph target fails the verdict. Byte, material and vertex deltas are reported,
+not judged: a palette texture can grow a file that draws in one call.
+
+### Overdraw modules (0.4.0)
+
+Sprites batch by material. `World.compile()` groups `Sprite` objects sharing registry keys and replaces each group
+of at least `spriteThreshold` (default 4) with one instanced quad under a `SpriteNodeMaterial` built from the
+`SpriteMaterial`. Sprites are dynamic by nature, so the originals stay and drive the batch: a `FORGE_HOOK` copies
+every sprite's world position and scale each frame (an invisible sprite gets scale 0), sorts back to front when
+the material blends, and sets `instanceCount`. Sprites with a non-default `center`, `renderOrder`, layers or
+their own `onBeforeRender` are skipped with a named rule. Per-sprite colour inside one batch was rejected:
+materials differing only by colour stay separate batches. Lake: 3,548 submissions become 7.
+
+`ParticleBudget` caps live particles per tier (60,000 / 15,000 / 5,000): every `Points` object and every sprite
+batch is a system, and when their sum exceeds the budget each system's `drawRange` or instance cap is scaled by
+the same ratio; `pointSizeScale` (0.75 on `phone-low`) scales `PointsMaterial.size` in place and `release()`
+restores it. `ResolutionScaler` trades pixels for frame time: every `window` (20) frames the median frame time is
+compared with the tier's `frameMs`; above 1.05 times it the scale drops one step (0.05), below 0.7 times it
+rises, clamped to [0.5, 1]. Neither runs in the bench, which keeps a fixed 800 by 600 buffer on the `desktop`
+tier where the budgets do not bind. Soft particles and GPU simulation are documented in `docs/vfx.md`, not built.
+
+### Device bench page (0.4.0)
+
+`pnpm bench` runs on SwiftShader or one desktop GPU; the numbers that matter come from phones. `bench-app/` is a
+static page that runs the same eight scenes in both variants on the device's best backend and submits the result
+as a GitHub issue. One scene registry: the page imports `BENCH_SCENES` unchanged, and `test/app/benchMetrics.ts`
+(`WARM`, `MEASURED`, `metricsOf`, `METRIC_KEYS`) is shared with the CI runner so the two cannot drift. `env`
+adds a two-second fill-rate probe (transparent fullscreen layers doubled until the frame drops below vsync),
+informational only.
+
+Results are GitHub-native, with no server, no accounts and no secret beyond `GITHUB_TOKEN`: the page opens a
+prefilled issue when the encoded URL stays under 7,000 characters and otherwise shows the JSON to copy. The
+ingest workflow validates the body with a hand-written validator (exact key sets, known scene ids,
+`unattributed === 0`), writes `bench/devices/<id>.json`, regenerates `docs/devices.md` and closes the issue.
+Issue text is data: nothing from it is executed or interpolated into a shell. Device numbers are never gated,
+and the page is not in the npm package.
+
+### Skinning (0.7.0)
+
+Three skins every `SkinnedMesh` from its own bone texture each frame, so `compile()` cannot touch a crowd.
+`bakeAnimationTexture(prototype, clips, { fps: 30 })` plays each clip through a mixer with the prototype at the
+origin and copies `skeleton.boneMatrices` (the exact data three uploads) into one row of a float `DataTexture`
+per frame. `AnimatedInstances` then draws any number of characters as one `InstancedMesh` per part; the
+material's `positionNode` picks the row from a per-instance `(start, frames, offset, speed)` attribute and the
+`time` uniform and applies three's own skinning formula with the part's bind matrices. Because
+`NodeMaterial.setupPosition` applies the instance matrix before a custom `positionNode` is assigned, the node
+multiplies the instance matrix itself and writes the skinned normal to `normalLocal` in place.
+
+Nearest-frame playback is not pixel-identical to mixer interpolation, so the crowd e2e checks motion and a
+similarity under 3 %, not parity. Crowd: 401 submissions become 17, skinned vertices 271 k become 0. Rejected:
+automatic conversion inside `compile()` (crowds are built explicitly; mixers remain the way to drive individually
+controlled characters), cross-fading between clips, and morph targets in the instanced path.
+
+### Lighting and shadows (0.6.0)
+
+A shadow map renders only when `needsUpdate || autoUpdate` (`ShadowNode.updateBefore`), and `updateShadow`
+resizes its target from `mapSize` on every update, so a budget can change map sizes at runtime without disposing
+anything. `DayNight` adds one directional sun, a gradient sky dome (an inverted sphere with vertex colours,
+static, `fog: false`, `depthWrite: false`), a hemisphere light, fog and background from the hour of day; the map
+has `autoUpdate = false` and re-renders only when the sun moved `everyDegrees` (default 0.5) since the last
+shadow render. A Preetham `SkyMesh` was rejected as a full-screen shader every frame. Day/night: shadow passes
+per frame 1 become 0.5, shadow texels 4.19 M become 2.10 M.
+
+`ShadowBudget.apply(scene)` turns shadows off on tiers listed in `off`, drops point-light shadows unless
+`pointShadows` (default: only desktop keeps them, six faces each), then halves the largest map while the texel
+sum exceeds the tier's budget, never below `minMapSize` (256); `freeze(light)` freezes a static light's map. No
+new hint: the ledger cannot tell a static light from a moving one. Lightmaps needed no registry change (it
+already keys `lightMap` and `lightMapIntensity`, and the attribute signature includes `uv1`); the bake now
+carries and welds every UV set.
+
+### Per-frame JS (0.5.0)
+
+`render()` visits every descendant unconditionally; an object with `matrixAutoUpdate` recomposes and forces its
+subtree's world matrices, and `_projectObject` walks every visible descendant per pass, hidden originals
+included. So `compile()` freezes statics (`freeze`, default on): every unbatched static mesh and every ancestor
+whose subtree is entirely static (no animated node, dynamic tag, light, camera, bone, skinned mesh or sprite)
+gets `matrixAutoUpdate = false`. Matrices are current at that moment, so no pixel changes; `decompile()`
+restores every flag. `world.markDirty(object)` is the one way to move a frozen static: it recomposes the subtree
+and pushes every batched original into its batch, instance buffer or rebake. Dirty flags inside three (prototype
+patching) were rejected; apps call `markDirty()` or `invalidate()`.
+
+`RenderScheduler` renders on change: `invalidate()`, a camera matrix change, a watched object, a mixer with
+running actions, a buffer resize or `keepAliveMs` (default 0, never). It is not part of the bench because it
+changes what a frame is, not what a frame costs; `js.skipped` reports the skipped ticks among the last 60 when
+it is attached. `detach-originals` fires at 1,000 hidden originals: `originals: 'detach'` leaves both walks.
+
+### Memory and streaming (0.8.0)
+
+three keeps a GPU copy of every geometry and texture until `dispose()` and only counts them. `createLoader(renderer)`
+wires Draco, KTX2 (support detected on the renderer, which `WebGPURenderer` requires) and meshopt in one call
+with the addons imported lazily. `ResourceTracker` reference-counts geometries and textures across tracked
+owners and disposes on the last release; it never disposes a material the registry knows, because the registry
+owns shared materials. `unreferencedResources` is the renderer's counts minus what the scene reaches, with
+three's own allocations (frame buffer, shadow maps, PMREM, the DFG lookup, the overdraw count target) allowed by
+identity; the `unreferenced-resources` hint fires at 8 or more.
+
+`Streamer` needs `World({ chunkSize })` and decides residency by the distance from the camera to the cell's box
+with y ignored: resident within `radius`, unloaded past `radius + margin * chunkSize` (one cell of hysteresis).
+`radius` defaults to `camera.far`, so with fog to the far plane nothing visible pops; like the bake, streaming
+must not change a pixel at the camera it was updated for. Unload removes the chunk's objects and disposes what no
+resident chunk still references; load adds them back and three re-uploads from the CPU copies, so nothing is
+re-fetched. `userData.forgeStream = false` opts an object out. Zen: 64 textured ground tiles holding 64 MB of
+textures in the naive scene, streamed to the cells within 600 m; 3,540 submissions become 88. Fetching chunk
+data on demand is out of scope.

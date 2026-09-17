@@ -67,8 +67,8 @@ export interface DrawCallLedgerOptions {
   budgets?: Partial<Budgets>;
 }
 
-/** Scene-graph statistics recounted at most every RESCAN_EVERY frames (a full traversal). */
 const _bufferSize = new Vector2();
+/** Scene-graph statistics recounted at most every RESCAN_EVERY frames (a full traversal). */
 const RESCAN_EVERY = 60;
 /** Layer 31 mask, where World parks batched originals. */
 const HIDDEN_MASK = (1 << 31) >>> 0;
@@ -719,7 +719,7 @@ export class DrawCallLedger {
     state.lights = infos;
   }
 
-  /** The registry's cached hashes for `material`, read at most once per material per frame (`hashesOf`, R6). */
+  /** The registry's cached hashes for `material`, read at most once per material per frame (`hashesOf`). */
   private hashesOf(material: Material): MaterialHashes {
     const revision = this.registry.keysRevision;
     if (revision !== this.hashesRevision) {
@@ -930,8 +930,8 @@ function compiledLocalSpaceReader(object: Object3D): Material | null {
 /**
  * A pass id no other pass of this frame has, and the frame's record that it is taken. The first pass of a name keeps
  * the bare id; a later one of the same name gets `#2`, `#3` and so on, so two reflectors whose render targets are both
- * named `reflection` are `nested:reflection` and `nested:reflection#2` instead of one row summing both (independent
- * review M5). This is `shadowPassIds`' rule (`shadowPasses.ts`) over the same frame-wide set, which is why the set
+ * named `reflection` are `nested:reflection` and `nested:reflection#2` instead of one row summing both. This is
+ * `shadowPassIds`' rule (`shadowPasses.ts`) over the same frame-wide set, which is why the set
  * holds every kind of id. The fixed ids — `main`, `override`, `fullscreen` and a VSM blur's `:vsm` — deliberately do
  * not go through it: several post-processing quads share `fullscreen` by design.
  */

@@ -58,7 +58,7 @@ describe('page errors fail the analyze verdict', () => {
 });
 
 /**
- * Ruling R149: `analyze --parity` judges compile parity through the same `parityOf` as `optimize`. The page's two
+ * `analyze --parity` judges compile parity through the same `parityOf` as `optimize`. The page's two
  * screenshots (before and after compile) differ in exactly one pixel of 400: 0.25 %.
  */
 describe('analyze --parity judges the compile parity like optimize', () => {
@@ -120,8 +120,8 @@ describe('analyze --parity judges the compile parity like optimize', () => {
   });
 
   /**
-   * Final re-review A, L3(a): one changed pixel of 400 is 0.25 %, which a comparison of the rounded percentage also
-   * rejects at 0, so the case above cannot tell raw-count semantics from the R108 defect. At the harness's 1280x720
+   * One changed pixel of 400 is 0.25 %, which a comparison of the rounded percentage also
+   * rejects at 0, so the case above cannot tell raw-count semantics from the rounding defect. At the harness's 1280x720
    * canvas one pixel is 0.000109 %: `diffPct` rounds to 0 (three decimals, and `0.00` in the reason), so only a check
    * on `changedPixels` fails it.
    */

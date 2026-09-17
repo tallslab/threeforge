@@ -191,7 +191,7 @@ for (const nested of POLICIES) {
     expect(diff).toBeLessThan(0.0005);
   });
 
-  test(`audit reproduction: the shadowed naive scene seen from (24, 10, 18) compiles with the same pixels (nestedPasses: ${nested})`, async ({ forge }) => {
+  test(`reproduction: the shadowed naive scene seen from (24, 10, 18) compiles with the same pixels (nestedPasses: ${nested})`, async ({ forge }) => {
     test.setTimeout(180_000);
     // transparent=keep: transparent statics stay individual meshes, so their draw order does not enter the comparison.
     await forge.open('naive', { shadows: '1', transparent: 'keep', ...nestedQuery(nested) });
@@ -209,7 +209,7 @@ for (const nested of POLICIES) {
       return { instanced, passes: frame.passes.map((p) => [p.id, p.submissions, p.gpuDraws]) };
     });
     await skipIfDeviceLost(forge);
-    // The naive scene has no InstancedMesh (Task 17's compacted instancing), so this task controls every batch in it.
+    // The naive scene has no InstancedMesh (compacted instancing), so this task controls every batch in it.
     expect(naive.instanced).toBe(0);
     await settle(forge.page, 2);
     const before = forge.pixelChecks ? await forge.page.screenshot({ type: 'png' }) : null;
@@ -278,16 +278,16 @@ for (const nested of POLICIES) {
     expect(compiled.shadow.sample, 'batched casters missing from the shadow pass').toEqual([]);
     await settle(forge.page, 2);
     if (!before) {
-      await attachNumbers('audit', { backend: forge.backend, nestedPasses: compiled.nestedPasses, after: compiled.after, naive: naive.passes, passes: compiled.passes, shadow: compiled.shadow, diffPct: null });
+      await attachNumbers('reproduction', { backend: forge.backend, nestedPasses: compiled.nestedPasses, after: compiled.after, naive: naive.passes, passes: compiled.passes, shadow: compiled.shadow, diffPct: null });
       return;
     }
     const after = await forge.page.screenshot({ type: 'png' });
     mkdirSync(OUT, { recursive: true });
     const tag = `${nested}-${forge.backend}`;
-    writeFileSync(`${OUT}/audit-naive-${tag}.png`, before);
-    writeFileSync(`${OUT}/audit-compiled-${tag}.png`, after);
-    const diff = pixelDiff(before, after, { threshold: 4, diffPath: `${OUT}/audit-diff-${tag}.png` });
-    await attachNumbers('audit', { backend: forge.backend, nestedPasses: compiled.nestedPasses, after: compiled.after, naive: naive.passes, passes: compiled.passes, shadow: compiled.shadow, diffPct: (diff * 100).toFixed(4) });
+    writeFileSync(`${OUT}/reproduction-naive-${tag}.png`, before);
+    writeFileSync(`${OUT}/reproduction-compiled-${tag}.png`, after);
+    const diff = pixelDiff(before, after, { threshold: 4, diffPath: `${OUT}/reproduction-diff-${tag}.png` });
+    await attachNumbers('reproduction', { backend: forge.backend, nestedPasses: compiled.nestedPasses, after: compiled.after, naive: naive.passes, passes: compiled.passes, shadow: compiled.shadow, diffPct: (diff * 100).toFixed(4) });
     expect(diff).toBeLessThan(0.001);
   });
 

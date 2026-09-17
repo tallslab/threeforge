@@ -349,8 +349,6 @@ export class World {
     return this.batches;
   }
 
-  /** One mesh per baked group (empty unless `bake` is on). */
-  /** Objects `compile()` froze beyond the hidden originals (unbatched statics and all-static ancestors). */
   /** The `chunkSize` option: world-space cell size, or undefined when statics are not split by cell. */
   get chunkSize(): number | undefined {
     return this.chunkSizeOption;
@@ -370,6 +368,7 @@ export class World {
     return out;
   }
 
+  /** Objects `compile()` froze beyond the hidden originals (unbatched statics and all-static ancestors). */
   get frozenObjects(): readonly Object3D[] {
     return this.frozenList.map((f) => f.object);
   }
@@ -379,6 +378,7 @@ export class World {
     return this.spriteBatchList.map((b) => b.mesh);
   }
 
+  /** One mesh per baked group (empty unless `bake` is on). */
   get bakedMeshes(): readonly Mesh[] {
     return this.baked.map((b) => b.mesh);
   }
@@ -666,7 +666,6 @@ export class World {
     entry.proxy.position.copy(_center);
   }
 
-  /** Show or hide an original mesh, wherever it ended up. A baked module rebakes its group. */
   /** Listen for graph changes that need a new frame (`markDirty`, `setVisible`, `compile`, `decompile`); returns the disposer. */
   onDirty(listener: (event: DirtyEvent) => void): () => void {
     this.assertLive();
@@ -768,6 +767,7 @@ export class World {
     return updated;
   }
 
+  /** Show or hide an original mesh, wherever it ended up. A baked module rebakes its group. */
   setVisible(original: Mesh, visible: boolean): void {
     this.assertLive();
     this.emitDirty({ kind: 'setVisible', object: original });

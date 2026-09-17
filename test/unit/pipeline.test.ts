@@ -35,12 +35,12 @@ describe('planSteps', () => {
   });
 
   /**
-   * Ruling R100: `weld` is a lossy-preset step, not a `safe` one. It changes no drawn value, yet it moves pixels on
+   * `weld` is a lossy-preset step, not a `safe` one. It changes no drawn value, yet it moves pixels on
    * WebGPU — on the Fox, and also on PotOfCoals and VirtualCity, which are fully indexed and carry normals — so the
    * preset held to zero changed pixels at `--parity 0` on the Fox and the Buggy must not run it (see
-   * `test/e2e/cli.spec.ts`). When R100 was made that alone did not bring `safe` to zero: `resample` then ran there at
-   * glTF-Transform's default 1e-4 keyframe tolerance, which shifts a few silhouette pixels on both backends (R104 set
-   * it to 0 and R105 moved it out of `safe`). Pinned here so a future preset edit cannot quietly put weld back: `safe` is
+   * `test/e2e/cli.spec.ts`). Moving weld alone did not bring `safe` to zero: `resample` then ran there at
+   * glTF-Transform's default 1e-4 keyframe tolerance, which shifts a few silhouette pixels on both backends (its tolerance
+   * is now 0 and it too left `safe`). Pinned here so a future preset edit cannot quietly put weld back: `safe` is
    * the one preset without it, and `--weld` is still the way to ask for it anywhere.
    */
   it('keeps weld out of safe and in the lossy presets, with --weld able to add it back in pipeline order', () => {
@@ -52,7 +52,7 @@ describe('planSteps', () => {
   });
 
   /**
-   * Ruling R105: `resample` left `safe` too, for the opposite reason to weld's. At `tolerance: 0` it is pixel-exact,
+   * `resample` left `safe` too, for the opposite reason to weld's. At `tolerance: 0` it is pixel-exact,
    * but it keeps every keyframe that is not an exact duplicate, so it can grow a file — swept over the 79 readable
    * corpus assets the median is 0.000 % but Xbot grows 1.248 %, past the 0.5 % bar the rule set. It earns its place
    * in the lossy presets (Soldier -18.9 %, BrainStem -14.9 %). `safe` is now dedup, palette and prune; `palette` was
@@ -66,7 +66,7 @@ describe('planSteps', () => {
   });
 
   /**
-   * Ruling R104: glTF-Transform's `resample` defaults to `tolerance: 1e-4`, which drops keyframes that merely sit
+   * glTF-Transform's `resample` defaults to `tolerance: 1e-4`, which drops keyframes that merely sit
    * near the value interpolated from their neighbours — lossy, whatever its docstring says, and enough to move the
    * posed silhouette by a few pixels. `safe` therefore asks for tolerance 0 explicitly. Pinned per preset because
    * the value is the entire fix: passing no options at all would silently restore the lossy default.
@@ -74,7 +74,7 @@ describe('planSteps', () => {
   it('resamples at tolerance 0 when added to safe, and at the lossy 1e-4 default under the lossy presets', () => {
     const resampleOptions = (preset: OptimizeInput['preset'], steps: OptimizeInput['steps'] = {}): unknown =>
       planSteps({ ...base, preset, steps }).find((s) => s.name === 'resample')!.options;
-    // `safe` no longer runs it (R105), but `--resample` under `safe` must still be the lossless one.
+    // `safe` no longer runs it, but `--resample` under `safe` must still be the lossless one.
     expect(resampleOptions('safe', { resample: true })).toEqual({ tolerance: 0 });
     expect(resampleOptions('balanced')).toEqual({ tolerance: 1e-4 });
     expect(resampleOptions('aggressive')).toEqual({ tolerance: 1e-4 });

@@ -2,7 +2,7 @@
  * Shadow pass id assignment (`src/ledger/shadowPasses.ts`), unit-tested without a renderer: it is a pure function of
  * the scene's shadow-casting lights, in scene order, and the ids the frame has already handed out to other scenes.
  *
- * The rules it has to keep (Task 32; the ledger end of them is in `lighting-section.test.ts`):
+ * The rules it has to keep (the ledger end of them is in `lighting-section.test.ts`):
  * - `shadow:<name>` for a light whose name no other shadow-casting light of the scene has;
  * - `shadow:<name>#k`, k from 1 in scene order, for lights that share a name;
  * - an unnamed light is named after its type, so unnamed lights of one type share a name and get numbered;

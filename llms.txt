@@ -9,4 +9,4 @@
 - Complete reference (every module, option, mechanism): docs/threeforge.md
 - Library API: README.md
 - Benchmark suite and baselines: docs/bench.md
-- Design: docs/superpowers/specs/2026-09-13-frame-budget-design.md, docs/superpowers/specs/2026-09-13-agent-cli-design.md, docs/superpowers/specs/2026-09-14-optimize-command-design.md
+- Design notes: docs/design.md

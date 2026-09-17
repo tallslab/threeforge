@@ -21,7 +21,7 @@ describe('cleanText', () => {
   });
 
   /**
-   * Final review area 3, F5: invisible format characters that survived. Unicode tag characters (U+E0000-E007F) mirror
+   * Invisible format characters that survived an earlier filter. Unicode tag characters (U+E0000-E007F) mirror
    * ASCII invisibly and LLM tokenizers read them ("ASCII smuggling"); variation selectors can likewise carry hidden
    * bytes after a visible glyph. A human reading the output sees only the visible name.
    */

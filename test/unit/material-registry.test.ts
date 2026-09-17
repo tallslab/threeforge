@@ -228,7 +228,7 @@ describe('MaterialRegistry caching', () => {
     registry.describe(material);
     registry.describe(material);
     expect(computeSpy.mock.calls.length).toBe(computeCallsAfterRegister);
-    expect(hashSpy.mock.calls.length).toBe(hashCallsAfterRegister); // hashKey(programKey/variantKey) must be cached too (R6)
+    expect(hashSpy.mock.calls.length).toBe(hashCallsAfterRegister); // hashKey(programKey/variantKey) must be cached too
     computeSpy.mockRestore();
     hashSpy.mockRestore();
   });
@@ -524,7 +524,7 @@ describe('sprite grouping uses the exact colorKey', () => {
 });
 
 /*
- * Material code and user-added own properties (Task 23b). Every factory below returns a new function (or class) with
+ * Material code and user-added own properties. Every factory below returns a new function (or class) with
  * the same source text on every call: only the captured `tint` differs, which `toString()` cannot see.
  */
 function makeSetupOutput(tint: number) {
@@ -740,7 +740,7 @@ describe('material keys for user-added own properties', () => {
 });
 
 /*
- * Fix round 1: subclasses, array properties and BigInt (Task 23b).
+ * Subclasses, array properties and BigInt.
  */
 class GlowMaterial extends MeshStandardNodeMaterial {
   override setupOutput(...args: Parameters<MeshStandardNodeMaterial['setupOutput']>): ReturnType<MeshStandardNodeMaterial['setupOutput']> {

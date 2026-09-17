@@ -1,7 +1,7 @@
 import { expect, test } from './fixtures.js';
 
 /**
- * Task 2 spike: how far does three's experimental SceneOptimizer get on its own?
+ * Spike: how far does three's experimental SceneOptimizer get on its own?
  * This is a measurement, not a contract. Its numbers are recorded in docs/spike-scene-optimizer.md.
  *
  * The one spec exempt from CONTRIBUTING.md rule 5, deliberately. Every other spec asserts

@@ -58,7 +58,7 @@ test('inspect_app takes no tier input; analyze_asset and optimize_asset still do
     expect(propsOf('inspect_app')).not.toContain('tier');
     expect(propsOf('analyze_asset')).toContain('tier');
     expect(propsOf('optimize_asset')).toContain('tier');
-    // R149: analyze_asset takes parity exactly as optimize_asset does.
+    // analyze_asset takes parity exactly as optimize_asset does.
     const parityOf = (name: string) => (tools.tools.find((t) => t.name === name)!.inputSchema as { properties: Record<string, { type?: string; default?: unknown }> }).properties.parity;
     expect(parityOf('analyze_asset')).toMatchObject({ type: 'number', default: 0.5 });
     expect(parityOf('analyze_asset')).toMatchObject({ type: parityOf('optimize_asset')!.type, default: parityOf('optimize_asset')!.default });
@@ -89,7 +89,7 @@ test('analyze_asset rejects frames: 0 as an isError with code 2, without opening
 });
 
 test('analyze_asset rejects a bad enum value and a non-integer frames the same way: isError with code 2', { tag: '@corpus' }, async () => {
-  // Finding 4 (Important, Task 8 fix round 1): a tight z.enum()/`.int()` in the MCP schema made these two return
+  // A tight z.enum()/`.int()` in the MCP schema made these two return
   // the SDK's own plain-text isError instead of threeforge's { error, code: 2 } JSON. Both now go through
   // validateInput (src/cli/args.ts), same as any other bad input.
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
@@ -113,7 +113,7 @@ test('analyze_asset rejects a bad enum value and a non-integer frames the same w
 });
 
 test('optimize_asset rejects an out path outside the allowed scope as an isError with code 2', { tag: '@corpus' }, async () => {
-  // Final review area 1, M1: this used '/tmp/x.txt', which the extension check refuses before the scope check ever runs.
+  // This used '/tmp/x.txt', which the extension check refuses before the scope check ever runs.
   // A valid extension outside both roots reaches the scope check itself; the extension case is the next test.
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
   await ready();
@@ -148,7 +148,7 @@ test('optimize_asset rejects an out that does not end in .glb or .gltf as an isE
 });
 
 test('optimize_asset rejects a default out that is a dangling symlink leading outside both roots, writing nothing there', { tag: '@corpus' }, async () => {
-  // Final review area 3, F1 (High): `<name>.forge.glb -> <outside>` passed the confinement check (realpath of a dangling
+  // `<name>.forge.glb -> <outside>` passed the confinement check (realpath of a dangling
   // link fails like a missing path) and `existsSync` followed it, so the GLB was written at the link's target.
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
   await ready();
@@ -176,7 +176,7 @@ test('optimize_asset rejects a default out that is a dangling symlink leading ou
 });
 
 test('every run tool marks its error result as data: analyze_asset, inspect_app and optimize_asset, including asset text an error quotes', { tag: '@corpus' }, async () => {
-  // Final review area 3, F4: DATA_NOTE rode only on success. glTF-Transform quotes an input's extensionsRequired
+  // DATA_NOTE rode only on success. glTF-Transform quotes an input's extensionsRequired
   // verbatim in the error, so an asset chooses text that reaches the agent through an error result.
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
   await ready();
@@ -227,7 +227,7 @@ test('optimize_asset refuses to silently overwrite an existing out file, matchin
   }
 });
 
-test('optimize_asset refuses a .gltf out whose resource file (not the out path itself) already exists, matching /exists/ with code 2 (Ruling R21)', { tag: '@corpus' }, async () => {
+test('optimize_asset refuses a .gltf out whose resource file (not the out path itself) already exists, matching /exists/ with code 2', { tag: '@corpus' }, async () => {
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
   await ready();
   // Fox.glb has one buffer and one baseColor texture; glTF-Transform names a lone buffer "<out-basename>.bin"
@@ -274,7 +274,7 @@ test('optimize_asset with overwrite: true replaces both the out file and a pre-e
     expect(result.isError).toBeFalsy();
     expect(existsSync(target)).toBe(true);
     expect(readFileSync(clashing, 'utf8')).not.toBe('stale bytes');
-    // Final review area 3, F2: the result echoes `overwrite`, which the published schema rejected. Validate the real
+    // The result echoes `overwrite`, which the published schema rejected. Validate the real
     // MCP document against exactly what `threeforge schema optimize` prints, in a fresh ajv with nothing added.
     const doc = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
     expect(doc.input.overwrite).toBe(true);
@@ -330,7 +330,7 @@ test('a real analyze_asset call on the Fox returns the document in content[0] an
 });
 
 /**
- * Independent review C1, through the surface an agent actually calls. `analyze_asset` handed an untrusted asset's
+ * Through the surface an agent actually calls: `analyze_asset` handed an untrusted asset's
  * absolute `http://` resource URIs straight to headless Chromium; it now returns the CLI's `{ error, code: 2 }` before
  * a browser opens. No downloaded content, so this runs in CI's `--grep-invert "@corpus|@bench"` selection.
  */

@@ -61,7 +61,7 @@ interface ProgramEntry {
   materials: number;
 }
 
-/** `MaterialKeys` plus the two hashes derived from it, computed and cached together (Ruling R6). */
+/** `MaterialKeys` plus the two hashes derived from it, computed and cached together. */
 type CachedKeys = MaterialKeys & { programHash: string; variantHash: string };
 
 /** The key `canonicalByFullKey` is indexed by: same variant and colour merge into one canonical. */
@@ -146,7 +146,7 @@ export class MaterialRegistry {
   }
 
   /**
-   * The hashes, description and `unsupported` flag `describe()` reports, read straight from the key cache (Ruling R6):
+   * The hashes, description and `unsupported` flag `describe()` reports, read straight from the key cache:
    * nothing is allocated and no key or hash is recomputed once the material has been keyed (an unregistered material
    * is keyed and cached on first use, as `describe()` does). The result is the cache entry itself. `invalidate()` and
    * `forget()` replace an entry rather than change it, so a result held from before keeps its old values; after
@@ -379,7 +379,7 @@ export class MaterialRegistry {
     };
   }
 
-  /** The raw keys for a material, plus their `programHash`/`variantHash` (computed once and cached; Ruling R6). */
+  /** The raw keys for a material, plus their `programHash`/`variantHash` (computed once and cached). */
   keys(material: Material): CachedKeys {
     let keys = this.keyCache.get(material);
     if (!keys) {

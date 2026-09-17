@@ -196,9 +196,9 @@ describe('optimize --out', () => {
 });
 
 /**
- * Ruling R21 (Task 10 re-review): a `.gltf` out also writes resource files (`.bin`, textures) next to it, named
+ * A `.gltf` out also writes resource files (`.bin`, textures) next to it, named
  * after the out's own basename (`UniqueURIGenerator`, `@gltf-transform/core`: a single buffer becomes
- * `<basename>.bin`). Task 10 already refuses a resource target that is the *input's own* file or resource; this
+ * `<basename>.bin`). The input guard already refuses a resource target that is the *input's own* file or resource; this
  * covers every other pre-existing file that name happens to collide with. `optimizeAsset`'s `overwrite` (default
  * `true`, unset by `inputFor`/the CLI parser) must refuse before writing anything when `false`.
  */
@@ -259,7 +259,7 @@ describe("optimize --out overwrite (protects resource files, not just the input'
     expect(readFileSync(out, 'utf8')).toBe('stale glb bytes');
   });
 
-  it('with overwrite: false, a dangling symlink at a .glb or .gltf out counts as existing and nothing is written through it (final review F1)', async () => {
+  it('with overwrite: false, a dangling symlink at a .glb or .gltf out counts as existing and nothing is written through it', async () => {
     const file = await inputGlb();
     for (const name of ['dangling.glb', 'dangling.gltf']) {
       const target = join(root, `outside-${name}`);
@@ -273,7 +273,7 @@ describe("optimize --out overwrite (protects resource files, not just the input'
   });
 
   /**
-   * Final re-review A, L3(c): the case above passes if either guard is reverted alone, because each refuses a dangling
+   * The case above passes if either guard is reverted alone, because each refuses a dangling
    * link at `out` on its own. These two pin each guard without the other.
    *
    * The `lstat` check (`assertNotClobbering` through `entryExists`) refuses a dangling link at a .glb `out` before the
@@ -411,9 +411,9 @@ describe("optimize never overwrites a .gltf input's resources", () => {
 });
 
 /**
- * R156. `--parity` is the threshold between the two *files*, and each file's own compile check is a different
- * question that keeps the `analyze` default. The independent review proposed carrying a stricter `--parity` into the
- * inner checks (`Math.min`); that was tried and reverted against a measurement — see `verifyAnalyzeInput`'s comment
+ * `--parity` is the threshold between the two *files*, and each file's own compile check is a different
+ * question that keeps the `analyze` default. Carrying a stricter `--parity` into the
+ * inner checks (`Math.min`) was tried and reverted against a measurement — see `verifyAnalyzeInput`'s comment
  * and `cli.spec.ts`'s Buggy case, which pins the consequence end to end. This pins the decision itself:
  * `verifyAnalyzeInput` is the object `verifyPair` hands to each `analyzeAssetWithShots` call.
  */

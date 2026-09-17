@@ -134,7 +134,7 @@ export interface ForgeHarness {
   frameAsync(options?: { items?: boolean }): Promise<FrameSnapshot>;
   /** Meshes whose bounding sphere intersects the camera frustum (the same test the renderer applies). */
   visibleMeshes(): number;
-  /** Task 2 spike: run three's experimental SceneOptimizer on a fresh naive scene and measure it. */
+  /** Spike: run three's experimental SceneOptimizer on a fresh naive scene and measure it. */
   spikeSceneOptimizer(): Promise<SpikeResult>;
   /**
    * The message of the WebGPU device loss three reported (`renderer.onDeviceLost`), or null. Waits up to `waitMs` for a

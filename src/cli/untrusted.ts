@@ -3,8 +3,8 @@ import { EnvironmentError, PageError, UsageError } from './errors.js';
 
 /**
  * Cleans text that came from a glTF asset or a page the CLI does not control before it reaches a terminal or an
- * agent's JSON document. An audit reproduced a page returning a 340,000-character "IGNORE ALL PREVIOUS
- * INSTRUCTIONS" hint message that flowed, unbounded and uncleaned, into an 883 kB document and the terminal.
+ * agent's JSON document. A page can return a hint message hundreds of kilobytes long (an "IGNORE ALL PREVIOUS
+ * INSTRUCTIONS" text, say); it is bounded and cleaned before it reaches the document or the terminal.
  *
  * `cleanText` handles one string: a name, a stderr line, a page error. `sanitizeDeep` walks an arbitrary
  * `page.evaluate` result that *resolved* (the whole thing is untrusted for `inspect`, whose target is any page,
@@ -21,7 +21,7 @@ import { EnvironmentError, PageError, UsageError } from './errors.js';
 const ANSI = /[\x1B\x9B](?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\)|[@-Z\\-_])/g;
 
 /**
- * Invisible characters, useless in a name or a message except to disguise text (final review F5):
+ * Invisible characters, useless in a name or a message except to disguise text:
  * - every format character (`\p{Cf}`): bidi marks, overrides and isolates (U+061C, U+200E-200F, U+202A-202E,
  *   U+2066-2069), zero-width characters (U+200B-200D, U+2060-2064, U+FEFF), the soft hyphen, the deprecated format
  *   controls U+206A-206F, interlinear annotation U+FFF9-FFFB, and the Unicode tag characters U+E0001 and
@@ -70,7 +70,7 @@ export function cleanLines(text: string, max: number = DEFAULT_TEXT_MAX): string
 export interface SanitizeOptions {
   /**
    * Cap per string, in Unicode code points (default `MAX_MESSAGE_LENGTH`, 300): the ledger's own cap on a hint message,
-   * so a message it kept whole is not cut again here, losing its actionable tail (final review F6).
+   * so a message it kept whole is not cut again here, losing its actionable tail.
    */
   maxString?: number;
   /** Cap per array, in elements; a longer array gets one extra `"(+N more)"` marker appended (default 256). */

@@ -101,7 +101,7 @@ describe('inspect and the frame snapshot schemaVersion', () => {
     );
     expect(error).toBeInstanceOf(PageError);
     expect((error as Error).message).toMatch(/unsupported schemaVersion 2/);
-    // Names both versions and tells the reader what to do about it (Task 29).
+    // Names both versions and tells the reader what to do about it.
     expect((error as Error).message).toContain('reads schemaVersion 3');
     expect((error as Error).message).toContain('upgrade threeforge in the app (exposeToAgents)');
     expect(Date.now() - started, 'fails without waiting for the timeout').toBeLessThan(1000);
@@ -125,7 +125,7 @@ describe('inspect and the frame snapshot schemaVersion', () => {
 });
 
 /**
- * Independent review L3. `assertHookVersion` and the in-page guard above both check the *hook's* advertised version;
+ * `assertHookVersion` and the in-page guard above both check the *hook's* advertised version;
  * the snapshot `frameAsync()` returns was passed through untouched, so a target that advertises 3 and hands back a
  * differently-shaped frame produced a document violating the CLI's own published `SNAPSHOT_SCHEMA`
  * (`{ schemaVersion: { const: 3 } }`) with nothing to notice.

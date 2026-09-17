@@ -21,7 +21,7 @@
  * scene's override material; a render into a target (a reflection, an overdraw count pass, a shadow map) draws none.
  * Not modelled: frustum culling, sorting, matrix updates (call `scene.updateMatrixWorld()`), pipeline readiness.
  *
- * Known gaps from three r186 that no current test relies on (final review area 1, L1). A test that depends on one of
+ * Known gaps from three r186 that no current test relies on. A test that depends on one of
  * these cases must model it first, or it inherits a behaviour three does not have:
  * - `material.visible`: `projectItem` pushes an item whatever its material's `visible`; three's `_projectObject` pushes
  *   only visible materials, so a mesh with an invisible material counts as drawn here.

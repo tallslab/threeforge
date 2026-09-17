@@ -51,7 +51,7 @@ for (const id of SCENE_IDS) {
         { warm: WARM, measured: MEASURED },
       );
       expect(out.frame.totals.unattributed, 'unattributed draws').toBe(0);
-      // Ruling R117: `programs` is read from the last measured frame, *before* `measureOverdraw()`. The overdraw
+      // `programs` is read from the last measured frame, *before* `measureOverdraw()`. The overdraw
       // count materials are real materials whose shader stages stay counted in `renderer.info.memory.programs`
       // afterwards — three frees a stage only once its `usedTimes` reaches 0 — so a capture taken after the
       // measurement reports the diagnostic's own shaders as if the scene had compiled them, and any edit to

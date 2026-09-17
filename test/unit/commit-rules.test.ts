@@ -227,10 +227,9 @@ describe('checkCommits', () => {
 });
 
 /**
- * Independent review H2. Six commits on `fix/audit-0.9.0` touch rendering with no `Budget:` line — three predate the
- * rule, three were written after it. They were exempted in prose (`docs/release.md`) while the CI job was configured
- * so it could never judge a push at all, which made rule 4 unenforceable on the very flow the release prescribes. The
- * exemption now lives here, dated and by full SHA, so it is reviewable and so the job can run on push.
+ * Six commits exempted from the budget rule: they touch rendering with no `Budget:` line — three predate the rule,
+ * three were written after it. The exemption lives here, dated and by full SHA, so it is reviewable and so the CI job
+ * can run on push.
  */
 describe('EXEMPT_COMMITS', () => {
   const shas = () => Object.keys(EXEMPT_COMMITS ?? {});

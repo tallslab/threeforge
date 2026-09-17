@@ -56,25 +56,24 @@ export const EXCLUDED_PATHS = {
  * Commits exempted from rule 4 by an explicit, dated decision, each with the reason. Keyed by **full** SHA: an
  * abbreviation never matches, so a collision or a typo fails closed.
  *
- * Independent review H2. These six are the whole of `fix/audit-0.9.0`'s debt to this rule. Three predate the rule
- * (added in `109a209`) and three were written after it without a `Budget:` line, in the audit's final fix wave. The
- * decision not to rewrite their messages is the repository owner's; what changed is that the exemption is in code,
- * where it is reviewable and where the CI job can run on a push instead of being switched off for one
- * (`.github/workflows/ci.yml`, `docs/release.md`). Nothing may be added here without the same treatment: a date, a
- * reason, and a full SHA. An exempt commit is still reported in the summary, so an exemption is never silent.
+ * These six are the whole of the debt to this rule. Three predate the rule and three were written after it without
+ * a `Budget:` line. The decision not to rewrite their messages is the repository owner's; what changed is that the
+ * exemption is in code, where it is reviewable and where the CI job can run on a push instead of being switched off
+ * for one (`.github/workflows/ci.yml`, `docs/release.md`). Nothing may be added here without the same treatment: a
+ * date, a reason, and a full SHA. An exempt commit is still reported in the summary, so an exemption is never silent.
  */
 export const EXEMPT_COMMITS = {
   '4b61bd6573ffa33c84e54ce074d58cb38961a798': {
     date: '2026-09-16',
-    reason: 'predates the rule (added in 109a209): ledger name and hint-message caps against untrusted asset text',
+    reason: 'predates the rule: ledger name and hint-message caps against untrusted asset text',
   },
   '451ab9f3c869ebc83be9e562185f6ffc90423bf2': {
     date: '2026-09-16',
-    reason: 'predates the rule (added in 109a209): audit fix round 1, cleaned page errors and collapsed hints',
+    reason: 'predates the rule: cleaned page errors and collapsed hints',
   },
   'b037656f57dec0a203631151294edc98a74c0ae3': {
     date: '2026-09-16',
-    reason: 'predates the rule (added in 109a209): capped transparent-batch-order hint objects at five',
+    reason: 'predates the rule: capped transparent-batch-order hint objects at five',
   },
   '2e9b125bd78684751d46e80dfcab0d1406ad628b': {
     date: '2026-09-16',

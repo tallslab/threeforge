@@ -76,7 +76,7 @@ export function failingViews(views: Parity['views'], threshold: number): Parity[
  * A threshold of 0 means exactly that, and is judged on `changedPixels` rather than on the percentage: `diffPct` is
  * rounded to three decimals, so at the harness's 1280x720 canvas it reads `0.000` for anything up to 4 changed
  * pixels of 921,600. Comparing the rounded percentage let `--parity 0` report `pass: true` and exit 0 while pixels
- * moved (Ruling R108) — the tool has to mean zero when it says zero, because agents act on this number. A non-zero
+ * moved — the tool has to mean zero when it says zero, because agents act on this number. A non-zero
  * threshold is a percentage and is still compared as one.
  */
 export function parityOf(views: Parity['views'], threshold: number): Parity {
@@ -155,7 +155,7 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
   const started = Date.now();
   const file = resolve(input.file);
   if (!existsSync(file) || !statSync(file).isFile()) throw new UsageError(`file not found: ${input.file}`);
-  // Independent review C1. The page loads this asset with `GLTFLoader`, and three r186's `LoaderUtils.resolveURL`
+  // The page loads this asset with `GLTFLoader`, and three r186's `LoaderUtils.resolveURL`
   // (`node_modules/three/src/loaders/LoaderUtils.js`) returns an absolute `http(s)://` or protocol-relative `//host/`
   // URI unchanged, so the browser fetches it itself instead of through the confined static server below. An untrusted
   // asset would make headless Chromium issue requests from this machine's network (blind egress, and GET side effects
@@ -163,7 +163,7 @@ export async function analyzeAssetWithShots(input: AnalyzeInput, log: (line: str
   // the same `UsageError` naming the URI, exit 2, before a browser is opened. `routeGuard` below covers what a JSON
   // scan cannot see.
   assertConfinedUris(readGltfJson(file), dirname(file));
-  // `--parity` (Ruling R149), judged exactly as `optimize` judges its own: through `parityOf` and `failingViews`.
+  // `--parity`, judged exactly as `optimize` judges its own: through `parityOf` and `failingViews`.
   const threshold = input.parity ?? DEFAULT_PARITY;
   const resources = new Resources();
   resources.armAbort(deps.signal);

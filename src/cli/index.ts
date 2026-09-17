@@ -70,7 +70,7 @@ async function run(command: Command): Promise<number> {
     case 'decoders': {
       const { copyDecoders } = await import('./decoders.js');
       const out = copyDecoders(command.dir);
-      // The one remaining raw write (independent review L5). It is the local user's own argument rather than
+      // The one remaining raw write. It is the local user's own argument rather than
       // model-derived text, so this is consistency rather than a hole: every path out of this CLI is cleaned.
       process.stdout.write(cleanText(`decoders copied to ${out.draco} and ${out.basis}\nconst loader = await createLoader(renderer, { decoders: '/<served path of ${command.dir}>/' });`, 2000) + '\n');
       return 0;

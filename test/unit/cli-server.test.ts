@@ -26,7 +26,7 @@ function rawGet(url: string, path: string): Promise<{ status: number; body: stri
 }
 
 /**
- * Independent review L2. `serveStatic` registered no `'error'` handler on `listen`, so an `EMFILE` or `EACCES` — the
+ * `serveStatic` registered no `'error'` handler on `listen`, so an `EMFILE` or `EACCES` — the
  * first reachable in a long-lived MCP session that opens one server per `analyze` — was an uncaught exception that
  * took the process down and bypassed `Resources.run`'s teardown entirely, instead of the exit-3 `EnvironmentError`
  * the rest of the CLI is careful to give. `createServer` is mocked because port 0 on 127.0.0.1 does not fail on

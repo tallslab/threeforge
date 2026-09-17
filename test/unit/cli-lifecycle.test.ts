@@ -137,7 +137,7 @@ describe('Resources', () => {
 });
 
 /**
- * Final review area 3, F8: `armAbort` closed the stack once, when the signal fired, and `add()` did not look at the
+ * `armAbort` closed the stack once, when the signal fired, and `add()` did not look at the
  * signal, so a browser registered after an MCP client disconnected mid-launch was never closed and the page was
  * measured to completion with nobody listening.
  */
@@ -329,7 +329,7 @@ describe('analyze and inspect release what they opened', () => {
 });
 
 /**
- * Independent review M2. `--timeout` bounds every `page.evaluate`, but two waits escaped it: `page.screenshot` fell
+ * `--timeout` bounds every `page.evaluate`, but two waits escaped it: `page.screenshot` fell
  * back to Playwright's own 30 s page default (about 130 un-governed waits at `--views 64`), and `browser.newPage()`
  * had no bound at all. A user who asks for 2 s should not wait longer than that in a step they cannot shorten.
  */

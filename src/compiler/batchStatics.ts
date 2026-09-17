@@ -365,7 +365,7 @@ export { isBuiltInMaterial };
  *   (`hasOwnFunctions`) and no node in any slot (`hasNoNodes`). A node graph can read `positionLocal`, `normalLocal`,
  *   `positionGeometry` or `color` inside a `Fn` closure nothing can inspect before it builds: a `colorNode =
  *   vertexColor()` reads `color` whatever `vertexColors` says, and a colour or position from local coordinates changes
- *   once the bake writes them in scene space (Ruling R162).
+ *   once the bake writes them in scene space.
  * - Reads the move into scene space keeps. three r186's node-free mesh materials read position through the model-view
  *   matrix and normals through the normal matrix, which the baked geometry already carries, except a `displacementMap`:
  *   `setupPosition` displaces along the local normal in local units (NodeMaterial.js:788), so a scaled module's

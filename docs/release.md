@@ -1,58 +1,29 @@
 # Releasing threeforge
 
-## Before anything else: seed `main` with a push, not a pull request
+## Commit rules
 
-Everything already committed locally has to reach GitHub's `main` by a **direct push**, never through a pull
-request. CI's `commit-rules` job checks that every commit touching rendering code carries a `Budget:` line, and six
-commits on `fix/audit-0.9.0` fail it (`node scripts/commit-rules.mjs fee4a17..fix/audit-0.9.0` exits 1 and names
-them):
-
-- three predate the rule (added in `109a209`): `b037656`, `451ab9f` and `4b61bd6`, all touching `src/ledger/`;
-- three were committed after the rule existed, in the audit's final fix wave, without a `Budget:` line: `2e9b125`
-  (`src/registry/MaterialRegistry.ts`), `efb7464` (`src/ledger/DrawCallLedger.ts`, `src/ledger/reasons.ts`) and
-  `a485e57` (`src/ledger/DrawCallLedger.ts`).
-
-History is not rewritten to fix them, and the exemption is **in code**: `EXEMPT_COMMITS` in
-`scripts/commit-rules.mjs` is a dated allow-list of those six full SHAs, each with its reason, checked by
-`test/unit/commit-rules.test.ts` (exactly six entries, full 40-character SHAs, a date and a reason each). Every run
-prints the ones it excused, so an exemption is visible in the log rather than assumed. There is no environment
-variable, flag or other way past the rule.
-
-The job no longer runs on pull requests only: it runs on pushes too (independent review H2), because gating it on
-`pull_request` meant a direct push to `main` was never judged by rule 4 at all, by anyone, forever — and this
-document prescribes exactly such a push. On a push it uses `github.event.before..github.sha`; when that push created
-the ref (`github.event.before` is forty zeros: a branch's first push, and every tag push) it falls back to the
-merge-base with `main`, and when even that is missing or is the pushed commit itself — the seeding push below, which
-has no earlier base in the remote — it prints why and skips the range instead of silently passing or checking the
-whole history of the repository.
-
-The owner may still prefer to rewrite the six messages before the first push; the branch is unpushed, so nothing
-references those SHAs yet. Doing so means deleting their entries from `EXEMPT_COMMITS` (the unit test's count of six
-moves with them) and re-running `node scripts/commit-rules.mjs fee4a17..fix/audit-0.9.0`.
-
-All six commits are on `fix/audit-0.9.0`, **not** on the local `main` (which is still at 0.8.0, `fee4a17`, an
-ancestor of that branch). So pushing the local `main` first and then opening a pull request for the audit branch is exactly the
-flow that fails. Instead: bring the branch into `main` locally (`git checkout main && git merge --ff-only
-fix/audit-0.9.0`), then `git push origin main`. After that, open pull requests as normal; each is judged only on
-the commits it adds.
+Every commit that touches a rendering path (`RENDERING_PATHS` in `scripts/commit-rules.mjs`) carries a
+`Budget: <n>` or `Budget: n/a <reason>` line in its body, the `sceneSubmissions` number from `pnpm budget`
+(CONTRIBUTING.md rule 4). CI's `commit-rules` job checks this on every pull request and every push, over the commits
+the pull request or push adds; merge commits are not checked. Run it locally the same way:
+`node scripts/commit-rules.mjs main..HEAD`. The only way past the rule is `EXEMPT_COMMITS` in the same script, a
+dated allow-list of full SHAs with a reason each, and every run prints what it excused.
 
 ## Cutting a release
 
 1. Bump `version` in `package.json` and `src/version.ts` (a unit test keeps them equal), regenerate the agent docs
    with `pnpm build:lib && node scripts/agents-md.mjs`, update `CHANGELOG.md`.
 2. `pnpm typecheck && pnpm test && pnpm build && pnpm e2e --grep-invert "assets\.spec\.ts" && pnpm bench` on a
-   machine with a GPU (a native WebGPU adapter: this is the only run that checks WebGPU pixels in the e2e specs, and
-   it already checks some on corpus models: `warmup.spec.ts` holds `polyhaven-fir_sapling_medium` and
-   `CommercialRefrigerator` under 0.05 % changed pixels at tolerance 4, and `cli.spec.ts` holds `optimize` on the Fox
-   and the Buggy at `--parity 0`; what step 3's `assets.spec.ts` run adds is a compile-parity check of every model in
-   the asset index on each backend, see below), with the kits and the corpus downloaded. `assets.spec.ts` is left out on purpose: it rewrites the tracked
+   machine with a GPU (a native WebGPU adapter: this is the only run that checks WebGPU pixels in the e2e specs),
+   with the kits and the corpus downloaded. `assets.spec.ts` is left out on purpose: it rewrites the tracked
    `docs/assets-report*` files, and run here, with step 1's edits uncommitted, it would stamp every row with the
-   previous commit and `-dirty`. (At the head of `fix/audit-0.9.0`, where no spec has changed since `20bace1`, that selection is 156 of the 260 tests
-   per project, 312 of 520 across both.)
-3. Refresh the corpus report as a deliberate step of its own, when the release should cite a report measured on its
-   own code (0.9.0's was: commit `a485e57`, run `fix-audit-0.9.0-corpus-20260916`):
+   previous commit and `-dirty`.
+3. If `pnpm bench` fails its gate and the movement is intended, promote the new numbers with `pnpm bench:baseline`
+   and say why they moved in the commit message (CONTRIBUTING.md rule 8). Baselines change no other way.
+4. Refresh the corpus report as a deliberate step of its own, when the release should cite a report measured on its
+   own code:
    1. Commit step 1's edits first. `git status --short` must print nothing, or every row is stamped `-dirty`.
-   2. Pick one run id and pin it: `FORGE_RUN_ID=<version>-corpus-<yyyymmdd>`.
+   2. Pick one run id and pin it: `FORGE_RUN_ID=corpus-<yyyymmdd>`.
    3. Run `FORGE_RUN_ID=… pnpm exec playwright test test/e2e/assets.spec.ts --project=webgl2`, then the same with
       `--project=webgpu`, with no `FORGE_ASSETS` filter: the Markdown is rewritten only after a run that measured
       every asset in the index.
@@ -60,115 +31,49 @@ the commits it adds.
       and whether any asset failed. A failing asset is reported in the release notes, not hidden.
    5. Commit exactly `docs/assets-report.json`, `docs/assets-report.md`, `docs/assets-report-webgpu.json` and
       `docs/assets-report-webgpu.md`, naming the commit, the run id and the pass count per backend, before tagging.
-4. `npm pack --dry-run` must list `dist/cli/index.js`, `dist/cli-app/index.html`, `AGENTS.md`, `llms.txt`.
-5. Commit, tag `vX.Y.Z`, push the tag. The `publish` job in `.github/workflows/ci.yml` runs `npm publish --provenance
-   --access public`; it needs the `NPM_TOKEN` repository secret (an npm automation token).
-
-Consumers: `npm i -D threeforge playwright && npx playwright install chromium`, then `npx threeforge`.
-
-The `publish` job refuses a tag that does not match `package.json` (`v0.9.0` needs `"version": "0.9.0"`), because
-npm publishes what `package.json` says and the tag would otherwise point somewhere else. `ci.yml`'s `on:` lists
-`tags: ['v*']` as well as `branches: [main]`: a `branches:` filter on its own drops tag pushes entirely, and the
-job would never fire.
+5. `npm pack --dry-run` must list `dist/cli/index.js`, `dist/cli-app/index.html`, `AGENTS.md`, `llms.txt`.
+6. Commit, tag `vX.Y.Z`, push the tag. The `publish` job in `.github/workflows/ci.yml` runs `npm publish --provenance
+   --access public`; it needs the `NPM_TOKEN` repository secret (an npm automation token). The job refuses a tag
+   that does not match `package.json` (`v0.9.0` needs `"version": "0.9.0"`). Consumers then run
+   `npm i -D threeforge playwright && npx playwright install chromium` and `npx threeforge`.
 
 ## What CI covers, and what it does not
 
 `.github/workflows/ci.yml` runs on every pull request and every push to `main`:
 
-- **`commit-rules`** (pull requests **and** pushes; see the seeding note at the top) — `scripts/commit-rules.mjs`
-  over the commits the pull request or the push adds: a commit touching rendering code must carry `Budget: <n>` or
-  `Budget: n/a <reason>` on a body line. That is CONTRIBUTING.md rule 4, checked rather than remembered. What counts as
-  rendering is `RENDERING_PATHS` in that script, and what deliberately does not is `EXCLUDED_PATHS`, each entry with
-  its reason; a unit test fails if any top-level entry of `src/` is in neither list. Merge commits are not checked.
-  The only way past the rule is `EXEMPT_COMMITS`, a dated allow-list of full SHAs in the same script, and every run
-  prints what it excused. Run it locally the same way: `node scripts/commit-rules.mjs main..HEAD`.
-- **`unit`** — `pnpm typecheck`, `pnpm test`, `pnpm build`.
-- **`e2e`** — both backends, `--grep-invert "@corpus|@bench"`, and **no downloaded content at all**.
+- **`commit-rules`** — the `Budget:` line check above.
+- **`unit`** — `pnpm typecheck`, `pnpm test`, `pnpm build`, plus an informational ledger-overhead figure in the run
+  summary (not a gate, compared to nothing).
+- **`e2e`** — both backends, `--grep-invert "@corpus|@bench"`, and no downloaded content at all.
 - **`bench`** — both backends, the gate in `scripts/bench-run.mjs`. The only pull-request job that downloads
-  anything: the bench scenes reach the Kenney kits through `bossfight`/`crowd` and the water map through `lake`.
-  The fetch runs with `FORGE_FETCH_STRICT=1`, so a failed download fails that step by name rather than
-  surfacing later as a scene error.
+  anything (the Kenney kits and the water map, with `FORGE_FETCH_STRICT=1` so a failed download fails by name).
   Deterministic cost metrics are gated; timing is recorded only, since the runner is SwiftShader, not a GPU.
 
-**A green pull-request run is not full coverage, and should not be read as one.** The `@corpus` tag takes every
-test that needs downloaded content out of the `e2e` job. Measured at the head of
-`fix/audit-0.9.0` (no spec has changed since `20bace1`) with `pnpm exec playwright test --list --project=<backend>` (and `--grep-invert "@corpus|@bench"`, the `e2e` job's
-selection): the suite is 260 tests in 36 files **per project** (520 across the two backends), of which `e2e` runs
-**96 per project** (192 across both) in 28 files; 148 per project are `@corpus` and 16 are `@bench`. Not covered there:
+A green pull-request run is not full coverage. The `@corpus` tag takes every test that needs downloaded content out
+of the `e2e` job: most of `cli.spec.ts` and `mcp.spec.ts`, all of `ParticleBudget`, and the `arena`, `assets`,
+`bench`, `biome`, `crowd`, `vat` and `warmup` specs. **The `e2e` job on `webgpu` checks no pixels at all**: a Linux
+runner's WebGPU adapter is SwiftShader, so `test/e2e/fixtures.ts` turns `pixelChecks` off there. WebGPU pixel parity
+is proven only by a local run on a native adapter (steps 2 and 4 above).
 
-- 15 of `cli.spec.ts`'s 20 tests and 10 of `mcp.spec.ts`'s 13 — most of the CLI and MCP agent surface on real models;
-- `ParticleBudget` entirely (`particles.spec.ts` contributes no tests to the run) and the boss-fight half of
-  `shadow-budget.spec.ts`, because both open `bossfight`, which reaches the kits through `buildArena`;
-- `arena`, `assets`, `bench`, `biome`, `crowd`, `vat` and `warmup`, which contribute no tests to the run.
+`.github/workflows/assets.yml` runs the full corpus on both backends weekly (Mondays 04:17 UTC) and on manual
+dispatch. It fails when any asset misbehaves or failed to download, uploads `docs/assets-report*` as a build
+artifact and never commits: the tracked report files are updated by hand, from that artifact or by step 4.
 
-**The `e2e` job on `webgpu` checks no pixels at all.** A Linux runner's WebGPU adapter is SwiftShader, and capturing
-its canvas in headless Chromium drops the device, so `test/e2e/fixtures.ts` turns `pixelChecks` off for `webgpu` on
-any adapter but a native one and says so in an annotation on every such test. There, 25 `test.skip(!forge.pixelChecks)`
-declarations skip their whole test (in `bake`, `compile`, `crowd`, `freeze`, `hidden-group`, `scene-space`,
-`sprites`, `streaming`, `vat` and `warmup`), and `compile`, `character`, `occlusion` and `nested-passes` run their
-counts but skip their screenshots. `nested-passes.spec.ts` also skips a test, with the loss message, once the adapter
-reports the device lost; on macOS SwiftShader that happens after the first step, so all ten skip there, and how long a
-Linux runner keeps the device is unknown until CI first runs. The `bench` job's `webgpu` gate is SwiftShader too and
-gates counts, not pixels. **WebGPU pixel parity is therefore proven only by a local run on a native adapter**, where
-`FORGE_WEBGPU` defaults to `native` off Linux: step 2 of the release for the e2e specs (the `@corpus` ones among them
-compare pixels on a few corpus models), and step 3's `assets.spec.ts` run on `--project=webgpu` for every model of the
-corpus (one view per model, under 0.5 % of pixels changed at a per-channel tolerance of 24). A green `webgpu` job proves counts only.
-
-Those are covered by **`.github/workflows/assets.yml`**: weekly (Mondays 04:17 UTC) and on manual dispatch, the
-full corpus on both backends. It fails when any asset misbehaves **and when any asset failed to download**: the
-fetch steps run with `FORGE_FETCH_STRICT=1`, and `assets.spec.ts` builds its tests from `corpusPlan`, which keeps a
-model whose download errored in the run (its test fails naming the error) instead of dropping it, so a partial
-fetch can no longer pass as a smaller corpus. It uploads `docs/assets-report*` as a build artifact and
-**never commits** — the tracked report files are updated by hand, from that artifact or by step 3 of the release. It pins
-`FORGE_RUN_ID` per job so a run crossing midnight UTC does not split its id and decline to publish the Markdown.
-
-`FORGE_FETCH_STRICT=1` makes `pnpm assets` and `pnpm assets:kits` exit 1, listing every failed download, after
-writing the index. Unset — the default for local work — a failed download is recorded in the index and the script
-exits 0 with whatever did download, so a flaky connection does not block you; a full local `pnpm assets:report`
-then fails the models that are missing by name.
-
-`FORGE_BENCH_APP_OPTIONAL=1` lets `scripts/bench-app-assets.mjs` warn instead of exiting 1 when the Kenney kits
-are absent. Only Playwright's port-5180 `webServer` sets it: that command's exit status fails the *whole*
-Playwright run rather than one spec, so without it a kit-less machine loses all 96 tests per project that are
-neither `@corpus` nor `@bench` (192 across both backends, measured at the head of `fix/audit-0.9.0`).
-`pnpm build:bench-app` and `pnpm bench:app` never set it, so a published page still fails hard without the kits.
+`FORGE_FETCH_STRICT=1` makes `pnpm assets` and `pnpm assets:kits` exit 1 after listing every failed download; unset
+(the local default) the failure is recorded in the index and the script exits 0. `FORGE_BENCH_APP_OPTIONAL=1` lets
+`scripts/bench-app-assets.mjs` warn instead of exiting 1 without the kits; only Playwright's `webServer` sets it.
 
 ## Device bench page and results (one-time repository settings)
 
-- Seed `main` with a direct push before opening any pull request (see the top of this file).
-- Settings → Pages → Source: **GitHub Actions**. The `pages` workflow then deploys `dist/bench-app` on every push to
-  `main`, and `bench-results` also dispatches it (`gh workflow run pages.yml`) after every accepted result, since a
-  `GITHUB_TOKEN` push does not itself fire another workflow's `on: push`. The page's submit button targets this
+- Settings → Pages → Source: **GitHub Actions**. The `pages` workflow deploys `dist/bench-app` on every push to
+  `main`, and `bench-results` also dispatches it after every accepted result. The page's submit button targets this
   repository through `VITE_FORGE_REPO`.
-- Create two labels:
-  - `bench-result` — applied automatically by the issue template to every submission; triage only, it grants no
-    access.
-  - `bench-accepted` — the acceptance label. Applying it is what makes `bench-results` ingest the issue's result
-    and commit it to `main`.
-- **Trust model.** A submitted issue is untrusted input from anyone with a GitHub account. `bench-results` only
-  ingests a result after `bench-accepted` is applied, and only when the user who applied it has `write` or `admin`
-  permission on the repository (checked live via the GitHub API for that specific user, not just "the label is
-  present"). GitHub's Maintain role is accepted too — the collaborator-permission API reports that role's
-  `permission` as `write`, not `maintain`. If someone without qualifying permission applies the label, the
-  workflow removes it immediately and comments explaining why, without touching `bench/devices` or `main`.
-  - **Editing withdraws acceptance.** If an already-accepted, still-open issue (one still carrying
-    `bench-accepted`) is edited, `bench-results` removes the label and comments that the edit withdrew
-    acceptance — a maintainer must look at the new content and re-apply the label before it is ingested. This
-    stops a submitter from getting a body approved and then swapping in something else afterwards. (A closed,
-    already-ingested issue is left alone if edited — re-applying the label to a closed issue wouldn't do
-    anything, since ingestion also requires the issue to still be open.)
-  - Applying a label at all needs GitHub's Triage role or higher, which is still short of `write`/`admin` — a
-    triage-only collaborator can technically apply `bench-accepted`, so the label alone is not proof of
-    maintainer trust. The workflow is what enforces the actual `write`/`admin` requirement (removing the label
-    again within seconds if the labeler doesn't qualify), so no separate repository setting is needed to restrict
-    who can apply labels.
-  - **Duplicate and colliding ids.** A result's id is derived from its GPU/browser/backend and the day it was
-    submitted, so re-accepting the same unedited issue (or a duplicate webhook delivery) reproduces byte-identical
-    content — the workflow recognizes this and closes the issue as recorded without a second commit. If a
-    *different* result collides on the same id (the same device benched again the same day), the workflow leaves
-    the earlier file untouched, removes `bench-accepted`, and comments on the issue rather than silently
-    overwriting the first submission.
-- The `bench-results` workflow commits to `main` with the default `GITHUB_TOKEN`: branch protection on `main` must
-  allow that push — either let the GitHub Actions bot push directly, or add a bypass for it — otherwise the push
-  step fails after its retries, the `bench-accepted` label is removed, and a comment says so on the issue.
-- `pnpm bench:devices` regenerates `docs/devices.md` locally from `bench/devices/*.json`.
+- Create two labels: `bench-result` (applied by the issue template to every submission; triage only) and
+  `bench-accepted` (the acceptance label: applying it makes `bench-results` ingest the issue's result into `main`).
+- Trust model: a submitted issue is untrusted input. `bench-results` ingests only after `bench-accepted` is applied
+  by a user with `write` or `admin` permission (checked live; Maintain reports as `write`); otherwise it removes the
+  label and comments why. Editing an accepted, still-open issue withdraws acceptance. Re-accepting an unedited issue
+  reproduces byte-identical content and closes it without a second commit; a different result colliding on the same
+  id (same device, same day) leaves the earlier file untouched and removes the label.
+- The workflow commits to `main` with the default `GITHUB_TOKEN`: branch protection must allow that push.
+  `pnpm bench:devices` regenerates `docs/devices.md` locally from `bench/devices/*.json`.

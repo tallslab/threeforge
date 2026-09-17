@@ -7,7 +7,7 @@
  * at once while the enclosing pass is submitted only in `finishRender`; on WebGL the receiving batch draws right after
  * the nested render returns. So a nested pass must not rewrite the index rows the enclosing pass already recorded.
  *
- * The FakeRenderer (Task 2) models exactly that timing (`webgpu`, `sceneHooks`, `shadowTrigger: 'first-receiver'`,
+ * The FakeRenderer models exactly that timing (`webgpu`, `sceneHooks`, `shadowTrigger: 'first-receiver'`,
  * `record`). Every test here compiles plain meshes with `World` and checks the ids each pass actually draws against a
  * reference computed from the original meshes: every id whose box meets the pass's frustum is drawn, no id twice, and
  * nothing whose bounding sphere misses the frustum (so any id beyond the box reference lies outside the frustum).
@@ -43,7 +43,7 @@ import { createCulledInstancedMesh } from '../../src/compiler/instancing.js';
 import { PassTracker } from '../../src/compiler/passTracker.js';
 import { World } from '../../src/compiler/World.js';
 import { tag } from '../../src/tags.js';
-import { mulberry32 } from '../../test/scenes/naive.js';
+import { mulberry32 } from '../scenes/naive.js';
 import { FakeRenderer, type FakePass } from './helpers/fakeRenderer.js';
 
 const box = new BoxGeometry(1, 1, 1);
@@ -156,7 +156,7 @@ function rig(options: RigOptions) {
   const unlitOriginals = row(scene, 'unlit', -3, new MeshBasicMaterial(), false);
   const litOriginals = row(scene, 'lit', 3, options.litMaterial ?? new MeshStandardMaterial({ roughness: 0.8 }), true);
   scene.updateMatrixWorld(true);
-  // threshold 1000: 101 repeats of one geometry stay a BatchedMesh (the default 64 makes an InstancedMesh, Task 17).
+  // threshold 1000: 101 repeats of one geometry stay a BatchedMesh (the default 64 makes an InstancedMesh).
   const world = new World(scene, { instanceThreshold: 1000, ...(options.nested === 'auto' ? {} : { nestedPasses: options.nested }) });
   const report = world.compile({ coordinateSystem: cs });
   const unlit = world.slotOf(unlitOriginals[0]!)!.batch as BatchedMesh;

@@ -1,5 +1,5 @@
 /**
- * The ledger's per-submission hot path (Task 26): guarded by counts, not timings, plus one µs ratio.
+ * The ledger's per-submission hot path: guarded by counts, not timings, plus one µs ratio.
  *
  * - Registry cache reads per frame are bounded by unique materials (the ledger memoizes `hashesOf()` per frame and
  *   never calls `describe()`), and stay current across `registry.invalidate()`.
@@ -515,28 +515,22 @@ describe('DrawCallLedger cost per submission', () => {
 });
 
 /**
- * A structural guard, in the spirit of R97: it counts a property of the source rather than timing anything, so it
- * cannot be flaky.
+ * A structural guard: it counts a property of the source rather than timing anything, so it cannot be flaky.
  *
  * The ledger builds a snapshot in `exit()` on every frame, so `skinningOf`, `lightingOf` and `buildFrame` each walk
  * every submission record of every frame. V8 elides the array iterator of a `for…of` over that array only some of the
- * time; when a nearby edit tips it over, each step allocates a 40-byte iterator result. That is not hypothetical:
- * `e568614` *shrank* `lightingOf`'s loop and took the flat 10k scene from 0.80 to 1.20 MB per frame — a 50 %
- * allocation regression that shipped and was documented as the new normal, because nothing counts allocations here
- * and `scripts/ledger-overhead.mjs` is a report, not a gate.
+ * time; when a nearby edit tips it over, each step allocates a 40-byte iterator result. Shrinking one such loop once
+ * took the flat 10k scene from 0.80 to 1.20 MB per frame — a 50 % allocation regression — because nothing counted
+ * allocations here and `scripts/ledger-overhead.mjs` is a report, not a gate.
  *
  * Measuring bytes from a unit test would be flaky (GC timing, and other tests share the process), so this asserts the
- * shape the fix depends on instead.
- *
- * Its first version named two files and missed two more walks of the same array (`DrawCallLedger.exit()` and
- * `hintsFor`, which `exit()` calls every frame with that array), so it passed while its claim was false. This version
- * scans every file under `src/ledger/` for an iterator-protocol walk rather than trusting a list, and then checks each
- * walk site that exists is an index loop. It matches the names the record array actually goes by (`items`,
- * `ctx.items`, `this.lastItems`, `state.buffer.items`) with flexible whitespace; it cannot see the array under a name
- * that is not on that list, so renaming it means adding the new name here. Any binding counts, a destructuring pattern
- * included (`for (const { pass } of items)` uses the same protocol), and so do `[...items]`, `Array.from(items)` and
- * `new Set(items)`. `Array.prototype.map`/`forEach` are not flagged: they index internally and allocate no iterator
- * result.
+ * shape the fix depends on instead: it scans every file under `src/ledger/` for an iterator-protocol walk of the
+ * record array rather than trusting a list of files, and then checks each walk site that exists is an index loop. It
+ * matches the names the record array actually goes by (`items`, `ctx.items`, `this.lastItems`, `state.buffer.items`)
+ * with flexible whitespace; it cannot see the array under a name that is not on that list, so renaming it means adding
+ * the new name here. Any binding counts, a destructuring pattern included (`for (const { pass } of items)` uses the
+ * same protocol), and so do `[...items]`, `Array.from(items)` and `new Set(items)`. `Array.prototype.map`/`forEach`
+ * are not flagged: they index internally and allocate no iterator result.
  */
 const RECORD_ARRAY = String.raw`(?:ctx\.items|this\.lastItems|state\.buffer\.items|items)\b`;
 /** A `for…of` binding: a name, or an object or array destructuring pattern (the same iterator protocol either way). */
@@ -822,12 +816,12 @@ interface NestedObservation {
 }
 
 /**
- * The rig's second frame (camera moved to x = 90) as the ledger reported it before the restructure, at 63daa89. Items
+ * The rig's second frame (camera moved to x = 90) as the ledger reported it before the restructure. Items
  * in filing order: the unlit batch's main draw, then the shadow pass the lit batch's draw triggers (both batches, the
  * main prefix zeroed and the shadow camera's rows appended), then the lit batch's main draw, filed once it returns.
- * The first frame (camera at x = 0) drew more of each row, so a count read before a draw would differ. Since Task 31 a
+ * The first frame (camera at x = 0) drew more of each row, so a count read before a draw would differ. Now a
  * shadow batch's `instancesDrawn` counts only its slots with a non-zero count (the 51 cubes the shadow camera sees);
- * 63daa89 reported every slot there (68 and 66, the zeroed main-list slots included), which `expectedGpuDraws` still counts.
+ * the old ledger reported every slot there (68 and 66, the zeroed main-list slots included), which `expectedGpuDraws` still counts.
  */
 const BATCHES: NestedObservation['batches'] = [
   { pass: 'main', instances: 101, instancesDrawn: 17, expectedGpuDraws: 17 },

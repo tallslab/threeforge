@@ -31,8 +31,8 @@ interface MaterialMark {
  * materials the registry deliberately keeps apart (instance functions, own data) stay apart.
  *
  * The canonical of a drawn material is resolved at most once per material instance per frame, and again once
- * `registry.keysRevision` moves, even mid-frame — the same memo and the same invalidation the ledger's hash reads use
- * (Ruling R6). A material whose canonical changes without moving that revision (a `register()` call made between two
+ * `registry.keysRevision` moves, even mid-frame — the same memo and the same invalidation the ledger's hash reads use.
+ * A material whose canonical changes without moving that revision (a `register()` call made between two
  * draws of the same frame) keeps the canonical the frame started with, as its hashes do.
  */
 export class MaterialUses {

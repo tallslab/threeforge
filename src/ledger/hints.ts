@@ -53,7 +53,7 @@ export interface MainPassObjects {
 
 const mb = (n: number): string => `${(n / (1024 * 1024)).toFixed(0)} MB`;
 
-/** SP1 rules: what the six sections already know how to say. Later modules add their own. */
+/** The base rules: what the six sections already know how to say. Later modules add their own. */
 export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): Hint[] {
   const hints: Hint[] = [];
   // `message` may already embed an untrusted name (e.g. a point light's), and `objects` may carry one directly

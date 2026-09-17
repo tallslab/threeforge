@@ -32,7 +32,7 @@ jobs:
           - backend: webgpu
             requireWebgpu: '1' # a no-adapter runner must fail, not skip its way to green
     env:
-      # Ruling R110. Every report row is stamped with a run id, and the Markdown is republished only when one run
+      # Every report row is stamped with a run id, and the Markdown is republished only when one run
       # measured every asset. Unpinned, the id is derived from the UTC day, so a corpus run that crosses midnight
       # splits into two ids and declines to publish (fail-closed, but it wastes the run). One id per job removes
       # the split; the two backends write separate report files, so they carry separate ids by design.

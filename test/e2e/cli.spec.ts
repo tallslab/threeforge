@@ -50,14 +50,14 @@ test('analyze renders a sample asset, compiles it and prints the document', { ta
   expect(doc.after.totals.unattributed).toBe(0);
   expect(doc.before.overdraw.measured).toBe(true);
   expect(doc.parity.pass).toBe(true);
-  // R149: the default stays 0.5, and the document records it.
+  // The default stays 0.5, and the document records it.
   expect(doc.input.parity).toBe(0.5);
   expect(doc.parity.threshold).toBe(0.5);
   expect(doc.verdict.pass).toBe(true);
   expect(r.stderr).toContain('PASS');
 });
 
-test('analyze --parity 0 judges compile parity on the raw changed-pixel count, from the built binary (R149)', { tag: '@corpus' }, async ({ forge }) => {
+test('analyze --parity 0 judges compile parity on the raw changed-pixel count, from the built binary', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   const r = run(['analyze', sample(), '--backend', forge.backend, '--frames', '3', '--views', '1', '--parity', '0', '--json']);
   const doc = JSON.parse(r.stdout);
@@ -231,7 +231,7 @@ test('analyze --bake --views keeps parity on a multi-part static asset and repor
   expect(r.stderr).toContain('bake:');
 });
 
-test('analyze --bake --json output validates against ANALYZE_SCHEMA, compiled standalone in ajv (Task 29: self-contained $defs)', { tag: '@corpus' }, async ({ forge }) => {
+test('analyze --bake --json output validates against ANALYZE_SCHEMA, compiled standalone in ajv (self-contained $defs)', { tag: '@corpus' }, async ({ forge }) => {
   test.setTimeout(600_000);
   const index = JSON.parse(readFileSync('test/assets/files/index.json', 'utf8')) as Array<{ name: string; entry: string }>;
   const engine = index.find((a) => a.name === '2CylinderEngine')!;
@@ -253,18 +253,18 @@ test('optimize changes zero pixels of the Fox at --parity 0 in every view, skin 
     // --parity 0, and every view asserted at zero *changed pixels* on both backends: `safe` is held to zero changed
     // pixels at --parity 0 on the Fox and the Buggy (CONTRIBUTING.md rule 7), and neither the 0.5 % default this test began with nor the rounded
     // `diffPct` that replaced it could prove that — `diffPct` is rounded to three decimals, which at 1280x720
-    // absorbs up to 4 changed pixels of 921,600. `changedPixels` (Ruling R104) is the exact count, so these rows
+    // absorbs up to 4 changed pixels of 921,600. `changedPixels` is the exact count, so these rows
     // are the first form of this assertion that actually tests rule 7.
     const r = run(['optimize', asset('Fox'), '--out', out, '--parity', '0', '--backend', forge.backend, '--frames', '5', '--json']);
-    // Status first. This became a real parity gate only in fix round 3 (Ruling R108): until then the CLI compared
-    // the rounded percentage, so `--parity 0` exited 0 while 1-4 pixels moved, and the round-2 comment here — and
-    // that commit's message — claimed a gate the tool did not yet have. `parityOf` now judges a threshold of 0 on
+    // Status first. This became a real parity gate only once `parityOf` judged raw counts: until then the CLI compared
+    // the rounded percentage, so `--parity 0` exited 0 while 1-4 pixels moved, and an earlier version of this
+    // comment claimed a gate the tool did not yet have. `parityOf` now judges a threshold of 0 on
     // the raw counts, so exit 0 does mean no pixel moved; the per-view assertions below no longer stand alone.
     // Passing stderr as the message also keeps a crashed CLI from surfacing as "Unexpected end of JSON input".
     expect(r.status, r.stderr).toBe(0);
     const doc = JSON.parse(r.stdout);
     expect(doc).toMatchObject({ schemaVersion: 2, tool: 'threeforge', command: 'optimize', input: { preset: 'safe', parity: 0 } });
-    // R100 moved `weld` to `balanced` (it moved pixels) and R105 moved `resample` after it (it grew files), so `safe`
+    // `weld` moved to `balanced` (it moved pixels) and `resample` followed it (it grew files), so `safe`
     // is these three steps. `--weld` / `--resample` add them back (pinned in pipeline.test.ts).
     expect(doc.steps.map((s: { name: string }) => s.name)).toEqual(['dedup', 'palette', 'prune']);
     expect(statSync(out).size).toBe(doc.output.bytes);
@@ -285,7 +285,7 @@ test('optimize changes zero pixels of the Fox at --parity 0 in every view, skin 
     const views = doc.verify.parity.views as Array<{ view: string; diffPct: number; changedPixels: number }>;
     expect(views.map((v) => v.view)).toEqual(['default', 'orbit-0', 'orbit-1']);
     expect(doc.verify.parity.threshold).toBe(0);
-    // R156: `--parity` is the original-versus-optimized threshold and does not reach each file's *own* compile check,
+    // `--parity` is the original-versus-optimized threshold and does not reach each file's *own* compile check,
     // which stays at the analyze default. The Buggy case below is where that separation is pinned and argued; here it
     // is enough that the two thresholds are the two different numbers this run asked for.
     expect(doc.verify.original.input.parity).toBe(0.5);
@@ -294,8 +294,8 @@ test('optimize changes zero pixels of the Fox at --parity 0 in every view, skin 
     expect(doc.verify.original.parity.pass, JSON.stringify(doc.verify.original.parity)).toBe(true);
     test.info().annotations.push({ type: 'parity', description: `[${forge.backend}] safe Fox: ${views.map((v) => `${v.view} ${v.changedPixels} px (${v.diffPct} %)`).join(', ')}` });
     // Two defects had to be fixed before this could assert zero, and both were found by measuring rather than by
-    // reading: `weld` moved to `balanced` (Ruling R100) because it moves pixels on WebGPU on some assets even
-    // though it changes no drawn value, and `resample` now runs at tolerance 0 (Ruling R104) because
+    // reading: `weld` moved to `balanced` because it moves pixels on WebGPU on some assets even
+    // though it changes no drawn value, and `resample` now runs at tolerance 0 because
     // glTF-Transform's default is 1e-4, not 0, which dropped keyframes near the interpolated value and shifted the
     // pose the harness fixes at `mixer.setTime(0.7)` — 1-3 pixels of 921,600 on webgl2 and 3-5 on webgpu, small
     // enough that the rounded percent read 0.000 on webgl2 and hid it. Asserting the raw count on both backends is
@@ -314,9 +314,9 @@ test('optimize changes zero pixels of the Fox at --parity 0 in every view, skin 
 });
 
 /**
- * Ruling R112: `--resample` under `safe` is the one lossless path with no end-to-end cover.
+ * `--resample` under `safe` is the one lossless path with no end-to-end cover.
  *
- * R105 moved `resample` out of `safe`, and `--resample` adds it back — where it runs at `tolerance: 0` (R104),
+ * `resample` left `safe`, and `--resample` adds it back — where it runs at `tolerance: 0`,
  * because glTF-Transform's default is a lossy `1e-4` that drops keyframes merely *near* the value interpolated from
  * their neighbours. That tolerance is the entire difference between lossless and not, and until now it was pinned
  * only in `test/unit/pipeline.test.ts`, which tests `planSteps` — a pure function that decides the number. Nothing
@@ -362,7 +362,7 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
     // collapses to one. Every view must be exactly 0, not merely inside the 0.5 % default. This asset corroborates
     // nothing about weld, which is a measured no-op on it (245,673 vertices in and out, all 148 primitives already
     // indexed) and no longer in `safe` anyway; what it covers is dedup, palette and prune -- `safe`'s steps since
-    // R105 moved resample out of the preset -- on a many-material asset, where safe does measure 0 on both backends.
+    // resample left the preset -- on a many-material asset, where safe does measure 0 on both backends.
     const r = run(['optimize', asset('Buggy'), '--out', join(dir, 'buggy.glb'), '--parity', '0', '--backend', forge.backend, '--frames', '3', '--views', '1', '--json']);
     expect(r.status, r.stderr).toBe(0);
     const doc = JSON.parse(r.stdout);
@@ -382,7 +382,7 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
     expect(doc.verify.parity.pass).toBe(true);
     expect(doc.verdict.pass).toBe(true);
 
-    // R156, pinned here because this asset is the one that can tell the two questions apart, and an attempt to
+    // Pinned here because this asset is the one that can tell the two questions apart, and an attempt to
     // conflate them shipped and was reverted.
     //
     // `--parity` is the ORIGINAL-versus-OPTIMIZED threshold. `--parity 0` asks "is the optimized asset exactly the
@@ -413,10 +413,10 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
 
 /**
  * The tolerance is measured, not guessed. `optimize --preset balanced --parity 100` on the Fox, three times per
- * backend (twice before Ruling R100 and again after it, which does not change what `balanced` runs), reported the
+ * backend (twice before `weld` left `safe` and again after, which does not change what `balanced` runs), reported the
  * same figures every time: webgl2 default 0.008 %, orbit-0 0.005 %, orbit-1 0.002 %; webgpu default 0.014 %,
  * orbit-0 0.014 %, orbit-1 0.015 %. So the worst view measured is 0.015 % and 0.05 % leaves ~3.3x headroom.
- * It covers three lossy sources together: `weld` (which R100 moved here out of `safe`, and which is most of the
+ * It covers three lossy sources together: `weld` (which moved here out of `safe`, and which is most of the
  * webgpu figure — 0.013 % of the 0.015 % on its own), `quantize` (positions, UVs and weights to integers) and
  * `textures` (the base colour map re-encoded as WebP at quality 85). It is deliberately far below the CLI's own
  * 0.5 % default: balanced is lossy, but only just, and a step that starts moving a tenth of a percent should fail.
@@ -457,7 +457,7 @@ test('optimize --preset balanced quantizes and re-encodes the Fox, changing pixe
 });
 
 /**
- * Ruling R113: `--parity 0` has to fail the *process*, not only the decision.
+ * `--parity 0` has to fail the *process*, not only the decision.
  *
  * `test/unit/cli-core.test.ts` drives the whole chain — `parityOf` → `verdictOf` → `exitCodeOf` — on a one-pixel
  * difference, but in process. That proves the decision and nothing about the wiring. `src/cli/index.ts` is what turns
@@ -544,7 +544,7 @@ test('optimize --no-verify runs without a browser; a missing file, an out-of-dir
 });
 
 /**
- * Independent review C1. three r186's `LoaderUtils.resolveURL` returns an absolute `http://` URI unchanged, so before
+ * three r186's `LoaderUtils.resolveURL` returns an absolute `http://` URI unchanged, so before
  * the fix `analyze` handed one straight to headless Chromium: the page issued the request from this machine's network,
  * outside the confined static server. The whole run is the temporary file below, so this test needs no downloaded
  * content and runs in CI's `--grep-invert "@corpus|@bench"` selection.

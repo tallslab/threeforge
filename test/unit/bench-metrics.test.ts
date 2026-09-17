@@ -31,7 +31,7 @@ describe('benchMetrics', () => {
   });
 
   /**
-   * Ruling R115: the key list existed in three places (this module for the page, `scripts/bench-schema.mjs` for the
+   * The key list existed in three places (this module for the page, `scripts/bench-schema.mjs` for the
    * node scripts, and `scripts/bench-gate.d.mts`'s type, which had silently lost five keys). The node scripts cannot
    * import TypeScript, so one copy has to stay: this pins it, and pins the gate's own split of the same keys.
    */

@@ -1,5 +1,5 @@
 /**
- * Task 18: static meshes under an invisible ancestor Group used to be classified `static` and folded into a
+ * Static meshes under an invisible ancestor Group used to be classified `static` and folded into a
  * `BatchedMesh` at the scene root, which is visible by default. Three's own traversal never draws them (a Group's
  * `visible = false` short-circuits its whole subtree in `Renderer.js`'s `_projectObject`), so a naive render and a
  * pre-fix compiled render disagreed on pixels. `exclusionRule`'s `invisible-ancestor` rule (reusing

@@ -3,12 +3,12 @@
  *
  * Renders one deterministic scene for 3 frames and snapshots `DrawCallLedger.frame({ items: true })` to
  * `ledger-golden.snapshot.json`, stored next to this file. The scene touches every submission reason and pass
- * kind the ledger currently classifies (see the table in this file's describe block and in task-3-report.md), with
+ * kind the ledger currently classifies (see the table in this file's describe block), with
  * one exception: `static-unbatched`. That reason needs two statics that share a material, and every static here has
  * its own — the only shared material in the scene belongs to the two skinned meshes, `body` and `body-2` — so no
  * item in the snapshot carries it. `draw-call-ledger.test.ts` covers `static-unbatched` instead.
- * Task 26 (a hot-path rewrite of the ledger) must keep this file byte-identical; later tasks that change a
- * number on purpose update it and the diff is reviewed by a human — that review is the point of a golden file.
+ * A hot-path rewrite of the ledger must keep this file byte-identical; a change that moves a number on purpose
+ * updates it, and the diff is read by a human — that reading is the point of a golden file.
  *
  * To update after an intentional change to the ledger's output:
  *
@@ -218,7 +218,7 @@ describe('DrawCallLedger golden output', () => {
 
     // render() takes a fixed 3 ms; matches the pattern in js-section.test.ts. This clock ticks only inside render(), so
     // the snapshot's `js.renderMs: 12` (4 renders x 3) and `js.ledgerMs: 0` are what the injection dictates and cannot
-    // fail on the renderMs/ledgerMs split (independent review M7). That split is covered by the two clock tests in
+    // fail on the renderMs/ledgerMs split. That split is covered by the two clock tests in
     // js-section.test.ts: one charges the ledger's filing time through rescan(), the other on every frame.
     const originalRender = renderer.render.bind(renderer);
     (renderer as { render: typeof originalRender }).render = (s, c) => {

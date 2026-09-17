@@ -8,7 +8,7 @@ import { CHUNK_BIN, glbBytes } from './helpers/gltf-files.js';
 
 /**
  * `threeforge optimize` hands files to glTF-Transform, which resolves `images[].uri` and `buffers[].uri` against the
- * input's directory with no confinement: an audit got `../../.ssh/id_ed25519` embedded into `<name>.forge.glb`. These
+ * input's directory with no confinement: a crafted input got `../../.ssh/id_ed25519` embedded into `<name>.forge.glb`. These
  * pin the rules `assertConfinedUri` applies before any read or write. `root/a/b` is the base directory; `root` holds
  * the "secret" a hostile URI reaches for. On macOS `tmpdir()` itself sits behind a symlink (`/var` → `/private/var`).
  */

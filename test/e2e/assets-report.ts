@@ -73,7 +73,7 @@ export function shortCommit(commit: string): string {
  * `day` is in the id because a pid alone can repeat: an OS that recycles the runner pid at the same commit would
  * otherwise let a later partial run inherit an earlier full run's rows and republish the table. A run that crosses
  * midnight UTC splits into two ids, which blocks the Markdown instead of publishing a mixed table — the safe
- * direction. `FORGE_RUN_ID` pins the id outright, which is what CI should set (see Task 47).
+ * direction. `FORGE_RUN_ID` pins the id outright, which is what CI should set.
  */
 export function runIdOf(env: { FORGE_RUN_ID?: string | undefined }, ppid: number, commit: string, day: string): string {
   const pinned = (env.FORGE_RUN_ID ?? '').trim();

@@ -43,20 +43,20 @@ export interface NumberRange {
 export type RangeField = 'budget' | 'frames' | 'timeout' | 'views' | 'parity' | 'simplify' | 'simplifyError' | 'textureSize' | 'textureQuality';
 
 /**
- * Bounds of every numeric run input, keyed by input field. The CLI flag is the kebab-case name (`textureSize` →
- * `--texture-size`). `timeout` stops at 2^31 - 1 ms because a longer Node timer fires immediately; `views` stops at
- * 64 because each view renders and screenshots twice and nothing bounds their total time.
- */
-/**
  * The default `--parity` of `analyze` and `optimize` (and of the MCP `analyze_asset` and `optimize_asset`): the percent
  * of pixels allowed to change. Both commands judge it through `parityOf` (`src/cli/analyze.ts`): a threshold of 0 on
- * the raw changed-pixel count of every view, any other on the percentage (Rulings R108, R149).
+ * the raw changed-pixel count of every view, any other on the percentage.
  */
 export const DEFAULT_PARITY = 0.5;
 
 /** `--parity`'s sentence on what 0 means, shared word for word by every command that takes the flag. */
 const PARITY_ZERO = 'A threshold of 0 means zero: it is judged on the raw changed-pixel count of every view, not the rounded percent.';
 
+/**
+ * Bounds of every numeric run input, keyed by input field. The CLI flag is the kebab-case name (`textureSize` →
+ * `--texture-size`). `timeout` stops at 2^31 - 1 ms because a longer Node timer fires immediately; `views` stops at
+ * 64 because each view renders and screenshots twice and nothing bounds their total time.
+ */
 export const RANGES: Readonly<Record<RangeField, NumberRange>> = {
   budget: { min: 0, integer: true },
   frames: { min: 1, integer: true },

@@ -19,10 +19,9 @@ concurrency:
 
 jobs:
   # CONTRIBUTING.md rule 4 as a check: a commit touching a rendering path carries the budget it measured.
-  # Runs on pushes as well as pull requests (independent review H2): gating it on pull_request meant a direct push to
-  # main was never checked by rule 4 at all, by anyone, forever — and the release prescribes exactly such a push. The
-  # six commits on fix/audit-0.9.0 that fail the rule are exempted by the dated allow-list in
-  # scripts/commit-rules.mjs (EXEMPT_COMMITS), in code rather than in prose; the run prints each one it excused.
+  # Runs on pushes as well as pull requests: gating it on pull_request alone would leave a direct push to main
+  # unchecked. Commits that predate the rule are exempted by the dated allow-list in scripts/commit-rules.mjs
+  # (EXEMPT_COMMITS), in code rather than in prose; the run prints each one it excused.
   commit-rules:
     name: Budget line on every rendering commit
     runs-on: ubuntu-latest
@@ -65,22 +64,22 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      # `test/unit/ledger-hot-path.test.ts` carries the branch's one wall-clock measurement (µs per submission at 20k
-      # vs 2k, under 3x). Task 41 made it best-of-7 per size across 3 interleaved attempts, taking each size's own
+      # `test/unit/ledger-hot-path.test.ts` carries the suite's one wall-clock measurement (µs per submission at 20k
+      # vs 2k, under 3x). It is best-of-7 per size across 3 interleaved attempts, taking each size's own
       # minimum, so a stall has to land on the fast half of every attempt to matter. No CI retry or skip is wired
       # here on purpose: the statistic already survives a noisy shared runner, and a retry would hide a real
       # super-linear regression behind a second roll of the dice.
       # What it guards is *scaling*, not constant cost: adding a fixed cost per submission moves the ratio toward 1,
-      # so restoring 0.8.0's ~3.5-4.6 µs would make it pass more comfortably, not fail (independent review M6). The
-      # audited constant-cost mechanism is guarded by the count assertions in the same file — `describes === 0` and
+      # so restoring 0.8.0's ~3.5-4.6 µs would make it pass more comfortably, not fail. The
+      # constant-cost mechanism is guarded by the count assertions in the same file — `describes === 0` and
       # `reads <= 4` per frame, so `registry.describe()` cannot return to the hot path — which is a structural check
       # no runner noise can move.
       - run: pnpm test
       - run: pnpm build
-      # R136 (accepted from the independent review as a non-gating measure): nothing in CI watches the ledger's own
-      # cost, and a 50 % allocation regression has already reached this branch once and taken a bisect to attribute.
+      # Nothing else in CI watches the ledger's own cost, and a 50 % allocation regression has once landed unnoticed
+      # and taken a bisect to attribute.
       # This prints `scripts/ledger-overhead.mjs` into the run summary so the numbers are at least visible per run.
-      # It is INFORMATIONAL and UNVALIDATED until it has run once on a real runner (R10): the figures are
+      # It is INFORMATIONAL and UNVALIDATED until it has run once on a real runner: the figures are
       # machine-specific, a shared runner is noisy, and nothing here compares them to anything. `continue-on-error`
       # so it can never fail the job, and it runs after `pnpm build` because the script reads `dist/`.
       - name: Ledger overhead (informational, not a gate)
@@ -127,8 +126,8 @@ jobs:
       # (FORGE_WEBGPU unset ⇒ swiftshader) takes.
       - run: pnpm exec playwright install --with-deps chromium chromium-headless-shell
       - run: pnpm build # cli.spec.ts and mcp.spec.ts drive the built CLI in dist/
-      # COVERAGE, stated so a green run is not read as more than it is (Rulings R102, R110, R121). Measured at the
-      # head of fix/audit-0.9.0 (no spec changed since 20bace1) with `pnpm exec playwright test --list
+      # COVERAGE, stated so a green run is not read as more than it is. Measured at 0.9.0 with
+      # `pnpm exec playwright test --list
       # [--grep-invert "@corpus|@bench"]`: the suite is 260 tests in 36 files PER PROJECT (520 across the two); this
       # selection runs 96 per project (192 across both) in 28 files.
       # Dropped here and covered only by the weekly full-corpus `assets.yml`: 148 @corpus tests per project and the

@@ -390,7 +390,7 @@ describe('bakeGeometries vertex colours and tangents', () => {
   });
 });
 
-describe('bakeGeometries fix round 1: non-manifold shells, render sides, fused duplicates, kept survivors', () => {
+describe('bakeGeometries: non-manifold shells, render sides, fused duplicates, kept survivors', () => {
   it('rejects a shell whose outward and inside-out parts share one edge (non-manifold): the filler keeps every face', () => {
     // One entry: an outward box [0,2]x[0,2]x[0,1] and an inside-out box [2,3]x[2,3]x[0,1] sharing the edge
     // (2,2,0)-(2,2,1); a second entry fills the inside-out box. The shared edge is used twice in each direction.
@@ -463,7 +463,7 @@ describe('bakeGeometries fix round 1: non-manifold shells, render sides, fused d
   });
 });
 
-describe('bakeGeometries fix round 2: outlines of overlapping or non-manifold islands, shadow casters, back-side hits, copies', () => {
+describe('bakeGeometries: outlines of overlapping or non-manifold islands, shadow casters, back-side hits, copies', () => {
   /** The first front face a ray straight down from above (x, z) meets in a baked geometry, or undefined. */
   const hitFromAbove = (geometry: BufferGeometry, x: number, z: number) =>
     new Raycaster(new Vector3(x, 5, z), new Vector3(0, -1, 0)).intersectObject(new Mesh(geometry, new MeshBasicMaterial()))[0];
