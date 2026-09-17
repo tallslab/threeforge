@@ -2,7 +2,6 @@ import { existsSync, statSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pngjs from 'pngjs';
-import { DEFAULT_PARITY } from './args.js';
 import type { PlaywrightPage, PlaywrightRoute } from './browser.js';
 import { buildDocument, compileAndRemeasure, openPage } from './document.js';
 import { PageError, UsageError } from './errors.js';
@@ -12,6 +11,7 @@ import { evaluateWithin, measureViaHook, screenshotWithin, waitFor } from './mea
 import { serveStatic } from './server.js';
 import type { AgentDocument, AnalyzeInput, AssetFacts, CliCompileReport, Parity } from './types.js';
 import { formatPageErrors } from './untrusted.js';
+import { DEFAULT_PARITY } from './validate.js';
 
 /** The shipped harness page lives next to this module's directory: dist/cli/analyze.js -> dist/cli-app. */
 function cliAppDir(): string {

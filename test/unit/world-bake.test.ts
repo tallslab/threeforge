@@ -295,8 +295,7 @@ describe('World with bake', () => {
 
   it('bakeEntriesOf takes opacity, sidedness and vertex colours from the material', () => {
     const mesh = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
-    const entry = (material: Material, vertexColors?: boolean) =>
-      bakeEntriesOf([mesh], new Set(), material, { vertexColors })[0]!;
+    const entry = (material: Material, vertexColors?: boolean) => bakeEntriesOf([mesh], material, { vertexColors })[0]!;
     expect(entry(new MeshStandardMaterial())).toMatchObject({
       opaque: true,
       side: FrontSide,
@@ -306,7 +305,7 @@ describe('World with bake', () => {
     });
     const caster = Object.assign(new Mesh(new BoxGeometry(), new MeshStandardMaterial()), { castShadow: true });
     expect(
-      bakeEntriesOf([caster], new Set(), new MeshStandardMaterial())[0]!.castShadow,
+      bakeEntriesOf([caster], new MeshStandardMaterial())[0]!.castShadow,
       'castShadow is copied from each module',
     ).toBe(true);
     expect(entry(new MeshStandardMaterial({ side: BackSide }))).toMatchObject({ side: BackSide, doubleSided: false });

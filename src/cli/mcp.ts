@@ -1,7 +1,6 @@
 import { dirname, resolve as resolvePath } from 'node:path';
 import { VERSION } from '../version.js';
 import { analyzeAsset } from './analyze.js';
-import { DEFAULT_PARITY, validateInput } from './args.js';
 import { EnvironmentError, exitCodeFor, UsageError } from './errors.js';
 import { explain, REMEDIES } from './explain.js';
 import { inspectApp } from './inspect.js';
@@ -10,6 +9,7 @@ import { defaultOutputPath, optimizeAsset } from './optimize.js';
 import { assertGltfOutPath, entryExists, isInside, realPathOf } from './paths.js';
 import type { AnalyzeInput, InspectInput, OptimizeInput } from './types.js';
 import { cleanText } from './untrusted.js';
+import { DEFAULT_PARITY, validateInput } from './validate.js';
 
 const INSTALL = 'npm i -D @modelcontextprotocol/sdk zod';
 
@@ -161,7 +161,7 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
   // Choices (CHOICES) and bounds (RANGES) — including integer-ness — live only in validateInput, not here: a
   // zod-level rejection (a tight z.enum, a `.int()`) would return the SDK's own plain-text isError, while every
   // rule threeforge defines should read the same `{ error, code }` JSON regardless of which field or command
-  // tripped it (src/cli/args.ts, CHOICES, RANGES, validateInput). Allowed values stay discoverable to agents
+  // tripped it (src/cli/validate.ts, CHOICES, RANGES, validateInput). Allowed values stay discoverable to agents
   // through each field's `.describe()` text instead of a JSON Schema `enum`.
   const runShape = {
     backend: z.string().default('webgl2').describe('Renderer backend to measure on: webgl2 or webgpu (default webgl2)'),

@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { failingViews, parityOf } from '../../src/cli/analyze.js';
-import { COMMAND_SPECS, COMMANDS, formatUsage, parseArgs, RANGES, validateInput } from '../../src/cli/args.js';
+import { parseArgs } from '../../src/cli/args.js';
+import { COMMAND_SPECS, COMMANDS } from '../../src/cli/commandSpecs.js';
 import { bakeProgressLine } from '../../src/cli/document.js';
 import { UsageError } from '../../src/cli/errors.js';
 import { explain, REMEDIES } from '../../src/cli/explain.js';
 import { printDocument, summarize, summarizeOptimize } from '../../src/cli/format.js';
 import { ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA, SNAPSHOT_SCHEMA } from '../../src/cli/schema.js';
 import type { AgentDocument, AnalyzeInput, OptimizeDocument, OptimizeInput } from '../../src/cli/types.js';
+import { formatUsage } from '../../src/cli/usage.js';
+import { RANGES, validateInput } from '../../src/cli/validate.js';
 import { exitCodeOf, verdictOf, worstChangedPixels } from '../../src/cli/verdict.js';
 import { budgetsFor } from '../../src/ledger/budgets.js';
 import { hintsFor } from '../../src/ledger/hints.js';

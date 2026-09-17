@@ -14,6 +14,8 @@ import {
   Vector3,
 } from 'three';
 import { describe, expect, it } from 'vitest';
+import { isDegenerate, islandsByEdge, perpendicularBasis } from '../../src/compiler/bake/topology.js';
+import { type VertexAttributes, vertexComparator } from '../../src/compiler/bake/weld.js';
 import { type BakeEntry, bakeGeometries, unbakeableAttribute } from '../../src/compiler/bake.js';
 
 /**
@@ -882,6 +884,204 @@ describe('bakeGeometries duplicate rule: a copy goes only when every coincident 
     });
     expect(report.duplicateFaces).toBe(0);
     expect(report.keptDuplicateFaces).toBe(0);
+  });
+});
+
+describe('bakeGeometries comparator: the weld and the duplicate rule judge "draws the same" by the same thresholds', () => {
+  /** The geometry with every normal turned by `degrees` about a perpendicular axis, so each moves by exactly that angle. */
+  const tilted = <G extends BufferGeometry>(g: G, degrees: number): G => {
+    const rad = (degrees * Math.PI) / 180;
+    const normal = g.attributes.normal!;
+    const n = new Vector3();
+    const p = new Vector3();
+    for (let i = 0; i < normal.count; i++) {
+      n.fromBufferAttribute(normal, i);
+      p.set(1, 0, 0);
+      if (Math.abs(n.x) > 0.9) p.set(0, 1, 0);
+      p.cross(n).normalize();
+      n.multiplyScalar(Math.cos(rad)).addScaledVector(p, Math.sin(rad));
+      normal.setXYZ(i, n.x, n.y, n.z);
+    }
+    return g;
+  };
+  /** Two coplanar unit quads sharing an edge with continuous uvs: two vertices weld when their attributes agree. */
+  const pair = (
+    right: PlaneGeometry,
+    options?: Parameters<typeof bakeGeometries>[1],
+    left: PlaneGeometry = new PlaneGeometry(1, 1),
+  ): number => {
+    left.attributes.uv!.setX(1, 1);
+    const uv = right.attributes.uv!;
+    for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) + 1);
+    return bakeGeometries(
+      [
+        { geometry: left, matrix: new Matrix4() },
+        { geometry: right, matrix: new Matrix4().makeTranslation(1, 0, 0) },
+      ],
+      options,
+    ).report.weldedVertices;
+  };
+  const coloured = (value: number): PlaneGeometry => {
+    const g = new PlaneGeometry(1, 1);
+    g.setAttribute(
+      'color',
+      new Float32BufferAttribute(new Float32Array(g.attributes.position!.count * 3).fill(value), 3),
+    );
+    return g;
+  };
+
+  it('welds normals within normalAngle (default 0.5 degrees) and not beyond', () => {
+    expect(pair(tilted(new PlaneGeometry(1, 1), 0.4))).toBe(2);
+    expect(pair(tilted(new PlaneGeometry(1, 1), 0.6))).toBe(0);
+    expect(pair(tilted(new PlaneGeometry(1, 1), 0.6), { normalAngle: 1 })).toBe(2);
+  });
+
+  it('welds colours within colorTolerance (default 1/255) and not beyond', () => {
+    expect(pair(coloured(0.5 + 0.5 / 255), undefined, coloured(0.5))).toBe(2);
+    expect(pair(coloured(0.5 + 2 / 255), undefined, coloured(0.5))).toBe(0);
+    expect(pair(coloured(0.5 + 2 / 255), { colorTolerance: 0.01 }, coloured(0.5))).toBe(2);
+  });
+
+  it('welds uvs within 1e-5 only', () => {
+    const nudged = (by: number): PlaneGeometry => {
+      const g = new PlaneGeometry(1, 1);
+      g.attributes.uv!.setY(0, g.attributes.uv!.getY(0) + by);
+      g.attributes.uv!.setY(2, g.attributes.uv!.getY(2) + by);
+      return g;
+    };
+    expect(pair(nudged(5e-6))).toBe(2);
+    expect(pair(nudged(5e-5))).toBe(0);
+  });
+
+  it('removes a duplicate whose normals differ within normalAngle, keeps and counts one beyond it', () => {
+    const copy = (degrees: number): BakeEntry => box(0, 1, { geometry: tilted(new BoxGeometry(1, 1, 1), degrees) });
+    expect(bakeGeometries([box(0), copy(0.4)]).report).toMatchObject({ duplicateFaces: 12, keptDuplicateFaces: 0 });
+    expect(bakeGeometries([box(0), copy(0.6)]).report).toMatchObject({ duplicateFaces: 0, keptDuplicateFaces: 24 });
+    expect(bakeGeometries([box(0), copy(0.6)], { normalAngle: 1 }).report).toMatchObject({
+      duplicateFaces: 12,
+      keptDuplicateFaces: 0,
+    });
+  });
+});
+
+describe('bake helpers', () => {
+  it('vertexComparator: the same four-part rule whatever arrays hold the two vertices', () => {
+    const same = vertexComparator(0.5, 1 / 255);
+    const rad = (degrees: number): number => (degrees * Math.PI) / 180;
+    const vertex = (
+      normal: number[],
+      tangent: number[] | null,
+      uv: number[],
+      color: number[] | null,
+    ): { typed: VertexAttributes; plain: VertexAttributes } => ({
+      typed: {
+        normal: new Float32Array(normal),
+        tangent: tangent && new Float32Array(tangent),
+        uvs: [new Float32Array(uv)],
+        color: color && new Float32Array(color),
+      },
+      plain: { normal, tangent, uvs: [uv], color },
+    });
+    const base = vertex([0, 0, 1], [1, 0, 0, 1], [0.25, 0.75], [0.5, 0.5, 0.5]);
+    const cases: Array<[string, ReturnType<typeof vertex>, boolean]> = [
+      ['identical', vertex([0, 0, 1], [1, 0, 0, 1], [0.25, 0.75], [0.5, 0.5, 0.5]), true],
+      [
+        'normal within 0.5 degrees',
+        vertex([0, Math.sin(rad(0.4)), Math.cos(rad(0.4))], [1, 0, 0, 1], [0.25, 0.75], [0.5, 0.5, 0.5]),
+        true,
+      ],
+      [
+        'normal beyond',
+        vertex([0, Math.sin(rad(0.6)), Math.cos(rad(0.6))], [1, 0, 0, 1], [0.25, 0.75], [0.5, 0.5, 0.5]),
+        false,
+      ],
+      ['tangent w differs', vertex([0, 0, 1], [1, 0, 0, -1], [0.25, 0.75], [0.5, 0.5, 0.5]), false],
+      [
+        'tangent direction beyond',
+        vertex([0, 0, 1], [Math.cos(rad(0.6)), Math.sin(rad(0.6)), 0, 1], [0.25, 0.75], [0.5, 0.5, 0.5]),
+        false,
+      ],
+      ['uv within 1e-5', vertex([0, 0, 1], [1, 0, 0, 1], [0.25 + 5e-6, 0.75], [0.5, 0.5, 0.5]), true],
+      ['uv beyond', vertex([0, 0, 1], [1, 0, 0, 1], [0.25, 0.75 + 2e-5], [0.5, 0.5, 0.5]), false],
+      ['colour within 1/255', vertex([0, 0, 1], [1, 0, 0, 1], [0.25, 0.75], [0.5, 0.5 + 0.5 / 255, 0.5]), true],
+      ['colour beyond', vertex([0, 0, 1], [1, 0, 0, 1], [0.25, 0.75], [0.5, 0.5, 0.5 + 2 / 255]), false],
+    ];
+    for (const [label, other, expected] of cases) {
+      expect(same(base.typed, 0, other.typed, 0), `${label} (typed)`).toBe(expected);
+      expect(same(base.typed, 0, other.plain, 0), `${label} (typed against plain)`).toBe(expected);
+      expect(same(base.plain, 0, other.plain, 0), `${label} (plain)`).toBe(expected);
+    }
+    // Exactly equal zero tangents weld although their dot is below the threshold.
+    const zero = vertex([0, 0, 1], [0, 0, 0, 1], [0, 0], null);
+    expect(same(zero.typed, 0, zero.plain, 0)).toBe(true);
+    // Absent tangents and colours are not compared.
+    const bare = vertex([0, 0, 1], null, [0, 0], null);
+    expect(same(bare.typed, 0, bare.plain, 0)).toBe(true);
+    // The second vertex of a buffer, and a wider angle.
+    const two = { normal: [1, 0, 0, 0, 0, 1], tangent: null, uvs: [[0, 0, 0.25, 0.75]], color: null };
+    expect(same(base.typed, 0, two, 1)).toBe(true);
+    expect(same(base.typed, 0, two, 0)).toBe(false);
+    expect(vertexComparator(1, 1 / 255)(base.typed, 0, cases[2]![1].typed, 0)).toBe(true);
+  });
+
+  it('perpendicularBasis: the exact axes the buried-face rays and the plane projections use', () => {
+    const u = new Vector3();
+    const v = new Vector3();
+    // `x + 0` turns a negative zero from the cross products into the zero `toEqual` expects.
+    const axes = (n: Vector3): number[][] => {
+      perpendicularBasis(n, u, v);
+      return [u, v].map((a) => a.toArray().map((x) => x + 0));
+    };
+    expect(axes(new Vector3(0, 0, 1))).toEqual([
+      [0, -1, 0],
+      [1, 0, 0],
+    ]);
+    expect(axes(new Vector3(1, 0, 0))).toEqual([
+      [0, 0, -1],
+      [0, 1, 0],
+    ]);
+    const n = new Vector3(0.6, 0.48, 0.64);
+    axes(n);
+    expect(u.length()).toBeCloseTo(1);
+    expect(v.length()).toBeCloseTo(1);
+    expect(u.dot(n)).toBeCloseTo(0);
+    expect(v.dot(n)).toBeCloseTo(0);
+    expect(u.dot(v)).toBeCloseTo(0);
+    expect(new Vector3().crossVectors(u, v).distanceTo(n)).toBeCloseTo(0);
+  });
+
+  it('islandsByEdge: triangles join by a shared edge, not by a shared vertex; islands come in first-triangle order', () => {
+    // 0 and 1 share edge 1-2; 2 touches 0 at vertex 0 only; 3 shares edge 4-5 with 2; 4 is alone; 5 rejoins 1 by edge 2-3.
+    const corners = [
+      [0, 1, 2],
+      [2, 1, 3],
+      [0, 4, 5],
+      [5, 4, 6],
+      [7, 8, 9],
+      [3, 2, 10],
+    ];
+    const islands = islandsByEdge(corners.length, (i, c) => corners[i]![c]!, 11);
+    expect(islands).toEqual([[0, 1, 5], [2, 3], [4]]);
+    expect(islandsByEdge(0, () => 0, 1)).toEqual([]);
+    // Edges are unordered: the same edge in either direction joins.
+    expect(
+      islandsByEdge(
+        2,
+        (i, c) =>
+          [
+            [0, 1, 2],
+            [1, 0, 3],
+          ][i]![c]!,
+        4,
+      ),
+    ).toEqual([[0, 1]]);
+  });
+
+  it('isDegenerate: two corners on one id', () => {
+    expect(isDegenerate(0, 1, 2)).toBe(false);
+    expect(isDegenerate(1, 1, 2)).toBe(true);
+    expect(isDegenerate(0, 2, 2)).toBe(true);
+    expect(isDegenerate(3, 1, 3)).toBe(true);
   });
 });
 

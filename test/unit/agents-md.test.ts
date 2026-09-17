@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { COMMAND_SPECS } from '../../src/cli/args.js';
+import { COMMAND_SPECS } from '../../src/cli/commandSpecs.js';
 import { REMEDIES } from '../../src/cli/explain.js';
 import { VERSION } from '../../src/version.js';
 

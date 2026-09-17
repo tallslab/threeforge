@@ -1549,7 +1549,7 @@ describe('DrawCallLedger batch-local-space hint', () => {
 
   /**
    * A subclass can read `positionLocal` from an overridden `setup*` without ever assigning a
-   * `*Node` property, so `hasNodeSlot` alone misses it — the same class `bakeProvesReads` (`batchStatics.ts:381`)
+   * `*Node` property, so `hasNodeSlot` alone misses it — the same class `bakeProvesReads` (`bakeGate.ts`)
    * already refuses and `spriteRule` already names `sprite-custom-material` before `sprite-node-material`. The
    * subclass here is the shape that matters: `setupPosition` displaces along `positionLocal`, which batching
    * replaces with the scene-space position.

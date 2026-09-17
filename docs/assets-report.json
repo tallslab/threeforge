@@ -7,7 +7,7 @@
     "triangles": 121496,
     "animations": 0,
     "naive": 115,
-    "loadMs": 18,
+    "loadMs": 17,
     "compiled": 1,
     "batches": 1,
     "instanced": 0,
@@ -16,8 +16,8 @@
     "restored": 115,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "ABeautifulGame",
@@ -27,7 +27,7 @@
     "triangles": 1499072,
     "animations": 0,
     "naive": 49,
-    "loadMs": 279,
+    "loadMs": 292,
     "compiled": 29,
     "batches": 8,
     "instanced": 0,
@@ -36,8 +36,8 @@
     "restored": 49,
     "skipped": "transmission:16 singleton:5",
     "reasons": "excluded:transmission:16 batched:8 unique-material:5",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "AlphaBlendModeTest",
@@ -56,8 +56,8 @@
     "restored": 9,
     "skipped": "singleton:4",
     "reasons": "unique-material:4 batched:2",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "AnimatedMorphCube",
@@ -76,8 +76,8 @@
     "restored": 1,
     "skipped": "morph-targets:1",
     "reasons": "morph:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "AnimatedMorphCube-Quantized",
@@ -96,8 +96,8 @@
     "restored": 1,
     "skipped": "morph-targets:1",
     "reasons": "morph:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "AnimatedTriangle",
@@ -107,7 +107,7 @@
     "triangles": 1,
     "animations": 1,
     "naive": 1,
-    "loadMs": 10,
+    "loadMs": 11,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -116,8 +116,8 @@
     "restored": 1,
     "skipped": "animated:1",
     "reasons": "dynamic:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "AntiqueCamera",
@@ -127,7 +127,7 @@
     "triangles": 20066,
     "animations": 0,
     "naive": 2,
-    "loadMs": 109,
+    "loadMs": 111,
     "compiled": 2,
     "batches": 0,
     "instanced": 0,
@@ -136,8 +136,8 @@
     "restored": 2,
     "skipped": "singleton:2",
     "reasons": "unique-material:2",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "AttenuationTest",
@@ -156,8 +156,8 @@
     "restored": 28,
     "skipped": "transmission:21 singleton:2",
     "reasons": "excluded:transmission:26 unique-material:2",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Avocado-Draco",
@@ -176,8 +176,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "BoomBox",
@@ -196,8 +196,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Box",
@@ -216,8 +216,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "BoxAnimated",
@@ -236,8 +236,8 @@
     "restored": 2,
     "skipped": "singleton:1 animated:1",
     "reasons": "dynamic:1 unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "BoxInterleaved",
@@ -256,8 +256,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "BoxTextured",
@@ -267,7 +267,7 @@
     "triangles": 12,
     "animations": 0,
     "naive": 1,
-    "loadMs": 9,
+    "loadMs": 10,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -276,8 +276,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "BrainStem",
@@ -287,7 +287,7 @@
     "triangles": 61666,
     "animations": 1,
     "naive": 59,
-    "loadMs": 19,
+    "loadMs": 22,
     "compiled": 59,
     "batches": 0,
     "instanced": 0,
@@ -296,8 +296,8 @@
     "restored": 59,
     "skipped": "skinned-mesh:59",
     "reasons": "skinned:59",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "BrainStem-Meshopt",
@@ -307,7 +307,7 @@
     "triangles": 61666,
     "animations": 1,
     "naive": 49,
-    "loadMs": 17,
+    "loadMs": 19,
     "compiled": 49,
     "batches": 0,
     "instanced": 0,
@@ -316,8 +316,8 @@
     "restored": 49,
     "skipped": "skinned-mesh:49",
     "reasons": "skinned:49",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Buggy",
@@ -327,7 +327,7 @@
     "triangles": 531955,
     "animations": 0,
     "naive": 236,
-    "loadMs": 36,
+    "loadMs": 37,
     "compiled": 1,
     "batches": 1,
     "instanced": 0,
@@ -336,8 +336,8 @@
     "restored": 236,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Cameras",
@@ -356,8 +356,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "CarbonFibre",
@@ -367,7 +367,7 @@
     "triangles": 3968,
     "animations": 0,
     "naive": 1,
-    "loadMs": 14,
+    "loadMs": 13,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -376,8 +376,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "CesiumMan",
@@ -396,8 +396,8 @@
     "restored": 1,
     "skipped": "skinned-mesh:1",
     "reasons": "skinned:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "ClearCoatTest",
@@ -416,8 +416,8 @@
     "restored": 27,
     "skipped": "singleton:11",
     "reasons": "unique-material:11 batched:4",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "collision-world",
@@ -427,7 +427,7 @@
     "triangles": 1754,
     "animations": 0,
     "naive": 1,
-    "loadMs": 10,
+    "loadMs": 12,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -436,8 +436,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "CommercialRefrigerator",
@@ -447,7 +447,7 @@
     "triangles": 208679,
     "animations": 1,
     "naive": 9,
-    "loadMs": 62,
+    "loadMs": 63,
     "compiled": 9,
     "batches": 0,
     "instanced": 0,
@@ -456,8 +456,8 @@
     "restored": 9,
     "skipped": "singleton:5 animated:3",
     "reasons": "dynamic:4 unique-material:3 static-unbatched:2",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "CompareAlphaCoverage",
@@ -476,8 +476,8 @@
     "restored": 6,
     "skipped": "singleton:3",
     "reasons": "unique-material:3 batched:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Corset",
@@ -487,7 +487,7 @@
     "triangles": 18324,
     "animations": 0,
     "naive": 1,
-    "loadMs": 99,
+    "loadMs": 95,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -496,8 +496,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "DamagedHelmet",
@@ -507,7 +507,7 @@
     "triangles": 15452,
     "animations": 0,
     "naive": 1,
-    "loadMs": 75,
+    "loadMs": 76,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -516,8 +516,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "DiffuseTransmissionPlant",
@@ -527,7 +527,7 @@
     "triangles": 68409,
     "animations": 1,
     "naive": 9,
-    "loadMs": 55,
+    "loadMs": 56,
     "compiled": 8,
     "batches": 1,
     "instanced": 0,
@@ -536,8 +536,8 @@
     "restored": 9,
     "skipped": "animated:6 singleton:1",
     "reasons": "dynamic:6 batched:1 unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "DragonAttenuation",
@@ -547,7 +547,7 @@
     "triangles": 134995,
     "animations": 0,
     "naive": 2,
-    "loadMs": 56,
+    "loadMs": 55,
     "compiled": 2,
     "batches": 0,
     "instanced": 0,
@@ -556,8 +556,8 @@
     "restored": 2,
     "skipped": "singleton:1 transmission:1",
     "reasons": "excluded:transmission:1 unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Duck",
@@ -567,7 +567,7 @@
     "triangles": 4212,
     "animations": 0,
     "naive": 1,
-    "loadMs": 10,
+    "loadMs": 11,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -576,8 +576,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Duck-Draco",
@@ -596,8 +596,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Duck-Quantized",
@@ -616,8 +616,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "EmissiveStrengthTest",
@@ -627,7 +627,7 @@
     "triangles": 90,
     "animations": 0,
     "naive": 6,
-    "loadMs": 10,
+    "loadMs": 11,
     "compiled": 6,
     "batches": 0,
     "instanced": 0,
@@ -636,8 +636,8 @@
     "restored": 6,
     "skipped": "singleton:6",
     "reasons": "unique-material:6",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "facecap",
@@ -647,7 +647,7 @@
     "triangles": 8042,
     "animations": 4,
     "naive": 4,
-    "loadMs": 61,
+    "loadMs": 62,
     "compiled": 4,
     "batches": 0,
     "instanced": 0,
@@ -656,8 +656,8 @@
     "restored": 4,
     "skipped": "animated:3 morph-targets:1",
     "reasons": "dynamic:3 morph:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "ferrari",
@@ -676,8 +676,8 @@
     "restored": 51,
     "skipped": "singleton:2",
     "reasons": "batched:2 unique-material:2",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Flamingo",
@@ -687,7 +687,7 @@
     "triangles": 542,
     "animations": 1,
     "naive": 1,
-    "loadMs": 8,
+    "loadMs": 9,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -696,8 +696,8 @@
     "restored": 1,
     "skipped": "morph-targets:1",
     "reasons": "morph:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "FlightHelmet",
@@ -707,7 +707,7 @@
     "triangles": 94722,
     "animations": 0,
     "naive": 6,
-    "loadMs": 149,
+    "loadMs": 162,
     "compiled": 6,
     "batches": 0,
     "instanced": 0,
@@ -716,8 +716,8 @@
     "restored": 6,
     "skipped": "singleton:5 transmission:1",
     "reasons": "unique-material:5 excluded:transmission:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Fox",
@@ -727,7 +727,7 @@
     "triangles": 576,
     "animations": 3,
     "naive": 1,
-    "loadMs": 18,
+    "loadMs": 19,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -736,8 +736,8 @@
     "restored": 1,
     "skipped": "skinned-mesh:1",
     "reasons": "skinned:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "GearboxAssy",
@@ -756,8 +756,8 @@
     "restored": 95,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "GlamVelvetSofa",
@@ -776,8 +776,8 @@
     "restored": 3,
     "skipped": "singleton:3",
     "reasons": "unique-material:3",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Horse",
@@ -787,7 +787,7 @@
     "triangles": 984,
     "animations": 1,
     "naive": 1,
-    "loadMs": 8,
+    "loadMs": 9,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -796,8 +796,8 @@
     "restored": 1,
     "skipped": "morph-targets:1",
     "reasons": "morph:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "InterpolationTest",
@@ -816,8 +816,8 @@
     "restored": 10,
     "skipped": "animated:9 singleton:1",
     "reasons": "dynamic:9 unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "IridescenceLamp",
@@ -827,7 +827,7 @@
     "triangles": 18866,
     "animations": 0,
     "naive": 3,
-    "loadMs": 47,
+    "loadMs": 45,
     "compiled": 3,
     "batches": 0,
     "instanced": 0,
@@ -836,8 +836,8 @@
     "restored": 3,
     "skipped": "singleton:2 transmission:1",
     "reasons": "unique-material:2 excluded:transmission:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "IridescentDishWithOlives",
@@ -847,7 +847,7 @@
     "triangles": 24448,
     "animations": 1,
     "naive": 4,
-    "loadMs": 54,
+    "loadMs": 56,
     "compiled": 4,
     "batches": 0,
     "instanced": 0,
@@ -856,8 +856,8 @@
     "restored": 4,
     "skipped": "singleton:2 transmission:1 animated:1",
     "reasons": "unique-material:2 dynamic:1 excluded:transmission:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "kira",
@@ -867,7 +867,7 @@
     "triangles": 51601,
     "animations": 0,
     "naive": 43,
-    "loadMs": 85,
+    "loadMs": 95,
     "compiled": 16,
     "batches": 7,
     "instanced": 0,
@@ -876,8 +876,8 @@
     "restored": 43,
     "skipped": "singleton:6 skinned-mesh:3",
     "reasons": "batched:7 unique-material:6 skinned:3",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Lantern",
@@ -887,7 +887,7 @@
     "triangles": 5394,
     "animations": 0,
     "naive": 3,
-    "loadMs": 85,
+    "loadMs": 87,
     "compiled": 1,
     "batches": 1,
     "instanced": 0,
@@ -896,8 +896,8 @@
     "restored": 3,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "LightsPunctualLamp",
@@ -907,7 +907,7 @@
     "triangles": 6000,
     "animations": 0,
     "naive": 4,
-    "loadMs": 64,
+    "loadMs": 66,
     "compiled": 4,
     "batches": 0,
     "instanced": 0,
@@ -916,8 +916,8 @@
     "restored": 4,
     "skipped": "singleton:2 transmission:1",
     "reasons": "excluded:transmission:2 unique-material:2",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "LittlestTokyo",
@@ -927,7 +927,7 @@
     "triangles": 141802,
     "animations": 1,
     "naive": 71,
-    "loadMs": 89,
+    "loadMs": 97,
     "compiled": 66,
     "batches": 3,
     "instanced": 0,
@@ -936,8 +936,8 @@
     "restored": 71,
     "skipped": "animated:44 singleton:11 skinned-mesh:8",
     "reasons": "dynamic:44 skinned:8 unique-material:7 static-unbatched:4 batched:3",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "MaterialsVariantsShoe",
@@ -947,7 +947,7 @@
     "triangles": 22700,
     "animations": 0,
     "naive": 1,
-    "loadMs": 61,
+    "loadMs": 60,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -956,8 +956,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "MeshPrimitiveModes",
@@ -976,8 +976,8 @@
     "restored": 6,
     "skipped": "",
     "reasons": "line:2 batched:1 points:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "MetalRoughSpheres",
@@ -987,7 +987,7 @@
     "triangles": 501776,
     "animations": 0,
     "naive": 5,
-    "loadMs": 37,
+    "loadMs": 40,
     "compiled": 1,
     "batches": 1,
     "instanced": 0,
@@ -996,8 +996,8 @@
     "restored": 5,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "MorphPrimitivesTest",
@@ -1007,7 +1007,7 @@
     "triangles": 32,
     "animations": 0,
     "naive": 2,
-    "loadMs": 11,
+    "loadMs": 12,
     "compiled": 2,
     "batches": 0,
     "instanced": 0,
@@ -1016,8 +1016,8 @@
     "restored": 2,
     "skipped": "morph-targets:2",
     "reasons": "morph:2",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "MorphStressTest",
@@ -1036,8 +1036,8 @@
     "restored": 2,
     "skipped": "morph-targets:2",
     "reasons": "morph:2",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "MosquitoInAmber",
@@ -1047,7 +1047,7 @@
     "triangles": 14349,
     "animations": 0,
     "naive": 3,
-    "loadMs": 155,
+    "loadMs": 158,
     "compiled": 3,
     "batches": 0,
     "instanced": 0,
@@ -1056,8 +1056,8 @@
     "restored": 3,
     "skipped": "singleton:2 transmission:1",
     "reasons": "unique-material:2 excluded:transmission:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "MultiUVTest",
@@ -1067,7 +1067,7 @@
     "triangles": 12,
     "animations": 0,
     "naive": 1,
-    "loadMs": 14,
+    "loadMs": 13,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -1076,8 +1076,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "NegativeScaleTest",
@@ -1096,8 +1096,8 @@
     "restored": 11,
     "skipped": "mirrored:4 singleton:3",
     "reasons": "excluded:mirrored:4 batched:2 unique-material:2 static-unbatched:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "NormalTangentTest",
@@ -1107,7 +1107,7 @@
     "triangles": 7774,
     "animations": 0,
     "naive": 1,
-    "loadMs": 41,
+    "loadMs": 43,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -1116,8 +1116,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Parrot",
@@ -1136,8 +1136,8 @@
     "restored": 1,
     "skipped": "morph-targets:1",
     "reasons": "morph:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "polyhaven-ammo_box",
@@ -1147,7 +1147,7 @@
     "triangles": 4382,
     "animations": 0,
     "naive": 5,
-    "loadMs": 19,
+    "loadMs": 20,
     "compiled": 1,
     "batches": 1,
     "instanced": 0,
@@ -1156,8 +1156,8 @@
     "restored": 5,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "polyhaven-anthurium_botany_01",
@@ -1167,7 +1167,7 @@
     "triangles": 67152,
     "animations": 0,
     "naive": 6,
-    "loadMs": 23,
+    "loadMs": 22,
     "compiled": 1,
     "batches": 1,
     "instanced": 0,
@@ -1176,8 +1176,8 @@
     "restored": 6,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "polyhaven-barrel_03",
@@ -1187,7 +1187,7 @@
     "triangles": 1473,
     "animations": 0,
     "naive": 1,
-    "loadMs": 16,
+    "loadMs": 17,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -1196,8 +1196,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "polyhaven-boulder_01",
@@ -1207,7 +1207,7 @@
     "triangles": 66122,
     "animations": 0,
     "naive": 1,
-    "loadMs": 26,
+    "loadMs": 28,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -1216,8 +1216,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "polyhaven-coast_rocks_01",
@@ -1227,7 +1227,7 @@
     "triangles": 679936,
     "animations": 0,
     "naive": 1,
-    "loadMs": 50,
+    "loadMs": 56,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -1236,8 +1236,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "polyhaven-coast_rocks_02",
@@ -1247,7 +1247,7 @@
     "triangles": 1260423,
     "animations": 0,
     "naive": 1,
-    "loadMs": 66,
+    "loadMs": 68,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -1256,8 +1256,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "polyhaven-CoffeeCart_01",
@@ -1267,7 +1267,7 @@
     "triangles": 27659,
     "animations": 0,
     "naive": 3,
-    "loadMs": 18,
+    "loadMs": 19,
     "compiled": 3,
     "batches": 0,
     "instanced": 0,
@@ -1276,8 +1276,8 @@
     "restored": 3,
     "skipped": "singleton:3",
     "reasons": "unique-material:3",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "polyhaven-covered_car",
@@ -1296,8 +1296,8 @@
     "restored": 5,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "polyhaven-dandelion_01",
@@ -1307,7 +1307,7 @@
     "triangles": 54764,
     "animations": 0,
     "naive": 5,
-    "loadMs": 20,
+    "loadMs": 22,
     "compiled": 1,
     "batches": 1,
     "instanced": 0,
@@ -1316,8 +1316,8 @@
     "restored": 5,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "polyhaven-dead_quiver_trunk",
@@ -1327,7 +1327,7 @@
     "triangles": 17978,
     "animations": 0,
     "naive": 1,
-    "loadMs": 21,
+    "loadMs": 23,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -1336,8 +1336,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "polyhaven-dead_tree_trunk_02",
@@ -1347,7 +1347,7 @@
     "triangles": 83128,
     "animations": 0,
     "naive": 1,
-    "loadMs": 28,
+    "loadMs": 27,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -1356,8 +1356,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "polyhaven-dry_branches_medium_01",
@@ -1367,7 +1367,7 @@
     "triangles": 16803,
     "animations": 0,
     "naive": 3,
-    "loadMs": 26,
+    "loadMs": 25,
     "compiled": 1,
     "batches": 1,
     "instanced": 0,
@@ -1376,8 +1376,8 @@
     "restored": 3,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "polyhaven-fir_sapling",
@@ -1387,7 +1387,7 @@
     "triangles": 433021,
     "animations": 0,
     "naive": 6,
-    "loadMs": 47,
+    "loadMs": 52,
     "compiled": 2,
     "batches": 2,
     "instanced": 0,
@@ -1396,8 +1396,8 @@
     "restored": 6,
     "skipped": "",
     "reasons": "batched:2",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "polyhaven-fir_sapling_medium",
@@ -1407,7 +1407,7 @@
     "triangles": 1533513,
     "animations": 0,
     "naive": 9,
-    "loadMs": 127,
+    "loadMs": 139,
     "compiled": 3,
     "batches": 3,
     "instanced": 0,
@@ -1416,8 +1416,8 @@
     "restored": 9,
     "skipped": "",
     "reasons": "batched:3",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "PotOfCoals",
@@ -1427,7 +1427,7 @@
     "triangles": 18223,
     "animations": 0,
     "naive": 2,
-    "loadMs": 64,
+    "loadMs": 78,
     "compiled": 2,
     "batches": 0,
     "instanced": 0,
@@ -1436,8 +1436,8 @@
     "restored": 2,
     "skipped": "singleton:2",
     "reasons": "unique-material:2",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "PrimitiveModeNormalsTest",
@@ -1456,8 +1456,8 @@
     "restored": 25,
     "skipped": "singleton:9",
     "reasons": "unique-material:9 line:8 points:8",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "ReciprocatingSaw",
@@ -1476,8 +1476,8 @@
     "restored": 113,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "RecursiveSkeletons",
@@ -1496,8 +1496,8 @@
     "restored": 84,
     "skipped": "skinned-mesh:84",
     "reasons": "skinned:84",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "RiggedFigure",
@@ -1516,8 +1516,8 @@
     "restored": 1,
     "skipped": "skinned-mesh:1",
     "reasons": "skinned:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "RobotExpressive",
@@ -1536,8 +1536,8 @@
     "restored": 19,
     "skipped": "bone-parented:12 skinned-mesh:4 morph-targets:3",
     "reasons": "dynamic:12 skinned:4 morph:3",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "SciFiHelmet",
@@ -1547,7 +1547,7 @@
     "triangles": 23358,
     "animations": 0,
     "naive": 1,
-    "loadMs": 93,
+    "loadMs": 94,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -1556,8 +1556,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "ShaderBall",
@@ -1567,7 +1567,7 @@
     "triangles": 88264,
     "animations": 0,
     "naive": 2,
-    "loadMs": 12,
+    "loadMs": 11,
     "compiled": 1,
     "batches": 1,
     "instanced": 0,
@@ -1576,8 +1576,8 @@
     "restored": 2,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "SheenChair",
@@ -1587,7 +1587,7 @@
     "triangles": 39936,
     "animations": 0,
     "naive": 4,
-    "loadMs": 36,
+    "loadMs": 34,
     "compiled": 4,
     "batches": 0,
     "instanced": 0,
@@ -1596,8 +1596,8 @@
     "restored": 4,
     "skipped": "singleton:4",
     "reasons": "unique-material:4",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "SimpleInstancing",
@@ -1607,7 +1607,7 @@
     "triangles": 12,
     "animations": 0,
     "naive": 1,
-    "loadMs": 8,
+    "loadMs": 9,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -1616,8 +1616,8 @@
     "restored": 1,
     "skipped": "already-instanced:1",
     "reasons": "instanced:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "SimpleMorph",
@@ -1627,7 +1627,7 @@
     "triangles": 1,
     "animations": 1,
     "naive": 1,
-    "loadMs": 9,
+    "loadMs": 10,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -1636,8 +1636,8 @@
     "restored": 1,
     "skipped": "morph-targets:1",
     "reasons": "morph:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "SimpleSkin",
@@ -1656,8 +1656,8 @@
     "restored": 1,
     "skipped": "skinned-mesh:1",
     "reasons": "skinned:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Soldier",
@@ -1667,7 +1667,7 @@
     "triangles": 11376,
     "animations": 4,
     "naive": 2,
-    "loadMs": 36,
+    "loadMs": 38,
     "compiled": 2,
     "batches": 0,
     "instanced": 0,
@@ -1676,8 +1676,8 @@
     "restored": 2,
     "skipped": "skinned-mesh:2",
     "reasons": "skinned:2",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "SpecGlossVsMetalRough",
@@ -1687,7 +1687,7 @@
     "triangles": 9028,
     "animations": 0,
     "naive": 4,
-    "loadMs": 63,
+    "loadMs": 62,
     "compiled": 4,
     "batches": 0,
     "instanced": 0,
@@ -1696,8 +1696,8 @@
     "restored": 4,
     "skipped": "singleton:4",
     "reasons": "unique-material:4",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Sponza",
@@ -1707,7 +1707,7 @@
     "triangles": 262267,
     "animations": 0,
     "naive": 103,
-    "loadMs": 163,
+    "loadMs": 167,
     "compiled": 25,
     "batches": 21,
     "instanced": 0,
@@ -1716,8 +1716,8 @@
     "restored": 103,
     "skipped": "singleton:4",
     "reasons": "batched:21 unique-material:4",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "StainedGlassLamp-JPG-PNG",
@@ -1727,7 +1727,7 @@
     "triangles": 35132,
     "animations": 0,
     "naive": 8,
-    "loadMs": 83,
+    "loadMs": 95,
     "compiled": 8,
     "batches": 0,
     "instanced": 0,
@@ -1736,8 +1736,8 @@
     "restored": 8,
     "skipped": "singleton:8",
     "reasons": "unique-material:8",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Stork",
@@ -1747,7 +1747,7 @@
     "triangles": 542,
     "animations": 1,
     "naive": 1,
-    "loadMs": 8,
+    "loadMs": 9,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -1756,8 +1756,8 @@
     "restored": 1,
     "skipped": "morph-targets:1",
     "reasons": "morph:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "SunglassesKhronos",
@@ -1776,8 +1776,8 @@
     "restored": 8,
     "skipped": "transmission:3",
     "reasons": "excluded:transmission:3 batched:2",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "TextureEncodingTest",
@@ -1787,7 +1787,7 @@
     "triangles": 3844,
     "animations": 0,
     "naive": 14,
-    "loadMs": 14,
+    "loadMs": 13,
     "compiled": 14,
     "batches": 0,
     "instanced": 0,
@@ -1796,8 +1796,8 @@
     "restored": 14,
     "skipped": "singleton:14",
     "reasons": "unique-material:14",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "TextureLinearInterpolationTest",
@@ -1807,7 +1807,7 @@
     "triangles": 642,
     "animations": 0,
     "naive": 3,
-    "loadMs": 10,
+    "loadMs": 9,
     "compiled": 3,
     "batches": 0,
     "instanced": 0,
@@ -1816,8 +1816,8 @@
     "restored": 3,
     "skipped": "singleton:3",
     "reasons": "unique-material:3",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "TextureSettingsTest",
@@ -1827,7 +1827,7 @@
     "triangles": 72,
     "animations": 0,
     "naive": 10,
-    "loadMs": 11,
+    "loadMs": 13,
     "compiled": 10,
     "batches": 0,
     "instanced": 0,
@@ -1836,8 +1836,8 @@
     "restored": 10,
     "skipped": "singleton:10",
     "reasons": "unique-material:10",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "TextureTransformMultiTest",
@@ -1856,8 +1856,8 @@
     "restored": 29,
     "skipped": "singleton:29",
     "reasons": "unique-material:29",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "TextureTransformTest",
@@ -1867,7 +1867,7 @@
     "triangles": 24,
     "animations": 0,
     "naive": 12,
-    "loadMs": 13,
+    "loadMs": 16,
     "compiled": 9,
     "batches": 2,
     "instanced": 0,
@@ -1876,8 +1876,8 @@
     "restored": 12,
     "skipped": "singleton:7",
     "reasons": "unique-material:7 batched:2",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "ToyCar",
@@ -1887,7 +1887,7 @@
     "triangles": 108936,
     "animations": 0,
     "naive": 3,
-    "loadMs": 35,
+    "loadMs": 36,
     "compiled": 3,
     "batches": 0,
     "instanced": 0,
@@ -1896,8 +1896,8 @@
     "restored": 3,
     "skipped": "singleton:2 transmission:1",
     "reasons": "unique-material:2 excluded:transmission:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "TransmissionTest",
@@ -1907,7 +1907,7 @@
     "triangles": 128775,
     "animations": 0,
     "naive": 34,
-    "loadMs": 29,
+    "loadMs": 28,
     "compiled": 26,
     "batches": 1,
     "instanced": 0,
@@ -1916,8 +1916,8 @@
     "restored": 34,
     "skipped": "transmission:12 singleton:1",
     "reasons": "excluded:transmission:24 batched:1 unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Triangle",
@@ -1936,8 +1936,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "TwoSidedPlane",
@@ -1947,7 +1947,7 @@
     "triangles": 2,
     "animations": 0,
     "naive": 1,
-    "loadMs": 10,
+    "loadMs": 11,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -1956,8 +1956,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "UnlitTest",
@@ -1967,7 +1967,7 @@
     "triangles": 88,
     "animations": 0,
     "naive": 2,
-    "loadMs": 7,
+    "loadMs": 8,
     "compiled": 1,
     "batches": 1,
     "instanced": 0,
@@ -1976,8 +1976,8 @@
     "restored": 2,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "VertexColorTest",
@@ -1987,7 +1987,7 @@
     "triangles": 36,
     "animations": 0,
     "naive": 2,
-    "loadMs": 11,
+    "loadMs": 10,
     "compiled": 2,
     "batches": 0,
     "instanced": 0,
@@ -1996,8 +1996,8 @@
     "restored": 2,
     "skipped": "singleton:2",
     "reasons": "unique-material:2",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "VirtualCity",
@@ -2007,7 +2007,7 @@
     "triangles": 8383,
     "animations": 1,
     "naive": 167,
-    "loadMs": 38,
+    "loadMs": 48,
     "compiled": 83,
     "batches": 7,
     "instanced": 0,
@@ -2016,8 +2016,8 @@
     "restored": 167,
     "skipped": "animated:67 singleton:9",
     "reasons": "dynamic:67 unique-material:9 batched:7",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "WaterBottle",
@@ -2027,7 +2027,7 @@
     "triangles": 4510,
     "animations": 0,
     "naive": 1,
-    "loadMs": 77,
+    "loadMs": 75,
     "compiled": 1,
     "batches": 0,
     "instanced": 0,
@@ -2036,8 +2036,8 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "Xbot",
@@ -2047,7 +2047,7 @@
     "triangles": 49112,
     "animations": 7,
     "naive": 2,
-    "loadMs": 25,
+    "loadMs": 23,
     "compiled": 2,
     "batches": 0,
     "instanced": 0,
@@ -2056,8 +2056,8 @@
     "restored": 2,
     "skipped": "skinned-mesh:2",
     "reasons": "skinned:2",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   },
   {
     "name": "XmpMetadataRoundedCube",
@@ -2076,7 +2076,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "96d45459d9c885cdad0e2bf51da2153358ba1b4b",
-    "run": "corpus-96d4545"
+    "commit": "e0aae7054bc1a9d9930f836e3e5d69167d7b8b4c",
+    "run": "16rdxk9z"
   }
 ]

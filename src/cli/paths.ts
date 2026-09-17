@@ -57,15 +57,10 @@ export function checkPathText(text: string, refuse: (problem: string) => never):
   if (posix.isAbsolute(text) || win32.isAbsolute(text)) refuse('is an absolute path');
 }
 
-/** `path` ends in `.glb` or `.gltf`, in any case. */
-export function isGltfPath(path: string): boolean {
-  return /\.(glb|gltf)$/i.test(path);
-}
-
 /**
  * The output-path rule the CLI's `--out` and MCP's `optimize_asset.out` share: `UsageError` unless `target` is a
  * glTF path. `field` names the caller's option in the message; `shown` is the text the caller gave (default `target`).
  */
 export function assertGltfOutPath(target: string, field: string, shown: string = target): void {
-  if (!isGltfPath(target)) throw new UsageError(`${field} must end in .glb or .gltf (got ${shown})`);
+  if (!/\.(glb|gltf)$/i.test(target)) throw new UsageError(`${field} must end in .glb or .gltf (got ${shown})`);
 }

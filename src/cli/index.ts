@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { analyzeAsset } from './analyze.js';
-import { type Command, formatUsage, parseArgs } from './args.js';
+import { type Command, parseArgs } from './args.js';
 import { exitCodeFor, UsageError } from './errors.js';
 import { explain, REMEDIES } from './explain.js';
 import { printDocument, summarize, summarizeOptimize } from './format.js';
@@ -10,6 +10,7 @@ import { inspectApp } from './inspect.js';
 import { armExitWatchdog } from './lifecycle.js';
 import { ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA, SNAPSHOT_SCHEMA } from './schema.js';
 import { cleanText, describeError } from './untrusted.js';
+import { formatUsage } from './usage.js';
 import { exitCodeOf } from './verdict.js';
 
 function helpText(): string {

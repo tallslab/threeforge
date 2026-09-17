@@ -1,7 +1,8 @@
 /** Programmatic access to the CLI's operations: `import { analyzeAsset, inspectApp, explain } from 'threeforge/cli'`. */
 export { analyzeAsset, analyzeAssetWithShots } from './analyze.js';
-export { COMMANDS, type Command, parseArgs } from './args.js';
+export { type Command, parseArgs } from './args.js';
 export { launchBrowser } from './browser.js';
+export { COMMANDS } from './commandSpecs.js';
 export { EnvironmentError, PageError, UsageError } from './errors.js';
 export { explain, REMEDIES, type Remedy } from './explain.js';
 export { summarize, summarizeOptimize } from './format.js';

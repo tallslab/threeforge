@@ -1,9 +1,10 @@
 // Generates AGENTS.md and llms.txt from the built remedy table and command specs so the hint list,
 // the command table and the flag table never drift. Run after `pnpm build:lib`: node scripts/agents-md.mjs
 import { writeFileSync } from 'node:fs';
-import { COMMAND_SPECS, flagForms, usageLine } from '../dist/cli/args.js';
+import { COMMAND_SPECS } from '../dist/cli/commandSpecs.js';
 import { REMEDIES } from '../dist/cli/explain.js';
 import { DATA_NOTE, ERROR_NOTE } from '../dist/cli/mcp.js';
+import { flagForms, usageLine } from '../dist/cli/usage.js';
 import { VERSION } from '../dist/version.js';
 
 const hintRows = Object.values(REMEDIES)

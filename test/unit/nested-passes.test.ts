@@ -1101,7 +1101,6 @@ describe('compacted InstancedMesh driven by a PassTracker', () => {
     );
     const passes = new PassTracker();
     const mesh = createCulledInstancedMesh(box, new MeshStandardMaterial(), matrices, null, WebGLCoordinateSystem, {
-      nestedPasses,
       passes,
     }) as Instanced;
     const scene = new Scene();

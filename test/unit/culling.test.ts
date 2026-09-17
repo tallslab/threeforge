@@ -5,14 +5,17 @@ import {
   Frustum,
   Matrix4,
   MeshStandardMaterial,
+  Object3D,
   PerspectiveCamera,
   Scene,
   Sphere,
   Vector3,
   WebGLCoordinateSystem,
+  WebGPUCoordinateSystem,
 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { attachBvhCulling, FORGE_HOOK } from '../../src/compiler/culling.js';
+import { cameraView, frustumFor, viewProjection } from '../../src/compiler/instanceBvh.js';
 import { mulberry32 } from '../../test/scenes/naive.js';
 
 const box = new BoxGeometry(1, 1, 1);
@@ -287,5 +290,156 @@ describe('attachBvhCulling margin changes what is drawn', () => {
       margined.drawn.slice().sort((a, b) => a - b),
       "a margin offers it, and three's sphere test admits it",
     ).toEqual([0, 1]);
+  });
+});
+
+describe('frustumFor', () => {
+  /** A camera off-axis and a target with a non-identity world matrix, so every factor of the product matters. */
+  function setup() {
+    const camera = new PerspectiveCamera(50, 1.2, 0.5, 200);
+    camera.position.set(3, 4, 5);
+    camera.lookAt(-2, 1, -8);
+    camera.updateMatrixWorld();
+    camera.updateProjectionMatrix();
+    const target = new Object3D();
+    target.position.set(7, -1, 2);
+    target.rotation.set(0.3, 1.1, -0.4);
+    target.scale.set(2, 1, 0.5);
+    target.updateMatrixWorld();
+    const expected = new Matrix4()
+      .multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+      .multiply(target.matrixWorld);
+    return { camera, target, expected };
+  }
+
+  it("builds the camera's view-projection in the target's frame into the shared scratch", () => {
+    const { camera, target, expected } = setup();
+    const matrix = viewProjection(camera, target);
+    expect(matrix).toBe(cameraView.matrix);
+    expect(matrix.elements).toEqual(expected.elements);
+  });
+
+  it('sets the shared frustum as three would, in the coordinate system and depth convention it is given', () => {
+    const { camera, target, expected } = setup();
+    for (const coordinateSystem of [WebGLCoordinateSystem, WebGPUCoordinateSystem]) {
+      for (const reversedDepth of [undefined, true]) {
+        const frustum = frustumFor(camera, target, coordinateSystem, reversedDepth);
+        expect(frustum).toBe(cameraView.frustum);
+        expect(cameraView.matrix.elements).toEqual(expected.elements);
+        const reference = new Frustum().setFromProjectionMatrix(expected, coordinateSystem, reversedDepth);
+        for (let p = 0; p < 6; p++) {
+          expect(frustum.planes[p]!.equals(reference.planes[p]!), `plane ${p}`).toBe(true);
+        }
+      }
+    }
+    // The flags reach three: the WebGPU and reversed-depth variants are not the WebGL one.
+    const webgl = frustumFor(camera, target, WebGLCoordinateSystem).clone();
+    expect(frustumFor(camera, target, WebGPUCoordinateSystem).planes.some((p, i) => !p.equals(webgl.planes[i]!))).toBe(
+      true,
+    );
+    expect(
+      frustumFor(camera, target, WebGLCoordinateSystem, true).planes.some((p, i) => !p.equals(webgl.planes[i]!)),
+    ).toBe(true);
+  });
+});
+
+describe('attachBvhCulling slot writer', () => {
+  type MultiDraw = {
+    _multiDrawStarts: Int32Array;
+    _multiDrawCounts: Int32Array;
+    _multiDrawCount: number;
+    _multiDrawBytesPerElement: number;
+    _indirectTexture: { image: { data: Uint32Array }; version: number };
+  };
+
+  /**
+   * Two geometries with different index ranges, every instance well inside the frustum so the BVH and three's scan
+   * draw the same list, and `sortObjects` off so the slots are written straight from the query.
+   */
+  function inView(material: MeshStandardMaterial) {
+    const small = new BoxGeometry(0.5, 0.5, 0.5, 2, 2, 2);
+    const batch = new BatchedMesh(
+      40,
+      box.attributes.position!.count + small.attributes.position!.count,
+      box.index!.count + small.index!.count,
+      material,
+    );
+    const geometryIds = [batch.addGeometry(box), batch.addGeometry(small)];
+    const rng = mulberry32(11);
+    const m = new Matrix4();
+    for (let i = 0; i < 40; i++) {
+      const instance = batch.addInstance(geometryIds[i % 2]!);
+      m.makeTranslation(rng() * 20 - 10, rng() * 20 - 10, -30 - rng() * 20);
+      batch.setMatrixAt(instance, m);
+    }
+    batch.sortObjects = false;
+    batch.computeBoundingSphere();
+    const camera = new PerspectiveCamera(90, 1, 0.1, 100);
+    camera.updateMatrixWorld();
+    camera.updateProjectionMatrix();
+    const cull = () =>
+      batch.onBeforeRender(
+        { coordinateSystem: WebGLCoordinateSystem } as never,
+        new Scene(),
+        camera,
+        batch.geometry,
+        batch.material as never,
+        null as never,
+      );
+    const snapshot = () => {
+      const b = batch as unknown as MultiDraw;
+      return {
+        starts: Array.from(b._multiDrawStarts.subarray(0, b._multiDrawCount)),
+        counts: Array.from(b._multiDrawCounts.subarray(0, b._multiDrawCount)),
+        rows: Array.from(b._indirectTexture.image.data.subarray(0, b._multiDrawCount)),
+        count: b._multiDrawCount,
+        bytesPerElement: b._multiDrawBytesPerElement,
+      };
+    };
+    return { batch, cull, snapshot };
+  }
+
+  it("writes starts, counts, rows and the byte size entry for entry as three's scan does", () => {
+    const f = inView(new MeshStandardMaterial());
+    f.cull();
+    const linear = f.snapshot();
+    expect(linear.count).toBe(40);
+    expect(new Set(linear.counts).size, 'two geometries, two index counts').toBe(2);
+    attachBvhCulling(f.batch, WebGLCoordinateSystem);
+    f.cull();
+    const bvh = f.snapshot();
+    // The same set (everything is in view) but the tree's order, so compare per instance id.
+    expect(bvh.count).toBe(40);
+    expect(bvh.bytesPerElement).toBe(linear.bytesPerElement);
+    const byId = (s: typeof linear) => new Map(s.rows.map((id, k) => [id, [s.starts[k], s.counts[k]]]));
+    expect(byId(bvh)).toEqual(byId(linear));
+  });
+
+  it("applies three's wireframe rule: twice the index count, byte size implied by the vertex count", () => {
+    const material = new MeshStandardMaterial();
+    material.wireframe = true;
+    const f = inView(material);
+    f.cull();
+    const linear = f.snapshot();
+    attachBvhCulling(f.batch, WebGLCoordinateSystem);
+    f.cull();
+    const bvh = f.snapshot();
+    expect(bvh.bytesPerElement).toBe(linear.bytesPerElement);
+    const byId = (s: typeof linear) => new Map(s.rows.map((id, k) => [id, [s.starts[k], s.counts[k]]]));
+    expect(byId(bvh)).toEqual(byId(linear));
+  });
+
+  it('marks the indirect texture on every plain cull, rows changed or not', () => {
+    const f = inView(new MeshStandardMaterial());
+    attachBvhCulling(f.batch, WebGLCoordinateSystem);
+    const texture = (f.batch as unknown as MultiDraw)._indirectTexture;
+    // `needsUpdate` is a setter that bumps `version`, which is what the upload compares against.
+    const before = texture.version;
+    f.cull();
+    expect(texture.version).toBe(before + 1);
+    f.cull();
+    // three's own scan sets it unconditionally; a plain cull owes the renderer the same, since nothing else tracks
+    // whether the rows it rewrote differ from the upload.
+    expect(texture.version).toBe(before + 2);
   });
 });

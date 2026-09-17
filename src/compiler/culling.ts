@@ -1,10 +1,4 @@
-import {
-  BVH,
-  type BVHNode,
-  WebGLCoordinateSystem as BvhWebGL,
-  WebGPUCoordinateSystem as BvhWebGPU,
-  HybridBuilder,
-} from 'bvh.js';
+import type { BVH, BVHNode } from 'bvh.js';
 import {
   type ArrayCamera,
   type BatchedMesh,
@@ -12,28 +6,21 @@ import {
   type BufferGeometry,
   type Camera,
   type CoordinateSystem,
-  Frustum,
+  type Frustum,
   FrustumArray,
   type Material,
   Matrix4,
-  type Object3D,
   type Scene,
   Sphere,
   Vector3,
-  WebGLCoordinateSystem,
 } from 'three';
-import { FORGE_HOOK_KEY } from './materialCode.js';
+import { cameraView, frustumFor, InstanceBvh } from './instanceBvh.js';
+import { type CullingLod, levelFor } from './lodLevel.js';
+import { PassLayers } from './passLayers.js';
 import type { PassTracker } from './passTracker.js';
+import { FORGE_HOOK, markForgeHook, prependAfterRenderHook, prependRenderHook } from './renderHooks.js';
 
-/** Functions threeforge installs as own-property hooks carry this marker so the ledger does not flag them. */
-export const FORGE_HOOK: unique symbol = Symbol.for(FORGE_HOOK_KEY);
-
-export interface CullingLod {
-  /** Distance thresholds; level i is used from distances[i-1] onward. */
-  distances: number[];
-  /** Base geometryId -> geometryIds per level (level 0 = base). Geometries not listed always draw at level 0. */
-  geometryIds: Map<number, number[]>;
-}
+export { type CullingLod, FORGE_HOOK, levelFor, prependAfterRenderHook, prependRenderHook };
 
 /**
  * How a render pass nested in another render of the scene (a shadow map, a reflection, a portal) culls a batch that no
@@ -62,80 +49,6 @@ export interface CullingOptions {
    * inside another render (no shadow-casting light, no reflection).
    */
   passes?: PassTracker;
-}
-
-/**
- * The open passes that culled or served one object, innermost last, with strictly increasing depths. The batch and
- * instanced culling hooks share it: they keep their own per-layer data indexed by layer number, `pop` hands that number
- * to `restore` so the owner puts back what the layer changed, and `restoreAtEnd` asks the `PassTracker` to pop the
- * layers of the innermost open pass when that pass ends (from the scene's marked `onAfterRender`, after
- * `backend.finishRender`; or when the tracker resets).
- */
-export class PassLayers {
-  /** Layers on the stack. */
-  size = 0;
-  private readonly depths: number[] = [];
-  private readonly ids: number[] = [];
-  /** Per depth: the pass whose end is already set to pop this stack. */
-  private readonly registered: number[] = [];
-  private readonly endPass: (depth: number) => void;
-
-  constructor(
-    private readonly passes: PassTracker | undefined,
-    private readonly restore: (layer: number) => void,
-  ) {
-    this.endPass = (depth) => {
-      while (this.size > 0 && this.depths[this.size - 1]! >= depth) this.pop();
-    };
-  }
-
-  /** The depth of the innermost layer, 0 when there is none. */
-  get topDepth(): number {
-    return this.size > 0 ? this.depths[this.size - 1]! : 0;
-  }
-
-  /** Pops the layers deeper than `depth` and those whose pass is over (their end already popped them unless a render threw). */
-  popClosed(depth: number): void {
-    while (this.size > 0) {
-      const top = this.size - 1;
-      if (this.depths[top]! <= depth && this.passes!.passAt(this.depths[top]!) === this.ids[top]) return;
-      this.pop();
-    }
-  }
-
-  /** Pushes a layer for the open pass `pass` at `depth` (by default the innermost open pass); returns its number. */
-  push(depth: number, pass: number = this.passes!.pass): number {
-    const layer = this.size++;
-    this.depths[layer] = depth;
-    this.ids[layer] = pass;
-    return layer;
-  }
-
-  /** Pops the layers at `depth` and deeper when the innermost open pass (at `depth`) ends; registers once per pass. */
-  restoreAtEnd(depth: number): void {
-    const pass = this.passes!.pass;
-    if (this.registered[depth] === pass) return;
-    this.registered[depth] = pass;
-    this.passes!.atEnd(this.endPass);
-  }
-
-  /** Pops the innermost layer, restoring it. */
-  pop(): void {
-    this.size--;
-    this.restore(this.size);
-  }
-
-  /** Pops every layer. */
-  clear(): void {
-    while (this.size > 0) this.pop();
-  }
-}
-
-/** Index of the LOD level for a camera distance. */
-export function levelFor(distance: number, distances: number[]): number {
-  let level = 0;
-  while (level < distances.length && distance >= distances[level]!) level++;
-  return level;
 }
 
 export interface CullingHandle {
@@ -172,9 +85,7 @@ interface RenderItem {
 
 const _box = new Box3();
 const _sphere = new Sphere();
-const _matrix = new Matrix4();
 const _instanceMatrix = new Matrix4();
-const _frustum = new Frustum();
 const _frustumArray = new FrustumArray();
 const _cameraPos = new Vector3();
 const _forward = new Vector3();
@@ -227,46 +138,31 @@ export function attachBvhCulling(
   options: CullingOptions = {},
 ): CullingHandle {
   const target = batch as Internals;
-  const margin = options.margin ?? 0;
   const lod = options.lod;
   const reuseMain = options.nestedPasses === 'reuse-main';
   const passes = options.passes;
-  const bvh = new BVH<object, number>(
-    new HybridBuilder(),
-    coordinateSystem === WebGLCoordinateSystem ? BvhWebGL : BvhWebGPU,
-  );
-  const nodes = new Map<number, BVHNode<object, number>>();
 
-  const boxOf = (id: number, out: Float32Array): Float32Array => {
-    const info = target._instanceInfo[id]!;
-    batch.getBoundingBoxAt(info.geometryIndex, _box);
+  /** The instance's box in the batch's frame. */
+  const boxOf = (id: number): Box3 => {
+    batch.getBoundingBoxAt(target._instanceInfo[id]!.geometryIndex, _box);
     batch.getMatrixAt(id, _instanceMatrix);
-    _box.applyMatrix4(_instanceMatrix);
-    out[0] = _box.min.x;
-    out[1] = _box.max.x;
-    out[2] = _box.min.y;
-    out[3] = _box.max.y;
-    out[4] = _box.min.z;
-    out[5] = _box.max.z;
-    return out;
+    return _box.applyMatrix4(_instanceMatrix);
   };
-
+  const tree = new InstanceBvh(coordinateSystem, boxOf, options.margin ?? 0);
   const ids: number[] = [];
-  const boxes: Float32Array[] = [];
-  for (let i = 0; i < target._instanceInfo.length; i++) {
-    if (!target._instanceInfo[i]!.active) continue;
-    ids.push(i);
-    boxes.push(boxOf(i, new Float32Array(6)));
-  }
-  bvh.createFromArray(ids, boxes, (node) => nodes.set(node.object!, node), margin);
+  for (let i = 0; i < target._instanceInfo.length; i++) if (target._instanceInfo[i]!.active) ids.push(i);
+  tree.build(ids);
+  const bvh = tree.bvh;
 
   const prototypeHook = Object.getPrototypeOf(batch).onBeforeRender as BatchedMesh['onBeforeRender'];
 
   // Scratch of the running cull; the visitors below are created once per batch, so a cull allocates nothing.
-  let count = 0;
+  /** The next slot a plain cull or an append writes. */
+  let slot = 0;
   let bytesPerElement = 1;
   let multiplier = 1;
   let sorted = false;
+  /** A slot's texture row changed since the running append started. */
   let changed = false;
   /** Where LOD distances are measured from, in the batch's frame. */
   let eye = _cameraPos;
@@ -345,51 +241,58 @@ export function attachBvhCulling(
     return target._geometryInfo[gid]!;
   };
 
-  /** Loads the instance's bounding sphere into `_sphere` and runs three's sphere test against `_frustum`. */
-  const sphereMeets = (id: number): boolean => {
-    const info = target._instanceInfo[id]!;
-    if (!info.visible || !info.active) return false;
+  /** Loads the instance's bounding sphere, in the batch's frame, into `_sphere`. */
+  const loadSphere = (id: number): void => {
     batch.getMatrixAt(id, _instanceMatrix);
-    batch.getBoundingSphereAt(info.geometryIndex, _sphere)!.applyMatrix4(_instanceMatrix);
-    return _frustum.intersectsSphere(_sphere);
+    batch.getBoundingSphereAt(target._instanceInfo[id]!.geometryIndex, _sphere)!.applyMatrix4(_instanceMatrix);
   };
 
-  const sortList = (material: Material, camera: Camera): void => {
+  /** Loads the instance's bounding sphere into `_sphere` and runs three's sphere test against `frustum`. */
+  const sphereMeets = (id: number, frustum: Frustum | FrustumArray): boolean => {
+    const info = target._instanceInfo[id]!;
+    if (!info.visible || !info.active) return false;
+    loadSphere(id);
+    return frustum.intersectsSphere(_sphere);
+  };
+
+  /** Writes a slot, noting whether its texture row changes. */
+  const writeSlot = (at: number, start: number, indexCount: number, id: number): void => {
+    target._multiDrawStarts[at] = start * bytesPerElement * multiplier;
+    target._multiDrawCounts[at] = fullCounts[at] = indexCount * multiplier;
+    const rows = target._indirectTexture.image.data;
+    if (rows[at] !== id) {
+      rows[at] = id;
+      changed = true;
+    }
+  };
+
+  /** Lists an instance whose sphere is in `_sphere` (when `sorted` or `lod` need it): the sort list, or the next slot. */
+  const emit = (id: number): void => {
+    const range = rangeFor(target._instanceInfo[id]!.geometryIndex);
+    if (sorted) pushItem(range.start, range.count, _temp.subVectors(_sphere.center, _cameraPos).dot(_forward), id);
+    else writeSlot(slot++, range.start, range.count, id);
+  };
+
+  /** Sorts the list as three would and writes it to the slots from `slot` on. */
+  const drainSorted = (material: Material, camera: Camera): void => {
     const customSort = batch.customSort as ((list: RenderItem[], camera: Camera) => void) | null;
     if (customSort === null) _list.sort(material.transparent ? sortTransparent : sortOpaque);
     else customSort.call(batch, _list, camera);
-  };
-
-  /** Writes a slot of a plain cull. */
-  const writeSlot = (slot: number, start: number, indexCount: number, id: number): void => {
-    target._multiDrawStarts[slot] = start * bytesPerElement * multiplier;
-    target._multiDrawCounts[slot] = fullCounts[slot] = indexCount * multiplier;
-    target._indirectTexture.image.data[slot] = id;
-  };
-
-  /** Writes an appended slot, noting whether its texture row changes. */
-  const appendSlot = (slot: number, start: number, indexCount: number, id: number): number => {
-    target._multiDrawStarts[slot] = start * bytesPerElement * multiplier;
-    target._multiDrawCounts[slot] = fullCounts[slot] = indexCount * multiplier;
-    const rows = target._indirectTexture.image.data;
-    if (rows[slot] !== id) {
-      rows[slot] = id;
-      changed = true;
+    for (let k = 0; k < _list.length; k++) {
+      const item = _list[k]!;
+      writeSlot(slot++, item.start, item.count, item.index);
     }
-    return slot + 1;
+    _list.length = 0;
   };
 
   const visitPlain = (node: BVHNode<object, number>): void => {
     const id = node.object!;
-    if (!sphereMeets(id)) return;
-    const range = rangeFor(target._instanceInfo[id]!.geometryIndex);
-    if (sorted) pushItem(range.start, range.count, _temp.subVectors(_sphere.center, _cameraPos).dot(_forward), id);
-    else writeSlot(count++, range.start, range.count, id);
+    if (sphereMeets(id, cameraView.frustum)) emit(id);
   };
 
   const visitNeeded = (node: BVHNode<object, number>): void => {
     const id = node.object!;
-    if (sphereMeets(id)) needed[neededCount++] = id;
+    if (sphereMeets(id, cameraView.frustum)) needed[neededCount++] = id;
   };
 
   /** A fresh list for the camera: three's algorithm over BVH candidates, or three's own scan for the cameras it handles differently. */
@@ -410,23 +313,15 @@ export function attachBvhCulling(
     }
     setUnits(geometry, material);
     sorted = target.sortObjects;
-    _matrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).multiply(target.matrixWorld);
-    _frustum.setFromProjectionMatrix(_matrix, coordinateSystem);
+    frustumFor(camera, target, coordinateSystem);
     if (lod || sorted) cameraInBatchFrame(camera);
     eye = _cameraPos;
-    count = 0;
+    slot = 0;
     _list.length = 0;
-    bvh.frustumCulling(_matrix.elements, visitPlain);
-    if (sorted) {
-      sortList(material, camera);
-      for (let k = 0; k < _list.length; k++) {
-        const item = _list[k]!;
-        writeSlot(count++, item.start, item.count, item.index);
-      }
-      _list.length = 0;
-    }
+    bvh.frustumCulling(cameraView.matrix.elements, visitPlain);
+    if (sorted) drainSorted(material, camera);
     target._indirectTexture.needsUpdate = true;
-    target._multiDrawCount = count;
+    target._multiDrawCount = slot;
     target._multiDrawBytesPerElement = bytesPerElement;
     target._visibilityChanged = false;
   };
@@ -457,24 +352,13 @@ export function attachBvhCulling(
     if (!target.perObjectFrustumCulled) {
       for (let id = 0; id < info.length; id++) if (info[id]!.visible && info[id]!.active) needed[neededCount++] = id;
     } else if (cam.isArrayCamera || cam.reversedDepth) {
-      let frustum: Frustum | FrustumArray;
-      if (cam.isArrayCamera) {
-        frustum = _frustumArray.setFromArrayCamera(camera as ArrayCamera);
-      } else {
-        _matrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).multiply(target.matrixWorld);
-        frustum = _frustum.setFromProjectionMatrix(_matrix, camera.coordinateSystem, cam.reversedDepth);
-      }
-      for (let id = 0; id < info.length; id++) {
-        const instance = info[id]!;
-        if (!instance.visible || !instance.active) continue;
-        batch.getMatrixAt(id, _instanceMatrix);
-        batch.getBoundingSphereAt(instance.geometryIndex, _sphere)!.applyMatrix4(_instanceMatrix);
-        if (frustum.intersectsSphere(_sphere)) needed[neededCount++] = id;
-      }
+      const frustum = cam.isArrayCamera
+        ? _frustumArray.setFromArrayCamera(camera as ArrayCamera)
+        : frustumFor(camera, target, camera.coordinateSystem, cam.reversedDepth);
+      for (let id = 0; id < info.length; id++) if (sphereMeets(id, frustum)) needed[neededCount++] = id;
     } else {
-      _matrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).multiply(target.matrixWorld);
-      _frustum.setFromProjectionMatrix(_matrix, coordinateSystem);
-      bvh.frustumCulling(_matrix.elements, visitNeeded);
+      frustumFor(camera, target, coordinateSystem);
+      bvh.frustumCulling(cameraView.matrix.elements, visitNeeded);
     }
     for (let j = 0; j < neededCount; j++) marks[needed[j]!] = mark;
 
@@ -499,147 +383,80 @@ export function attachBvhCulling(
     if (lod || sorted) cameraInBatchFrame(camera);
     eye = hasMainPos ? mainPos : _cameraPos;
     changed = false;
-    let slot = base;
-    if (sorted) {
-      _list.length = 0;
-      for (let j = 0; j < neededCount; j++) {
-        const id = needed[j]!;
-        if (marks[id] === covered) continue;
-        batch.getMatrixAt(id, _instanceMatrix);
-        batch.getBoundingSphereAt(info[id]!.geometryIndex, _sphere)!.applyMatrix4(_instanceMatrix);
-        const range = rangeFor(info[id]!.geometryIndex);
-        pushItem(range.start, range.count, _temp.subVectors(_sphere.center, _cameraPos).dot(_forward), id);
-      }
-      sortList(material, camera);
-      for (let k = 0; k < _list.length; k++) {
-        const item = _list[k]!;
-        slot = appendSlot(slot, item.start, item.count, item.index);
-      }
-      _list.length = 0;
-    } else {
-      for (let j = 0; j < neededCount; j++) {
-        const id = needed[j]!;
-        if (marks[id] === covered) continue;
-        if (lod) {
-          batch.getMatrixAt(id, _instanceMatrix);
-          batch.getBoundingSphereAt(info[id]!.geometryIndex, _sphere)!.applyMatrix4(_instanceMatrix);
-        }
-        const range = rangeFor(info[id]!.geometryIndex);
-        slot = appendSlot(slot, range.start, range.count, id);
-      }
+    slot = base;
+    _list.length = 0;
+    for (let j = 0; j < neededCount; j++) {
+      const id = needed[j]!;
+      if (marks[id] === covered) continue;
+      if (sorted || lod) loadSphere(id);
+      emit(id);
     }
+    if (sorted) drainSorted(material, camera);
     if (changed) target._indirectTexture.needsUpdate = true;
     target._multiDrawCount = slot;
     target._multiDrawBytesPerElement = bytesPerElement;
     return slot;
   };
 
-  const hook = (
-    renderer: unknown,
-    scene: Scene,
-    camera: Camera,
-    geometry: BufferGeometry,
-    material: Material,
-    group: unknown,
-  ): void => {
-    ensureCapacity();
-    const depth = passes === undefined ? 0 : passes.depth;
-    // Drop the layers of passes that are over (their end already restored them, unless a render threw) and this pass's
-    // own layer when three culls the batch twice in one pass (onBeforeShadow, then onBeforeRender).
-    layers.popClosed(depth);
-    if (layers.size > 0 && layers.topDepth === depth) layers.pop();
-    const base = layers.size > 0 ? layerCount[layers.size - 1]! : reuseMain && depth > 1 ? mainCount : -1;
-    if (base >= 0) {
-      const layer = layers.size;
-      const length = appendFor(camera, geometry, material, base, layer);
-      layers.push(depth);
-      layerBase[layer] = base;
-      layerCount[layer] = length;
-      layers.restoreAtEnd(depth);
-      return;
-    }
-    cullPlain(renderer, scene, camera, geometry, material, group);
-    if (depth <= 1) {
-      mainCount = target._multiDrawCount;
-      if (lod) {
-        cameraInBatchFrame(camera);
-        mainPos.copy(_cameraPos);
-        hasMainPos = true;
+  const hook = markForgeHook(
+    (
+      renderer: unknown,
+      scene: Scene,
+      camera: Camera,
+      geometry: BufferGeometry,
+      material: Material,
+      group: unknown,
+    ): void => {
+      ensureCapacity();
+      const depth = passes === undefined ? 0 : passes.depth;
+      // Drop the layers of passes that are over (their end already restored them, unless a render threw) and this
+      // pass's own layer when three culls the batch twice in one pass (onBeforeShadow, then onBeforeRender).
+      layers.popClosed(depth);
+      if (layers.size > 0 && layers.topDepth === depth) layers.pop();
+      const base = layers.size > 0 ? layerCount[layers.size - 1]! : reuseMain && depth > 1 ? mainCount : -1;
+      if (base >= 0) {
+        const layer = layers.size;
+        const length = appendFor(camera, geometry, material, base, layer);
+        layers.push(depth);
+        layerBase[layer] = base;
+        layerCount[layer] = length;
+        layers.restoreAtEnd(depth);
+        return;
       }
-    }
-    if (depth >= 1) {
-      const layer = layers.push(depth);
-      layerBase[layer] = -1;
-      layerCount[layer] = target._multiDrawCount;
-    }
-  };
-  (hook as unknown as Record<symbol, boolean>)[FORGE_HOOK] = true;
+      cullPlain(renderer, scene, camera, geometry, material, group);
+      if (depth <= 1) {
+        mainCount = target._multiDrawCount;
+        if (lod) {
+          cameraInBatchFrame(camera);
+          mainPos.copy(_cameraPos);
+          hasMainPos = true;
+        }
+      }
+      if (depth >= 1) {
+        const layer = layers.push(depth);
+        layerBase[layer] = -1;
+        layerCount[layer] = target._multiDrawCount;
+      }
+    },
+  );
   batch.onBeforeRender = hook as unknown as BatchedMesh['onBeforeRender'];
 
   return {
     bvh,
-    margin,
+    margin: tree.margin,
     move(id) {
-      const node = nodes.get(id);
-      if (!node) return;
-      boxOf(id, node.box as Float32Array);
-      bvh.move(node, margin);
+      tree.move(id);
     },
     insert(id) {
-      nodes.set(id, bvh.insert(id, boxOf(id, new Float32Array(6)), margin));
+      tree.insert(id);
     },
     remove(id) {
-      const node = nodes.get(id);
-      if (!node) return;
-      bvh.delete(node);
-      nodes.delete(id);
+      tree.remove(id);
     },
     detach() {
       layers.clear();
       if (Object.hasOwn(batch, 'onBeforeRender')) delete (batch as { onBeforeRender?: unknown }).onBeforeRender;
-      bvh.clear();
-      nodes.clear();
+      tree.clear();
     },
-  };
-}
-
-const OWN = Object.prototype.hasOwnProperty;
-
-/**
- * Runs `fn` before whatever `onBeforeRender` the object currently has (three's prototype method or a
- * threeforge hook), as a marked own-property hook. Returns a function that restores the previous state.
- */
-export function prependRenderHook(
-  object: Object3D,
-  fn: (...args: Parameters<Object3D['onBeforeRender']>) => void,
-): () => void {
-  return prependHook(object, 'onBeforeRender', fn);
-}
-
-/** Same as `prependRenderHook` for `onAfterRender`; `fn` receives the renderer, scene and camera. */
-export function prependAfterRenderHook(
-  object: Object3D,
-  fn: (...args: Parameters<Object3D['onAfterRender']>) => void,
-): () => void {
-  return prependHook(object, 'onAfterRender', fn);
-}
-
-function prependHook<K extends 'onBeforeRender' | 'onAfterRender'>(
-  object: Object3D,
-  name: K,
-  fn: (...args: Parameters<Object3D[K]>) => void,
-): () => void {
-  const hadOwn = OWN.call(object, name);
-  const previous = object[name] as (...args: Parameters<Object3D[K]>) => void;
-  const hook = function (this: Object3D, ...args: Parameters<Object3D[K]>): void {
-    fn(...args);
-    previous.apply(this, args);
-  };
-  (hook as unknown as Record<symbol, boolean>)[FORGE_HOOK] = true;
-  (object as unknown as Record<K, unknown>)[name] = hook;
-  return () => {
-    if ((object as unknown as Record<K, unknown>)[name] !== hook) return;
-    if (hadOwn) (object as unknown as Record<K, unknown>)[name] = previous;
-    else delete (object as unknown as Record<K, unknown>)[name];
   };
 }

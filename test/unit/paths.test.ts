@@ -3,15 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { UsageError } from '../../src/cli/errors.js';
-import {
-  assertGltfOutPath,
-  checkPathText,
-  entryExists,
-  isGltfPath,
-  isInside,
-  realPathOf,
-  SCHEME,
-} from '../../src/cli/paths.js';
+import { assertGltfOutPath, checkPathText, entryExists, isInside, realPathOf, SCHEME } from '../../src/cli/paths.js';
 
 /**
  * The one set of path-confinement helpers `gltf-uris.ts`, `mcp.ts` and `server.ts` share. Before `paths.ts` each
@@ -121,17 +113,15 @@ describe('checkPathText and SCHEME', () => {
   });
 });
 
-describe('isGltfPath and assertGltfOutPath', () => {
+describe('assertGltfOutPath', () => {
   it('accepts .glb and .gltf in any case, refuses anything else', () => {
-    expect(isGltfPath('scene.glb')).toBe(true);
-    expect(isGltfPath('Scene.GLB')).toBe(true);
-    expect(isGltfPath('scene.gltf')).toBe(true);
-    expect(isGltfPath('scene.txt')).toBe(false);
-    expect(isGltfPath('scene.glb.bak')).toBe(false);
-    expect(isGltfPath('glb')).toBe(false);
+    for (const path of ['scene.glb', 'Scene.GLB', 'scene.gltf'])
+      expect(() => assertGltfOutPath(path, 'out')).not.toThrow();
+    for (const path of ['scene.txt', 'scene.glb.bak', 'glb'])
+      expect(() => assertGltfOutPath(path, 'out')).toThrow(UsageError);
   });
 
-  it('assertGltfOutPath throws a UsageError naming the field and the text the caller gave', () => {
+  it('throws a UsageError naming the field and the text the caller gave', () => {
     expect(() => assertGltfOutPath('/repo/out.txt', '--out', 'out.txt')).toThrow(UsageError);
     expect(() => assertGltfOutPath('/repo/out.txt', '--out', 'out.txt')).toThrow(
       '--out must end in .glb or .gltf (got out.txt)',

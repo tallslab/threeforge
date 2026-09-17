@@ -118,7 +118,7 @@ test('analyze_asset rejects a bad enum value and a non-integer frames the same w
 }, async () => {
   // A tight z.enum()/`.int()` in the MCP schema made these two return
   // the SDK's own plain-text isError instead of threeforge's { error, code: 2 } JSON. Both now go through
-  // validateInput (src/cli/args.ts), same as any other bad input.
+  // validateInput (src/cli/validate.ts), same as any other bad input.
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
   await ready();
   const { client, close } = await connect();

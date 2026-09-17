@@ -15,10 +15,11 @@ import { join, relative } from 'node:path';
 import { Document, NodeIO } from '@gltf-transform/core';
 import pngjs from 'pngjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_PARITY, parseArgs } from '../../src/cli/args.js';
+import { parseArgs } from '../../src/cli/args.js';
 import { UsageError } from '../../src/cli/errors.js';
 import { optimizeAsset, verifyAnalyzeInput } from '../../src/cli/optimize.js';
 import type { OptimizeInput } from '../../src/cli/types.js';
+import { DEFAULT_PARITY } from '../../src/cli/validate.js';
 import { GLB_MAGIC, glbBytes } from './helpers/gltf-files.js';
 
 /**

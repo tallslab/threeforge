@@ -3,7 +3,6 @@ import { basename, dirname, extname, join, resolve } from 'node:path';
 import type { Document, NodeIO } from '@gltf-transform/core';
 import { VERSION } from '../version.js';
 import { analyzeAssetWithShots, comparePixels, failingViews, parityOf } from './analyze.js';
-import { DEFAULT_PARITY } from './args.js';
 import { EnvironmentError, UsageError } from './errors.js';
 import {
   assertConfinedUri,
@@ -29,6 +28,7 @@ import type {
   Verdict,
 } from './types.js';
 import { cleanText } from './untrusted.js';
+import { DEFAULT_PARITY } from './validate.js';
 import { pageErrorsReason, verdictOf } from './verdict.js';
 
 /** `scene.glb` → `scene.forge.glb` next to it; `.gltf` inputs still default to a single `.glb`. */
