@@ -94,7 +94,7 @@ if (import.meta.env.DEV) exposeToAgents({ ledger, world, renderer, scene, camera
 Then `npx threeforge inspect http://localhost:5173 --json` (it compiles through the hook; `--no-compile` measures
 only). The hook offers `frame()`, `frameAsync()`, `compile()`, `decompile()`, `measureOverdraw()`, `measureMemory()`,
 `hints()`, `report()`; an agent driving its own browser can call them directly. It also lets *any* script on the
-page — a browser extension, a third-party tag, an XSS payload — call `compile()`/`decompile()` and read the ledger,
+page (a browser extension, a third-party tag, an XSS payload) call `compile()`/`decompile()` and read the ledger,
 so publish it only in a development build or behind your own flag; `import.meta.env.DEV` is Vite's dev check,
 other bundlers need their own.
 

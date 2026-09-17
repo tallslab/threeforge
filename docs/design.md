@@ -176,14 +176,14 @@ What the assets taught the compiler (each became a rule or a fix):
 
 - **Animated nodes** (`animations` option): any node targeted by a clip, with its descendants, is dynamic under
   `policy: 'auto'`; otherwise LittlestTokyo's trains and cars would have been frozen into batches.
-- **GPU-instancing extension**: meshes that are already `InstancedMesh` are excluded (`already-instanced`).
-- **Transmission**: three derives volume thickness from the object matrix's scale; a batch or an instanced mesh
+- GPU-instancing extension: meshes that are already `InstancedMesh` are excluded (`already-instanced`).
+- Transmission: three derives volume thickness from the object matrix's scale; a batch or an instanced mesh
   presents one matrix for all instances, so a whole row of AttenuationTest cubes rendered wrong. Materials with
   `transmission > 0` are excluded (`transmission`).
-- **Reflections and other nested renders**: the ledger names a nested render of the main scene
+- Reflections and other nested renders: the ledger names a nested render of the main scene
   `nested:<target>` instead of folding it into `main`, so water reflection cost is visible (the biome's reflection
   pass adds ~3,700 submissions to a 17,000-submission frame).
-- **Harness, not library**: three's reflector fills its render target one frame late, so parity captures need a
+- Harness, not library: three's reflector fills its render target one frame late, so parity captures need a
   warm-up frame; Playwright restarts its worker after a failing test, so per-asset report rows are merged on disk.
 - Lone meshes under `policy: 'auto'` are annotated `unique-material` rather than `untagged`.
 
@@ -213,7 +213,7 @@ The same scene on the native WebGPU backend matches at 0.00 % too, after two bac
   15.5 % when the boxes did, their main pass drawing the spot light's list). So a nested pass that reaches a mesh first compacts it for the main camera, a
   shadow pass appends the casters of its own light (every light is queried once per frame into one list that records
   which lights reach each caster, and a pass appends its own light's entries in that list's order, so a tail that
-  already holds them — a point light's six faces, or a set that is a prefix of the pass before — is not rewritten),
+  already holds them, a point light's six faces or a set that is a prefix of the pass before, is not rewritten),
   and reflections draw the main list: they may miss instances outside the main frustum.
 
   | Nested pass | Batch `per-pass` | Batch `reuse-main` | Instanced mesh (either policy) |
@@ -254,17 +254,17 @@ Rules and fixes this content produced:
 - **Bone-parented meshes are dynamic** whatever their tag: a weapon in a hand moves with the rig. With
   `dynamics: 'batch-sync'` they join batches and follow the bone through matrix sync (121 synced objects in the
   arena: 12 weapons, 96 blocky body parts, torches).
-- **Dynamic geometry is never batched**: attributes with `DynamicDrawUsage` / `StreamDrawUsage` (trails,
+- Dynamic geometry is never batched: attributes with `DynamicDrawUsage` / `StreamDrawUsage` (trails,
   ribbons, particle positions) mark a mesh `excluded:dynamic-geometry`, since a batch copies vertices once.
-- **Animations resolve per root**: many characters share bone and node names, and three resolves track names
+- Animations resolve per root: many characters share bone and node names, and three resolves track names
   by first match, so `animations` accepts `{ root, clips }` entries, one per animated character.
 - **Points, sprites and lines get their own ledger reasons** instead of `untagged`; the compiler never touches them.
 - **Batches share the canonical material when every instance is white**, so runtime uniform changes (emissive
   flicker, opacity, texture offsets) keep propagating; a white clone with per-instance colours is used otherwise.
-- **Zero-instance draws cost nothing**: `RenderObject.getDrawParameters()` returns null for an instanced object
+- Zero-instance draws cost nothing: `RenderObject.getDrawParameters()` returns null for an instanced object
   with no instances, so both backends skip it; the ledger's cost model does the same (it showed up as
   `unattributed: -2` in the point light's shadow pass).
-- **Shadow maps render once per animation frame**: `ShadowNode` gates on three's node `frameId`, which only
+- Shadow maps render once per animation frame: `ShadowNode` gates on three's node `frameId`, which only
   advances on animation-frame ticks, so several `render()` calls in one task show shadow passes only on the first.
   The harness's `frameAsync()` yields to an animation frame before rendering; apps that render on demand should
   expect the same.

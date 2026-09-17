@@ -43,28 +43,11 @@ exit codes an agent can branch on.
 ### Optimize assets at build time
 
 `threeforge optimize scene.glb` rewrites the file with [glTF-Transform](https://gltf-transform.dev) and writes
-`scene.forge.glb`. Three presets: `safe` (default; dedup, palette, prune: measured at 0 changed pixels, no channel
-moving by more than 24 of 255, on the Fox and the Buggy on both backends; `palette` merges five or more untextured
-materials that differ into 8-bit palette textures and adds a UV attribute to every primitive it merges, so it can make a
-file bigger),
-`balanced` (adds weld, resample, quantize and WebP textures at 2048 px), `aggressive` (adds simplify to 50 % and 1024 px textures).
-Any step can be added or removed (`--quantize`, `--no-palette`, `--simplify 0.3`, `--compress meshopt`, `--textures avif`,
-`--instance`, `--join`). The command then renders the original and the result through the same harness, compares
-pixels view by view, compiles both with threeforge, and reports:
-
-```json
-{
-  "steps": [{ "name": "dedup", "applied": true, "before": { "materials": 148, "meshes": 109 }, "after": { "materials": 10, "meshes": 63 } }],
-  "requires": [{ "extension": "EXT_meshopt_compression", "needs": "MeshoptDecoder", "code": "loader.setMeshoptDecoder(MeshoptDecoder);" }],
-  "verify": { "parity": { "diffPct": 0, "threshold": 0.5, "pass": true, "views": [{ "view": "default", "diffPct": 0, "changedPixels": 0 }] }, "delta": { "bytes": -2103500, "materials": -147, "sceneSubmissions": { "naive": -173, "compiled": 0 } } },
-  "verdict": { "pass": true }
-}
-```
-
-The verdict fails when the two files' uncompiled renders differ by more than `--parity`, when compiling the
-optimized file changes more than 0.5 % of its pixels (whatever `--parity` says), when a clip, skin or morph target was
-lost, when the optimized file fails `--budget`, or when either render raised a page error. Texture compression needs `npm i -D sharp`; reading a Draco input needs
-`npm i -D draco3dgltf`. The output never uses Draco.
+`scene.forge.glb`. The `safe` preset (default: dedup, palette, prune) is measured at 0 changed pixels on the Fox and
+the Buggy on both backends; `balanced` adds weld, resample, quantize and WebP textures, `aggressive` adds simplify and
+smaller textures, and any step can be added or removed by flag. The command then renders the original and the result,
+compares pixels view by view, compiles both, and reports every step, every decoder the output needs and a verdict.
+Every flag, the JSON document and the exit codes: [AGENTS.md](AGENTS.md).
 
 Draw-call numbers so far: the naive test scene (500 props, 40 material recipes, a new material per prop) goes from
 **503 to 28** scene submissions, with under 0.05 % of pixels changed per view at a per-channel tolerance of 4 (the e2e
@@ -198,7 +181,7 @@ inspectable:
 
 Eight scenes every genre maps onto, each shipped as a naive assembly and an optimized path through threeforge
 (`test/app/scenes`). `pnpm bench` measures all of them on both backends and fails on a 10 % regression against
-the committed baselines; the table below is generated from those baselines, never typed by hand.
+the committed baselines.
 
 | scene | stresses |
 |---|---|
@@ -211,37 +194,8 @@ the committed baselines; the table below is generated from those baselines, neve
 | `zen` vast procedural low-poly world, 50 000 objects on 64 textured tiles | chunk streaming, memory |
 | `rpg` portrait mobile RPG, gear swaps | character assembler |
 
-<!-- bench:start -->
-### webgl2
-
-ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver) · tier desktop · three 186
-
-| scene | submissions naive → opt | gpu draws | triangles | overdraw opaque / transparent | particles | fill MPix | objects / auto-matrices | skinned verts | shadow texels | shadow passes/frame | memory MB | render ms | frame ms |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| village | 303 → 28 (10.8×) | 304 → 29 | 36.7k → 36.7k | 0.71 / 0.01 → 0.71 / 0.01 | 0 → 0 | 0.34 → 0.34 | 310 / 310 → 325 / 34 | 158 → 158 | 0 → 0 | 0.00 → 0.00 | 4 → 4 | 1.7 → 0.9 | 17.8 → 16.8 |
-| forest | 5706 → 13 (438.9×) | 5707 → 10 | 391.1k → 99.3k | 0.84 / 0.00 → 0.57 / 0.00 | 0 → 0 | 0.40 → 0.28 | 7.0k / 7.0k → 7.0k / 15 | 0 → 0 | 0 → 0 | 0.00 → 0.00 | 4 → 4 | 16.1 → 2.0 | 121.7 → 87.4 |
-| crowd | 401 → 17 (23.6×) | 402 → 18 | 151.6k → 151.6k | 0.86 / 0.00 → 0.87 / 0.00 | 0 → 0 | 0.41 → 0.41 | 2.2k / 2.2k → 19 / 18 | 271.0k → 0 | 0 → 0 | 0.00 → 0.00 | 15 → 18 | 3.2 → 0.6 | 35.4 → 33.2 |
-| bossfight | 2780 → 370 (7.5×) | 2787 → 294 | 161.7k → 175.7k | 1.04 / 0.64 → 1.04 / 0.64 | 7.6k → 7.6k | 0.81 → 0.81 | 1.5k / 1.5k → 1.5k / 442 | 16.4k → 16.4k | 3.67M → 3.67M | 3.00 → 3.00 | 106 → 107 | 15.0 → 8.3 | 117.8 → 130.0 |
-| lake | 3548 → 7 (506.9×) | 3549 → 8 | 8.0k → 8.2k | 0.63 / 0.70 → 0.63 / 0.70 | 1.8k → 1.8k | 0.64 → 0.64 | 2.0k / 2.0k → 2.0k / 2.0k | 0 → 0 | 0 → 0 | 0.00 → 0.00 | 4 → 4 | 16.1 → 1.5 | 91.5 → 76.5 |
-| daynight | 605 → 28 (21.6×) | 606 → 29 | 73.4k → 36.7k | 0.71 / 0.01 → 0.71 / 0.01 | 0 → 0 | 0.34 → 0.34 | 310 / 310 → 325 / 34 | 158 → 158 | 4.19M → 2.10M | 1.00 → 0.50 | 20 → 20 | 2.9 → 1.3 | 31.5 → 28.2 |
-| zen | 3540 → 88 (40.2×) | 3541 → 62 | 63.2k → 60.9k | 0.64 / 0.00 → 0.64 / 0.00 | 0 → 0 | 0.31 → 0.31 | 50.1k / 50.1k → 226 / 194 | 0 → 0 | 0 → 0 | 0.00 → 0.00 | 91 → 47 | 26.3 → 1.1 | 101.4 → 72.4 |
-| rpg | 4 → 1 (4.0×) | 5 → 2 | 365 → 365 | 0.24 / 0.00 → 0.24 / 0.00 | 0 → 0 | 0.09 → 0.09 | 10 / 10 → 6 / 6 | 326 → 326 | 0 → 0 | 0.00 → 0.00 | 3 → 3 | 0.4 → 0.3 | 16.7 → 16.7 |
-
-### webgpu
-
-apple metal-3 · tier desktop · three 186
-
-| scene | submissions naive → opt | gpu draws | triangles | overdraw opaque / transparent | particles | fill MPix | objects / auto-matrices | skinned verts | shadow texels | shadow passes/frame | memory MB | render ms | frame ms |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| village | 303 → 28 (10.8×) | 304 → 304 | 36.7k → 36.7k | 0.71 / 0.01 → 0.71 / 0.01 | 0 → 0 | 0.34 → 0.34 | 310 / 310 → 325 / 34 | 158 → 158 | 0 → 0 | 0.00 → 0.00 | 4 → 5 | 2.1 → 1.2 | 16.6 → 16.7 |
-| forest | 5706 → 13 (438.9×) | 5707 → 10 | 391.1k → 99.3k | 0.84 / 0.00 → 0.58 / 0.00 | 0 → 0 | 0.40 → 0.28 | 7.0k / 7.0k → 7.0k / 15 | 0 → 0 | 0 → 0 | 0.00 → 0.00 | 4 → 4 | 16.1 → 2.4 | 16.7 → 16.7 |
-| crowd | 401 → 17 (23.6×) | 402 → 18 | 151.6k → 151.6k | 0.86 / 0.00 → 0.86 / 0.00 | 0 → 0 | 0.41 → 0.41 | 2.2k / 2.2k → 19 / 18 | 271.0k → 0 | 0 → 0 | 0.00 → 0.00 | 15 → 18 | 3.4 → 0.8 | 16.7 → 16.7 |
-| bossfight | 2780 → 370 (7.5×) | 2787 → 1082 | 161.7k → 175.7k | 1.04 / 0.63 → 1.04 / 0.63 | 7.6k → 7.6k | 0.80 → 0.80 | 1.5k / 1.5k → 1.5k / 442 | 16.4k → 16.4k | 3.67M → 3.67M | 3.00 → 3.00 | 107 → 107 | 14.2 → 8.1 | 16.4 → 16.6 |
-| lake | 3548 → 7 (506.9×) | 3549 → 34 | 8.0k → 8.2k | 0.63 / 0.69 → 0.63 / 0.69 | 1.8k → 1.8k | 0.63 → 0.63 | 2.0k / 2.0k → 2.0k / 2.0k | 0 → 0 | 0 → 0 | 0.00 → 0.00 | 4 → 4 | 14.9 → 2.1 | 16.6 → 16.8 |
-| daynight | 605 → 28 (21.6×) | 606 → 304 | 73.4k → 36.7k | 0.71 / 0.01 → 0.71 / 0.01 | 0 → 0 | 0.34 → 0.34 | 310 / 310 → 325 / 34 | 158 → 158 | 4.19M → 2.10M | 1.00 → 0.50 | 20 → 21 | 3.1 → 1.4 | 16.6 → 16.9 |
-| zen | 3540 → 88 (40.2×) | 3541 → 62 | 63.2k → 60.9k | 0.64 / 0.00 → 0.64 / 0.00 | 0 → 0 | 0.31 → 0.31 | 50.1k / 50.1k → 226 / 194 | 0 → 0 | 0 → 0 | 0.00 → 0.00 | 91 → 47 | 26.4 → 1.4 | 26.8 → 16.7 |
-| rpg | 4 → 1 (4.0×) | 5 → 2 | 365 → 365 | 0.24 / 0.00 → 0.24 / 0.00 | 0 → 0 | 0.09 → 0.09 | 10 / 10 → 6 / 6 | 326 → 326 | 0 → 0 | 0.00 → 0.00 | 3 → 3 | 0.6 → 0.5 | 16.7 → 16.6 |
-<!-- bench:end -->
+Scene submissions per frame, naive → optimized, identical on both backends: village 303 → 28, forest 5706 → 13, crowd 401 → 17, bossfight 2780 → 370, lake 3548 → 7, daynight 605 → 28, zen 3540 → 88, rpg 4 → 1.
+The full table per backend (GPU draws, triangles, measured overdraw, shadow texels, memory, render and frame times) is generated from the baselines by `pnpm bench:table` into [docs/bench.md](docs/bench.md).
 
 ### Run it on your device
 
@@ -292,3 +246,5 @@ rebuilds them in a scissored frame. The result reports `{ mode, textures, repair
 | `pnpm dev` | test app: `http://localhost:5179/?scene=naive&compile=1&overlay=1&budget=30&animate=1&dynamics=batch-sync` (also `scene=field&count=20000`, `scene=gltf&asset=Sponza`, `scene=biome&dynamics=batch-sync`, `scene=arena&bloom=1&assemble=1`) |
 
 See `docs/design.md` for the architecture and `docs/spike-scene-optimizer.md` for the baseline measurement.
+What we learned about three.js r186 along the way, from what it counts to what it compiles wrong:
+[docs/three-r186-notes.md](docs/three-r186-notes.md).

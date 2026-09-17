@@ -41,11 +41,11 @@ dated allow-list of full SHAs with a reason each, and every run prints what it e
 
 `.github/workflows/ci.yml` runs on every pull request and every push to `main`:
 
-- **`commit-rules`** — the `Budget:` line check above.
-- **`unit`** — `pnpm typecheck`, `pnpm test`, `pnpm build`, plus an informational ledger-overhead figure in the run
+- `commit-rules`: the `Budget:` line check above.
+- `unit`: `pnpm typecheck`, `pnpm test`, `pnpm build`, plus an informational ledger-overhead figure in the run
   summary (not a gate, compared to nothing).
-- **`e2e`** — both backends, `--grep-invert "@corpus|@bench"`, and no downloaded content at all.
-- **`bench`** — both backends, the gate in `scripts/bench-run.mjs`. The only pull-request job that downloads
+- `e2e`: both backends, `--grep-invert "@corpus|@bench"`, and no downloaded content at all.
+- `bench`: both backends, the gate in `scripts/bench-run.mjs`. The only pull-request job that downloads
   anything (the Kenney kits and the water map, with `FORGE_FETCH_STRICT=1` so a failed download fails by name).
   Deterministic cost metrics are gated; timing is recorded only, since the runner is SwiftShader, not a GPU.
 

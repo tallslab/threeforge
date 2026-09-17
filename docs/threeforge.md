@@ -1,40 +1,28 @@
-# threeforge — the complete reference
+# threeforge: the complete reference
 
-This document describes everything threeforge is and does, module by module, and how each part works. Shorter
-entry points: [README.md](../README.md) (overview and quick start), [AGENTS.md](../AGENTS.md) (for AI agents),
-[docs/bench.md](bench.md) (benchmark baselines), [docs/design.md](design.md) (the history of phases 1–6).
+This file is the reference for every threeforge module, option and mechanism; read it before changing behaviour.
+Shorter entry points: [README.md](../README.md) (overview and quick start), [AGENTS.md](../AGENTS.md) (the CLI and
+MCP surface for AI agents), [docs/bench.md](bench.md) (benchmark baselines), [docs/design.md](design.md) (module map
+and design history) and [docs/three-r186-notes.md](three-r186-notes.md) (what three r186 does that threeforge works
+around).
 
 ## 1. What it is
 
-threeforge is a **frame-budget compiler and diagnostics layer for three.js games** (three r186, `three/webgpu`
-with its WebGL2 fallback). It is not an engine and has no editor. three.js stays the renderer. threeforge does
-three things:
+threeforge is a frame-budget compiler and diagnostics layer for three.js games (three r186, `three/webgpu` with its
+WebGL2 fallback). It is not an engine and has no editor; three.js stays the renderer. At load time it compiles a
+naively assembled scene into a cheap one: static meshes merge into batches or baked meshes, repeated geometry is
+instanced, instances are culled per instance with a BVH, LODs are switched, and the original objects stay editable
+and reversible. Every frame it measures each cost category in one ledger (draw calls by reason, measured overdraw,
+skinning, lighting and shadows, per-frame JavaScript, memory) and reconciles its own count with the renderer's, so a
+non-zero `unattributed` means the model is wrong, never the scene. Per-tier budgets turn into hints with a remedy
+each, readable by a person on the overlay or by an AI agent through JSON, a CLI and an MCP server.
 
-1. **Compiles** a naively assembled scene into a cheap one at load time: it merges static meshes into batches or
-   baked meshes, instances repeated geometry, culls per instance with a BVH, switches LODs, and keeps the original
-   objects editable and reversible.
-2. **Measures** every cost category of a frame in one ledger: draw calls by reason, measured overdraw, skinning,
-   lighting and shadows, per-frame JavaScript, memory. It reconciles its own count with the renderer's, so a
-   non-zero `unattributed` means the model is wrong, never the scene.
-3. **Explains** what to fix: per-tier budgets turn into hints with a remedy each, readable by a person on the
-   overlay or by an AI agent through JSON, a CLI and an MCP server.
+Everything is measured on a fixed benchmark suite of eight scenes on both backends, with a regression gate that fails
+the build on a 10 % regression (section 11), and on a corpus of public glTF assets (section 12, "Corpus report").
 
-Everything is measured on a fixed benchmark suite of eight scenes, on both backends, with a regression gate that
-fails the build on a 10 % regression, and on a corpus of public glTF assets (`docs/assets-report.md`,
-`docs/assets-report-webgpu.md`). The corpus report is regenerated deliberately, from a clean tree (`docs/release.md`,
-step 3); the current one was generated from 0.9.0 code at commit `a485e57`, run `corpus-20260916`, and
-passes 104 of 104 models on each backend: 0 unattributed draws, decompile restoring the naive count, and under 0.5 %
-of the pixels of one view changed at a per-channel tolerance of 24. Its `diff` column is that percentage rounded to
-two decimals, so the 0 every row reads means under 0.005 %, not zero changed pixels. Pixel claims below state the
-bound their test enforces. On native WebGPU, texture-heavy rows (`polyhaven-CoffeeCart_01`, `Sponza`) can show a
-non-zero `diff` of up to ~0.04 % that moves between regenerations with no code change: the two screenshots land at
-different points in the Metal adapter's texture and mip residency settling, which the fixed three-frame warm-up does
-not bound, so this is capture-side noise rather than a rendering difference and stays two orders of magnitude under
-the 0.5 % gate. Bounding texture residency before capture is a harness improvement not yet made.
-
-Principles: three.js renders; a wrong deletion is visible and a missed one is invisible (so every removal is
-conservative, counted and reversible); measurements are real, never estimated where a measurement is possible;
-agents get the same data as people, as JSON with exit codes.
+Principles: three.js renders; a wrong deletion is visible and a missed one is invisible, so every removal is
+conservative, counted and reversible; measurements are real, never estimated where a measurement is possible; agents
+get the same data as people, as JSON with exit codes.
 
 ## 2. Install and first use
 
@@ -69,63 +57,41 @@ npx threeforge inspect http://localhost:5173 --json
 
 ## 3. Architecture
 
-| Directory | Responsibility |
-|---|---|
-| `src/tags.ts` | `tag.static(obj)`, `tag.dynamic(obj)`, `tag.of(obj)`; stored in `userData.forge` |
-| `src/registry` | `MaterialRegistry`: material keys (program, variant, colour) and canonical sharing; three's own material classes (`isBuiltInMaterial`) |
-| `src/ledger` | `DrawCallLedger`, the v3 snapshot, reasons, display names (`DisplayNames`, a validated cache), expected GPU draws, sections (skinning, lighting), memory estimate, measured overdraw, budgets and tiers, hints |
-| `src/compiler` | `classify` (rules), `batchStatics` (batches, instancing, bake), `bake` (geometry bake), `culling` (BVH, hooks), `instancing` (compacted InstancedMesh), `geometryCompat`, `World` (compile/decompile/resolve/warmup) |
-| `src/lod` | meshoptimizer LOD generation |
-| `src/overdraw` | `ParticleBudget` (particle caps per tier) and `ResolutionScaler` (dynamic drawing-buffer scale) |
-| `src/scheduler` | `RenderScheduler` (render on change) |
-| `src/lighting` | `DayNight` (sun, sky dome, hemisphere, fog, quantized shadow updates) and `ShadowBudget` (map sizes per tier, frozen shadows) |
-| `src/character` | the character assembler (gear merged onto one skeleton, one atlas) |
-| `src/overlay` | text formatting of a snapshot and the DOM overlay |
-| `src/agent` | `exposeToAgents` (the `window.__threeforge` hook) |
-| `src/cli` | the `threeforge` CLI (`analyze`, `inspect`, `optimize`, `explain`, `schema`, `mcp`, `decoders`), the MCP server, JSON schemas, hint remedies, the glTF-Transform pipeline (node only, optional peers loaded lazily) |
-| `cli-app` | the harness page shipped inside the package for `threeforge analyze` |
-| `test/app` | the development harness (`pnpm dev`) with every test scene and benchmark scene |
-| `test/scenes`, `test/app/scenes` | deterministic scenes (naive, field, forest, character) and the eight benchmark scenes |
-| `test/unit`, `test/e2e` | Vitest units (node, fake renderer) and Playwright specs on both backends |
-| `bench` | baselines and results of the benchmark suite |
-| `scripts` | asset download, bench runner/gate/table, agent docs generator, decoder copy |
-
-Data flow: the app tags meshes → `World.compile()` classifies every mesh, registers materials, groups statics and
-builds batches / baked meshes / instanced meshes, hides the originals, installs culling and sync hooks → three.js
-renders → the ledger records every `renderObject` call with a reason and rebuilds the snapshot at the end of the
-outermost `render()` → the overlay, the CLI, the bench runner and agents read `ledger.frame()`.
+The module map (one directory per concern under `src/`, the harnesses in `test/app`, `cli-app` and `bench-app`) is
+the "Modules" table of [docs/design.md](design.md) and the "Layout" section of [CONTRIBUTING.md](../CONTRIBUTING.md). Data flow:
+the app tags meshes; `World.compile()` classifies every mesh, registers materials, groups statics and builds batches,
+baked meshes and instanced meshes, hides the originals and installs culling and sync hooks; three.js renders; the
+ledger records every `renderObject` call with a reason and rebuilds the snapshot at the end of the outermost
+`render()`; the overlay, the CLI, the bench runner and agents read `ledger.frame()`.
 
 ## 4. The ledger (`DrawCallLedger`)
 
 ### How it hooks in
 
-`ledger.attach(renderer)` replaces two instance methods on the renderer: `renderObject` (called once per render
-item after culling and sorting, in every pass, including shadow maps and post-processing) and `render` (frame
-boundaries). The outermost `render()` call is one frame; nested calls are passes of it. `detach()` restores the
-originals. Nothing global is patched.
+`ledger.attach(renderer)` replaces two instance methods on the renderer: `renderObject` (called once per render item
+after culling and sorting, in every pass, shadow maps and post-processing included) and `render` (frame boundaries).
+The outermost `render()` call is one frame; nested calls are passes of it. `detach()` restores the originals. Nothing
+global is patched.
 
-`renderAsync` works without a patch of its own. three r186's `renderAsync` (deprecated since r181) awaits `init()` and
-then calls `this.render(scene, camera)`, so a frame rendered through it enters the patched `render` once, after the
-await, and reports a `main` pass with its shadow passes and skinning, exactly like `render()`. A `render()` made while
-`renderAsync` awaits `init()` is a frame of its own. A unit test checks three's source for that call. This
-paragraph is the authoritative statement of that mechanism: `docs/design.md`, `World.warmup` and `DrawCallLedger`
-point here instead of restating it.
+`renderAsync` needs no patch of its own. three r186's `renderAsync` (deprecated since r181) awaits `init()` and then
+calls `this.render(scene, camera)`, so a frame rendered through it enters the patched `render` once, after the await,
+and reports a `main` pass with its shadow passes and skinning, exactly like `render()`. A `render()` made while
+`renderAsync` awaits `init()` is a frame of its own. A unit test checks three's source for that call. This paragraph
+is the authoritative statement of that mechanism; `docs/design.md`, `World.warmup` and `DrawCallLedger` point here.
 
 ### Passes
 
-Each submission carries a pass id: `main`, `shadow:<light name>` (the camera is the shadow camera of a world-visible
-shadow-casting light; its type when it has no name; `shadow:<name>#k`, k from 1 in scene order, when shadow-casting
-lights of a scene share a name, and an id another scene of the frame already took moves on to the next free k),
-`shadow:<id>:vsm` (the two VSM blur quads three renders right after that map), `override` (a scene with
-`overrideMaterial`), `fullscreen` (a non-scene root, for example a post-processing quad), `nested:<render target name>`
-(a nested render of the main scene, for example a reflector), `scene:<name>` (a different scene). `nested:` and
-`scene:` ids are disambiguated against the same frame-wide set the shadow ids use: the first pass of a name keeps the
-bare id and a later one of that name gets `#2`, `#3` and so on, so two reflectors whose targets are both named
-`reflection` are `nested:reflection` and `nested:reflection#2` rather than one row summing both. `main`, `override`,
-`fullscreen` and the `:vsm` blur ids are fixed and not disambiguated: several post-processing quads share `fullscreen`
-by design. Renderer-internal
-work (three's output colour transform quad, the VSM blur quads) is attributed as `renderer-internal` and excluded from
-`sceneSubmissions`.
+Each submission carries a pass id. `main` is the outermost render. `shadow:<light name>` is a pass whose camera is
+the shadow camera of a world-visible shadow-casting light (the light's type when it has no name; `shadow:<name>#k`,
+k from 1 in scene order, when shadow-casting lights of a scene share a name, and an id another scene of the frame
+already took moves on to the next free k). `shadow:<id>:vsm` is the two VSM blur quads three renders right after that
+map. `override` is a scene with `overrideMaterial`, `fullscreen` a non-scene root (a post-processing quad),
+`nested:<render target name>` a nested render of the main scene (a reflector) and `scene:<name>` a different scene.
+`nested:` and `scene:` ids are disambiguated against the same frame-wide set the shadow ids use: the first pass of a
+name keeps the bare id and a later one gets `#2`, `#3` and so on, so two reflectors whose targets are both named
+`reflection` are `nested:reflection` and `nested:reflection#2`. `main`, `override`, `fullscreen` and the `:vsm` ids
+are fixed; several post-processing quads share `fullscreen` by design. Renderer-internal work (three's output colour
+transform quad, the VSM blur quads) is attributed as `renderer-internal` and excluded from `sceneSubmissions`.
 
 ### Reasons and flags
 
@@ -133,326 +99,223 @@ Every submission gets one reason: `batched`, `baked`, `instanced`, `unique-mater
 `skinned`, `morph`, `transparent`, `multi-material-group`, `untagged`, `unsupported-material`, `renderer-internal`,
 `fullscreen-pass`, `occlusion-proxy`, `points`, `sprite`, `line`, `unclassified`, or `excluded:<rule>`. The compiler
 annotates objects it left alone (`ledger.annotate(object, reason)`) so the ledger says why. A static drawn alone is
-`unique-material` when no other object of the frame's main pass draws its material, and `static-unbatched` when one
-does: at the end of the frame the ledger counts, per canonical material (the registry's, else the instance itself), the
-distinct objects that drew it in the main pass, so a mesh drawn twice there is one use. The item's `material` is that
-material's per-frame index. A registry change inside the frame (`invalidate()` or `forget()`, which move
+`unique-material` when no other object of the frame's main pass draws its material and `static-unbatched` when one
+does: at the end of the frame the ledger counts, per canonical material (the registry's, else the instance itself),
+the distinct objects that drew it in the main pass, so a mesh drawn twice there is one use. The item's `material` is
+that material's per-frame index. A registry change inside the frame (`invalidate()` or `forget()`, which move
 `registry.keysRevision`) makes the ledger resolve canonicals again from that point on, so one material's uses can
 split across two per-frame indices for that frame, each judged for sharing on its own. Flags add detail:
 `shadow-caster`, `double-sided-transparent`, `custom-hook`, `render-order`, `layers`, `transparent`.
-`double-sided-transparent` describes the material three draws in that pass (see Reconciliation), so a shadow caster can
-carry it in its shadow pass and not in the main pass, or the other way round.
+`double-sided-transparent` describes the material three draws in that pass (see Reconciliation), so a shadow caster
+can carry it in its shadow pass and not in the main pass, or the other way round.
 
 ### Reconciliation
 
 For each submission the ledger predicts the draw calls three r186's `renderer.info` counts for it on this backend:
 
 - 1 for a mesh.
-- N for a `BatchedMesh` with N multi-draw slots on WebGPU or on WebGL without `WEBGL_multi_draw` (1 with multi-draw, 0
-  for an empty list). A slot whose count a nested pass zeroed (stable-prefix culling, `attachBvhCulling`) is counted:
-  three's `Info` counts every slot.
-- 0 when the instance count is 0: an `InstancedMesh` with `count = 0`, or a mesh over an `InstancedBufferGeometry` with
-  `instanceCount = 0` (an empty sprite batch or VAT part).
-- ×2 when the material three draws is transparent, `DoubleSide` and not `forceSinglePass`. That material is the source
-  material, or `scene.overrideMaterial` for a source with `allowOverride`: transparent when the source is transparent,
-  transmissive or has a backdrop node, with the override's own side, except in a shadow pass, where the side is the
-  source's `shadowSide`, else its side (PCF flips it, VSM keeps the source side; either way `DoubleSide` stays
-  `DoubleSide`). The factor is read before `renderObject` runs, because three puts the override material's side back
-  as it returns. So a `side` or `transparent` change made inside `object.onBeforeRender`, which three calls at the
-  start of `renderObject`, is not seen by the prediction. A double-sided transmissive material is two submissions of
-  one draw each: its back-side pass, then its front.
-- A vertex range three rejects predicts 0 draws, as three draws none: `RenderObject.getDrawParameters` returns null
-  when the range count is below 0 or `Infinity` (`RenderObject.js:640-671`), which the prediction follows with the
-  submission's own material and group. Three ways to reach it: a geometry with neither an index nor a `position`
-  attribute under the default infinite `drawRange` (vertices from storage buffers, no `setDrawRange`); a `drawRange`
-  disjoint from the group being drawn (groups `(0,18)` and `(18,18)` with `setDrawRange(0, 10)`); and a `drawRange`
-  starting past the last vertex. The wireframe range factor scales the item count as an approximation of three's
-  generated wireframe index, which can only matter for a wireframe mesh whose range is already disjoint. Such a
-  submission's `instancesDrawn` is 0 too, so no total counts work three skipped; its `instances`, what the submission
-  covers, is unchanged.
+- N for a `BatchedMesh` with N multi-draw slots on WebGPU or on WebGL without `WEBGL_multi_draw` (1 with multi-draw,
+  0 for an empty list). A slot whose count a nested pass zeroed (stable-prefix culling) is counted: three's `Info`
+  counts every slot.
+- 0 when the instance count is 0: an `InstancedMesh` with `count = 0`, or a mesh over an `InstancedBufferGeometry`
+  with `instanceCount = 0` (an empty sprite batch or VAT part).
+- ×2 when the material three draws is transparent, `DoubleSide` and not `forceSinglePass`. That material is the
+  source material, or `scene.overrideMaterial` for a source with `allowOverride`: transparent when the source is
+  transparent, transmissive or has a backdrop node, with the override's own side, except in a shadow pass, where the
+  side is the source's `shadowSide`, else its side (PCF flips it, VSM keeps the source side; either way `DoubleSide`
+  stays `DoubleSide`). The factor is read before `renderObject` runs, because three puts the override material's
+  side back as it returns, so a `side` or `transparent` change made inside `object.onBeforeRender` is not seen. A
+  double-sided transmissive material is two submissions of one draw each: its back-side pass, then its front.
+- 0 for a vertex range three rejects: `RenderObject.getDrawParameters` returns null when the range count is below 0
+  or `Infinity` (`RenderObject.js:640-671`), which the prediction follows with the submission's own material and
+  group. Three ways to reach it: a geometry with neither an index nor a `position` attribute under the default
+  infinite `drawRange`; a `drawRange` disjoint from the group being drawn (groups `(0,18)` and `(18,18)` with
+  `setDrawRange(0, 10)`); a `drawRange` starting past the last vertex. The wireframe range factor scales the item
+  count as an approximation of three's generated wireframe index, which can only matter for a wireframe mesh whose
+  range is already disjoint. Such a submission's `instancesDrawn` is 0 too; its `instances` is unchanged.
 
-`reportedDrawCalls` is the change in `renderer.info.render.drawCalls` inside the frame;
-`unattributed = reportedDrawCalls − gpuDraws` and is asserted to be 0 in every test. `drawCommands` counts multi-draw
-ranges individually. It and `instancesDrawn` count only the slots with a non-zero index count: a zeroed slot adds a
-draw call but draws no instance. A batched double-sided transparent submission adds its drawn slots to `drawCommands`
+`reportedDrawCalls` is the change in `renderer.info.render.drawCalls` inside the frame; `unattributed =
+reportedDrawCalls − gpuDraws` and is asserted to be 0 in every test. `drawCommands` counts multi-draw ranges
+individually. It and `instancesDrawn` count only the slots with a non-zero index count: a zeroed slot adds a draw
+call but draws no instance. A batched double-sided transparent submission adds its drawn slots to `drawCommands`
 once, without the ×2 its `expectedGpuDraws` carries, while a non-batched one adds 2; this predates 0.9.0.
 
 ### The snapshot (`ledger.frame()`), schema version 3
 
-```
-schemaVersion: 3
-env:       three, backend (webgl2|webgpu), multiDraw, tier, gpu, dpr, viewport
-totals:    submissions, sceneSubmissions, gpuDraws, reportedDrawCalls, unattributed, programSwitches, programs,
-           triangles, instances, instancesDrawn, drawCommands
-passes:    [{ id, submissions, gpuDraws }]
-byReason:  { reason: { submissions, gpuDraws, top: [first 5 names] } }
-programs:  { programHash: { type, description, submissions } }
-overdraw:  opaque, transparent (fragments per pixel, measured), transparentSubmissions, measured
-skinning:  submissions, vertices, bones, skeletons, maxBones, morphTargets, vatInstances, vatVertices
-lighting:  lights { directional, point, spot, hemisphere, ambient, other }, shadowLights, shadowPasses,
-           shadowCasters, shadowTexels, shadowSubmissions
-js:        renderMs, ledgerMs, frameMs, objects, autoUpdatedMatrices, hiddenOriginals, skipped
-memory:    textures { count, bytes }, geometries { count, bytes }, renderTargets { count, bytes },
-           unreferenced { geometries, textures }, chunks { total, resident },
-           measured { textures { count, bytes }, geometries { count, bytes }, renderTargets { count }, bytes } | null,
-           estimated: true
-hints:     [{ category, severity, code, message, objects }]
-items?:    per-submission records with ledger.frame({ items: true })
-```
+`npx threeforge schema snapshot --json` prints the JSON Schema; this section says what each part measures. `env`
+records three's version, the backend, multi-draw support, tier, GPU, DPR and viewport. The six cost sections are
+draw calls (`totals`, `passes`, `byReason`, `programs`), `overdraw`, `skinning`, `lighting`, `js` and `memory`;
+`hints` sits on top (see "Tiers, budgets and hints"), and per-submission `items` come with `ledger.frame({ items:
+true })`. `totals` holds `submissions`, `sceneSubmissions`, `gpuDraws`, `reportedDrawCalls`, `unattributed`,
+`programSwitches`, `programs`, `triangles`, `instances`, `instancesDrawn` and `drawCommands`; `passes` lists
+submissions and GPU draws per pass id; `byReason` counts them per reason with the first five names; `programs` keys
+each program hash to its type, description and submissions.
 
-- **overdraw** is measured, not estimated: `ledger.measureOverdraw(scene, camera)` renders the scene twice into a
-  1/8-resolution half-float target, once for the opaque render list (`renderer.transparent = false`) and once for the
-  transparent lists, reads each render back and averages the red channel: fragments per pixel. The count material (a
-  `MeshBasicNodeMaterial` with a constant `outputNode`, One/One blending, no depth test or write, one pass) adds exactly
-  1 per fragment, so material, vertex, instance and batch colours do not change the count and a batched scene measures
-  like its naive original. A render-object function draws each object with its own material's `side`, `map`, `opacity`,
-  `alphaHash`, `opacityNode`, `alphaTestNode` and `maskNode`, and three's override copies `alphaTest`, `alphaMap` and
-  `positionNode`: closed meshes count their front faces, cutouts count their kept texels, animated instances count their
-  animated pose. Sprite materials (a `Sprite`, a World sprite batch) are drawn with a `SpriteNodeMaterial` count material
-  carrying their `rotation`, `sizeAttenuation`, `scaleNode` and `rotationNode`, so they count their billboards. Not
-  carried into the count: `colorNode` alpha, vertex-colour alpha, and vertices a material builds in its class or
-  `vertexNode` (a `PointsNodeMaterial` on a non-`Points` object, Line2-style materials), which count what the count
-  material rasterises from the geometry and `positionNode`. Not counted: the
-  background (the target clears to 0), materials with `allowOverride = false` or `colorWrite = false`, and occlusion
-  proxies. A mesh whose material groups differ only in the slots the count copies (`map`, `alphaHash`, `opacityNode`,
-  `alphaTestNode`, `maskNode`, `positionNode`) is counted with whichever group's program three built first: three keys
-  the render object by object, override material, context and lights, and assigning a slot bumps no version. A sprite
-  batch mirrors its side in `onBeforeRender`, after the count has copied `side`, so a measurement taken right after a
-  mirroring flip, with no app frame between, counts the previous side. A scene rendered inside a count draw with its
-  own override material, or none (a render-to-texture hook), passes straight through: its draws keep their materials and
-  change nothing on the count material, and a same-scene render inside a count draw (a reflector's `updateBefore`) puts
-  back every slot it changed. A `measureOverdraw()` called while that renderer's count renders run (a hook the count
-  render calls again, as a measuring hook is) returns the measurement in progress and renders nothing: it ignores its own
-  `scene`, `camera` and `options.scale`, and resolves with the outer measurement's result even for another scene. One
-  called once the counts have rendered, while the read-backs are pending, is a measurement of its own. A
-  `disposeOverdraw(renderer)` called while the count renders run releases once they end. Every scene and renderer setting it changes is restored before the read-backs are awaited, so frames
-  rendered meanwhile are unaffected; attribution pauses for the two count renders only, which never become part of a
-  frame (not even when measured from a render hook). The target and count materials are kept per renderer until
-  `ledger.detach()` or `disposeOverdraw(renderer)`; `overdrawTargetOf(renderer)` returns the target, which the
-  memory section allows. Call it on demand.
-- **skinning** sums the main pass's skinned submissions: vertices, bones per unique skeleton (indexed per frame, no
-  uuids in the snapshot), the largest bone count, morph targets; `vatInstances` and `vatVertices` count the
-  characters drawn as animated instances (`kind: 'vat'`, reason `vat-instanced`), which need no CPU bones.
-- **lighting** counts the lights three projected for the main pass (`lightsNode.getLights()`, read from the first
-  scene submission's `renderObject` call; a light under a hidden group, on a layer the camera does not see, or with
-  `renderer.lighting.enabled = false` is not lit), else the main scene's world-visible lights (hidden subtrees skipped,
-  as `scanLights` does). `shadowLights` counts those set to cast. `shadowPasses` and `shadowSubmissions` count the scene
-  submissions of `shadow:*` passes, not the renderer-internal `:vsm` quads. `shadowTexels` = Σ `mapSize.x ·
-  mapSize.y`, and `mapSize.x² · 6` for a point light (three renders each of its six cube faces at the map's width and
-  never reads its height), over the lights whose shadow map rendered this frame, each light
-  once: a frozen map (`autoUpdate` off and no `needsUpdate`) or a disabled `renderer.shadowMap` adds 0, and a map three
-  renders again for another camera of the frame counts once. `shadowCasters` counts the distinct objects drawn into any
-  shadow map this frame: a `BatchedMesh` or `InstancedMesh` is one object whatever slots or instances it draws, and an
-  object casting for several lights (or a point light's six faces) counts once. `lights` and `shadowLights` describe
-  the **main pass only**, while `shadowPasses`, `shadowSubmissions`, `shadowCasters` and `shadowTexels` cover every
-  scene of the frame. Because `shadowTexels` is per frame, the `shadow-texels` hint and the overlay alternate on a
-  frozen or quantized map (a `DayNight` stepping its map every second frame fires the hint on the frames it renders
-  on and not on the others), so a single-frame `inspect` depends on which frame it lands on: average over frames
-  before acting on it. Pass ids move with the scene too: a light keeps `shadow:<name>` only while no other
-  shadow-casting light of its scene shares that name, so hiding a namesake or turning its casting off switches an id
-  between `shadow:lamp` and `shadow:lamp#1`.
-- **js**: `renderMs` is the outermost `render()` call's duration until the ledger starts filing the frame (it includes
-  the ledger's per-submission attribution, which runs inside the renderer's calls); `ledgerMs` is that filing, after
-  `render()` has finished: the snapshot, the hints and, every 60 frames, the rescan. `frameMs` is the median interval
-  between the last 60 outermost renders, `objects`, `autoUpdatedMatrices` and `hiddenOriginals` (batched originals
-  parked on layer 31) come from a traversal repeated at most every 60 frames; `skipped` is the ticks a
-  `RenderScheduler` skipped among its last 60 (`ledger.rescan()` forces it).
-- **memory** estimates bytes. A texture follows three r186's `Info._getTextureMemorySize`: `w · h · depth · texel
-  bytes`, with channels from the format, bytes per channel from the type and packed types whole, depth 6 for a cube and
-  the layers of a 3D or array texture, ×1.333 with generated mipmaps. It follows what three allocates where that
-  function does not: a compressed texture is the sum of its mip data (a compressed cube's six faces too; three counts 1
-  byte), the size is the one `Textures.getSize` allocates (a cube's first face, a video's frame; three's `Info` reads 1
-  for a cube's image array), and explicit mipmaps are the levels three uploads (every level in a 2D texture's
-  `mipmaps`, the base plus the levels in a cube's). Geometries are Σ attribute and index bytes, render targets the
-  shadow maps three has built for casting lights (none for a light whose map three never built), the two RG half-float
-  blur targets each built non-point map holds under `VSMShadowMap`, and the renderer's half-float frame-buffer target
-  for the viewport.
-  `ledger.measureMemory()` recounts now.
-- **memory.measured** is three's own `renderer.info.memory` when the estimate was made: `textures` (count and
-  `texturesSize`), `geometries` (count and `attributesSize + indexAttributesSize`), `renderTargets` (count) and `bytes`
-  (`total`). It counts everything three allocated, render-target, shadow-map and internal textures included, and a
-  compressed texture as 1 byte; null for a renderer without these counters.
-- **memory.unreferenced** counts the geometries and textures the renderer still holds (`info.memory` counts) that the
-  scene no longer reaches, minus what three allocates for itself, whatever the viewport: one geometry, the frame-buffer
-  target's colour and depth, the textures of every shadow map three has built (a colour and a depth texture, read off
-  each casting light's `shadow.map`; a casting light whose map three never built, with shadow maps disabled or never
-  lit, holds none) with a non-point VSM map's two blur targets (read off an array map, else counted from
-  `renderer.shadowMap.type`), the overdraw count target once `measureOverdraw()` has run, and three's 16 × 16 `DFG_LUT`
-  (created once a Standard or Physical material is lit, and held with nothing in the scene reaching it), which the
-  ledger counts through `renderer.info.createTexture` and `destroyTexture` while attached. three's `DFGLUT.js` keeps
-  that texture in a module variable it does not export; it *is* reachable through private internals
-  (`DFGLUT.shaderNode.jsFunc`), but matching `createTexture`/`destroyTexture` against three's own name for it is
-  chosen over reaching into internals that are fragile across revisions. The allowance also covers resources three
-  r186 holds for itself, identified from its source while the ledger is attached: the LOD plane geometries and the
-  `isPMREMTexture` render-target textures of PMREMNode's own `PMREMGenerator` (an equirect or cube `environment`,
-  `background` or `envMap`), the background sphere, one morph texture per morphed geometry, the textures of a render
-  target a render drew into, by identity until that target's `dispose` (post-processing `pass()` and bloom targets,
-  CubeMapNode's cube, a mirror), and the frame-buffer targets `renderer._frameBufferTargets` holds (a private field,
-  pinned by a canary test; a renderer without it keeps the fixed colour and depth allowance). Reachable includes
-  BatchedMesh and skeleton textures and `material.userData.forgeTextures`. Recounted with the graph statistics;
-  `measureMemory()` recounts now. **memory.chunks** is the attached Streamer's residency, read live.
-- **Limits of the memory section.** Each is bounded:
-  - **Resources three created before `ledger.attach()`** are not seen: PMREM planes and textures and a target drawn
-    once (CubeMapNode's cube) read as unreferenced until they are recreated. The background sphere, per-frame passes
-    and frame-buffer targets are seen again every frame. Attach the ledger before the first render.
-  - **A render target drawn once and then abandoned without `dispose()`** is allowed like a live one, so that leak is
-    missed (a missed hint, never a false one). An app's own `PMREMGenerator` left undisposed looks exactly like
-    PMREMNode's and is allowed too.
-  - **Transmission and XR** are not handled: `ViewportTextureNode`, `ViewportSharedTextureNode` and
-    `ViewportDepthTextureNode` framebuffer textures (transmission, refraction) and XR targets still count as
-    unreferenced, and can raise a false `unreferenced-resources`.
-  - A LUT three created before `ledger.attach()` is not seen and reads as one unreferenced texture. An app
-    `DataTexture` named exactly `DFG_LUT` and uploaded while the ledger is attached is counted as three's, hiding at
-    most one texture.
-  - After `renderer.dispose()`, which zeroes `info.memory` without calling `destroyTexture`, the LUT count stays
-    stale until `detach()`, hiding at most one texture.
-  - A shadow map built but not rendered yet is allowed the textures three creates on its first render, so the count
-    reads low until it renders. Right after a `renderer.shadowMap.type` change, the VSM allowance can be off by 2
-    until the next render.
-  - **Detach two ledgers on one renderer in reverse attach order.** The second `attach()` wraps the wrappers the
-    first installed, for `info` and `render` alike, so detaching first-in-first-out restores a stale wrapper. This
-    predates 0.9.0.
-  - **Tiled shadows** (three's `TileShadowNode` addon) keep their tile lights outside the scene, so the
-    reachable-resource walk never sees those lights' array maps and such a scene over-reports
-    `memory.unreferenced.textures`. **Array shadow maps** also under-report `memory.renderTargets.bytes` by their
-    layer count, for the map and its VSM blur targets alike (`src/ledger/memory.ts` sizes both from width and height
-    alone). No scene in the repo uses an array shadow map.
-- **hints** are recomputed every frame from the snapshot and the budgets of the environment's tier. The `untagged`,
-  `unique-materials`, `static-unbatched` and `sprites-unbatched` hints count distinct objects the main pass drew
-  (`HintContext.objects`, a `MainPassObjects`), not submissions across every pass, in their messages and against
-  their thresholds: a shadow map or a reflection drawing the same object again does not add to them, and a reason
-  whose objects were drawn only outside the main pass (casters out of view) raises no hint that frame. The
-  `unsupported-material` hint (an `error`) counts distinct objects over every pass instead
-  (`HintContext.unsupportedObjects`): the material renders in none of them on WebGPU, so a mesh drawn only into a
-  shadow map still counts, one drawn in several passes counts once, and the hint appears whenever such a submission
-  exists. `byReason` still counts submissions in every pass. The `point-light-shadow` and `transmission` hints name only lights and
-  meshes three renders (world-visible; no point light while `renderer.shadowMap.enabled` is false). The
-  `batch-local-space` hint (`HintContext.localSpaceDraws`, gathered on the rescan) names world-visible draws
-  `World.compile()` made (a `forge:batch:` batch, the base level of a `forge:instanced:` group, a baked mesh) whose
-  material has a node in any slot, code the hint cannot read (a subclass or an own function), `alphaHash` or an
-  object-space normal map (section 7).
-- **programHash / variantHash** (the `programs` keys, and each item's hashes) come from the material registry
-  (section 5). A hash for a material with instance code, a class that is not one of three's own, or identity-keyed
-  data (a function or class instance in a user-added property) is stable within a run only: identity numbers follow
-  the order materials are first keyed. A `variantHash` with a texture also differs between runs (texture `uuid`s).
+`overdraw` is measured, not estimated. `ledger.measureOverdraw(scene, camera)` renders the scene twice into a
+1/8-resolution half-float target, once for the opaque render list (`renderer.transparent = false`) and once for the
+transparent lists, reads each back and averages the red channel: fragments per pixel. The count material (a
+`MeshBasicNodeMaterial` with a constant `outputNode`, One/One blending, no depth test or write, one pass) adds
+exactly 1 per fragment, so colours do not change the count and a batched scene measures like its naive original.
+Each object is drawn with its own material's `side`, `map`, `opacity`, `alphaHash`, `opacityNode`, `alphaTestNode`
+and `maskNode`, and three's override copies `alphaTest`, `alphaMap` and `positionNode`, so closed meshes count their
+front faces, cutouts their kept texels and animated instances their animated pose; sprites and sprite batches are
+drawn with a `SpriteNodeMaterial` count material carrying `rotation`, `sizeAttenuation`, `scaleNode` and
+`rotationNode`. Not carried: `colorNode` alpha, vertex-colour alpha, and vertices a material builds in its class or
+`vertexNode` (a `PointsNodeMaterial` on a non-`Points` object, Line2-style materials). Not counted: the background
+(the target clears to 0), materials with `allowOverride = false` or `colorWrite = false`, and occlusion proxies. A
+mesh whose material groups differ only in the copied slots is counted with whichever group's program three built
+first (three keys the render object by object, override material, context and lights, and assigning a slot bumps no
+version); a sprite batch mirrors its side in `onBeforeRender`, after the count copied `side`, so a measurement right
+after a mirroring flip counts the previous side. A scene rendered inside a count draw with its own override
+material, or none, passes straight through, and a same-scene render inside one (a reflector's `updateBefore`) puts
+back every slot it changed. A `measureOverdraw()` called while that renderer's count renders run returns the
+measurement in progress and renders nothing, whatever `scene`, `camera` or `options.scale` it was given; one called
+while only the read-backs are pending is a measurement of its own; a `disposeOverdraw(renderer)` called during the
+count renders releases once they end. Every setting is restored before the read-backs are awaited, and attribution
+pauses for the two count renders only, which never become part of a frame. The target and count materials are kept
+per renderer until `ledger.detach()` or `disposeOverdraw(renderer)`; `overdrawTargetOf(renderer)` returns the
+target, which the memory section allows. Call it on demand. `overdraw.particles` and `overdraw.pixels` come from
+the overdraw modules (section 7).
 
-Other methods: `ledger.report()` (text), `ledger.budget({ maxSubmissions })` → `{ pass, actual, max, offenders }`,
-`ledger.setEnvironment({ tier, gpu, dpr, viewport })`, `ledger.budgets()`.
+`skinning` sums the main pass's skinned submissions: vertices, bones per unique skeleton (indexed per frame, no
+uuids), `maxBones` and morph targets; `vatInstances` and `vatVertices` count the characters drawn as animated
+instances (`kind: 'vat'`, reason `vat-instanced`), which need no CPU bones.
+
+`lighting.lights` counts the lights three projected for the main pass (`lightsNode.getLights()`, read from the first
+scene submission's `renderObject` call; a light under a hidden group, on a layer the camera does not see, or with
+`renderer.lighting.enabled = false` is not lit), else the main scene's world-visible lights (as `scanLights` does);
+`shadowLights` counts those set to cast. Both describe the main pass only. `shadowPasses` and `shadowSubmissions`
+count the scene submissions of `shadow:*` passes over every scene of the frame, not the `:vsm` quads.
+`shadowTexels` is the sum of `mapSize.x · mapSize.y` (`mapSize.x² · 6` for a point light: three renders each cube
+face at the map's width) over the lights whose shadow map rendered this frame, each light once: a frozen map
+(`autoUpdate` off and no `needsUpdate`) or a disabled `renderer.shadowMap` adds 0, and a map rendered again for
+another camera counts once. `shadowCasters` counts the distinct objects drawn into any shadow map this frame (a
+`BatchedMesh` or `InstancedMesh` is one object; an object casting for several lights or six cube faces counts once).
+Because `shadowTexels` is per frame, the `shadow-texels` hint and the overlay alternate on a frozen or quantized map
+(a `DayNight` stepping its map every second frame fires the hint on the frames it renders on), so a single-frame
+`inspect` depends on which frame it lands on: average over frames before acting on it. Pass ids move with the scene
+too: hiding a namesake light or turning its casting off switches an id between `shadow:lamp` and `shadow:lamp#1`.
+
+`js.renderMs` is the outermost `render()` call's duration until the ledger starts filing the frame (it includes the
+per-submission attribution, which runs inside the renderer's calls); `ledgerMs` is that filing: the snapshot, the
+hints and, every 60 frames, the rescan. `frameMs` is the median interval between the last 60 outermost renders.
+`objects`, `autoUpdatedMatrices` and `hiddenOriginals` (batched originals parked on layer 31) come from a traversal
+repeated at most every 60 frames, which `ledger.rescan()` forces; `skipped` is the ticks a `RenderScheduler` skipped
+among its last 60.
+
+`memory` estimates bytes (`estimated: true`); `ledger.measureMemory()` recounts now. A texture follows three r186's
+`Info._getTextureMemorySize` (`w · h · depth · texel bytes`, channels from the format, bytes per channel from the
+type and packed types whole, depth 6 for a cube and the layers of a 3D or array texture, ×1.333 with generated
+mipmaps) and what three allocates where that function does not: a compressed texture is the sum of its mip data (a
+compressed cube's six faces too; three counts 1 byte), the size is the one `Textures.getSize` allocates (a cube's
+first face, a video's frame), and explicit mipmaps are the levels three uploads. Geometries are attribute plus index
+bytes. Render targets are the shadow maps three has built for casting lights, the two RG half-float blur targets
+each built non-point map holds under `VSMShadowMap`, and the renderer's half-float frame-buffer target.
+`memory.measured` is three's own `renderer.info.memory` at the time of the estimate (`textures` count and
+`texturesSize`, `geometries` count and `attributesSize + indexAttributesSize`, `renderTargets` count, `bytes` as
+`total`), everything three allocated with a compressed texture as 1 byte, or null without these counters.
+`memory.chunks` is the attached Streamer's residency, read live.
+
+`memory.unreferenced` counts the geometries and textures the renderer still holds (`info.memory` counts) that the
+scene no longer reaches, minus an allowance for what three r186 holds for itself, identified from its source while
+the ledger is attached: one geometry, the frame-buffer targets (`renderer._frameBufferTargets`, a private field
+pinned by a canary test; a fixed colour and depth without it), the textures of every shadow map three has built with
+a non-point VSM map's two blur targets, the overdraw count target once `measureOverdraw()` has run, three's 16 × 16
+`DFG_LUT` (counted through `renderer.info.createTexture` and `destroyTexture`, since `DFGLUT.js` keeps it in an
+unexported module variable and matching three's own name is preferred to `DFGLUT.shaderNode.jsFunc`), PMREMNode's
+own `PMREMGenerator` planes and `isPMREMTexture` targets, the background sphere, one morph texture per morphed
+geometry, and the textures of a render target a render drew into, by identity until its `dispose`. Reachable
+includes BatchedMesh and skeleton textures and `material.userData.forgeTextures`. It is recounted with the graph
+statistics. The allowance and its bounded blind spots (resources created before `ledger.attach()`, a target drawn
+once and abandoned without `dispose()`, transmission's and XR's viewport textures, the `DFG_LUT` name, a map not yet
+rendered, the VSM allowance right after a `shadowMap.type` change, tiled shadows) are in `docs/memory.md`. Two more:
+detach two ledgers on one renderer in reverse attach order, since the second `attach()` wraps the first's wrappers
+for `info` and `render` alike (predates 0.9.0); and array shadow maps under-report `memory.renderTargets.bytes` by
+their layer count, for the map and its VSM blur targets alike (`src/ledger/memory.ts` sizes both from width and
+height alone; no scene in the repo uses one).
+
+`hints` are recomputed every frame from the snapshot and the tier's budgets. The `untagged`, `unique-materials`,
+`static-unbatched` and `sprites-unbatched` hints count distinct objects the main pass drew (`HintContext.objects`, a
+`MainPassObjects`), not submissions across every pass, in their messages and against their thresholds: a shadow map
+or reflection drawing the same object again adds nothing, and a reason whose objects were drawn only outside the
+main pass raises no hint that frame. The `unsupported-material` hint (an `error`) counts distinct objects over every
+pass (`HintContext.unsupportedObjects`), since the material renders in none of them on WebGPU. `byReason` still
+counts submissions in every pass. The `point-light-shadow` and `transmission` hints name only lights and meshes
+three renders (world-visible; no point light while `renderer.shadowMap.enabled` is false). The `batch-local-space`
+hint (`HintContext.localSpaceDraws`, gathered on the rescan) names world-visible draws `World.compile()` made (a
+`forge:batch:` batch, the base level of a `forge:instanced:` group, a baked mesh) whose material has a node in any
+slot, code the hint cannot read (a subclass or an own function), `alphaHash` or an object-space normal map
+(section 7).
+
+`programHash` and `variantHash` (the `programs` keys and each item's hashes) come from the material registry
+(section 5). A hash for a material with instance code, a class that is not one of three's own, or identity-keyed
+data is stable within a run only, since identity numbers follow the order materials are first keyed; a
+`variantHash` with a texture also differs between runs (texture `uuid`s). Other methods: `ledger.report()` (text),
+`ledger.budget({ maxSubmissions })` → `{ pass, actual, max, offenders }`, `ledger.setEnvironment({ tier, gpu, dpr,
+viewport })`, `ledger.budgets()`.
 
 ### Overhead
 
-The ledger's per-submission path runs inside the renderer's calls, so its cost is part of `js.renderMs`; filing the frame
-once `render()` has finished (the snapshot, the hints and the periodic rescan) is `js.ledgerMs`. In a steady scene the
-per-submission path allocates nothing that grows with the submission count: the measured bytes per frame (table below)
-stay at 15-30 KB from 2k to 25k submissions, a per-frame constant. None of the following changes a number in the
-snapshot:
-
-- **Flags rewritten in place.** A pooled record's `flags` array is overwritten element by element (`flagsInto` writes
-  an element only where it differs and sets `length` only when it changes). Emptying it with `length = 0` and pushing
-  again, as an earlier 0.9.0 build did, let V8 release and reallocate the backing store of every flagged record every
-  frame: about 40 bytes per submission, 0.40 MB per frame at 10k.
-
-- **Pooled records.** Two record buffers alternate: the frame in progress writes one while the last completed frame's
-  items stay intact in the other, so a read between frames or inside one (a hook) sees whole frames. `frame({ items: true })` returns copies, valid however long they are held.
-- **Material hashes** come from `registry.hashesOf()` (the registry's key cache, section 5), read at most once per
-  material per frame, and again after `invalidate()` or `forget()` (`registry.keysRevision`), even within a frame.
-- **Material uses** (`materialUses.ts`: the per-frame `material` index every record carries and the main-pass users
-  behind `static-unbatched`) resolve each drawn material to the registry's canonical at most once per material per
-  frame, memoized and invalidated on that same revision, rather than once per submission.
-- **Display names** come from a cache checked against the live graph on every read: the object's name, type and
-  sibling index, and its parent's path. A sibling index is trusted only while `parent.children[index] === object`, so
-  a rename, reorder, reparent or removal (even from a hook between two submissions) gives `displayName()`'s answer
-  without calling `children.indexOf`.
-- **One ancestor walk** per submission finds both the root and the nearest tag.
-- **Draw state** (`expectedGpuDraws`, `instances`, `instancesDrawn`) is copied into the record as soon as
-  `renderObject` returns, after a pass nested inside that draw (a receiver's shadow map) has restored the counts it
-  changed. The side factor of `expectedGpuDraws` and the `double-sided-transparent` flag are read as the call starts,
-  before three puts an override material's side back. `writeInstanceCounts` loops over every multi-draw slot of a
-  batched submission to count the non-zero ones, without allocating; `scripts/ledger-overhead.mjs` renders plain
-  meshes only, so it does not measure that loop.
-- **One walk per scene per frame** (`traverseVisible`) gives the shadow cameras of world-visible shadow-casting lights
-  their pass ids and keeps the main scene's lights as the lighting section's fallback; the section's lights come from
-  the first scene submission's lights node, read once per frame. Casters and shadow texels are marked per object and per
-  light with the frame's number, so nothing is cleared between frames. The rescan every 60 frames reads each shared
-  material's texture properties once (`collectResources`).
+The per-submission path runs inside the renderer's calls, so its cost is part of `js.renderMs`; filing the frame
+once `render()` has finished is `js.ledgerMs`. In a steady scene that path allocates nothing that grows with the
+submission count: a pooled record's `flags` array is rewritten in place (`flagsInto`; emptying and re-pushing it, as
+an earlier 0.9.0 build did, cost about 40 bytes per submission per frame), two record buffers alternate so a read
+between frames or from a hook sees whole frames (`frame({ items: true })` returns copies), material hashes come from
+`registry.hashesOf()` at most once per material per frame and again after `invalidate()` or `forget()`, material
+uses resolve each drawn material to its canonical once per frame on the same revision, display names come from a
+cache checked against the live graph on every read (a sibling index is trusted only while
+`parent.children[index] === object`, so `children.indexOf` is never called), one ancestor walk per submission finds
+both the root and the nearest tag, draw state is copied into the record as soon as `renderObject` returns (after a
+pass nested inside that draw restored the counts it changed), `writeInstanceCounts` counts a batch's non-zero slots
+without allocating, and one `traverseVisible` walk per scene per frame gives shadow cameras their pass ids and keeps
+the main scene's lights as the lighting fallback; casters and texels are marked per object and per light with the
+frame's number, so nothing is cleared between frames, and the rescan reads each shared material's textures once.
 
 `pnpm build:lib && node scripts/ledger-overhead.mjs [submissions…]` reports the µs added per submission, the bytes
-allocated per frame and the rescan time, at 2k, 10k and 20k submissions by default. It renders a flat scene (unnamed
-meshes under the scene), a nested one (unnamed meshes in unnamed groups under named zones) and a shadow one (the flat
-scene with a shadow-casting sun, whose map renders as a nested pass drawing the quarter of the meshes that cast)
-through a minimal renderer, bare and with a ledger attached. µs per submission is the best ledger round minus the best
-bare round. It is a report, not a gate: compare runs on one machine. The table reports the **default invocation**,
-`node scripts/ledger-overhead.mjs` with no arguments, which measures 2k, 10k and 20k in one process; the same build
-prints a different figure for a single size given on its own, so quote the invocation together with the number.
-Measured on 2026-09-16 at commit `5bf1fdf` on a 10-core Apple M1 Max with node v22.23.1, the flat scene over two
-back-to-back runs (a range where the runs differ; bytes move by under 1 KB between runs):
-
-| submissions | µs / submission | KB / frame | rescan ms | 0.8.0: µs / submission | 0.8.0: MB / frame |
-|---|---|---|---|---|---|
-| 2k | 0.22 | 23.0–23.3 | 0.5–0.6 | 0.83 | 2.3 |
-| 10k | 0.30 | 17.1–17.3 | 1.7–2.0 | 1.84 | 11.4 |
-| 20k | 0.35 | 27.3–27.4 | 4.9–5.6 | 3.07 | 23.1 |
-
-Two later back-to-back runs of the same invocation on the same machine measured
-the nested scene at 15.5–25.7 KB per frame and the shadow scene at 19.1–29.5 KB; their flat rows read 0.22, 0.30–0.32
-and 0.40–0.41 µs per submission and 23.4–23.6, 17.1–17.3 and 27.1–27.5 KB per frame at 2k, 10k and 20k. Before the
-flags were rewritten in place, the flat scene allocated 0.10, 0.40 and 0.79 MB per frame at 2k, 10k and 20k. The
-`0.8.0` columns are the numbers recorded on 0.8.0 before the hot-path work, on the machine of the day: they show the
-scale of that change rather than a same-run comparison. (Another 0.8.0 measurement quoted 3.8 µs and 8.7 MB at 10k from
-another run: two 0.8.0 baselines exist, and neither is a same-machine comparison. The script prints neither; its
-footer gives only the targets.)
-
-The unit guards in `test/unit/ledger-hot-path.test.ts` count registry reads (at most one per material per frame),
-traversals (at most one on a frame without a rescan) and `children.indexOf` calls (none), and check that µs per
-submission grows less than 3× from 2k to 20k submissions (best of 7).
+allocated per frame and the rescan time at 2k, 10k and 20k submissions by default, on a flat, a nested and a shadow
+scene through a minimal renderer, bare and with a ledger attached (best ledger round minus best bare round). It is a
+report, not a gate: compare runs on one machine and quote the invocation with the number, since a single size given
+on its own prints a different figure. The default invocation on 2026-09-16 at commit `5bf1fdf` (10-core Apple M1
+Max, node v22.23.1) measured 0.22, 0.30–0.32 and 0.40–0.41 µs per submission and 17–28 KB per frame at 2k, 10k and
+20k on the flat scene (rescan 0.5–5.6 ms), 15.5–25.7 KB on the nested scene and 19.1–29.5 KB on the shadow scene,
+against 0.83, 1.84 and 3.07 µs and 2.3, 11.4 and 23.1 MB per frame recorded on 0.8.0 before the hot-path work
+(another 0.8.0 run read 3.8 µs and 8.7 MB at 10k; neither is a same-machine comparison).
+`test/unit/ledger-hot-path.test.ts` counts registry reads (at most one per material per frame), traversals (at most
+one on a frame without a rescan) and `children.indexOf` calls (none), and checks that µs per submission grows less
+than 3× from 2k to 20k (best of 7).
 
 ### Tiers, budgets and hints
 
-`detectTier({ gpu, deviceMemory, cores, touch, mobile, platform, dpr })` is GPU-first: a recognised GPU name decides the
-tier before touch is even considered, so a touch-capable desktop (a Windows laptop with a discrete GPU and a
-touchscreen) is not mistaken for a phone. A mobile GPU *family name* is the weakest signal of the seven, because
-those families also ship in laptops, so it decides only after everything that contradicts it directly. All seven
-steps of the decision live in `detectTier` itself (so it never disagrees with what `tierInputFromNavigator` feeds
-it), in order:
+`detectTier({ gpu, deviceMemory, cores, touch, mobile, platform, dpr })` is GPU-first: a recognised GPU name decides
+before touch is considered, so a touch-capable desktop is not mistaken for a phone, and a mobile GPU family name is
+the weakest signal because those families also ship in laptops. All seven steps live in `detectTier` itself, so it
+never disagrees with what `tierInputFromNavigator` feeds it. In order:
 
-1. The low-end regex matches (Adreno 1xx–5xx and 60x–63x, Mali-G1x–G5x, Mali-T/4xx, PowerVR SGX, VideoCore)
-   → `phone-low`. Those families ship in no laptop, so nothing outranks them.
-2. An `"Apple"` name with `touch` → `phone-mid`, or `phone-low` when `deviceMemory <= 2`. Before step 3, because
-   an M-series GPU with a touchscreen is an iPad, not a Mac (no Mac has a touchscreen), and iPadOS Safari sends a
-   Macintosh user agent, so `mobile` reads `false` there too.
-3. A desktop GPU matches (NVIDIA, Radeon, AMD, Intel, Iris, Arc, Apple M-series, SwiftShader) → `desktop`,
-   whatever `touch`/`mobile` say. Every alternative in all three GPU regexes is word-bounded, so an unrelated
-   string ("Intelligent Renderer", "Malibu GPU") cannot false-match a brand substring ("intel", "mali").
-4. The renderer string names an ANGLE Direct3D backend or Windows (`D3D11`, `Direct3D11`, `Windows`) → `desktop`.
-   Windows-on-ARM laptops (Snapdragon X, 8cx) carry Adreno GPUs and report both brands through ANGLE, e.g.
-   `ANGLE (Qualcomm, Adreno (TM) X1-85 (0x00043050), D3D11)`; Android's ANGLE strings name OpenGL ES or Vulkan.
-5. A mobile/tablet GPU matches (higher-end Adreno/Mali, PowerVR, Xclipse, Qualcomm, Apple A-series) → `desktop` when
-   `platform` names an OS no phone or tablet runs (Windows, macOS, Linux, ChromeOS, in any spelling a browser uses),
-   else `phone-mid`, or `phone-low` when `deviceMemory <= 2`. Before the `mobile` step, because Chrome reports an
-   Android **tablet** as `userAgentData.mobile: false`: reading that as "desktop" gives a Mali tablet desktop budgets
-   and silences its budget hints. What separates that tablet from a Windows-on-ARM laptop (Snapdragon X: an Adreno
-   GPU in a laptop) is the graphics API in the renderer string on **WebGL2**, which steps 3–4 have already had their
-   say on — and on **WebGPU** there is no such token at all, because `gpu` comes from `adapter.info` and names a
-   vendor and an architecture only (this repository's own WebGPU string is `apple metal-3`). That is what `platform`
-   is for. With neither signal — a mobile GPU family and no platform reported — the GPU family name decides, as it
-   did before `platform` existed.
-6. `mobile` is defined: `true` → `phone-mid` (or `phone-low` under `deviceMemory <= 2`); `false` → `desktop`. For a
-   GPU string none of steps 1–5 recognised, the browser's own answer is the best signal there is.
-7. Otherwise the old touch-only rule: no `touch` → `desktop`; `touch` and `deviceMemory <= 2` → `phone-low`;
-   `touch` otherwise → `phone-mid`.
+1. The low-end regex matches (Adreno 1xx–5xx and 60x–63x, Mali-G1x–G5x, Mali-T/4xx, PowerVR SGX, VideoCore):
+   `phone-low`. Those families ship in no laptop.
+2. An `"Apple"` name with `touch`: `phone-mid`, or `phone-low` when `deviceMemory <= 2`. An M-series GPU with a
+   touchscreen is an iPad, and iPadOS Safari sends a Macintosh user agent, so `mobile` reads `false` there.
+3. A desktop GPU matches (NVIDIA, Radeon, AMD, Intel, Iris, Arc, Apple M-series, SwiftShader): `desktop`, whatever
+   `touch` and `mobile` say. Every alternative in all three GPU regexes is word-bounded, so "Intelligent Renderer"
+   or "Malibu GPU" cannot match a brand substring.
+4. The renderer string names an ANGLE Direct3D backend or Windows (`D3D11`, `Direct3D11`, `Windows`): `desktop`.
+   Windows-on-ARM laptops carry Adreno GPUs and report both brands through ANGLE, e.g. `ANGLE (Qualcomm, Adreno (TM)
+   X1-85 (0x00043050), D3D11)`; Android's ANGLE strings name OpenGL ES or Vulkan.
+5. A mobile or tablet GPU matches (higher-end Adreno/Mali, PowerVR, Xclipse, Qualcomm, Apple A-series): `desktop`
+   when `platform` names an OS no phone or tablet runs (Windows, macOS, Linux, ChromeOS, in any spelling), else
+   `phone-mid`, or `phone-low` when `deviceMemory <= 2`. This precedes the `mobile` step because Chrome reports an
+   Android tablet as `userAgentData.mobile: false`. On WebGPU `gpu` comes from `adapter.info` and names a vendor and
+   architecture only (this repository's own string is `apple metal-3`), with no graphics API token to separate that
+   tablet from a Windows-on-ARM laptop, which is what `platform` is for; with neither signal the GPU family decides.
+6. `mobile` is defined: `true` gives `phone-mid` (`phone-low` under `deviceMemory <= 2`), `false` gives `desktop`.
+7. Otherwise: no `touch` gives `desktop`; `touch` with `deviceMemory <= 2` gives `phone-low`, else `phone-mid`.
 
-`tierInputFromNavigator(gpu, nav)` builds the `TierInput` that feeds `detectTier` from a GPU name and `navigator`
-(passed explicitly so it is unit-testable with fake navigators) — `test/app/main.ts`, `cli-app/main.ts` and
-`bench-app/runner.ts` all call it the same way. `touch` is the real touch capability
-(`navigator.maxTouchPoints > 0`) and nothing else. `platform` (step 5) is resolved in priority order:
-`navigator.userAgentData.platform` (Chromium, the only one stated rather than inferred), then the OS named in
-`navigator.userAgent`, then `navigator.platform`. The user agent comes before `navigator.platform` because Android
-reports `Linux armv8l` there while its user agent says `Android`, and reading the platform string first would call an
-Android tablet a Linux desktop. `mobile` (step 6) is resolved separately, in priority order:
-`navigator.userAgentData.mobile` (Chromium, most reliable — correctly `false` for a touch-capable desktop even
-though `touch` is `true`), then a `"Mobi"` sniff of `navigator.userAgent` (non-Chromium browsers), else left
-`undefined` when neither is available, so `detectTier` falls back to `touch` alone (step 7). Every field it reads
-(`userAgentData`, `deviceMemory`, `maxTouchPoints`) is optional and guarded.
+`tierInputFromNavigator(gpu, nav)` builds that input from a GPU name and `navigator` (passed explicitly so it is
+unit-testable); `test/app/main.ts`, `cli-app/main.ts` and `bench-app/runner.ts` all call it the same way. `touch` is
+`navigator.maxTouchPoints > 0`. `platform` is `navigator.userAgentData.platform` (Chromium, the only one stated
+rather than inferred), then the OS named in `navigator.userAgent`, then `navigator.platform` (last because Android
+reports `Linux armv8l` there). `mobile` is `navigator.userAgentData.mobile`, then a `"Mobi"` sniff of the user
+agent, else `undefined` so step 7 applies. Every field it reads is optional and guarded.
 
 Budgets per tier (`BUDGETS`, `budgetsFor(tier, overrides)`):
 
@@ -469,10 +332,11 @@ Budgets per tier (`BUDGETS`, `budgetsFor(tier, overrides)`):
 | objects walked per frame | 20 k | 5 k | 2 k |
 
 Hint codes (`hintsFor`, remedies in `npx threeforge explain --all`): `over-budget-submissions`,
-`over-budget-triangles`, `untagged`, `unique-materials`, `static-unbatched`, `unsupported-material`, `programs`, `transparent-overdraw`,
-`skinned-vertices`, `point-light-shadow`, `shadow-texels`, `transmission`, `transparent-batch-order`, `batch-local-space`, `texture-bytes`,
-`static-auto-update`, `particles-over-budget`, `sprites-unbatched`, `js-objects`, `detach-originals`,
-`bones-over-budget`, `skinned-crowd`, `geometry-bytes`, `unreferenced-resources`.
+`over-budget-triangles`, `untagged`, `unique-materials`, `static-unbatched`, `unsupported-material`, `programs`,
+`transparent-overdraw`, `skinned-vertices`, `point-light-shadow`, `shadow-texels`, `transmission`,
+`transparent-batch-order`, `batch-local-space`, `texture-bytes`, `static-auto-update`, `particles-over-budget`,
+`sprites-unbatched`, `js-objects`, `detach-originals`, `bones-over-budget`, `skinned-crowd`, `geometry-bytes`,
+`unreferenced-resources`.
 
 ### Overlay
 
@@ -482,126 +346,101 @@ reasons by count and the hints. `formatOverlay`, `formatCostRows` and `formatHin
 
 ## 5. Material registry (`MaterialRegistry`)
 
-`register(material)` returns the canonical material for its key without mutating the input. Three keys are computed
-(`computeMaterialKeys`): **programKey** mirrors three's `RenderObject.getMaterialCacheKey()` (type, custom program
-cache key, which texture slots are set with their mapping/channel/colour space, booleans, enums, feature gates such as
-transmission or clearcoat as on/off, defines, node cache keys, the number of clipping planes, material code as below);
-**variantKey** adds every non-colour uniform, the texture identities and transforms, clipping plane values, an instance
-`onBeforeRender` as below, and `visible=0` when `material.visible` is false (so a hidden material never
-merges with an otherwise-identical visible one; `visible` never affects programKey); **colorKey** is the `color`
-property, keyed by **exact linear floats** (`color.r/g/b`, three's working colour space), not 8-bit sRGB hex — two
-colours under 1/255 apart stay distinct, and an HDR value (a channel > 1) stays distinct from another HDR value that
-would otherwise clamp to the same hex. Every other `Color`-valued property (`emissive`, `sheenColor`, `blendColor`,
-…) is keyed the same exact way inside variantKey. `describe(material)` also returns **colorHex**
-(`color.getHexString()`, 8-bit sRGB), which exists for display only — logs, the CLI, the overlay — and must never be
-used for identity or grouping; sprite batching (section 13) groups by the exact `colorKey`, not `colorHex`, for the
-same reason. Outcomes: `new`, `merged` (same variant and colour), `color-variant` (batchable through per-instance
-colour), `uniform-variant` (the same programKey, another variantKey: uniform values, texture identities, clipping plane
-values, `visible`, or an instance `onBeforeRender`), `shader-variant` (another programKey), `unsupported`
-(`ShaderMaterial` / `RawShaderMaterial` do not render on `WebGPURenderer`), `unregistered`. `describe(material)` gives
-the hashes, `colorHex`/`colorKey` and outcome;
-`canonicalOf`, `keys`, and `stats()` (`registered, canonical, merged, unsupported, programs, byProgram[]`).
+`register(material)` returns the canonical material for its key without mutating the input. `computeMaterialKeys`
+derives three keys. `programKey` mirrors three's `RenderObject.getMaterialCacheKey()`: type, custom program cache
+key, which texture slots are set with their mapping, channel and colour space, booleans, enums, feature gates such
+as transmission or clearcoat as on/off, defines, node cache keys, the number of clipping planes, and material code as
+below. `variantKey` adds every non-colour uniform, the texture identities and transforms, clipping plane values, an
+instance `onBeforeRender`, and `visible=0` when `material.visible` is false (a hidden material never merges with an
+otherwise identical visible one; `visible` never affects `programKey`). `colorKey` is the `color` property keyed by
+exact linear floats (`color.r/g/b`), not 8-bit sRGB hex, so two colours under 1/255 apart stay distinct and an HDR
+value (a channel above 1) stays distinct from another that would clamp to the same hex; every other `Color`-valued
+property (`emissive`, `sheenColor`, `blendColor` and the rest) is keyed the same way inside `variantKey`.
+`describe(material)` also returns `colorHex` (`color.getHexString()`, 8-bit sRGB) for display only (logs, the CLI,
+the overlay); it must never be used for identity or grouping, and sprite batching (section 7) groups by the exact
+`colorKey` for that reason. Outcomes: `new`, `merged` (same variant and colour), `color-variant` (batchable through
+per-instance colour), `uniform-variant` (the same `programKey`, another `variantKey`), `shader-variant` (another
+`programKey`), `unsupported` (`ShaderMaterial` and `RawShaderMaterial` do not render on `WebGPURenderer`),
+`unregistered`. `describe(material)` gives the hashes, `colorHex`, `colorKey` and outcome; `canonicalOf`, `keys` and
+`stats()` (`registered, canonical, merged, unsupported, programs, byProgram[]`) complete the read API.
 `hashesOf(material)` returns `{ programHash, variantHash, description, unsupported }` straight from the key cache,
-allocating nothing and recomputing nothing: it is the cache entry itself, which `invalidate()` and `forget()` replace
-rather than change. `keysRevision` moves whenever either of them drops cached keys, so a caller that memoizes
-`hashesOf()` (the ledger, per frame) knows to read again.
-`programs` is checked against `renderer.info.memory.programs` in the tests: shader variants counted by the registry
-are real programs. The count can exceed the programs three compiles when materials run different function objects or
-classes whose code compiles to the same shader (closures from one factory with the same source text, or a subclass
-that overrides nothing the shader reads): three compiles one program for those, the registry counts one per function
-or class.
+allocating and recomputing nothing: it is the cache entry itself, which `invalidate()` and `forget()` replace rather
+than change, and `keysRevision` moves whenever either drops cached keys so a caller that memoizes `hashesOf()` (the
+ledger, per frame) knows to read again. `programs` is checked against `renderer.info.memory.programs` in the tests;
+the count can exceed what three compiles when materials run different function objects or classes whose code
+compiles to the same shader (closures from one factory with the same source text, or a subclass that overrides
+nothing the shader reads).
 
-**Materials with different code never merge, even when the source text matches.** Material code joins the keys **by
-identity** (a number per object from a `WeakMap`, never `toString()`), so two closures from one factory, with the same
-text but different captured values, get different keys, while materials sharing the same function object or class
-still merge:
+Materials with different code never merge, even when the source text matches. Material code joins the keys by
+identity (a number per object from a `WeakMap`, never `toString()`), so two closures from one factory with different
+captured values get different keys, while materials sharing one function object or class still merge. The class
+joins `programKey` when the material is not exactly an instance of one of three's own classes (`isBuiltInMaterial`,
+`src/registry/builtInMaterials.ts`), since a subclass inherits its base's `type` and can override any method, so
+each subclass is its own program. Every own function-valued property except `onBeforeRender` joins `programKey` too
+(an instance `setup*`, `onBeforeCompile`, `customProgramCacheKey`), since three builds the program from them, so such
+materials report as `shader-variant`s. An own `onBeforeRender` joins `variantKey`: it is not program code on either
+backend (WebGLRenderer calls a material's `onBeforeRender` once per draw, WebGPU's renderer never calls it), so such
+materials report as `uniform-variant`s, one program but never one batch or canonical. The compiler groups statics by
+`variantKey`, which contains `programKey`, and `register()` merges by `variantKey` plus colour, so a batch or a
+canonical never draws one material's code for another. A user-added own property (`material.extra = {…}`) is keyed
+by value when it holds plain data (object literals, arrays, strings, numbers, booleans, BigInts; a self-containing
+value is keyed by its shape without overflowing the stack) and by identity for anything else inside it (a function,
+a `Texture`, an `Object3D`, any class instance), which is never walked. An array of planes (`clippingPlanes`) keys
+its length in `programKey` and each plane's normal and constant in `variantKey`; any other non-numeric array is
+keyed like plain data. `userData` stays out of the key except `forgeKey` (which overrides everything, code
+included), and so does EventDispatcher's `_listeners` (the `dispose` listener a renderer adds to every material it
+draws). Identity numbers follow the order objects are first keyed, so a hash that includes one is stable within a
+run, not across runs (section 4).
 
-- **The class**, in programKey, when the material is not exactly an instance of one of three's own classes
-  (`isBuiltInMaterial`, `src/registry/builtInMaterials.ts`). A subclass inherits its base's `type` and can override
-  any method (`setup*`, `onBeforeCompile`, `customProgramCacheKey`, `onBeforeRender`); the registry cannot tell which,
-  so each subclass is its own program. three's own classes add nothing.
-- **Every own function-valued property except `onBeforeRender`**, in programKey (an instance `setup*`,
-  `onBeforeCompile`, `customProgramCacheKey` …). three builds the program from them (WebGL keys
-  `customProgramCacheKey()` and runs `onBeforeCompile` on the shader source; `NodeMaterial` calls `setup*` to build the
-  node graph), so such materials report as `shader-variant`s.
-- **An own `onBeforeRender`**, in variantKey. It is not program code on either backend: WebGLRenderer calls a
-  material's `onBeforeRender` once per draw, and WebGPU's renderer never calls it (only the object's). Such materials
-  report as `uniform-variant`s: one program, but never one batch or canonical.
-
-The compiler groups statics by variantKey, which contains programKey, and `register()` merges by variantKey plus
-colour, so a batch or a canonical never draws one material's code for another. A user-added own property
-(`material.extra = {…}`, data a hook reads through `this`) is keyed by value when it holds plain data (object
-literals, arrays, strings, numbers, booleans, BigInts; a value that contains itself is keyed by its shape, never
-overflowing the stack), and by identity for anything else inside it — a function, a `Texture`, an `Object3D`, any class
-instance — which is never walked. An array of planes (`clippingPlanes`) keys its length in programKey and each plane's
-normal and constant in variantKey; any other non-numeric array is keyed like the plain data above. `userData` stays
-out of the key except `forgeKey` (which still overrides everything, code included), and so does EventDispatcher's
-`_listeners` (the `dispose` listener a renderer adds to every material it draws). Identity numbers follow the order
-objects are first keyed, so a hash that includes one is stable within a run, not across runs (section 4).
-
-**A material is immutable once registered.** `register()` and `describe()` compute a material's keys once and cache
-them (together with their `programHash`/`variantHash`, so `describe()` never re-hashes on repeated calls); nothing
-in `MaterialRegistry` re-reads a material's properties after that first pass. Mutating a registered material's
-properties afterwards is outside the contract: anything already built from its old keys (a `BatchedMesh`, a sprite
-batch) stays built from them. Three ways to react to it:
-
-- `invalidate(material)` re-keys it: it removes `material` from every index it was filed under by its *old* keys
-  (`canonicalByFullKey`, its program's `canonicals`/`variants` — nothing to remove if it was a merged duplicate
-  rather than a canonical), recomputes its keys from its current properties, and re-files it under the *new* ones —
-  it stays/becomes the canonical for the new key if no other canonical already holds it, or its record is demoted
-  to `{ outcome: 'merged', canonical: <that other material> }` if one does. This closes a real defect: without the
-  removal step, a *different*, later material built with `material`'s old property values would still find the
-  stale index entry and merge into `material`, silently rendering with its new, mutated state. A material already
-  merged into `material` before the call is untouched and keeps resolving to it (a live object) regardless — that
-  is the app's choice once it mutates a shared canonical; `invalidate` does not chase down and re-key dependents.
-- `forget(material)` removes a material from the registry entirely, as if it had never been registered, unwinding
-  `stats()` and its program's bookkeeping (shares its index-removal step with `invalidate`). Forgetting a canonical
-  that other materials were merged into leaves those materials' bookkeeping correct — they keep resolving to that
-  exact `Material` object — but this is **not** a signal that the object's GPU resources are safe to dispose: every
-  one of those dependents is still relying on it rendering correctly, and `forget()` does not track or release
-  them. Check `dependentsOf(material) === 0` first, or `forget()` every dependent too before disposing.
-- `dependentsOf(material)` counts how many other registered materials currently resolve to `material` as their
-  canonical (a live scan of `records`, never cached) — the check `forget()`'s doc comment above calls for.
+A material is immutable once registered: `register()` and `describe()` compute its keys once and cache them with
+their hashes, nothing re-reads its properties after that, and anything built from its old keys (a `BatchedMesh`, a
+sprite batch) stays built from them. `invalidate(material)` re-keys it: it removes `material` from every index it
+was filed under by its old keys (`canonicalByFullKey`, its program's `canonicals` and `variants`; nothing for a
+merged duplicate), recomputes the keys from the current properties and re-files it, staying or becoming the
+canonical for the new key when no other canonical holds it, else demoted to `{ outcome: 'merged', canonical: <that
+material> }`. Without the removal step a later material built with the old property values would find the stale
+index entry and merge into `material`, rendering with its mutated state; that defect is closed. A material already
+merged into `material` keeps resolving to it (a live object); `invalidate` does not re-key dependents.
+`forget(material)` removes a material entirely, as if never registered, unwinding `stats()` and its program's
+bookkeeping. Forgetting a canonical other materials were merged into leaves their bookkeeping correct (they keep
+resolving to that exact object) but is no signal that its GPU resources are safe to dispose: every dependent still
+relies on it, and `forget()` neither tracks nor releases them. Check `dependentsOf(material) === 0` first (a live
+scan of `records`, never cached), or `forget()` every dependent too before disposing.
 
 `World.decompile()` and `ResourceTracker.release()` both call `forget()` for the materials they release, so the
 registry's records stop keeping a material nothing references alive: the clones a compile created (batches,
 instanced groups, a baked group's tints, the occlusion proxies and the sprite batches) and, in the tracker, a
 registered material no other owner still holds. Both forget the materials merged into a canonical before the
-canonical itself, and both keep a canonical another registered material still resolves to — the tracker leaves it
-registered, and `decompile()` leaves it registered *and* undisposed, since every mesh drawn with that duplicate
-still renders through this exact object. Such a canonical is not revisited when its last dependent is released
-later; releasing it is then the app's own call (`dependentsOf`). The tracker still never disposes a material the
-registry knows.
+canonical itself, and both keep a canonical another registered material still resolves to: the tracker leaves it
+registered, and `decompile()` leaves it registered and undisposed, since every mesh drawn with that duplicate still
+renders through this exact object. Such a canonical is not revisited when its last dependent is released later;
+releasing it is then the app's own call (`dependentsOf`). The tracker never disposes a material the registry knows.
 
 ## 6. Tags and classification
 
 `tag.static(obj)` and `tag.dynamic(obj)` write `userData.forge`; a tag on an ancestor applies to its subtree.
-`classify(root, { policy, animations })` decides per mesh, in this order: skinned → morph targets → `ShaderMaterial`
-(unsupported) → dynamic tag → parented under a bone → animated by a clip (pass `animations`: clips, or
-`{ root, clips }` per animated root so shared bone names resolve correctly) → exclusion rules → static tag → policy
-`auto` (untagged plain meshes become static) → `untagged`. Exclusion rules (`exclusionRule(mesh, root?)`): `invisible`,
-`invisible-ancestor` (an ancestor up to `root` with `visible = false`, via `isVisibleInGraph`; the mesh's own
-visibility is `invisible` above), `already-instanced`, `material-invisible` (`material.visible === false`),
-`transmission` (three scales volume thickness by the object matrix, which a batch cannot provide), `dynamic-geometry`
-(`DynamicDrawUsage` / `StreamDrawUsage` attributes), `multi-material`, `layers`, `render-order`, `group-render-order`
-(the *nearest* `isGroup` ancestor has `renderOrder !== 0`: three's `Renderer._projectObject` reassigns
-`groupOrder = object.renderOrder` at every `isGroup` object on the way down — a plain overwrite, not accumulated —
-so only the closest Group's value reaches the mesh; a farther Group's `renderOrder` and any non-Group `Object3D`'s
-`renderOrder` in between are never read for this), `clipping-group` (an enabled `isClippingGroup` ancestor at *any*
-depth — clipping contexts chain, `getGroupContext` builds each one from its parent — WebGPU-only per three's docs,
-but the shared `Renderer.js` `_projectObject` that reads it backs both the WebGL2 and WebGPU backends here), `custom-hook` (own
-`onBeforeRender`/`onAfterRender`), `draw-range`, `frustum-culled-off`, `mirrored` (a negative determinant relative to
-the scene: the world determinant times the scene's; three flips a batch's front face by its own world matrix, the
-scene's, never per instance). Every
-excluded mesh shows up in the ledger as `excluded:<rule>`. `root` is optional; without it the three ancestor-scoped
-rules (`invisible-ancestor`, `group-render-order`, `clipping-group`) are skipped, since there is no boundary to walk
-to. `spriteRule(sprite, root?)` shares the same ancestor walker (`ancestorExclusionRule`) for `group-render-order`
-and `clipping-group`, plus its own `material-invisible`, `sprite-custom-material` (the material is not exactly a
-`SpriteMaterial` or `SpriteNodeMaterial`, or holds its own functions: the batch builds a plain `SpriteNodeMaterial`
-and would drop that code), `sprite-node-material` (a node material with any `*Node`
-slot set: the batch replaces position and scale nodes and draws object-dependent nodes against itself), `sprite-count`
-(`Sprite.count !== 1`: three draws `count` instances of such a sprite), `multi-material`, `sprite-center`, `layers`,
-`render-order` and `custom-hook`.
+`classify(root, { policy, animations })` decides per mesh, in this order: skinned, morph targets, `ShaderMaterial`
+(unsupported), dynamic tag, parented under a bone, animated by a clip (pass `animations`: clips, or `{ root, clips }`
+per animated root so shared bone names resolve correctly), exclusion rules, static tag, policy `auto` (untagged plain
+meshes become static), else `untagged`. Exclusion rules (`exclusionRule(mesh, root?)`): `invisible`,
+`invisible-ancestor` (an ancestor up to `root` with `visible = false`, via `isVisibleInGraph`), `already-instanced`,
+`material-invisible` (`material.visible === false`), `transmission` (three scales volume thickness by the object
+matrix, which a batch cannot provide), `dynamic-geometry` (`DynamicDrawUsage` or `StreamDrawUsage` attributes),
+`multi-material`, `layers`, `render-order`, `group-render-order` (the nearest `isGroup` ancestor has `renderOrder !==
+0`: three's `Renderer._projectObject` overwrites `groupOrder = object.renderOrder` at every `isGroup` object on the
+way down, so only the closest Group's value reaches the mesh), `clipping-group` (an enabled `isClippingGroup`
+ancestor at any depth, since clipping contexts chain through `getGroupContext`; WebGPU-only per three's docs, but
+the shared `Renderer.js` `_projectObject` that reads it backs both backends here), `custom-hook` (own
+`onBeforeRender` or `onAfterRender`), `draw-range`, `frustum-culled-off`, `mirrored` (a negative determinant
+relative to the scene, the world determinant times the scene's: three flips a batch's front face by its own world
+matrix, never per instance). Every excluded mesh shows up in the ledger as `excluded:<rule>`. Without `root` the
+three ancestor-scoped rules (`invisible-ancestor`, `group-render-order`, `clipping-group`) are skipped.
+`spriteRule(sprite, root?)` shares the same ancestor walker (`ancestorExclusionRule`) for `group-render-order` and
+`clipping-group`, plus its own `material-invisible`, `sprite-custom-material` (not exactly a `SpriteMaterial` or
+`SpriteNodeMaterial`, or holding its own functions: the batch builds a plain `SpriteNodeMaterial` and would drop that
+code), `sprite-node-material` (a node material with any `*Node` slot set: the batch replaces position and scale
+nodes and draws object-dependent nodes against itself), `sprite-count` (`Sprite.count !== 1`: three draws `count`
+instances of such a sprite), `multi-material`, `sprite-center`, `layers`, `render-order` and `custom-hook`.
 
 ## 7. The scene compiler (`World`)
 
@@ -611,21 +450,20 @@ slot set: the batch replaces position and scale nodes and draws object-dependent
    instancing and sprite batches (see culling).
 2. Classify every mesh; record the counts of meshes and distinct materials (`before`).
 3. Collect statics; with `dynamics: 'batch-sync'` also collect dynamics that pass every batch rule.
-4. `batchStatics`: register materials, group statics by **variant key + geometry attribute signature + castShadow +
-   receiveShadow (+ chunk cell)**. Per group: geometry repeated at least `instanceThreshold` times in an opaque group
-   becomes a compacted `InstancedMesh` per geometry; the rest becomes one `BatchedMesh` (or, with `bake`, one baked
-   `Mesh`); a group of one mesh stays a mesh with the canonical material (`unique-material`, or `static-unbatched` in a frame
-   where another object draws that canonical). Batches use the
-   canonical material itself when every instance is white, else a white clone with per-instance colour. The clone
-   (`cloneMaterial`, also used for a baked group's vertex-colour material) gets back what three's `clone()` drops:
-   every function assigned to the instance (`onBeforeCompile`, `customProgramCacheKey`, `onBeforeRender`, a node
-   material's `setup*` …), a copy of custom `defines`, `alphaTest` (lost on the `NodeMaterial.copy` path), and, by
-   reference, every other own enumerable property the fresh copy lacks (data a hook reads through `this`), except
-   EventDispatcher's lazily created `_listeners`, where the renderers keep their `dispose` listeners. It shares the
-   source's `userData` object instead of taking three's JSON copy, so a uniform kept there and animated through the
-   source reaches the batch, and circular or BigInt `userData` does not throw.
-   Non-indexed geometries get an index on a clone (`ensureIndexed`); indices promote to Uint32 as needed.
-   Instance matrices, instanced masters and baked vertices are written in the scene's space (see scene space below).
+4. `batchStatics`: register materials, group statics by variant key, geometry attribute signature, `castShadow` and
+   `receiveShadow` (and chunk cell). Per group, geometry repeated at least `instanceThreshold` times in an opaque
+   group becomes a compacted `InstancedMesh` per geometry; the rest becomes one `BatchedMesh` (with `bake`, one baked
+   `Mesh`); a group of one mesh stays a mesh with the canonical material (`unique-material`, or `static-unbatched` in
+   a frame where another object draws that canonical). A batch uses the canonical material itself when every
+   instance is white, else a white clone with per-instance colour. The clone (`cloneMaterial`, also used for a baked
+   group's vertex-colour material) gets back what three's `clone()` drops: every function assigned to the instance
+   (`onBeforeCompile`, `customProgramCacheKey`, `onBeforeRender`, a node material's `setup*`), a copy of custom
+   `defines`, `alphaTest` (lost on the `NodeMaterial.copy` path) and, by reference, every other own enumerable
+   property the fresh copy lacks, except EventDispatcher's `_listeners`. It shares the source's `userData` object
+   instead of three's JSON copy, so a uniform kept there and animated through the source reaches the batch, and
+   circular or BigInt `userData` does not throw. Non-indexed geometries get an index on a clone (`ensureIndexed`);
+   indices promote to Uint32 as needed. Instance matrices, instanced masters and baked vertices are written in the
+   scene's space (see "Scene space").
 5. Attach BVH culling to every batch (`culling: 'bvh'`), with LOD ranges when `lod` is set.
 6. Install matrix sync for batch-synced dynamics and occlusion proxies when enabled.
 7. Hide the originals: moved to layer 31 with `matrixAutoUpdate = false` (`originals: 'hide'`), or removed from the
@@ -636,7 +474,8 @@ slot set: the batch replaces position and scale nodes and draws object-dependent
    remaining meshes (`materials: 'canonical'`; `'keep'` leaves each mesh's own instance).
 9. Return the `CompileReport`: `before`, `after { batches, instanced, baked, meshes }`, `bake` summary, `groups[]`
    (kind, chunk, lods, program and variant hashes, instances, geometries, transparency, shadow flags, bake report),
-   `skipped[]` with rules, registry stats, culling mode, `synced`, `lod`, `occlusion` (`{ proxies, skippedSynced }`), `nestedPasses`.
+   `skipped[]` with rules, registry stats, culling mode, `synced`, `lod`, `occlusion` (`{ proxies, skippedSynced }`)
+   and `nestedPasses`.
 
 ### Options
 
@@ -662,175 +501,156 @@ slot set: the batch replaces position and scale nodes and draws object-dependent
 
 Transparent statics batch by default, but three sorts a `BatchedMesh` back-to-front by its own bounding-sphere
 centre, not per instance: a transparent batch composites in creation order relative to other transparent
-submissions in the same pass, not by true per-object depth against them. `transparent: 'keep'` opts a scene out of
-this (its transparent statics stay individual meshes, each sorted by three like any other transparent object), at
-the cost of one draw per mesh instead of one per batch; the `transparent-batch-order` hint (info) names it whenever
-a threeforge transparent batch shares the main pass with another transparent submission.
+submissions in the same pass, not by true per-object depth against them. `transparent: 'keep'` opts a scene out (its
+transparent statics stay individual meshes, sorted by three like any other transparent object) at the cost of one
+draw per mesh; the `transparent-batch-order` hint (info) names it whenever a threeforge transparent batch shares the
+main pass with another transparent submission.
 
 Batching and instancing also move a material's mesh-local space into the scene's, so node materials that shade from
 `positionLocal`, `alphaHash` and object-space normal maps stay batched by default too, with the limit named by a hint
 and an opt-out per mesh (section 14). three r186 multiplies `positionLocal` by the instance matrix in a batch
-(`batch()`, `Batch.js:148`) and an instanced mesh (`instance()`, `Instance.js:206-207`), and World writes those
-matrices in the scene's space; a baked mesh's positions are written there too. `positionLocal` is a varying
-(`Position.js:45`), so a node reading it in either stage sees the vertex in the scene's space instead of the mesh's
-own, and `alphaHash` hashes it (`NodeMaterial.js:893`), which moves the pattern of discarded pixels. An object-space
-normal map's normals go through `transformNormalToView` (`NormalMapNode.js:120-122`), which uses the draw's
-`modelNormalMatrix` (`Normal.js:183-197`): the batch's, instanced mesh's or baked mesh's, not each module's, so a rotated
-module is lit as if unrotated. `normalLocal` is not affected in the fragment stage: three redeclares it per stage
-(`Normal.js:23-35`, a `toVar`, not a varying), and a tangent-space normal map follows the batched normal and tangent.
-Measured by `test/e2e/local-space.spec.ts`, which compiles each case on four translated, rotated and scaled statics
-with `bake` off and records the share as a test annotation (changed pixels at tolerance 4, both backends): a
-`positionLocal` colour gradient 11.08 %, `alphaHash` 5.56 % (webgl2) / 5.59 % (webgpu), an object-space normal map
-9.54 %; a plain `MeshStandardMaterial` on the same boxes 0 pixels. **Those shares are that spec's scene**, not a
-property of the mechanism: how much of a frame changes depends on how much of it the affected meshes cover, so the
-figure to carry away is that the change is real and measurable on default settings, and the spec is where the current
-numbers are. It asserts only that the hint fires and that the count is non-zero, for that reason. The
-`batch-local-space` hint (warn) names every world-visible batch, instanced group and baked mesh World made whose
-material has a node in any slot (the test `spriteRule`'s `sprite-node-material` uses), code the hint cannot read (a
-class that is not one of three's own, or an own function — `spriteRule`'s `sprite-custom-material` test, and what
-`bakeProvesReads` refuses for the same reason: a subclass overriding `setupPosition` reads `positionLocal` with no
-`*Node` property to see), `alphaHash: true`, or a `normalMap` with `normalMapType: ObjectSpaceNormalMap`, with the
-material names. It cannot see into a node graph or into code, so it also names nodes that never read `positionLocal`
-(a texture lookup by uv, or `MeshSSSNodeMaterial`'s constant `thickness*Node` defaults) and subclasses that read
-nothing local. Tag the meshes that must keep their own local space `dynamic` (under the default
-`dynamics: 'separate'`) to leave them individual draws; an object-space normal map re-authored in tangent space batches
-unchanged.
+(`batch()`, `Batch.js:148`) and an instanced mesh (`instance()`, `Instance.js:206-207`), World writes those matrices
+in the scene's space, and a baked mesh's positions are written there too. `positionLocal` is a varying
+(`Position.js:45`), so a node reading it in either stage sees the vertex in the scene's space, and `alphaHash` hashes
+it (`NodeMaterial.js:893`), which moves the pattern of discarded pixels. An object-space normal map's normals go
+through `transformNormalToView` (`NormalMapNode.js:120-122`) with the draw's `modelNormalMatrix`
+(`Normal.js:183-197`), the batch's, instanced mesh's or baked mesh's rather than each module's, so a rotated module
+is lit as if unrotated. `normalLocal` is unaffected in the fragment stage (three redeclares it per stage,
+`Normal.js:23-35`, a `toVar` rather than a varying), and a tangent-space normal map follows the batched normal and
+tangent. `test/e2e/local-space.spec.ts` compiles each case on four translated, rotated and scaled statics with `bake`
+off and records the share of changed pixels at tolerance 4 as a test annotation, on both backends: a `positionLocal`
+colour gradient 11.08 %, `alphaHash` 5.56 % (webgl2) / 5.59 % (webgpu), an object-space normal map 9.54 %, and a
+plain `MeshStandardMaterial` on the same boxes 0 pixels. Those shares belong to that spec's scene (they scale with
+how much of the frame the affected meshes cover), so the spec asserts only that the hint fires and that the count is
+non-zero. The `batch-local-space` hint (warn) names every world-visible batch, instanced group and baked mesh World
+made whose material has a node in any slot (what `spriteRule`'s `sprite-node-material` uses), code the hint cannot
+read (a class that is not one of three's own, or an own function, as `sprite-custom-material` and `bakeProvesReads`
+refuse for the same reason: a subclass overriding `setupPosition` reads `positionLocal` with no `*Node` property to
+see), `alphaHash: true`, or a `normalMap` with `normalMapType: ObjectSpaceNormalMap`, with the material names. It
+cannot see into a node graph or into code, so it also names nodes that never read `positionLocal` (a texture lookup
+by uv, `MeshSSSNodeMaterial`'s constant `thickness*Node` defaults) and subclasses that read nothing local. Tag the
+meshes that must keep their own local space `dynamic` (under the default `dynamics: 'separate'`) to leave them
+individual draws; an object-space normal map re-authored in tangent space batches unchanged.
 
 ### Culling, instancing, chunks, LOD, occlusion
 
-- **Scene space** (`SceneSpace`, `src/compiler/space.ts`): batches, instanced meshes, baked meshes, sprite batches and
-  occlusion proxies are children of the scene, so three draws them with `scene.matrixWorld`. Every instance write
-  converts an original's `matrixWorld` to `inverse(scene.matrixWorld) * matrixWorld`: batch matrices and instanced
-  masters at compile, baked vertices (rebakes included), batch-sync matrices, `markDirty` writes, and sprite centres
-  and scales (divided by the scene matrix's column lengths, which three multiplies back in). The inverse is cached and
-  derived again whenever the scene's world matrix differs from the one it came from (its 16 elements are compared on
-  every use, and a counter, `version`, tells the batch sync that the scene moved, so a synced mover whose world matrix
-  did not change is rewritten too). A scene translated, turned or scaled after compile is therefore honoured by every
-  later compiled write; a scene without a transform copies world matrices unchanged. Culling and sprite sorting work in
-  the object's frame or in world space and are unaffected. `lod.distances` are measured in the object's frame, the
-  scene's, so under a scaled scene they are scene units, not world units. Chunk cells (`chunkSize`) are computed in
-  world space at compile and the `Streamer` keeps them: streaming assumes the scene does not move after compile.
-  Mirroring is decided at compile (`mirrored` is relative to the scene); a scene that becomes mirrored only after
-  compile is not handled, except by sprite batches, which check every render and swap `FrontSide`/`BackSide` only
-  when the scene's mirroring changed since the last check.
-- **BVH culling** (`attachBvhCulling`): a `bvh.js` tree of instance boxes replaces `BatchedMesh`'s linear
-  per-instance test. The hook mirrors three's own `onBeforeRender` (fills `_multiDrawStarts/Counts`, the indirect
-  texture) and is prepended with `prependRenderHook`, never overwriting the object's hook; hooks are marked with
-  `FORGE_HOOK`. The handle offers `move(id)`, `insert(id)`, `remove(id)`, `detach()` and reports its `margin`, which
-  is 0 for every batch `World` compiles, batch-synced movers included: a mover refits its own leaf on each sync.
-  `CullingOptions.margin` is available to direct `attachBvhCulling` callers, but **it changes what is drawn**. The BVH
-  prefilters candidates by their exact box and only the candidates it offers reach three's bounding-sphere test, and
-  a sphere circumscribes its box, so the prefilter is the tighter of the two; enlarging the boxes admits instances
-  whose sphere meets the frustum while their box does not, each costing a draw call and its (fully clipped)
-  triangles. It also rebuilds the tree, so the traversal order changes and depth tie-breaks between coincident
-  surfaces can flip. Measured on the bossfight bench scene when `World` briefly did this during 0.9.0: +2 draw calls
-  and +24 triangles per frame in a point light's shadow pass, and 1-4 pixels of 480000.
-- **Instancing** (`createCulledInstancedMesh`): master matrices and colours are kept aside; every frame the visible
-  instances are compacted to the front of `instanceMatrix`/`instanceColor` and `count` is set, so culled instances
-  cost nothing. LOD levels are separate InstancedMeshes chosen by distance. Handle: `setMatrixAt` (a master matrix, in
-  the mesh's parent space), `refreshBounds` (every level's box and sphere from the master matrices, drawn or not),
-  `setVisibleAt`, `getVisibleAt`, `detach`.
-- **Chunks** (`chunkSize`): groups are split by cell, which gives batches tight bounds (whole-object frustum
-  culling), per-cell shadow casting and a natural unit for streaming.
-- **LOD** (`generateLods(geometry, { ratios, error, lockBorder })`, `prepareLods(root, options)`, `lodsOf`): meshoptimizer
-  `simplify` (with `simplifySloppy` fallback), welding non-indexed meshes first; levels are extra geometry ranges in
-  the batch or extra InstancedMeshes, picked by `levelFor(distance, distances)`. `disposeLods(geometry)` disposes the
-  levels attached to a geometry and removes them, returning how many: the same levels outlive any one compile and are
-  shared by every mesh holding that geometry, so threeforge never disposes them itself — `decompile()` first.
-- **Nested passes** (shadow maps, reflections, portals): three renders them from inside another render, a shadow map
-  from the first `receiveShadow` object's draw. Every material of a batch reads one index texture; on WebGPU its
-  upload lands at once while a pass is submitted only when it ends, and on WebGL that receiving batch draws right
-  after the shadow render returns. So batches keep a **stable prefix**: `PassTracker` (scene hooks, marked) knows
-  which passes are open, and a nested pass on a batch an open pass has already culled leaves that pass's index rows
-  untouched, zeroes the counts of the rows its camera does not need, appends the ids it lacks (LOD by the main
-  camera's distance; sorted for its camera when the batch sorts) and marks the texture only when an appended row
-  changed; the counts and `_multiDrawCount` come back when the nested render ends (or when the tracker heals after
-  a render that threw). `nestedPasses` decides a batch no open pass has culled yet: `per-pass` (the default on both
-  backends) culls it for the nested camera, `reuse-main` appends to the rows of its last outermost cull. On WebGPU a
-  nested pass issues one draw command per slot, zero-count ones included.
-  Compacted instanced meshes keep a stable prefix too, the same under both policies. Above the uniform-buffer limit
-  three keeps their matrices in one vertex buffer that syncs once per frame per render object and is checked for
-  upload at most once per render call (a nested render advances the call count, so a draw after it cannot upload
-  what changed since): a nested pass that reaches a mesh before the outermost render did compacts it for the main
-  camera first; a shadow pass keeps the enclosing rows and appends only the instances **its own light** reaches
-  (directional and spot frusta, a point light's cube of half-size `distance || shadow.camera.far`). Every light of the
-  frame is queried once, at its first shadow pass, into one deduplicated caster list whose entries record which lights
-  reach them (one bit per shadow camera of the frame, up to 32; a camera past that carries no bit and its pass appends
-  the whole list, a correct superset). Each pass appends its own light's entries **in that list's order**, so a light
-  whose casters are the rows the tail already holds writes nothing — a point light's six faces always do, and so does
-  any light whose set is a prefix of the pass before it. An `InstancedMesh` draws one contiguous range `[0, count)`
-  (three r186 takes `instanceCount` from `object.count` and never writes `firstInstance`), so it cannot zero an
-  interior appended row the way a batch zeroes a slot: it rewrites the tail, and only rows that change are marked.
-  Any other nested pass draws the enclosing rows; `count` and `visibleIds` come back when the nested render ends. On that vertex buffer an outermost compaction marks only the
-  rows it changed (`addUpdateRange`), while a nested pass that writes rows marks the whole matrix and colour buffers:
-  a receiver's render object runs the instance `OnBeforeFrameUpdate` event before its `ShadowNode` (the position
-  stack is flowed before the stage loop in `NodeBuilder.build`), so the shadow render object's own sync replaces the
-  main pass's synced ranges before they upload, and the main pass cannot upload again in that render call.
+Scene space (`SceneSpace`, `src/compiler/space.ts`). Batches, instanced meshes, baked meshes, sprite batches and
+occlusion proxies are children of the scene, so three draws them with `scene.matrixWorld`, and every instance write
+converts an original's `matrixWorld` to `inverse(scene.matrixWorld) * matrixWorld`: batch matrices and instanced
+masters at compile, baked vertices (rebakes included), batch-sync matrices, `markDirty` writes, and sprite centres
+and scales (divided by the scene matrix's column lengths, which three multiplies back in). The inverse is cached and
+derived again whenever the scene's world matrix differs from the one it came from (its 16 elements are compared on
+every use, and a `version` counter tells the batch sync that the scene moved, so a synced mover whose own world
+matrix did not change is rewritten too). A scene translated, turned or scaled after compile is therefore honoured by
+every later compiled write; a scene without a transform copies world matrices unchanged. Culling and sprite sorting
+work in the object's frame or in world space and are unaffected. `lod.distances` are measured in the scene's frame,
+so under a scaled scene they are scene units. Chunk cells (`chunkSize`) are computed in world space at compile and
+the `Streamer` keeps them: streaming assumes the scene does not move after compile. Mirroring is decided at compile
+(`mirrored` is relative to the scene); a scene that becomes mirrored only after compile is not handled, except by
+sprite batches, which check every render and swap `FrontSide`/`BackSide` when the scene's mirroring changed.
 
-  | Nested pass | Batch, `per-pass` | Batch, `reuse-main` | Compacted instanced mesh (either policy) |
-  |---|---|---|---|
-  | an open pass culled the object | keep its rows, zero the unneeded, append the missing | same | shadow: keep its rows, append its own light's casters; other: draw its rows |
-  | no open pass culled it yet | fresh cull for the nested camera | append to the last outermost rows | compact for the main camera first, then as above |
-  | outermost render | fresh cull | fresh cull | compact (skipped while the view and rows are unchanged) |
-  | end of the nested render | counts restored | counts restored | `count`, `visibleIds` restored |
+BVH culling (`attachBvhCulling`). A `bvh.js` tree of instance boxes replaces `BatchedMesh`'s linear per-instance
+test. The hook mirrors three's own `onBeforeRender` (fills `_multiDrawStarts/Counts` and the indirect texture) and is
+prepended with `prependRenderHook`, never overwriting the object's hook; hooks are marked with `FORGE_HOOK`. The
+handle offers `move(id)`, `insert(id)`, `remove(id)`, `detach()` and reports its `margin`, which is 0 for every batch
+`World` compiles, batch-synced movers included: a mover refits its own leaf on each sync. `CullingOptions.margin` is
+available to direct callers, but it changes what is drawn: the BVH prefilters candidates by their exact box and only
+those reach three's bounding-sphere test, and a sphere circumscribes its box, so enlarging the boxes admits instances
+whose sphere meets the frustum while their box does not, each costing a draw call and its fully clipped triangles.
+It also rebuilds the tree, so traversal order changes and depth tie-breaks between coincident surfaces can flip.
+Measured on the bossfight bench scene when `World` briefly did this during 0.9.0: +2 draw calls and +24 triangles
+per frame in a point light's shadow pass, and 1-4 pixels of 480000.
 
-- **Occlusion** (`occlusion: true`): a proxy box per batch / instanced group carries `occlusionTest`; its own
-  `onAfterRender` reads `renderer.isOccluded()` and hides the target next frame. The proxy is a box over the target's
-  bounding box; `markDirty` fits it again (its centre moved, its corners rewritten in place) whenever it recomputes
-  those bounds.
-  - **Backends and latency.** Both backends run the queries (WebGL2 `ANY_SAMPLES_PASSED`, WebGPU occlusion query
-    sets), and both answer late, per render context.
-    - **When three reads back.** At the end of a render whose list counted a query, three reads back the results of
-      the previous such render. That includes a render whose only counted proxy was at the camera and issued none.
-    - **When it publishes.** WebGL checks `QUERY_RESULT_AVAILABLE` synchronously at `finishRender`: it publishes at
-      once when the results are ready, and polls by `requestAnimationFrame` only when they are not. WebGPU publishes
-      after `mapAsync` resolves.
-    - **What follows.** `isOccluded()` answers for a render at least two renders back, with no upper bound. A render
-      whose list counts no query publishes nothing.
-  - **Only the outermost render decides.** The proxy hooks act only in the outermost render of the scene
-    (`PassTracker` depth 1). A shadow map, a reflection or a portal that draws a proxy never decides a target's
-    visibility from its own query.
-    - **Known limitation of 0.9.0: a hidden target is hidden from every pass.** The decision is written to
-      `target.visible` (`World.ts`, the proxy's after-render hook), and three r186's `_projectObject` returns at
-      `object.visible === false` in every render, a shadow map's `renderer.render(scene, shadow.camera)` and a
-      reflection's included. So once a proxy reads occluded (two or more renders late), its batch also casts no
-      shadow and shows in no mirror or portal: a building behind a wall loses the shadow it throws across the visible
-      street, and the shadow pops back when the proxy is unoccluded. `test/e2e/occlusion.spec.ts` has no
-      shadow-casting light or reflection, so nothing guards this. Until a fix hides targets only for the outermost
-      render, do not combine `occlusion: true` with shadow casters or reflections whose occluded batches must still
-      appear.
-    - **Rendered without its own hooks.** The scene can be drawn without its hooks, as a child of another root passed
-      to `render()` (depth 0). Its proxies then issue no query and show their targets. Their `occlusionTest` comes
-      back in a microtask, once that `render()` call has returned.
-  - **One outermost camera per frame.** Occlusion assumes the scene has one outermost render per frame. A second one
-    with another camera also sets the shared `target.visible` from its own answers. Examples: a rear-view mirror or a
-    minimap into its own `RenderTarget`, or split screen. When it also shares the main render's render context, the
-    answers mix and targets visible to the main camera can flicker. three keys a render context by attachment state (the
-    target's texture count, format, type, samples, depth and stencil buffers), MRT and call depth (`RenderContexts.get`),
-    not by which target it is. Split screen on one target shares it, and so does a separate target with the same
-    attachments, such as an RGBA `HalfFloatType` target with the same samples, depth and stencil as the frame-buffer
-    target three draws the canvas pass into (`RGBAFormat`, `outputBufferType`, `HalfFloatType` by default).
-  - **Warm-up.** `world.warmup()` issues no occlusion query, in either mode. Its frame is scissored to one pixel, so
-    every query would count no samples and, once published, hide visible targets. It awaits `renderer.init()` before
-    it changes anything, then suspends the proxies, sets the scissor, renders and restores without yielding, so no
-    queued re-enable runs in between. It also resumes any proxy a depth-0 render parked, so that proxy is suspended
-    with the rest.
-  - **Camera at the box.** A query cannot see the target when the camera is inside the box, because every face is
-    back-facing. It also misses when the near plane cuts into the box, because a front face in front of the near
-    plane is clipped. So in the outermost render the proxy issues no query (its `occlusionTest` is off until that
-    render ends) and its targets are shown when either holds:
-    - the eye is inside the box grown by twice `camera.near`;
-    - the bounding box of the near-plane rectangle meets the box (a wide field of view, an orthographic near plane).
+Instancing (`createCulledInstancedMesh`). Master matrices and colours are kept aside; every frame the visible
+instances are compacted to the front of `instanceMatrix`/`instanceColor` and `count` is set, so culled instances
+cost nothing. LOD levels are separate InstancedMeshes chosen by distance. Handle: `setMatrixAt` (a master matrix, in
+the mesh's parent space), `refreshBounds` (every level's box and sphere from the master matrices, drawn or not),
+`setVisibleAt`, `getVisibleAt`, `detach`.
 
-    With no query issued, no late answer can hide the target after the camera leaves.
-  - **Batch-synced movers.** A batch or instanced group that holds a `dynamics: 'batch-sync'` mover gets no proxy
-    (these targets skip whole-object frustum culling instead).
-    - **Why.** A mover can leave the compile-time box. While the target is hidden, three never calls the target's
-      render hook, where the sync runs, so nothing could grow the box in time.
-    - **Report fields.** `report.occlusion.proxies` counts the proxies installed. `report.occlusion.skippedSynced`
-      counts the batches and instanced groups skipped for synced movers, which is the cost of this rule.
-  - **Mirrored scenes need nothing.** three flips a mesh's front face when its world matrix mirrors, and the proxy's
-    vertices mirror with it, so the `FrontSide` proxy still rasterises the faces toward the eye.
+Chunks (`chunkSize`) split groups by cell, which gives batches tight bounds (whole-object frustum culling), per-cell
+shadow casting and a natural unit for streaming. LOD (`generateLods(geometry, { ratios, error, lockBorder })`,
+`prepareLods(root, options)`, `lodsOf`) uses meshoptimizer `simplify` (with `simplifySloppy` fallback), welding
+non-indexed meshes first; levels are extra geometry ranges in the batch or extra InstancedMeshes, picked by
+`levelFor(distance, distances)`. `disposeLods(geometry)` disposes the levels attached to a geometry and removes
+them, returning how many: the same levels outlive any one compile and are shared by every mesh holding that geometry,
+so threeforge never disposes them itself; `decompile()` first.
+
+Nested passes (shadow maps, reflections, portals). three renders them from inside another render, a shadow map from
+the first `receiveShadow` object's draw. Every material of a batch reads one index texture; on WebGPU its upload
+lands at once while a pass is submitted only when it ends, and on WebGL that receiving batch draws right after the
+shadow render returns. So batches keep a stable prefix: `PassTracker` (scene hooks, marked) knows which passes are
+open, and a nested pass on a batch an open pass has already culled leaves that pass's index rows untouched, zeroes
+the counts of the rows its camera does not need, appends the ids it lacks (LOD by the main camera's distance; sorted
+for its camera when the batch sorts) and marks the texture only when an appended row changed; the counts and
+`_multiDrawCount` come back when the nested render ends (or when the tracker heals after a render that threw).
+`nestedPasses` decides a batch no open pass has culled yet: `per-pass` (the default on both backends) culls it for
+the nested camera, `reuse-main` appends to the rows of its last outermost cull. On WebGPU a nested pass issues one
+draw command per slot, zero-count ones included. Compacted instanced meshes keep a stable prefix too, the same under
+both policies. Above the uniform-buffer limit three keeps their matrices in one vertex buffer that syncs once per
+frame per render object and is checked for upload at most once per render call (a nested render advances the call
+count, so a draw after it cannot upload what changed since): a nested pass that reaches a mesh before the outermost
+render did compacts it for the main camera first; a shadow pass keeps the enclosing rows and appends only the
+instances its own light reaches (directional and spot frusta, a point light's cube of half-size `distance ||
+shadow.camera.far`). Every light of the frame is queried once, at its first shadow pass, into one deduplicated
+caster list whose entries record which lights reach them (one bit per shadow camera of the frame, up to 32; a
+camera past that carries no bit and its pass appends the whole list, a correct superset). Each pass appends its own
+light's entries in that list's order, so a light whose casters are the rows the tail already holds writes nothing (a
+point light's six faces always do, and so does any light whose set is a prefix of the pass before it). An
+`InstancedMesh` draws one contiguous range `[0, count)` (three r186 takes `instanceCount` from `object.count` and
+never writes `firstInstance`), so it cannot zero an interior appended row the way a batch zeroes a slot: it rewrites
+the tail, marking only rows that change. Any other nested pass draws the enclosing rows; `count` and `visibleIds`
+come back when the nested render ends. On that vertex buffer an outermost compaction marks only the rows it changed
+(`addUpdateRange`), while a nested pass that writes rows marks the whole matrix and colour buffers: a receiver's
+render object runs the instance `OnBeforeFrameUpdate` event before its `ShadowNode` (the position stack is flowed
+before the stage loop in `NodeBuilder.build`), so the shadow render object's own sync replaces the main pass's synced
+ranges before they upload, and the main pass cannot upload again in that render call.
+
+| Nested pass | Batch, `per-pass` | Batch, `reuse-main` | Compacted instanced mesh (either policy) |
+|---|---|---|---|
+| an open pass culled the object | keep its rows, zero the unneeded, append the missing | same | shadow: keep its rows, append its own light's casters; other: draw its rows |
+| no open pass culled it yet | fresh cull for the nested camera | append to the last outermost rows | compact for the main camera first, then as above |
+| outermost render | fresh cull | fresh cull | compact (skipped while the view and rows are unchanged) |
+| end of the nested render | counts restored | counts restored | `count`, `visibleIds` restored |
+
+Occlusion (`occlusion: true`). A proxy box over each batch's or instanced group's bounding box carries
+`occlusionTest`; its own `onAfterRender` reads `renderer.isOccluded()` and hides the target next frame, and
+`markDirty` fits it again (centre moved, corners rewritten in place) whenever it recomputes those bounds. Both
+backends run the queries (WebGL2 `ANY_SAMPLES_PASSED`, WebGPU occlusion query sets) and both answer late, per
+render context: at the end of a render whose list counted a query, three reads back the results of the previous
+such render (including one whose only counted proxy was at the camera and issued none); WebGL checks
+`QUERY_RESULT_AVAILABLE` synchronously at `finishRender` and polls by `requestAnimationFrame` only when the results
+are not ready, WebGPU publishes after `mapAsync` resolves; so `isOccluded()` answers for a render at least two
+renders back, with no upper bound, and a render whose list counts no query publishes nothing. Only the outermost
+render decides: the proxy hooks act only at `PassTracker` depth 1, so a shadow map, reflection or portal that draws
+a proxy never decides a target's visibility from its own query. Known limitation of 0.9.0: the decision is written
+to `target.visible` (`World.ts`, the proxy's after-render hook), and three r186's `_projectObject` returns at
+`object.visible === false` in every render, so once a proxy reads occluded its batch also casts no shadow and shows
+in no mirror or portal (a building behind a wall loses the shadow it throws across the visible street, which pops
+back when the proxy is unoccluded); `test/e2e/occlusion.spec.ts` has no shadow-casting light or reflection, so
+nothing guards this. Until a fix hides targets only for the outermost render, do not combine `occlusion: true` with
+shadow casters or reflections whose occluded batches must still appear. A scene drawn without its own hooks, as a
+child of another root passed to `render()` (depth 0), issues no query and shows its targets; their `occlusionTest`
+comes back in a microtask once that `render()` has returned. Occlusion assumes one outermost render per frame: a
+second one with another camera (a rear-view mirror or minimap into its own `RenderTarget`, split screen) also sets
+the shared `target.visible`, and when it shares the main render's render context the answers mix and targets
+visible to the main camera can flicker; three keys a render context by attachment state (texture count, format,
+type, samples, depth and stencil buffers), MRT and call depth (`RenderContexts.get`), not by target, so split screen
+on one target shares it and so does a separate target with the same attachments as the frame-buffer target three
+draws the canvas pass into (an RGBA `HalfFloatType` target with the same samples, depth and stencil).
+`world.warmup()` issues no occlusion query in either mode, since under its 1×1 scissor every query would count no
+samples and, once published, hide visible targets: it awaits `renderer.init()`, suspends the proxies (any proxy a
+depth-0 render parked included), sets the scissor, renders and restores without yielding. A query cannot see the
+target when the camera is inside the box (every face is back-facing) or the near plane cuts into it (a front face
+in front of the near plane is clipped), so in the outermost render the proxy issues no query (its `occlusionTest`
+is off until that render ends) and its targets are shown when the eye is inside the box grown by twice
+`camera.near` or the bounding box of the near-plane rectangle meets the box; with no query issued, no late answer
+can hide the target after the camera leaves. A batch or instanced group holding a `dynamics: 'batch-sync'` mover
+gets no proxy (those targets skip whole-object frustum culling instead): a mover can leave the compile-time box, and
+while the target is hidden three never calls its render hook, where the sync runs, so nothing could grow the box in
+time; `report.occlusion.proxies` counts the proxies installed and `report.occlusion.skippedSynced` the targets
+skipped for synced movers. Mirrored scenes need nothing: three flips a mesh's front face when its world matrix
+mirrors, and the proxy's vertices mirror with it, so the `FrontSide` proxy still rasterises the faces toward the
+eye.
 
 ### Runtime API
 
@@ -838,241 +658,223 @@ unchanged.
 compaction table) or a baked mesh (`faceIndex` through per-triangle origins) back to the original mesh.
 `world.setVisible(original, visible)` hides an instance wherever it went (a baked module rebakes its group).
 `world.slotOf(mesh)`, `world.batchedMeshes`, `world.instancedMeshes`, `world.bakedMeshes`, `world.cullingOf(batch)`,
-`world.mainCamera`, `world.bakeDebug()`. `world.decompile()` removes everything it built, disposes what it created
-(the white clones batches and instanced groups draw with, occlusion proxies, baked geometry and bake clones, sprite
-batches), restores layers, matrices, materials and parent order, and allows `compile()` again. A batch or instanced
-group whose instances are all white draws with the registry's canonical material itself: that material is the app's,
-so `decompile()` never disposes it and it stays usable.
-
-`world.dispose()` tears the World down for good:
-- **Decompiles first** when compiled, so `onDirty` listeners still hear `decompile`. That uninstalls the pass tracker's
-  scene hooks and removes and disposes the occlusion proxies; a re-enable a depth-0 render queued finds no proxy.
-- **Drops every `onDirty` listener.** The registry and the ledger stay the app's, and so do registered materials.
-- **Afterwards** a second `dispose()` and `decompile()` do nothing; `compile`, `markDirty`, `setVisible`, `onDirty` and
-  `warmup` throw `World is disposed`.
+`world.mainCamera` and `world.bakeDebug()` inspect the result. `world.decompile()` removes everything it built,
+disposes what it created (the white clones batches and instanced groups draw with, occlusion proxies, baked geometry
+and bake clones, sprite batches), restores layers, matrices, materials and parent order, and allows `compile()`
+again. A batch or instanced group whose instances are all white draws with the registry's canonical material itself:
+that material is the app's, so `decompile()` never disposes it. `world.dispose()` tears the World down for good: it
+decompiles first when compiled, so `onDirty` listeners still hear `decompile` (that uninstalls the pass tracker's
+scene hooks and removes and disposes the occlusion proxies, so a re-enable a depth-0 render queued finds no proxy),
+then drops every `onDirty` listener; the registry, the ledger and registered materials stay the app's. Afterwards a
+second `dispose()` and `decompile()` do nothing, and `compile`, `markDirty`, `setVisible`, `onDirty` and `warmup`
+throw `World is disposed`.
 
 ### Warm-up
 
-`world.warmup(renderer, camera, { mode })` builds every pipeline before the first visible frame. Default `frame`
-renders one real frame under a 1×1 scissor: the only way in three r186 to get exactly the pipelines the first frame
+`world.warmup(renderer, camera, { mode })` builds every pipeline before the first visible frame. The default `frame`
+renders one real frame under a 1×1 scissor, the only way in three r186 to get exactly the pipelines the first frame
 uses. `async` runs `renderer.compileAsync()` (yields between objects) and then disposes and rebuilds the materials
-three compiles wrong that way (transparent double-sided and transmissive ones; see section 13). Result:
-`{ mode, textures, repaired }`. Neither mode issues occlusion queries: under the 1×1 scissor every proxy would report
-occluded (see Occlusion).
-
-Both modes first await `renderer.init()` when the renderer has it, then render the frame with `render()`, not the
-deprecated `renderAsync()`: three logs no deprecation warning, nothing yields between setting the scissor and the
-render, and an attached ledger records the warm-up frame as one `main` frame.
+three compiles wrong that way (transparent double-sided and transmissive ones; `docs/three-r186-notes.md`). The
+result is `{ mode, textures, repaired }`. Neither mode issues occlusion queries (see Occlusion). Both first await
+`renderer.init()` when the renderer has it, then render with `render()`, not the deprecated `renderAsync()`: three
+logs no deprecation warning, nothing yields between setting the scissor and the render, and an attached ledger
+records the warm-up frame as one `main` frame.
 
 ### Overdraw modules: sprite batching, ParticleBudget, ResolutionScaler
 
-- **Sprite batching** (`src/compiler/sprites.ts`, `src/compiler/spriteBatch.ts`): `compile()` collects every
-  `Sprite`, groups them by material keys (`variantHash` and colour), and for each group of at least
-  `spriteThreshold` builds one `Mesh` over an `InstancedBufferGeometry` unit quad with a `SpriteNodeMaterial` that
-  takes every field of the group's material through `material.copy()` (`alphaMap`, stencil, clipping planes and the
-  rest), except `userData`, which the copy would JSON-serialise and which stays empty on the batch material.
-  `alphaTest` is set by hand, because three r186's `NodeMaterial.copy` misses Material's accessor. The batch's own
-  `positionNode` and `scaleNode` read per-instance attributes. A sprite whose material is a subclass of `SpriteMaterial`
-  or `SpriteNodeMaterial`, or holds instance functions (`setup`, `onBeforeRender` …), is not batched
-  (`sprite-custom-material`); nor is one whose node material sets any node slot (`sprite-node-material`), nor one whose
-  `count` is not 1 (`sprite-count`). Under a mirrored
-  scene the batch swaps `FrontSide` and `BackSide` (checked every render): three flips a mesh's front face under a
-  negative world determinant, never a sprite's. The originals go
-  to the hidden layer and keep auto-updating; a `FORGE_HOOK` render hook on the batch copies their world
-  positions and scales into the attributes once per frame, for the main camera only (an invisible sprite gets
-  scale 0; instances outside the four side planes of the frustum are left out, so the count matches what three
-  would have drawn), sorted back to front by projected depth when the material blends normally (what three does
-  for sprites), and sets `instanceCount`. Nested passes (reflections) draw the main camera's list on both
-  backends: three refreshes an object's attributes only on its first render object of a frame, so a second fill
-  for a nested camera would be what the main pass draws (section 13). Reason
-  `sprite-batch`, name `forge:sprites:<programHash>:<n>`, `after.spriteBatches` in the report; skipped sprites
-  carry `sprite-center`, `layers`, `render-order`, `material-invisible`, `sprite-custom-material`, `sprite-node-material`, `sprite-count`,
-  `group-render-order`, `clipping-group`, `custom-hook` or `sprite-threshold`. `decompile()` restores.
-- **`ParticleBudget`** (`src/overdraw/ParticleBudget.ts`): `new ParticleBudget({ tier, particles?, pointSizeScale? })
-  .apply(root)` counts every `Points` object (what its `drawRange` draws), every sprite batch (its instances) and
-  every single sprite; over the tier's `particles` budget, points and batches shrink by one common ratio (points
-  through `setDrawRange`, batches through `userData.forge.cap`, which the sync hook honours by keeping the nearest
-  instances) so the total fits alongside the single sprites, which cannot be capped. `PointsMaterial.size` is
-  multiplied by `pointSizeScale` (0.75 on `phone-low`). Returns `{ tier, budget, before, after, ratio, systems }`;
-  `release()` restores; `apply()` again re-derives from the originals.
-- **`ResolutionScaler`** (`src/overdraw/ResolutionScaler.ts`): `new ResolutionScaler(renderer, { target?, tier?,
-  min, max, step, window, ledger? })`; `update(frameMs)` every frame; every `window` frames the median decides:
-  above `target × 1.05` the scale steps down, below `target × 0.7` it steps up, clamped to `[min, max]`; a change
-  calls `renderer.setPixelRatio(base × scale)` (three resizes the drawing buffer) and updates the ledger's
-  `env.dpr`. `set(scale)`, `dispose()`. Overdraw per pixel is unchanged; `overdraw.pixels` shrinks.
-- **Ledger**: `overdraw.particles`, `overdraw.pixels`; hints `particles-over-budget`, `sprites-unbatched`; bench
-  metrics `particles` and `fillMegapixels` (fragments per pixel × pixels). Conventions for effects: `docs/vfx.md`.
+Sprite batching (`src/compiler/sprites.ts`, `src/compiler/spriteBatch.ts`). `compile()` collects every `Sprite`,
+groups them by material keys (`variantHash` and colour), and for each group of at least `spriteThreshold` builds one
+`Mesh` over an `InstancedBufferGeometry` unit quad with a `SpriteNodeMaterial` that takes every field of the group's
+material through `material.copy()` (`alphaMap`, stencil, clipping planes and the rest) except `userData`, which the
+copy would JSON-serialise and which stays empty on the batch material; `alphaTest` is set by hand because three
+r186's `NodeMaterial.copy` misses Material's accessor. The batch's own `positionNode` and `scaleNode` read
+per-instance attributes. Under a mirrored scene the batch swaps `FrontSide` and `BackSide` (checked every render):
+three flips a mesh's front face under a negative world determinant, never a sprite's. The originals go to the hidden
+layer and keep auto-updating; a `FORGE_HOOK` render hook on the batch copies their world positions and scales into
+the attributes once per frame, for the main camera only (an invisible sprite gets scale 0; instances outside the
+four side planes of the frustum are left out, so the count matches what three would have drawn), sorted back to
+front by projected depth when the material blends normally, and sets `instanceCount`. Nested passes (reflections)
+draw the main camera's list on both backends: three refreshes an object's attributes only on its first render object
+of a frame, so a second fill for a nested camera would be what the main pass draws (`docs/three-r186-notes.md`).
+Reason `sprite-batch`, name `forge:sprites:<programHash>:<n>`, `after.spriteBatches` in the report; skipped sprites
+carry a `spriteRule` reason (section 6) or `sprite-threshold`. `decompile()` restores.
+
+`ParticleBudget` (`src/overdraw/ParticleBudget.ts`): `new ParticleBudget({ tier, particles?, pointSizeScale? })
+.apply(root)` counts every `Points` object (what its `drawRange` draws), every sprite batch (its instances) and every
+single sprite; over the tier's `particles` budget, points and batches shrink by one common ratio (points through
+`setDrawRange`, batches through `userData.forge.cap`, which the sync hook honours by keeping the nearest instances)
+so the total fits alongside the single sprites, which cannot be capped. `PointsMaterial.size` is multiplied by
+`pointSizeScale` (0.75 on `phone-low`). Returns `{ tier, budget, before, after, ratio, systems }`; `release()`
+restores; `apply()` again re-derives from the originals.
+
+`ResolutionScaler` (`src/overdraw/ResolutionScaler.ts`): `new ResolutionScaler(renderer, { target?, tier?, min, max,
+step, window, ledger? })`; call `update(frameMs)` every frame; every `window` frames the median decides: above
+`target × 1.05` the scale steps down, below `target × 0.7` it steps up, clamped to `[min, max]`; a change calls
+`renderer.setPixelRatio(base × scale)` (three resizes the drawing buffer) and updates the ledger's `env.dpr`.
+`set(scale)`, `dispose()`. Overdraw per pixel is unchanged; `overdraw.pixels` shrinks.
+
+In the ledger: `overdraw.particles`, `overdraw.pixels`, hints `particles-over-budget` and `sprites-unbatched`, bench
+metrics `particles` and `fillMegapixels` (fragments per pixel × pixels). Conventions for effects: `docs/vfx.md`.
 
 ### Per-frame JS: freezing, `markDirty`, `RenderScheduler`
 
-What three pays in JavaScript every frame (r186): `render()` walks every descendant in `updateMatrixWorld()`
-(the recursion is unconditional; an object with `matrixAutoUpdate` recomposes its local matrix and forces its
-subtree's world matrices) and again in the render-list build (`visible` objects, hidden originals included).
-Only `matrixAutoUpdate = false` cuts the recomposing and only removing objects from the graph (`originals:
-'detach'`) cuts the walks.
+What three pays in JavaScript every frame (r186): `render()` walks every descendant in `updateMatrixWorld()` (the
+recursion is unconditional; an object with `matrixAutoUpdate` recomposes its local matrix and forces its subtree's
+world matrices) and again in the render-list build (`visible` objects, hidden originals included). Only
+`matrixAutoUpdate = false` cuts the recomposing and only removing objects from the graph (`originals: 'detach'`)
+cuts the walks.
 
-- **Freezing** (`src/compiler/freeze.ts`, `freezableObjects`): at compile, unbatched static-tagged meshes and the
-  topmost ancestors whose subtree is entirely static (hidden unsynced originals, static meshes, plain containers;
-  nothing dynamic-tagged, animated, lit, skinned, bone or sprite inside) get `matrixAutoUpdate = false` after one
-  last `updateMatrix()`. A container freezes only when it also holds at least one such static leaf: an empty
-  container, an anchor `Object3D` with no children, and a light's `target` (added straight to the scene, as
-  `DayNight` does for the sun) are never frozen, since nothing would ever move their matrix again. `decompile()`
-  restores the flags. The village drops from 310 to 34 recomposed matrices per frame (bench baselines); its freeze e2e holds the
-  compiled frame to under 0.5 % of pixels changed at a per-channel tolerance of 24.
-- **`world.markDirty(object)`** moves a frozen static on demand: recomposes every local matrix under `object`,
-  recomputes the world matrices, pushes each batched original in the subtree into its batch in the scene's space
-  (`BatchedMesh` matrix and BVH leaf, `InstancedMesh` through its culling handle, a baked group by rebaking once;
-  sprite batches follow on their own) and returns the number of instances updated. It then recomputes the bounds of
-  each touched batch (`computeBoundingBox`, `computeBoundingSphere`) and instanced group (`refreshBounds`, every LOD
-  level) once, so three's whole-object frustum test never culls an instance moved outside its old bounds while it is
-  on screen, and fits their occlusion proxies to the new bounds. `world.onDirty(listener)` reports
-  `markDirty`, `setVisible`, `compile` and `decompile` (a `RenderScheduler` subscribes to it).
-  - **With `originals: 'detach'`**, a detached original has no parent, so `updateMatrixWorld` alone would give its
-    own local matrix, not its former scene-relative one. `World` records each detached original's former parent (still
-    in the graph; only slotted originals are ever detached) at hide time. `markDirty` on a detached original composes
-    its world matrix from that former parent's current `matrixWorld` (read, not recomputed by this call — `markDirty`
-    on the parent, or an ancestor reached through the still-attached graph, refreshes it) and the original's own
-    freshly recomposed local matrix, instead of the parentless value `updateMatrixWorld` would give. `markDirty` on a
-    former parent also reaches its detached descendants (recursively, for a detached original that itself has
-    children), even though they are no longer its children in the graph.
-  - **The composed matrix and later world-matrix updates.** `markDirty` clears `matrixWorldNeedsUpdate` after
-    composing, so an unforced `updateMatrixWorld()` on a detached original with `matrixAutoUpdate` off keeps the
-    composed matrix. With `matrixAutoUpdate` on (the default, also for detached originals), any call that recomputes its
-    world matrix overwrites the composed one with its local matrix, since it has no parent: `updateMatrixWorld`,
-    `updateWorldMatrix`, `getWorldPosition` and the other `getWorld*` calls, and `lookAt`. Call `markDirty` on it again
-    after such a call.
-- **`RenderScheduler`** (`src/scheduler/RenderScheduler.ts`): `new RenderScheduler({ renderer, scene, camera,
-  ledger?, world?, mixers?, watch?, keepAliveMs?, onRender? })`, `start()` drives `renderer.setAnimationLoop`,
-  `tick(time)` renders only when `invalidate()` was called, the camera's world or projection matrix changed, a
-  watched object moved, a mixer has running actions (mixers are updated every tick), the drawing buffer was
-  resized, or `keepAliveMs` elapsed; otherwise three does nothing for that tick. Baselines are re-captured after
-  each render (three recomputes the camera's projection on its first WebGPU frame). `stats`, `lastReason`,
-  `skippedRecently()` (what `js.skipped` reports through `ledger.attachScheduler`), `stop()`, `dispose()`.
-  - **Running mixer:** a mixer is animating only when one of its active actions (three's private
-    `_actions[0.._nActiveActions)`, `AnimationMixer.js` r186 ~201-202) is actually `isRunning()`, or is scheduled
-    to start later (`_startTime !== null`, set by `startAt()`). `mixer.stats.actions.inUse` (~233) returns
-    `_nActiveActions` with no filtering, so on its own it keeps counting a finished `LoopOnce` action that stays
-    active — `clampWhenFinished` pauses it (`AnimationAction.js` ~771) and without clamping it is only disabled
-    (~772), neither of which removes it from `_actions`; `isRunning()` (~220) is false either way once finished.
-    The check reads these private fields through a reflection cast (pinned by a canary test in
-    `test/unit/render-scheduler.test.ts`) and falls back to `stats.actions.inUse > 0` for a mixer-like object
-    that does not expose them (a test double, or a future three version that renames them). `isRunning()` does
-    not consult `weight`, so an active, enabled, unpaused action with `weight === 0` still counts as running —
-    the scheduler deliberately errs toward rendering here, since a `fadeIn()` starts its target action at weight
-    0 and a skipped tick would miss the start of the fade. An enabled action with a weight interpolant (a
-    `fadeIn()` or `fadeOut()` in progress: three's private `_weightInterpolant`, pinned by its own canary test in the
-    same file) counts as animating too, paused or not: `_updateWeight` evaluates the fade for a paused action, so a finished clip
-    held by `clampWhenFinished` and then faded out blends back over the fade. `tick()` asks before and after
-    `mixer.update()`, so the tick whose update ends a clip or a fade renders that last step.
-  - **Matrices:** `cameraChanged()` and `watchedChanged()` (and `watch()`, for the initial baseline) call
-    `object.updateWorldMatrix(true, false)` before reading `matrixWorld`: three does not recompute it just
-    because a property changed, only a render pass or an explicit update call does, so moving `camera.position`
-    or a watched object's transform without calling `updateMatrixWorld()` is still detected. Do not `watch()` a
-    detached original (`originals: 'detach'`): this per-tick `updateWorldMatrix` call is exactly the hazard
-    described above under "The composed matrix and later world-matrix updates" — with `matrixAutoUpdate` on (the
-    default), it overwrites the world matrix `markDirty` composed for a detached original with a parentless one,
-    every tick. Watch the live object you actually move instead.
-  - **A disposed `World`:** the scheduler holds only the disposer `World.onDirty()` returns, and calls it once
-    from `dispose()`; it never calls back into the `World` at tick time. Constructing a scheduler against an
-    already-disposed `World` throws immediately — that is `World.onDirty()`'s own fail-fast guard, not scheduler
-    code. Disposing the `World` after the scheduler is already running does not throw anywhere: `World.dispose()`
-    clears its dirty-listener set, so the scheduler's subscription is silently dropped, but a disposed `World`
-    can never legitimately emit another dirty event (every mutator throws once it is disposed), and every other
-    detector (`invalidate()`, camera, watched objects, mixers, resize, `keepAliveMs`) keeps working normally.
-    `scheduler.dispose()` is safe to call before or after `world.dispose()`.
-- **Ledger**: `js.hiddenOriginals`, `js.skipped`; budget `objects`; hints `js-objects` (over budget) and
-  `detach-originals` (1 000 or more hidden originals: `originals: 'detach'`); bench metrics `objects` and
-  `autoUpdatedMatrices`.
+Freezing (`src/compiler/freeze.ts`, `freezableObjects`). At compile, unbatched static-tagged meshes and the topmost
+ancestors whose subtree is entirely static (hidden unsynced originals, static meshes, plain containers; nothing
+dynamic-tagged, animated, lit, skinned, bone or sprite inside) get `matrixAutoUpdate = false` after one last
+`updateMatrix()`. A container freezes only when it also holds at least one such static leaf: an empty container, an
+anchor `Object3D` with no children, and a light's `target` (added straight to the scene, as `DayNight` does for the
+sun) are never frozen, since nothing would ever move their matrix again. `decompile()` restores the flags. The
+village drops from 310 to 34 recomposed matrices per frame (bench baselines); its freeze e2e holds the compiled
+frame to under 0.5 % of pixels changed at a per-channel tolerance of 24.
+
+`world.markDirty(object)` moves a frozen static on demand: it recomposes every local matrix under `object`,
+recomputes the world matrices, pushes each batched original in the subtree into its batch in the scene's space
+(`BatchedMesh` matrix and BVH leaf, `InstancedMesh` through its culling handle, a baked group by rebaking once;
+sprite batches follow on their own) and returns the number of instances updated. It then recomputes the bounds of
+each touched batch (`computeBoundingBox`, `computeBoundingSphere`) and instanced group (`refreshBounds`, every LOD
+level) once, so three's whole-object frustum test never culls an instance moved outside its old bounds while it is
+on screen, and fits their occlusion proxies to the new bounds. `world.onDirty(listener)` reports `markDirty`,
+`setVisible`, `compile` and `decompile` (a `RenderScheduler` subscribes to it). With `originals: 'detach'` a detached
+original has no parent, so `updateMatrixWorld` alone would give its own local matrix; `World` records each detached
+original's former parent at hide time (only slotted originals are ever detached), and `markDirty` composes its world
+matrix from that parent's current `matrixWorld` (read, not recomputed; `markDirty` on the parent or an ancestor
+refreshes it) and the original's freshly recomposed local matrix. `markDirty` on a former parent also reaches its
+detached descendants, recursively. It clears `matrixWorldNeedsUpdate` after composing, so an unforced
+`updateMatrixWorld()` on a detached original with `matrixAutoUpdate` off keeps the composed matrix; with
+`matrixAutoUpdate` on (the default, also for detached originals) any call that recomputes its world matrix
+(`updateMatrixWorld`, `updateWorldMatrix`, `getWorldPosition` and the other `getWorld*` calls, `lookAt`) overwrites
+the composed one with its parentless local matrix, so call `markDirty` on it again after such a call.
+
+`RenderScheduler` (`src/scheduler/RenderScheduler.ts`): `new RenderScheduler({ renderer, scene, camera, ledger?,
+world?, mixers?, watch?, keepAliveMs?, onRender? })`; `start()` drives `renderer.setAnimationLoop`, and `tick(time)`
+renders only when `invalidate()` was called, the camera's world or projection matrix changed, a watched object
+moved, a mixer has running actions (mixers are updated every tick), the drawing buffer was resized, or
+`keepAliveMs` elapsed; otherwise three does nothing for that tick. Baselines are re-captured after each render
+(three recomputes the camera's projection on its first WebGPU frame). `stats`, `lastReason`, `skippedRecently()`
+(what `js.skipped` reports through `ledger.attachScheduler`), `stop()`, `dispose()`. A mixer counts as animating
+when one of its active actions (three's private `_actions[0.._nActiveActions)`, `AnimationMixer.js` r186 ~201-202)
+`isRunning()`, is scheduled to start later (`_startTime !== null`, set by `startAt()`), or has a weight interpolant
+(a `fadeIn()` or `fadeOut()` in progress, three's private `_weightInterpolant`, which `_updateWeight` evaluates even
+for a paused action, so a finished clip held by `clampWhenFinished` and then faded out blends back over the fade).
+`mixer.stats.actions.inUse` alone would keep counting a finished `LoopOnce` action, which `clampWhenFinished` pauses
+(`AnimationAction.js` ~771) or otherwise disables (~772) without removing it from `_actions`, while `isRunning()`
+(~220) is false either way. The private fields are read through a reflection cast pinned by canary tests in
+`test/unit/render-scheduler.test.ts`, with `stats.actions.inUse > 0` as the fallback for a mixer-like object that
+does not expose them. `isRunning()` does not consult `weight`, so an enabled, unpaused action at `weight === 0`
+still counts: the scheduler errs toward rendering, since a `fadeIn()` starts its target at weight 0. `tick()` asks
+before and after `mixer.update()`, so the tick whose update ends a clip or a fade renders that last step.
+`cameraChanged()` and `watchedChanged()` (and `watch()`, for the initial baseline) call
+`object.updateWorldMatrix(true, false)` before reading `matrixWorld`, since three recomputes it only in a render
+pass or an explicit update call, so moving `camera.position` or a watched transform without `updateMatrixWorld()`
+is still detected. Do not `watch()` a detached original: that per-tick call overwrites the matrix `markDirty`
+composed, every tick; watch the live object you move instead. The scheduler holds only the disposer
+`World.onDirty()` returns and calls it once from `dispose()`, never calling back into the `World` at tick time:
+constructing one against a disposed `World` throws (`World.onDirty()`'s own guard), disposing the `World` while the
+scheduler runs throws nowhere (its listener set is cleared, and every other detector keeps working), and
+`scheduler.dispose()` is safe before or after `world.dispose()`.
+
+In the ledger: `js.hiddenOriginals`, `js.skipped`, budget `objects`, hints `js-objects` (over budget) and
+`detach-originals` (1 000 or more hidden originals: use `originals: 'detach'`); bench metrics `objects` and
+`autoUpdatedMatrices`.
 
 ### Lighting: `DayNight`, `ShadowBudget`, lightmaps
 
-- **`DayNight`** (`src/lighting/DayNight.ts`): one sun on a circle (rise 6, set 18, a faint moon below), a
-  gradient sky dome (`sky-dome`, vertex colours, static-tagged so it freezes and draws once), a hemisphere light,
-  fog and background following the horizon; `setTime(hours)` drives all of it and requests a shadow-map render
-  only when the sun moved `everyDegrees` (default 0.5) since the last one, through `shadow.needsUpdate` with
-  `autoUpdate` off. The dome's vertex colours are rewritten only when the zenith or horizon colour differs from the
-  one they were last written from, so stepping the hour within an unchanging palette costs no vertex walk and no
-  re-upload; `refreshDome()` drops that cache, for a caller that rewrote the dome's colours or geometry itself.
-  `refreshShadow()`, `dispose()`. The day/night benchmark renders the map every second frame.
-- **`ShadowBudget`** (`src/lighting/ShadowBudget.ts`): `apply(scene)` switches shadows off on the `off` tiers,
-  drops point-light shadows off phones, then halves the largest map until the texel sum fits the tier's
-  `shadowTexels` budget (floor `minMapSize`); three resizes the targets on the next shadow render. `release()`
-  restores. `ShadowBudget.freeze(light)` returns a `refresh()` for static lights.
-- **Lightmaps**: the registry keys `lightMap` and its channel, `attributeSignature` includes `uv1`, and the bake
-  carries and welds every UV set, so lightmapped statics batch and bake without losing their coordinates.
-  Authoring notes: `docs/lighting.md`.
-- **Bench**: `shadowPassesPerFrame` and `shadowTexels` (means over the measured frames, texels rounded) are gated; the optimized day/night and boss
-  fight apply `ShadowBudget` for the detected tier.
+`DayNight` (`src/lighting/DayNight.ts`) is one sun on a circle (rise 6, set 18, a faint moon below), a gradient sky
+dome (`sky-dome`, vertex colours, static-tagged so it freezes and draws once), a hemisphere light, and fog and
+background following the horizon. `setTime(hours)` drives all of it and requests a shadow-map render only when the
+sun moved `everyDegrees` (default 0.5) since the last one, through `shadow.needsUpdate` with `autoUpdate` off. The
+dome's vertex colours are rewritten only when the zenith or horizon colour differs from the one they were last
+written from, so stepping the hour within an unchanging palette costs no vertex walk and no re-upload;
+`refreshDome()` drops that cache for a caller that rewrote the dome itself. `refreshShadow()`, `dispose()`. The
+day/night benchmark renders the map every second frame.
+
+`ShadowBudget` (`src/lighting/ShadowBudget.ts`): `apply(scene)` switches shadows off on the `off` tiers, drops
+point-light shadows off phones, then halves the largest map until the texel sum fits the tier's `shadowTexels`
+budget (floor `minMapSize`); three resizes the targets on the next shadow render. `release()` restores.
+`ShadowBudget.freeze(light)` returns a `refresh()` for static lights.
+
+Lightmaps: the registry keys `lightMap` and its channel, `attributeSignature` includes `uv1`, and the bake carries
+and welds every UV set, so lightmapped statics batch and bake without losing their coordinates. Authoring notes:
+`docs/lighting.md`. In the bench, `shadowPassesPerFrame` and `shadowTexels` (means over the measured frames, texels
+rounded) are gated; the optimized day/night and boss fight apply `ShadowBudget` for the detected tier.
 
 ### Skinning: `bakeAnimationTexture`, `AnimatedInstances`
 
-- **`bakeAnimationTexture(prototype, clips, { fps })`** (`src/skinning/bakeAnimationTexture.ts`): plays every clip
-  on the prototype at the origin (`LoopOnce`, clamped, so the last row is the end pose) and copies every distinct
-  skeleton's `boneMatrices` into one RGBA float `DataTexture`: a row per frame, four texels per bone, skeletons
-  after each other (`parts[i].boneOffset`); `clips[i]` = `{ name, start, frames, duration }`, `parts[i]` =
-  `{ mesh, matrix, boneOffset }`. The prototype's transform and pose are restored.
-- **`AnimatedInstances({ animation, count, material? })`** (`src/skinning/AnimatedInstances.ts`): one `Mesh` per
-  part over an `InstancedBufferGeometry` sharing the part's buffers, `MeshStandardNodeMaterial` with a TSL
-  `positionNode` that fetches the instance's four bone matrices for its current row (`clipStart + floor(mod((time
-  × speed + offset) × fps, frames))`), applies `bindMatrixInverse × Σ bone × weight × bindMatrix`, then the part's
-  offset (`parts[i].matrix`, a `mat4` uniform of that part's material, read every frame) and the instance matrix, and
-  assigns `normalLocal`. The instance matrices, the characters' own, live in one `InstancedInterleavedBuffer` the parts
-  share (four separate attributes would exceed WebGPU's eight vertex buffers; a plain `InterleavedBuffer` is read per
-  vertex, because both backends take the per-instance step from `isInstancedInterleavedBuffer`). `setMatrixAt` stores
-  the character's matrix and `getMatrixAt` returns it, `setClipAt(i, clip, { offset, speed })`, `setTime(seconds)`,
-  `addTo`, `dispose`. Meshes are `forge:vat:<part>` with `userData.forge = { kind: 'vat', instances }` (untagged: a
-  tag overwrites the marker).
-- **Ledger**: reason `vat-instanced`, `skinning.vatInstances` / `vatVertices`, budget `bones`, hints
-  `bones-over-budget` and `skinned-crowd` (50 skinned draws). Authoring notes: `docs/skinning.md`.
-- **Bench**: the optimized crowd bakes each of its eight prototypes and replaces its 25 characters with one
-  `AnimatedInstances`: 401 → 17 submissions, 271 k skinned vertices → 0.
+`bakeAnimationTexture(prototype, clips, { fps })` (`src/skinning/bakeAnimationTexture.ts`) plays every clip on the
+prototype at the origin (`LoopOnce`, clamped, so the last row is the end pose) and copies every distinct skeleton's
+`boneMatrices` into one RGBA float `DataTexture`: a row per frame, four texels per bone, skeletons after each other
+(`parts[i].boneOffset`); `clips[i]` is `{ name, start, frames, duration }` and `parts[i]` is `{ mesh, matrix,
+boneOffset }`. The prototype's transform and pose are restored.
+
+`AnimatedInstances({ animation, count, material? })` (`src/skinning/AnimatedInstances.ts`) builds one `Mesh` per part
+over an `InstancedBufferGeometry` sharing the part's buffers, with a `MeshStandardNodeMaterial` whose TSL
+`positionNode` fetches the instance's four bone matrices for its current row (`clipStart + floor(mod((time × speed +
+offset) × fps, frames))`), applies `bindMatrixInverse × Σ bone × weight × bindMatrix`, then the part's offset
+(`parts[i].matrix`, a `mat4` uniform of that part's material, read every frame) and the instance matrix, and assigns
+`normalLocal`. The instance matrices live in one `InstancedInterleavedBuffer` the parts share (four separate
+attributes would exceed WebGPU's eight vertex buffers; a plain `InterleavedBuffer` is read per vertex, because both
+backends take the per-instance step from `isInstancedInterleavedBuffer`). `setMatrixAt` and `getMatrixAt`,
+`setClipAt(i, clip, { offset, speed })`, `setTime(seconds)`, `addTo`, `dispose`. Meshes are `forge:vat:<part>` with
+`userData.forge = { kind: 'vat', instances }` (untagged: a tag overwrites the marker). In the ledger: reason
+`vat-instanced`, `skinning.vatInstances` and `vatVertices`, budget `bones`, hints `bones-over-budget` and
+`skinned-crowd` (50 skinned draws). Authoring notes: `docs/skinning.md`. The optimized crowd bench bakes each of its
+eight prototypes and replaces its 25 characters with one `AnimatedInstances`: 401 → 17 submissions, 271 k skinned
+vertices → 0.
 
 ### Memory and load: `createLoader`, `ResourceTracker`, `Streamer`
 
-- **`createLoader(renderer, { decoders, draco, ktx2, meshopt })`** (`src/load/createLoader.ts`): a `GLTFLoader` with
-  Draco, KTX2 (`detectSupport` after `renderer.init()`) and meshopt wired; the addons import lazily.
-  `disposeLoader(loader)` ends the worker pools. `threeforge decoders <dir>` (`src/cli/decoders.ts`) copies the
-  decoder files from the installed three.
-- **`ResourceTracker`** (`src/memory/ResourceTracker.ts`): `track(root | geometry | texture | material, owner?)`,
-  `release(owner)` disposes what no other owner holds (never a material the registry knows) and detaches an
-  Object3D owner, `dispose()`, `stats()`. `collectResources(root)` and `unreferencedResources(info, scene,
-  allowance)` are the building blocks (`src/memory/resources.ts`).
-- **`Streamer`** (`src/streaming/Streamer.ts`): residency of `world.chunks()` (batches, instanced groups and baked
-  meshes carry `userData.forgeChunk`) plus uncompiled static scene children placed by position, keyed by x and z.
-  Resident while the ground-plane distance from the camera to the cell's box is at most `radius` (default
-  `camera.far`), unloaded past `radius + margin × chunkSize` (first update strict). Unload removes the objects and
-  disposes the geometries and textures no resident chunk shares, including a BatchedMesh's matrix, indirect and
-  colour textures (never `BatchedMesh.dispose()`, which nulls them); load re-adds them and three re-uploads. `assign`,
-  `userData.forgeStream = false`, `stats()`, `onChange`, `dispose()` (every chunk resident again, then the chunks and
-  the object index released, so a disposed Streamer holds none of the World's objects, `stats()` reports none and a
-  later `update()` does nothing). `ledger.attachStreamer(streamer)`.
-- **Ledger**: `memory.unreferenced`, `memory.chunks`, `memory.measured`; budget `geometryBytes` (256 / 96 / 48 MB); hints
-  `geometry-bytes` and `unreferenced-resources` (eight or more). Authoring notes: `docs/memory.md`.
-- **Bench**: zen's ground is 64 tiles with a 512² texture each (85 MB) under fog to 600 m; the optimized variant
-  streams them: 32 of 64 chunks resident at the start camera. `test/e2e/streaming.spec.ts` (5,000 objects) holds the
-  start frame to under 0.5 % of pixels changed against naive at a per-channel tolerance of 24.
+`createLoader(renderer, { decoders, draco, ktx2, meshopt })` (`src/load/createLoader.ts`) returns a `GLTFLoader` with
+Draco, KTX2 (`detectSupport` after `renderer.init()`) and meshopt wired; the addons import lazily.
+`disposeLoader(loader)` ends the worker pools. `threeforge decoders <dir>` (`src/cli/decoders.ts`) copies the decoder
+files from the installed three.
+
+`ResourceTracker` (`src/memory/ResourceTracker.ts`): `track(root | geometry | texture | material, owner?)`,
+`release(owner)` disposes what no other owner holds (never a material the registry knows) and detaches an Object3D
+owner, `dispose()`, `stats()`. `collectResources(root)` and `unreferencedResources(info, scene, allowance)` are the
+building blocks (`src/memory/resources.ts`).
+
+`Streamer` (`src/streaming/Streamer.ts`) manages the residency of `world.chunks()` (batches, instanced groups and
+baked meshes carry `userData.forgeChunk`) plus uncompiled static scene children placed by position, keyed by x and
+z. A chunk is resident while the ground-plane distance from the camera to the cell's box is at most `radius`
+(default `camera.far`) and unloaded past `radius + margin × chunkSize` (first update strict). Unload removes the
+objects and disposes the geometries and textures no resident chunk shares, including a BatchedMesh's matrix,
+indirect and colour textures (never `BatchedMesh.dispose()`, which nulls them); load re-adds them and three
+re-uploads. `assign`, `userData.forgeStream = false`, `stats()`, `onChange`, `dispose()` (every chunk resident again,
+then the chunks and the object index released, so a disposed Streamer holds none of the World's objects, `stats()`
+reports none and a later `update()` does nothing). `ledger.attachStreamer(streamer)`.
+
+In the ledger: `memory.unreferenced`, `memory.chunks`, `memory.measured`, budget `geometryBytes` (256 / 96 / 48 MB),
+hints `geometry-bytes` and `unreferenced-resources` (eight or more). Authoring notes: `docs/memory.md`. In the bench,
+zen's ground is 64 tiles with a 512² texture each (85 MB) under fog to 600 m and the optimized variant streams them,
+32 of 64 chunks resident at the start camera; `test/e2e/streaming.spec.ts` (5,000 objects) holds the start frame to
+under 0.5 % of pixels changed against naive at a per-channel tolerance of 24.
 
 ## 8. Bake: one mesh per finished group
 
 `new World(scene, { bake: true | options })` replaces the `BatchedMesh` of each finished static group with one
-world-space `Mesh` (`bakeGeometries` in `src/compiler/bake.ts`; every UV set present in all entries, `uv` to `uv3`,
-is carried and compared by the weld):
+scene-space `Mesh` (`bakeGeometries` in `src/compiler/bake.ts`; every UV set present in all entries, `uv` to `uv3`,
+is carried and compared by the weld). The steps:
 
-1. **Gather**: positions and normals transformed to the scene's space (world space for an untransformed scene;
-   mirrored matrices flip winding), uv when every module has it, tangents when every module has them (xyz turned by
-   the module's matrix and normalised, `w` kept as it is: three builds the bitangent as
-   `cross(normalView, tangentView) * tangent.w` with no determinant term, so flipping `w` under a mirrored matrix
-   would change the normal-mapped shading), colour from vertex colours × instance tint, where the vertex colours
-   count only when the module's material reads them (`BakeEntry.vertexColors`; with a tint the material becomes a
-   `vertexColors` clone, and a rebake keeps the flag recorded at bake time).
-2. **Contact seams**: triangles are grouped by plane, split into the two facing sides and merged into islands along
-   shared edges. An island is paired only when it covers its region exactly once: every edge (by position) is used at
-   most twice inside it (an edge used three times drops out of the outline, so regions of different size could share
-   one), and no two of its triangles overlap by more than `tolerance` in the plane (a doubled area could otherwise hide
-   behind a matching outline). Its outline is then the set of edges used once, and two such islands with the same
-   outline cover the same region, whatever their triangulations. An island whose outline equals an island's on the
-   other side is a coincident, opposite-winding pair. Both islands go as a seam between touching solids only when all
-   five hold:
+1. Gather: positions and normals transformed to the scene's space (world space for an untransformed scene; mirrored
+   matrices flip winding), uv when every module has it, tangents when every module has them (xyz turned by the
+   module's matrix and normalised, `w` kept as it is: three builds the bitangent as `cross(normalView, tangentView)
+   * tangent.w` with no determinant term, so flipping `w` under a mirrored matrix would change the normal-mapped
+   shading), colour from vertex colours × instance tint, where the vertex colours count only when the module's
+   material reads them (`BakeEntry.vertexColors`; with a tint the material becomes a `vertexColors` clone, and a
+   rebake keeps the flag recorded at bake time).
+2. Contact seams: triangles are grouped by plane, split into the two facing sides and merged into islands along
+   shared edges. An island is paired only when it covers its region exactly once: every edge (by position) is used
+   at most twice inside it (an edge used three times drops out of the outline, so regions of different size could
+   share one), and no two of its triangles overlap by more than `tolerance` in the plane (a doubled area could hide
+   behind a matching outline). Its outline is then the set of edges used once, so two islands with the same outline
+   cover the same region whatever their triangulations, and an island whose outline equals an island's on the other
+   side is a coincident, opposite-winding pair. Both go as a seam between touching solids only when all five hold:
    1. the two islands come from disjoint sets of modules (entries);
    2. every module involved is a closed, manifold, outward shell: every edge (by position) is used exactly once in
       each direction, and every connected component encloses a positive signed volume (computed once per module in
@@ -1081,319 +883,188 @@ is carried and compared by the weld):
    3. every module involved draws front faces only (`BakeEntry.side` is `FrontSide`, set by `bakeEntriesOf`): a
       `BackSide` material draws exactly the faces a seam hides (from inside a modular room the shared wall is the
       nearest drawn surface), and a `DoubleSide` one draws both;
-   4. no module involved casts shadows (`BakeEntry.castShadow` is `false`, copied from each original; three's default):
-      non-VSM shadow maps draw a front-side material's back faces (`WebGLShadowMap.js`, the shadow override in
-      `renderers/common/Renderer.js`), so a seam face is the nearest caster for the neighbouring module's face turned
-      away from the light, which a toon ramp still lights at 0.7 × light × shadow. A shadow-casting static keeps its
-      seam faces. A rebake (hiding or showing a module) decides every removal again, counting a module as casting when
-      its original or the baked mesh casts: once neither casts, the next rebake may remove the seams, and turning
-      casting on for either after compile keeps the faces only after the next rebake or a `decompile()` and
-      `compile()`: until then the baked mesh casts without those faces if casting was turned on for the baked mesh
-      itself, and casts nothing at all if it was turned on only for a hidden original;
+   4. no module involved casts shadows (`BakeEntry.castShadow` is `false`, copied from each original): non-VSM shadow
+      maps draw a front-side material's back faces (`WebGLShadowMap.js`, the shadow override in
+      `renderers/common/Renderer.js`), so a seam face is the nearest caster for the neighbouring module's face
+      turned away from the light, which a toon ramp still lights at 0.7 × light × shadow. A rebake (hiding or
+      showing a module) decides every removal again, counting a module as casting when its original or the baked
+      mesh casts: once neither casts, the next rebake may remove the seams, and turning casting on for either after
+      compile keeps the faces only after the next rebake or a `decompile()` and `compile()`; until then the baked
+      mesh casts without those faces if casting was turned on for the baked mesh itself, and casts nothing at all if
+      it was turned on only for a hidden original;
    5. every module involved is opaque, by an allowlist of three's default material hooks (`BakeEntry.opaque`, set by
       `bakeEntriesOf`): exactly one of three r186's 35 material classes (`isBuiltInMaterial`: the 18 of
       `src/materials/Materials.js` and the 17 of `src/materials/nodes/NodeMaterials.js`; a subclass fails, since an
-      overridden method such as a node material's `setup*` builds the shader and can discard); no function assigned to
-      the instance (`hasOwnFunctions`: no instance `onBeforeRender`, `setup`, `setupOutput` …); not transparent; normal
-      or no blending; no `alphaTest`, `alphaHash`, `alphaToCoverage` or
-      `transmission`; not a `ShaderMaterial`; every node slot empty (every `*Node` property, such as `colorNode`,
-      `opacityNode`, `outputNode`, `positionNode` or `fragmentNode`, and any other own property holding a node, is
-      null, because `Discard()` can sit in any of them; under `World` such a material never reaches this test, since its
-      group is not baked at all: see "Groups the bake leaves to batching"); `onBeforeCompile` and `customProgramCacheKey` are three's own (`Material`'s, or `NodeMaterial`'s for a
-      node material); `defines` holds only three's material defines (`STANDARD`, `PHYSICAL`, `TOON`, `MATCAP`); no
-      `displacementMap`, material `clippingPlanes` or `polygonOffset`; `depthFunc` is `LessEqualDepth`; depth write and
-      depth test on; no `wireframe` or `stencilWrite`. Renderer-level clipping (`renderer.clippingPlanes`) is outside
-      what the bake can see. A rebake keeps the decision made at bake time and requires the current material (for a
-      tinted group, its vertex-colour clone) to pass too, so a rebake never removes more than the bake allowed.
+      overridden `setup*` builds the shader and can discard); no function assigned to the instance
+      (`hasOwnFunctions`); not transparent; normal or no blending; no `alphaTest`, `alphaHash`, `alphaToCoverage` or
+      `transmission`; not a `ShaderMaterial`; every node slot empty (every `*Node` property and any other own
+      property holding a node, because `Discard()` can sit in any of them; under `World` such a material never
+      reaches this test, since its group is not baked at all, see below); `onBeforeCompile` and
+      `customProgramCacheKey` are three's own; `defines` holds only three's material defines (`STANDARD`,
+      `PHYSICAL`, `TOON`, `MATCAP`); no `displacementMap`, material `clippingPlanes` or `polygonOffset`; `depthFunc`
+      is `LessEqualDepth`; depth write and depth test on; no `wireframe` or `stencilWrite`. Renderer-level clipping
+      (`renderer.clippingPlanes`) is outside what the bake can see. A rebake keeps the decision made at bake time and
+      requires the current material (for a tinted group, its vertex-colour clone) to pass too, so a rebake never
+      removes more than the bake allowed.
 
    Every other coincident, opposite pair stays and is counted in `keptCoincidentFaces` (only faces the bake does not
-   remove otherwise, so a kept face that is later buried is not counted): back-to-back sign cards, a floor lying on a
-   ceiling, a pair inside one module, a back-side, double-sided, translucent or shadow-casting pair, a face against a
-   flat slab, an open box, an inside-out box, a shell joined to another part by a shared edge, an island whose triangles
-   overlap. Islands with an edge used three or more times are not paired at all, and partial overlaps stay too.
-3. **Duplicates** (`removeDuplicateFaces`, default on): copies of one triangle (the same three points, in any entry,
-   excluded ones included) are gathered, and a same-winding set loses its later copies only when all three hold:
-   every copy is in an entry whose faces may be removed (opaque, front-side, casting no shadow, not
-   `forgeBake = false`); every copy draws the same as the first (each corner's normal and tangent direction within
-   `normalAngle`, tangent `w` identical, uvs within 1e-5, gathered colour with the instance tint within
-   `colorTolerance`); and no other triangle lies in their plane over them (a copy triangulated differently, a
-   double- or back-side face). three draws the later of two copies at equal depth, so a copy that draws differently
-   decides the pixel and stays. Kept copies are counted in `keptDuplicateFaces`. Two islands on the same side of a
-   plane never share an outline (shared outline edges fuse them into one island), and a region covered twice with
-   different triangulations fuses into one island with no outline at all: it is skipped and stays doubled, an
-   invisible cost.
-4. **Buried faces** (opt-in `removeBuried`): 24 rays over the front hemisphere from each face, cast against a BVH of
-   the group's opaque faces of front-side or double-sided modules (three-mesh-bvh), counting only hits on a triangle's
+   remove otherwise): back-to-back sign cards, a floor lying on a ceiling, a pair inside one module, a back-side,
+   double-sided, translucent or shadow-casting pair, a face against a flat slab, an open box, an inside-out box, a
+   shell joined to another part by a shared edge, an island whose triangles overlap. Islands with an edge used three
+   or more times are not paired at all, and partial overlaps stay too.
+3. Duplicates (`removeDuplicateFaces`, default on): copies of one triangle (the same three points, in any entry,
+   excluded ones included) are gathered, and a same-winding set loses its later copies only when every copy is in an
+   entry whose faces may be removed (opaque, front-side, casting no shadow, not `forgeBake = false`), every copy
+   draws the same as the first (each corner's normal and tangent direction within `normalAngle`, tangent `w`
+   identical, uvs within 1e-5, gathered colour with the instance tint within `colorTolerance`), and no other triangle
+   lies in their plane over them (a copy triangulated differently, a double- or back-side face). three draws the
+   later of two copies at equal depth, so a copy that draws differently decides the pixel and stays. Kept copies are
+   counted in `keptDuplicateFaces`. Two islands on the same side of a plane never share an outline (shared outline
+   edges fuse them), and a region covered twice with different triangulations fuses into one island with no outline
+   at all: it is skipped and stays doubled, an invisible cost.
+4. Buried faces (opt-in `removeBuried`): 24 rays over the front hemisphere from each face, cast against a BVH of the
+   group's opaque faces of front-side or double-sided modules (three-mesh-bvh), counting only hits on a triangle's
    back side: a viewer beyond the hit, looking back along the ray, then sees that triangle drawn (a front-side card
    facing the face shows such a viewer its culled back, so it blocks nothing; a face pressed against a neighbouring
-   solid's front face is buried only when that solid's far side is within `distance`). The face is buried only if every ray is
-   blocked within `distance` measured along the face normal (default 0.1 units): solid right in front of it. Only faces
-   of opaque, front-side modules that cast no shadow are removed; room interiors and open backsides survive; back-side
-   faces never block a ray (a back-side shell draws its far wall behind whatever is inside it).
-5. **Weld**: vertices merge only when position (`tolerance`, default 1e-4), normal and tangent xyz (`normalAngle`,
-   default 0.5°), tangent `w` (exact), uv (exact) and colour (`colorTolerance`, default 1/255) agree, so a merge moves
-   shading by at most those tolerances; `bake.spec.ts` holds every baked scene it renders under 0.05 % changed pixels
-   at a per-channel tolerance of 4.
+   solid's front face is buried only when that solid's far side is within `distance`). The face is buried only if
+   every ray is blocked within `distance` measured along the face normal (default 0.1 units). Only faces of opaque,
+   front-side modules that cast no shadow are removed; room interiors and open backsides survive; back-side faces
+   never block a ray (a back-side shell draws its far wall behind whatever is inside it).
+5. Weld: vertices merge only when position (`tolerance`, default 1e-4), normal and tangent xyz (`normalAngle`,
+   default 0.5°), tangent `w` (exact), uv (exact) and colour (`colorTolerance`, default 1/255) agree, so a merge
+   moves shading by at most those tolerances; `bake.spec.ts` holds every baked scene it renders under 0.05 % changed
+   pixels at a per-channel tolerance of 4.
 
-**Groups the bake leaves to batching**: `World` batches, rather than bakes, a group whose material the bake cannot
-prove draws the merged, scene-space geometry as it drew each module (`bakeProvesReads` in `src/compiler/batchStatics.ts`): one that is not exactly one of three's own material classes, has a function assigned to the instance,
-has a node in any slot, or has a `displacementMap`. A node graph can read `positionLocal`, `normalLocal` or
-`positionGeometry` inside a `Fn` closure nothing inspects before it builds, and three displaces along the local normal
-in local units, so all of these may change once the geometry is in scene space (a `normalLocal` colour node and a
-displacement map on scaled, rotated boxes changed 4.40 % of the frame on both backends when baked, and 0 once
-batched). `alphaHash` and an object-space normal map on three's own materials still bake: they read mesh-local space,
-which batching and instancing move the same way, so they changed the same pixels baked, batched or instanced (section 7,
-the `batch-local-space` hint) and leaving the bake would restore none. It also batches a group where any geometry carries an attribute the bake does not carry faithfully (`unbakeableAttribute(geometry, vertexColors, builtInReads)` in
-`src/compiler/bake.ts`, not exported from the package entry point): a four-component `color` the material reads (the
-bake writes three components, and three multiplies the alpha into the diffuse colour, so a glTF `BLEND` material with
-an RGBA `COLOR_0` would render more opaque), a `color` the material's `vertexColors: false` ignores but something
-other than three's own code may read, or any attribute outside `position`, `normal`, `tangent`, `uv` to `uv3` and
-`color` (a custom attribute a node material reads). The bake drops a `color` its flag ignores only when the material is
-one of three's own classes with no instance function and no node in any slot: an allowlist, since a `colorNode =
-vertexColor()` or an overridden `setupDiffuseColor` reads the attribute whatever the flag says. `BakeSummary.unbakeableEntries`
-counts those meshes.
+Groups the bake leaves to batching. `World` batches, rather than bakes, a group whose material the bake cannot prove
+draws the merged, scene-space geometry as it drew each module (`bakeProvesReads` in `src/compiler/batchStatics.ts`):
+one that is not exactly one of three's own material classes, has a function assigned to the instance, has a node in
+any slot, or has a `displacementMap`. A node graph can read `positionLocal`, `normalLocal` or `positionGeometry`
+inside a `Fn` closure nothing inspects before it builds, and three displaces along the local normal in local units,
+so all of these may change once the geometry is in scene space (a `normalLocal` colour node and a displacement map
+on scaled, rotated boxes changed 4.40 % of the frame on both backends when baked, and 0 once batched). `alphaHash`
+and an object-space normal map on three's own materials still bake: they read mesh-local space, which batching and
+instancing move the same way, so they changed the same pixels baked, batched or instanced (section 7, the
+`batch-local-space` hint) and leaving the bake would restore none. It also batches a group where any geometry
+carries an attribute the bake does not carry faithfully (`unbakeableAttribute(geometry, vertexColors, builtInReads)`
+in `src/compiler/bake.ts`, not exported from the package entry point): a four-component `color` the material reads
+(the bake writes three components, and three multiplies the alpha into the diffuse colour, so a glTF `BLEND`
+material with an RGBA `COLOR_0` would render more opaque), a `color` the material's `vertexColors: false` ignores but
+something other than three's own code may read, or any attribute outside `position`, `normal`, `tangent`, `uv` to
+`uv3` and `color`. The bake drops a `color` its flag ignores only when the material is one of three's own classes
+with no instance function and no node in any slot: an allowlist, since a `colorNode = vertexColor()` or an
+overridden `setupDiffuseColor` reads the attribute whatever the flag says. `BakeSummary.unbakeableEntries` counts
+those meshes.
 
-**Near-plane limitation (known in 0.9.0).** Seam and buried-face removal judge what a camera outside the modules can
+Near-plane limitation (known in 0.9.0). Seam and buried-face removal judge what a camera outside the modules can
 see. A camera whose near plane cuts into a module (a first-person camera pressed against a wall, near 0.1) clips that
 module's front face; naive, it then sees the neighbouring module's contact face, which faces into the clipped module
 and is drawn; baked, that face is gone and the neighbour's other faces point away and are culled, so the view goes
 through both modules. Keep such cameras out of the solids, or exclude the modules with `forgeBake = false`.
 
-**Direct `bakeGeometries` callers**: `bakeEntriesOf` (and so `World`) sets every entry flag from the material. An
-entry without `opaque` counts as not opaque, so it gets no seam and no buried-face removal (a missed deletion is
-invisible, a wrong one is visible); an entry without `vertexColors` keeps multiplying its geometry's colour attribute
-by the tint, as before; an entry without `side` counts as not front-side, so it loses no faces either
-(`doubleSided: true` has the same effect); an entry without `castShadow: false` counts as a shadow caster and loses no
-faces.
+Direct `bakeGeometries` callers: `bakeEntriesOf` (and so `World`) sets every entry flag from the material. An entry
+without `opaque` counts as not opaque, so it gets no seam and no buried-face removal; an entry without
+`vertexColors` keeps multiplying its geometry's colour attribute by the tint; an entry without `side` counts as not
+front-side (`doubleSided: true` has the same effect) and an entry without `castShadow: false` counts as a shadow
+caster, so neither loses faces.
 
 Control and inspection: `mesh.userData.forgeBake = false` passes a module through untouched; the compile report's
-`bake` block counts seams, coincident faces the seam guard kept and the bake left in place (`keptCoincidentFaces`),
-duplicates, duplicates kept (`keptDuplicateFaces`), buried faces, welded vertices, excluded entries and meshes left
-to batching (`unbakeableEntries`) (the CLI prints the kept counts next to the seams and duplicates); `world.bakeDebug()`
-returns a copy of the removed faces as red unlit meshes, a snapshot the caller owns and disposes (a later rebake or
-`decompile()` never touches it); hiding a module rebakes its group; `decompile()` restores. Instanced
-groups and batch-synced dynamics are never baked. The CLI's `analyze --bake --views N` bakes and checks pixel parity
-from N+1 camera angles: the verdict passes a view with up to `--parity` percent of its pixels changed (default 0.5),
-and `--parity 0` fails it unless every view has `changedPixels: 0` (no channel moving by more than 24). Verified in
-`test/e2e/bake.spec.ts` on both backends, each view held to under 0.05 % of pixels changed at a per-channel tolerance
-of 4: the village bake; a 6×3 modular wall loses exactly its 27
-seams, also under a mirrored scene; back-to-back sign cards and a floor lying on a ceiling keep both faces, seen from
-both sides; touching back-side rooms keep their shared wall, seen from inside and from outside; touching toon boxes
-that cast shadows keep their seam, lit along it with shadows on; a mirrored, normal-mapped mesh baked by
-`bakeGeometries` keeps its tangents; a block 5 cm inside a solid goes only with `removeBuried`; two crates in one
-place differing only by colour keep the one three draws on top; RGBA vertex colours and a custom attribute stay out
-of the bake. In `test/e2e/cli.spec.ts`, the 2CylinderEngine assembly passes `analyze --bake --views 3` at the default
-0.5 % over four views.
+`bake` block counts seams, `keptCoincidentFaces`, duplicates, `keptDuplicateFaces`, buried faces, welded vertices,
+excluded entries and `unbakeableEntries` (the CLI prints the kept counts next to the seams and duplicates);
+`world.bakeDebug()` returns a copy of the removed faces as red unlit meshes, a snapshot the caller owns and disposes;
+hiding a module rebakes its group; `decompile()` restores. Instanced groups and batch-synced dynamics are never
+baked. The CLI's `analyze --bake --views N` bakes and checks pixel parity from N+1 camera angles: the verdict passes
+a view with up to `--parity` percent of its pixels changed (default 0.5), and `--parity 0` fails it unless every
+view has `changedPixels: 0` (no channel moving by more than 24). Verified in `test/e2e/bake.spec.ts` on both
+backends, each view held to under 0.05 % of pixels changed at a per-channel tolerance of 4: the village bake; a 6×3
+modular wall loses exactly its 27 seams, also under a mirrored scene; back-to-back sign cards and a floor lying on a
+ceiling keep both faces, seen from both sides; touching back-side rooms keep their shared wall, seen from inside and
+from outside; touching toon boxes that cast shadows keep their seam, lit along it with shadows on; a mirrored,
+normal-mapped mesh baked by `bakeGeometries` keeps its tangents; a block 5 cm inside a solid goes only with
+`removeBuried`; two crates in one place differing only by colour keep the one three draws on top; RGBA vertex
+colours and a custom attribute stay out of the bake. In `test/e2e/cli.spec.ts`, the 2CylinderEngine assembly passes
+`analyze --bake --views 3` at the default 0.5 % over four views.
 
 ## 9. Character assembler
 
 `assembleCharacter({ skeleton, wardrobe, equipped, atlas: { size }, material })` merges skinned parts onto one shared
 skeleton: bones are remapped by name, textures are packed into a k×k grid atlas (a `DataTexture` in node, an
 `OffscreenCanvas` in the browser) with uv clamping and a half-texel inset, and one skinned mesh with one material
-results. `equip(part)` / `unequip(part)` rebuild only the vertex buffer; the draw count never changes. The report
-gives the atlas cells (`cellOf`), bones, vertices; `dispose()` frees the atlas. This is the "PolyMorph lesson": gear
-swaps change data, not draw calls.
+results. `equip(part)` and `unequip(part)` rebuild only the vertex buffer; the draw count never changes. The report
+gives the atlas cells (`cellOf`), bones and vertices; `dispose()` frees the atlas. Gear swaps change data, not draw
+calls.
 
 ## 10. For AI agents: hook, CLI, MCP
 
-- **Hook**: `exposeToAgents({ ledger, world, renderer, scene, camera })` publishes `window.__threeforge` with
-  `version`, `schemaVersion` (3, the frame snapshot's), `frame()`, `frameAsync()` (waits one animation frame so shadow
-  maps update, renders if it can), `compile()` / `decompile()`, `measureOverdraw()`, `measureMemory()`, `hints()`,
-  `report()`. Returns a disposer.
-  It lets any script on the page call `compile()`/`decompile()` and read the ledger, so call it as
-  `if (import.meta.env.DEV) exposeToAgents(...)` (Vite) or behind your own flag, never unconditionally in a shipped
-  build; bundlers other than Vite need their own dev check.
-- **CLI** (`npx threeforge` with no arguments, `threeforge help [<command>]`, or `--help` on any command prints
-  AGENTS.md). Every command's positionals and flags are declared once in `COMMAND_SPECS` (`src/cli/args.ts`); the
-  parser, the usage text printed after a usage error, and the AGENTS.md command and flag tables come from it.
-  - `analyze <file.glb|.gltf> [--backend webgl2|webgpu] [--tier auto|desktop|phone-mid|phone-low] [--budget N]
-    [--frames N] [--no-compile] [--timeout ms] [--headed] [--bake] [--bake-buried] [--views N] [--parity pct] [--json]`:
-    serves the shipped harness page and the asset's folder from a built-in static server on 127.0.0.1, launches
-    headless Chromium through Playwright (headless shell for WebGL2, full Chromium with WebGPU flags otherwise), loads
-    the asset with Draco/KTX2/meshopt support, measures N frames (default 30), overdraw and memory, screenshots the
-    default framing plus the orbit views, compiles, measures and screenshots again, computes pixel parity per view,
-    and prints one JSON document. `--parity pct` (MCP `analyze_asset`: `parity`) is the allowed percent of changed
-    pixels per view, 0 to 100, default 0.5, judged by the same `parityOf` as `optimize`: a threshold of 0 on every
-    view's raw `changedPixels` (a pixel whose R, G or B moved by more than 24), any other on the percentage. So the
-    default passes a view with up to 0.5 % of its pixels changed, and `--parity 0` fails unless no pixel changed.
-    Two renders of different sizes count as every pixel changed. `input.parity` records the threshold used.
-    Before any of that, the asset's `images[].uri` and `buffers[].uri` go through the same `assertConfinedUris` check
-    `optimize` runs (`src/cli/gltf-uris.ts`): an absolute URI, any scheme but `data:`, a backslash, a NUL, text that is
-    not valid percent-encoding, or a path resolving outside the asset's directory exits 2 naming the URI, before a
-    browser is opened. three's `LoaderUtils.resolveURL` returns an absolute `http(s)://` or protocol-relative `//host/`
-    URI unchanged, so without that check `GLTFLoader` fetched it from the page instead of through the static server,
-    and an untrusted asset could make headless Chromium issue requests from this machine's network. The page is also
-    held to the served origin by a catch-all Playwright route that aborts every other request and names up to five of
-    them on the progress line, so a URI the JSON scan cannot see cannot escape either. Playwright routes network
-    schemes only, so the `blob:` worker a decoder creates and a `data:` buffer inside the glTF are unaffected; that was
-    checked from the **built** CLI on `test/assets/files/Duck-Draco/Duck.gltf` (whose Draco decoder runs in a worker
-    made from a `blob:` URL) and on a hand-made `.gltf` with a `data:` buffer — both exit 0, load their geometry and
-    print no blocked-request line. The KTX2 transcoder worker takes the same path, but the local corpus holds no KTX2
-    asset, so that one is inferred from the Draco result rather than measured; and no committed test would notice if a
-    future Playwright began routing `data:` or `blob:`.
-  - `inspect <url> [--backend webgl2|webgpu] [--budget N] [--frames N] [--no-compile] [--timeout ms] [--headed]
-    [--json]`: drives the agent's own dev server through the hook, compiling through it unless `--no-compile`
-    (`--compile` is accepted and is the default); same document without asset facts and parity. There is no
-    `--tier`: the app measures itself at the tier its own ledger detects. The app's hook must publish
-    `schemaVersion: 3` (threeforge 0.9.0 or later): any other version exits 4 at once, before anything is measured,
-    with a message naming both versions and the fix, e.g. `window.__threeforge has unsupported schemaVersion 2:
-    this threeforge CLI reads schemaVersion 3; upgrade threeforge in the app (exposeToAgents)`. `analyze`'s own
-    measurement (`measureViaHook`) rejects an unsupported hook version the same way, and also checks the
-    `schemaVersion` of the frame the hook actually *returned*: a target that advertises 3 and hands back a
-    differently-shaped frame exits 4 with the same upgrade message, rather than yielding a document that violates the
-    CLI's own published `SNAPSHOT_SCHEMA`.
-  - `optimize <file.glb|.gltf> [--out out.glb] [--preset safe|balanced|aggressive] [--no-<step>|--<step>]
-    [--simplify [ratio]] [--simplify-error e] [--compress none|meshopt] [--textures [webp|avif|none]]
-    [--texture-size N] [--texture-quality Q] [--no-verify] [--parity pct] [--views N] [--budget N] [--backend …]
-    [--tier …] [--frames N] [--no-compile] [--timeout ms] [--headed] [--json]`: the build-time pipeline, see below.
-  - `explain [<hint-code>] [--all] [--json]`: `{ code, category, severity, meaning, fix, api, docs }` for one hint
-    code, or every remedy with `--all` (a code or `--all`, not both).
-  - `decoders <dir>`: copies three's Draco decoder and Basis transcoder into `<dir>/{draco,basis}` for `createLoader` (no JSON output, no flags).
-  - `schema [snapshot|analyze|inspect|optimize|all] [--json]`: JSON Schema (draft 2020-12) of everything printed
-    (always JSON). Each of the four schemas is self-contained: `analyze` and `inspect` embed the frame snapshot as
-    `$defs.FrameSnapshot`, and `optimize` embeds both that and the analyze document as `$defs.AnalyzeDocument`
-    (`verify.original`/`verify.optimized` are full analyze documents), rather than `$ref`-ing another schema's
-    `$id`. Copy any one of the four out of `threeforge schema <name> --json` and it validates on its own in any
-    draft-2020-12 validator (e.g. `ajv/dist/2020`), with no `addSchema` of the others.
-  - `mcp`: stdio Model Context Protocol server with `analyze_asset`, `inspect_app`, `optimize_asset`, `explain_hint` (no arguments).
-- **Flags** (`parseArgs`, `src/cli/args.ts`):
-  - Flags follow the command, before or after its argument. A value flag takes `--flag value` or `--flag=value`; a
-    boolean flag never takes one (`analyze --json scene.glb` parses), and a negatable one also accepts
-    `--no-<flag>`. `--simplify` and `--textures` take a value only after `=` or when the next argument is a valid
-    value (a number, a format), so `optimize --simplify scene.glb` keeps the file. `--` ends the flags.
-  - `--timeout ms` bounds every page step: the load, every evaluate, the whole N-frame measurement, `compile()`,
-    every screenshot (given the bound in Playwright as well, so the operation is cancelled rather than abandoned) and
-    `browser.newPage()` (default 60000; a step over it exits 4). `--headed` shows the browser. `--simplify-error e` is the simplify error
-    limit as a fraction of the mesh radius (default 0.001). `--texture-quality Q` is the encoder quality (default 85).
-    `--textures none` and `--compress none` leave those steps out.
-  - Usage errors (exit 2, nothing on stdout; the message and the usage text on stderr): an unknown flag (the nearest
-    flag of the command is suggested, or the commands that take it are named), a flag before the command, an extra
-    positional, a value on a boolean flag, a missing value, a flag given twice or with its negation, a malformed
-    number (hex, `Infinity`, empty), a number outside `RANGES`, `inspect --tier`, `explain <code> --all`, and
-    `optimize --budget` with `--no-verify` (the budget is judged on the verified render).
-  - `RANGES` (by input field; `validateInput(command, input)` checks them plus the cross-field rules and is exported
-    for the MCP server): `frames` an integer ≥ 1, `timeout` an integer from 1000 to 2147483647 (a longer Node timer
-    fires at once), `budget` an integer ≥ 0, `views` an integer from 0 to 64, `parity` 0 to 100, `simplify` in
-    (0, 1], `simplifyError` 0 to 1, `textureSize` an integer from 1 to 16384, `textureQuality` an integer from 1 to 100.
-- **The document**: `{ schemaVersion: 2, tool, version, command, input, env, asset, before, after, compile, parity,
-  hints, verdict, timings }`. `verdict.pass` is false over the budget, with an error-severity hint, when parity is
-  lost, or when the harness page raised an error (`analyze`; one reason quotes up to five, cleaned and capped; `inspect`
-  does not judge its app's page errors). Exit codes: 0 pass, 1 verdict failed, 2 usage/input, 3 environment (install command in the message),
-  4 page error/timeout. `--json` writes the JSON document to stdout before the human summary is built
-  (`printDocument`), then the summary to stderr; a summary that throws leaves a note on stderr and the document intact.
-  `before` and `after` are frame snapshots with their own `schemaVersion: 3`; their `js.renderMs`, `js.ledgerMs` and
-  `js.frameMs` are medians over the measured frames. `compile.skippedCount` and `compile.groupCount` are the true
-  lengths of `compile.skipped` and `compile.groups`, which list at most 256 entries each. The document schemas
-  (`$id` `https://threeforge.dev/schema/<command>-v2.json`) close every fixed-shape object
-  (`additionalProperties: false`, every key required) except the `compile` report, which is open and requires only
-  those two counts; keyed maps (`byReason`, `programs`, optimize's `input.steps`) take any key, a snapshot's `items`
-  is optional, and optimize's `input.overwrite` is optional.
-- **Untrusted text in a document.** Names, hint messages and everything the CLI reads back from a page are data to
-  report, never instructions to follow. In a snapshot, `byReason[].top` names and a hint's `objects` are capped at 120
-  characters and a hint's `message` at 300 (`src/ledger/text.ts`). The CLI additionally cleans every value it reads
-  from the page or the asset (`sanitizeDeep`, `src/cli/untrusted.ts`): ANSI escapes removed; invisible characters
-  removed (`INVISIBLE`): every Unicode format character (`\p{Cf}`: bidi marks, overrides and isolates, zero-width
-  characters, the soft hyphen, U+061C, U+206A-206F, U+FFF9-FFFB and the tag characters U+E0001 and U+E0020-E007F that
-  mirror ASCII invisibly), the rest of the tag block U+E0000-E007F, the variation selectors U+FE00-FE0F and
-  U+E0100-E01EF, the Mongolian selectors U+180B-180D and U+180F, and the fillers that draw nothing (U+034F, U+115F,
-  U+1160, U+3164, U+FFA0, U+17B4-17B5); remaining control characters (C0, DEL, C1) and the line and paragraph
-  separators U+2028-2029 replaced with a space; each string capped at 300 code points (the ledger's message cap),
-  each array at 256 elements and nesting at 16 levels; non-finite numbers normalized to 0 — on a resolved
-  `page.evaluate` result and on a rejected one alike, since `inspect`'s target is any page, not only one built with
-  threeforge. An array of strings cut at the cap ends in a `(+N more)` marker; any other array is cut silently, which
-  is why `compile` carries `skippedCount` and `groupCount`. Page errors keep the first 5, each capped, with
-  `(+N more)` for the rest. The MCP tools `analyze_asset`, `inspect_app` and `optimize_asset` return a second
-  `content` block after the JSON marking the asset- and page-derived fields as data (`DATA_NOTE`), and an error
-  result from them carries a second block too (`ERROR_NOTE`), since an error can quote the asset or the page;
-  `explain_hint` carries no such text and has no such block.
-- **Programmatic**: `import { analyzeAsset, inspectApp, optimizeAsset, explain } from 'threeforge/cli'`.
-- Playwright, `@modelcontextprotocol/sdk` and `zod` are optional peers imported lazily; game code never pays for them.
+`exposeToAgents({ ledger, world, renderer, scene, camera })` publishes `window.__threeforge` with `version`,
+`schemaVersion` (3, the frame snapshot's), `frame()`, `frameAsync()` (waits one animation frame so shadow maps
+update, renders if it can), `compile()` and `decompile()`, `measureOverdraw()`, `measureMemory()`, `hints()` and
+`report()`, and returns a disposer. It lets any script on the page call `compile()`/`decompile()` and read the
+ledger, so call it as `if (import.meta.env.DEV) exposeToAgents(...)` (Vite) or behind your own flag, never
+unconditionally in a shipped build; bundlers other than Vite need their own dev check.
+
+The CLI (`npx threeforge`; `help [<command>]` or `--help` prints AGENTS.md) has `analyze <file>`, `inspect <url>`,
+`optimize <file>`, `explain [<code>] [--all]`, `schema [snapshot|analyze|inspect|optimize|all]`, `decoders <dir>` and
+`mcp` (a stdio Model Context Protocol server with `analyze_asset`, `inspect_app`, `optimize_asset` and
+`explain_hint`). Every command's positionals and flags are declared once in `COMMAND_SPECS` (`src/cli/args.ts`); the
+parser, the usage text and the AGENTS.md tables come from it, and `RANGES` plus the cross-field rules are checked by
+`validateInput(command, input)`, which the MCP server reuses. The flags and their ranges, the document
+(`schemaVersion: 2`), the verdict rules, the exit codes (0 pass, 1 verdict failed, 2 usage or input, 3 environment,
+4 page error or timeout), the presets, the input URI confinement and the `--out` rules are in
+[AGENTS.md](../AGENTS.md), generated by `scripts/agents-md.mjs`. Programmatic use: `import { analyzeAsset,
+inspectApp, optimizeAsset, explain } from 'threeforge/cli'`. Playwright, `@modelcontextprotocol/sdk` and `zod` are
+optional peers imported lazily; game code never pays for them.
+
+Not restated in AGENTS.md: `inspect` and `analyze`'s `measureViaHook` exit 4 before measuring when the hook's
+`schemaVersion` is not 3 or the frame it returns is shaped differently, naming both versions and the fix. Each of
+the four `schema` documents is self-contained (`analyze` and `inspect` embed the snapshot as `$defs.FrameSnapshot`,
+`optimize` embeds that and the analyze document as `$defs.AnalyzeDocument`), so any one validates alone in a
+draft-2020-12 validator; the schemas (`$id` `https://threeforge.dev/schema/<command>-v2.json`) close every
+fixed-shape object except the open `compile` report, which requires only `skippedCount` and `groupCount`. `--json`
+writes the document to stdout before the human summary is built, then the summary to stderr. The URI check
+(`assertConfinedUris`, `src/cli/gltf-uris.ts`) runs before a browser opens, because three's `LoaderUtils.resolveURL`
+returns absolute and protocol-relative URIs unchanged and an untrusted asset could otherwise make headless Chromium
+issue requests from this machine's network; the page is also held to the served origin by a catch-all Playwright
+route that aborts every other request and names up to five on the progress line. The ledger caps `byReason[].top`
+names and a hint's `objects` at 120 characters and a hint's `message` at 300 (`src/ledger/text.ts`); the CLI cleans
+every value read from the page or the asset with `sanitizeDeep` (`src/cli/untrusted.ts`, which lists the exact
+character classes it strips), capping strings at 300 code points, arrays at 256 elements (an array of strings ends
+in a `(+N more)` marker; any other is cut silently, which is why `compile` carries its counts) and nesting at 16
+levels, and normalizing non-finite numbers to 0, on a resolved and a rejected `page.evaluate` alike.
 
 ### Build-time optimize (`threeforge optimize`)
 
-`src/cli/pipeline.ts` (pure), `src/cli/transform.ts` (glTF-Transform), `src/cli/optimize.ts` (the command).
+`src/cli/pipeline.ts` (pure), `src/cli/transform.ts` (glTF-Transform) and `src/cli/optimize.ts` (the command) run
+the steps in the order glTF-Transform recommends (dedup, instance, palette, flatten, join, weld, simplify, resample,
+prune, textures, quantize, meshopt). `safe` is dedup, palette and prune; `balanced` adds weld, resample, quantize and
+textures webp 2048 px, and being lossy its Fox e2e states a measured tolerance of 0.05 %, about 3× the worst view
+measured; `aggressive` adds simplify 0.5 and textures 1024 px. A preset's texture step without `sharp` is skipped
+with a note; an explicit `--textures` without it is an environment error (exit 3), as is a Draco input without
+`draco3dgltf`.
 
-- **Steps**, in the order glTF-Transform recommends: `dedup` (identical accessors, meshes, materials, textures become
-  one), `instance` (repeated meshes → `EXT_mesh_gpu_instancing`), `palette` (materials that differ only by factors
-  become one material sampling a nearest-filtered palette texture; textured materials are left alone), `flatten`,
-  `join` (meshes sharing a material merge; implies flatten), `weld` (exact duplicate vertices), `simplify`
-  (meshoptimizer, ratio and error), `resample` (redundant animation keyframes), `prune` (unused properties),
-  `textures` (sharp: WebP or AVIF, longest side, quality), `quantize` (`KHR_mesh_quantization`), `meshopt`
-  (`EXT_meshopt_compression`, replaces quantize because it quantizes itself).
-- **Presets**: `safe` = dedup, palette, prune. `balanced` = safe + weld + resample + quantize + textures webp
-  2048 px; being lossy, its Fox e2e states a measured tolerance of 0.05 %, about 3x the worst view measured.
-  `aggressive` = balanced + simplify 0.5 + textures 1024 px. Two steps were measured out of `safe`, for opposite
-  reasons. `weld` merges only bitwise-identical vertices and changes no drawn value, but it left
-  because welding the Fox's primitive moves up to 0.014 % of pixels on WebGPU; measured the same way it also moves
-  pixels on PotOfCoals (0.004 %) and VirtualCity (0.011 %), which are indexed and carry normals, so the effect is
-  not tied to either property. `resample` left because it can make a file *bigger*: at `tolerance: 0`
-  it is pixel-exact but keeps every keyframe that is not an exact duplicate, and swept over the 79 readable corpus
-  assets against a re-serialized baseline the median asset is 0.000 % while Xbot grows 1.248 % and the Fox 0.100 %.
-  It pays for itself in the lossy presets, where the 1e-4 default applies — Soldier −18.9 %, BrainStem −14.9 %,
-  VirtualCity −9.5 %. `--weld` and `--resample` add either back to any preset, and `--resample` under `safe` runs
-  at tolerance 0. Every percentage above is measured against a re-serialized baseline, so it isolates the step from
-  the container: glTF-Transform re-serializes the container whatever runs, and on the Fox that alone is +0.86 % (the
-  Buggy, −27.4 %).
-- **What `palette` does, and what was not measured.** Unlike weld and resample, `palette` was never swept over the
-  corpus on its own. It considers only untextured materials and does nothing unless 5 or more of them differ
-  (`transform.ts` passes `min: 5`, glTF-Transform's default) and a factor has 5 or more distinct values. When it runs
-  (glTF-Transform's `palette`), it writes base colour (converted to sRGB), emissive, metallic and roughness factors
-  into 8-bit palette PNGs (`value × 255`), sampled nearest-filtered, and gives every primitive it merges a new
-  `TEXCOORD_n` accessor of two floats per vertex (8 bytes per vertex). So it can make a file bigger (a large mesh under
-  a handful of flat materials gains more UV bytes than it saves in material JSON), and a factor quantized to 1/255 can shift shading
-  by less than the 24-level tolerance the parity checks use. `--no-palette` removes it.
-- **What `safe` is measured at**: **0 changed pixels in every view, on both backends**, for the Fox and the Buggy.
-  Precisely: no pixel's R, G or B differs by **more than 24** between the two renders (`comparePixels`,
-  `src/cli/analyze.ts`). Alpha is never compared, and a uniform shift of 24 or less on every pixel would still read
-  0 — the claim is "nothing visibly moved", not bitwise equality of the framebuffer. The e2e asserts that raw
-  `changedPixels` count per view rather than the percent, because `diffPct` is rounded to three decimals and at
-  1280x720 that absorbs up to 4 changed pixels of 921,600; the percent-based assertion could not have caught a
-  handful of moved pixels, and did not. `--parity 0` is judged the same way, so the shipped tool
-  means zero when it says zero, for the comparison `--parity` governs (see Report and Verdict). On the Buggy,
-  `safe` takes 148 materials to one; the Fox has one material, so `palette` does nothing there. `--<step>` / `--no-<step>` override a preset; `--simplify`,
-  `--textures`, `--compress meshopt` enable their step with the given value. `--instance`, `--join` and
-  `--compress meshopt` are never in a preset: the first two change the node graph game code may address by name,
-  the third needs `loader.setMeshoptDecoder`. A preset's texture step without `sharp` installed is skipped with a
-  note; an explicit `--textures` without it is an environment error (exit 3), as is a Draco input without
-  `draco3dgltf`. The output never uses Draco.
-- **Inputs and `--out`** (`src/cli/gltf-uris.ts`): every `images[].uri` and `buffers[].uri` of the input (a `.gltf`, or
-  a `.glb`'s JSON chunk) must be a `data:` URI or a relative path that stays inside the input's directory, also by real
-  path (symlinks followed). An absolute path, any other scheme (`file:`, `http:`, `C:`), a backslash, a NUL or invalid
-  percent-encoding exits 2 before glTF-Transform reads anything. `--out` must end in `.glb` or `.gltf` (any case; a
-  `.glb` is always written binary) and must not be the input file (same device and inode: a hard link, a symlink, a
-  case variant) or one of its resources. A `.gltf` output whose resource URIs would leave its directory, or whose
-  resource would land on the input or on one of the input's resources (same path, or same device and inode), exits 2
-  before anything is written: glTF-Transform keeps each resource's URI, so a `.gltf` output beside a `.gltf` input
-  would rewrite the input's `.bin` and textures. Write it to another directory, or as `.glb`.
-- **Report**: `stats.before/after` (bytes, nodes, meshes, primitives, materials, textures, texture bytes, accessors,
-  vertices, triangles, animations, skins, morph targets, extensions), one `steps[]` entry per step with the counts
-  before and after and the time, `requires[]` (each extension of the output with the loader piece it needs and the
-  line of code, `code: null` when `GLTFLoader` handles it alone), and `verify` when on (default): the original and
-  the optimized file go through `analyze` with the same framing, frames and views; `verify.parity` compares the two
-  naive renders (each file as loaded, before compiling) view by view at `--parity`, each view carrying the rounded
-  `diffPct` and the exact `changedPixels` behind it (the percent is rounded to three decimals, which at 1280x720 hides
-  up to 4 changed pixels, so only `changedPixels: 0` means no pixel moved), `verify.original` / `verify.optimized` are
-  the full analyze documents, each with its own compile parity (`verify.original.parity`, `verify.optimized.parity`)
-  judged at analyze's default 0.5 % whatever `--parity` is (`verifyAnalyzeInput`, `src/cli/optimize.ts`), `verify.delta` is
-  after minus before for bytes, materials, vertices, triangles, naive and compiled scene submissions, load time and
-  estimated GPU memory.
-- **Verdict**: fails on `verify.parity` over `--parity` (default 0.5 %), on the optimized file's own compile parity
-  over 0.5 % (`verify.optimized.parity`, when compiling), a lost animation, skin or morph target (checked in the glTF
-  document and, when verified, in what the harness loaded), `--budget` exceeded by the optimized file's compiled
-  submissions, an error-severity hint on the optimized file, or a page error in either verified render. The
-  original's compile parity is reported and never judged. So `--parity 0` guarantees zero changed pixels between the
-  two files as loaded, not after compiling: a compile of the optimized file that moves up to 0.5 % of its pixels
-  still passes, visible only in `verify.optimized.parity.views[].changedPixels`. That separation is deliberate and is
-  pinned by the Buggy e2e: `--preset safe` is pixel-identical between its two files, every view exactly 0
-  changed pixels on both backends, while compiling *either* file — the original as much as the optimized one — moves
-  1 px on webgl2 and 2 px of 921,600 on webgpu, because that is what threeforge's batching does to that asset.
-  Tightening the compile checks with `--parity 0` was tried and reverted: it made the run answer "no" to the question
-  `--parity` asks ("is the optimized asset exactly the original?"), whose answer here is yes. Read
-  `verify.optimized.parity`, or run `analyze --parity 0`, when compile exactness is the question. A verdict reason
-  for a lost compile parity names the raw changed-pixel count as well as the rounded percent, which reads 0.00 % at
-  that size. Deltas are never judged: a palette texture can grow a file that then draws in one call.
-- **Limits**: no atlasing across materials that differ by textures (the biome case still needs one batch per
-  texture set), no KTX2 encoding (needs `toktx`), no `MSFT_lod` chains, no Draco output.
+Two steps were measured out of `safe`. `weld` merges only bitwise-identical vertices, but welding the Fox's
+primitive moves up to 0.014 % of pixels on WebGPU, and measured the same way it moves pixels on PotOfCoals
+(0.004 %) and VirtualCity (0.011 %), which are indexed and carry normals. `resample` can make a file bigger: at
+`tolerance: 0` it is pixel-exact but keeps every keyframe that is not an exact duplicate, and swept over the 79
+readable corpus assets against a re-serialized baseline the median asset is 0.000 % while Xbot grows 1.248 % and the
+Fox 0.100 %; it pays for itself in the lossy presets, where the 1e-4 default applies (Soldier −18.9 %, BrainStem
+−14.9 %, VirtualCity −9.5 %). `--weld` and `--resample` add either back, and `--resample` under `safe` runs at
+tolerance 0. Every percentage is against a re-serialized baseline, since glTF-Transform re-serializes the container
+whatever runs (the Fox alone is +0.86 %, the Buggy −27.4 %). `palette` was never swept on its own: it considers only
+untextured materials, does nothing unless 5 or more of them differ (`min: 5`) and a factor has 5 or more distinct
+values, writes base colour (converted to sRGB), emissive, metallic and roughness factors into 8-bit palette PNGs
+sampled nearest-filtered, and gives every merged primitive a new `TEXCOORD_n` of two floats per vertex, so it can
+grow a file and a factor quantized to 1/255 can shift shading by less than the 24-level tolerance. `safe` is
+measured at 0 changed pixels in every view on both backends for the Fox and the Buggy: no pixel's R, G or B differs
+by more than 24 (`comparePixels`, `src/cli/analyze.ts`; alpha is never compared, so the claim is "nothing visibly
+moved", not bitwise equality), asserted on the raw `changedPixels` per view because `diffPct` is rounded to three
+decimals and at 1280x720 absorbs up to 4 changed pixels of 921,600. On the Buggy `safe` takes 148 materials to one;
+the Fox has one material, so `palette` does nothing there. `verify.original` and `verify.optimized` each carry a
+compile parity judged at analyze's default 0.5 % whatever `--parity` is (`verifyAnalyzeInput`); the Buggy e2e pins
+that separation, since `--preset safe` is pixel-identical between its two files on both backends while compiling
+either file moves 1 px on webgl2 and 2 px of 921,600 on webgpu, and tightening the compile checks with `--parity 0`
+was tried and reverted because it answered "no" to the question `--parity` asks. Deltas are never judged: a palette
+texture can grow a file that then draws in one call. Limits: no atlasing across materials that differ by textures,
+no KTX2 encoding (needs `toktx`), no `MSFT_lod` chains, no Draco output.
 
 ## 11. Benchmark suite and regression gate
 
@@ -1411,104 +1082,48 @@ budgets the scene stresses):
 | `zen` | 50 000 low-poly objects over 2 km² on 64 textured ground tiles, 250 m chunks, fog to 600 m | chunk streaming, memory |
 | `rpg` | portrait 9:16, one character, gear swapped every 30 frames | character assembler |
 
-`pnpm bench [backend]` measures 10 warm-up and 60 measured frames per variant (medians), one overdraw and memory
-measurement, writes `bench/results/local.<backend>.json` and fails when any deterministic metric (submissions, GPU
-draws, triangles, programs, overdraw, skinned vertices, shadow casters and texels, memory bytes) is worse than
-`bench/baselines/<backend>.json` by 10 % or more; timing is recorded and gated only with `FORGE_GPU=native` (CI
-runners render on SwiftShader). `pnpm bench:baseline` promotes results and rewrites `docs/bench.md`, the README table
-and the line below; `pnpm bench:table` rewrites them from the committed baselines without measuring.
+`pnpm bench [backend]` measures 10 warm-up and 60 measured frames per variant (medians) plus one overdraw and
+memory measurement, writes `bench/results/local.<backend>.json` and fails when any deterministic metric
+(submissions, GPU draws, triangles, programs, overdraw, skinned vertices, shadow casters and texels, memory bytes)
+is worse than `bench/baselines/<backend>.json` by 10 % or more; timing is gated only with `FORGE_GPU=native`.
+`pnpm bench:baseline` promotes results and rewrites [docs/bench.md](bench.md), the README table and the line below;
+`pnpm bench:table` rewrites them from the committed baselines. The device bench page (`bench-app/`, `pnpm
+bench:app`) runs the same scenes and metrics on a visitor's device and submits the result as a GitHub issue that
+`bench-results.yml` ingests into `bench/devices/*.json` and [docs/devices.md](devices.md); device numbers are
+published, never gated. The page, the wire form and the ingest validation: `docs/design.md` and `docs/release.md`.
 
 <!-- bench:start -->
 Current baselines (webgl2, scene submissions naive → optimized): village 303 → 28, forest 5706 → 13, crowd 401 → 17, bossfight 2780 → 370, lake 3548 → 7, daynight 605 → 28, zen 3540 → 88, rpg 4 → 1.
 <!-- bench:end -->
 
-### Device bench page
-
-`bench-app/` is a static page (`pnpm bench:app` to run it, `pnpm build:bench-app` to build it, the `pages` workflow
-deploys it to GitHub Pages) that runs the same eight scenes on the visitor's device. It imports `BENCH_SCENES`
-unchanged (the two scenes that fetch files take their URLs from `BenchContext.url()`, so the page works under a
-Pages base path) and `test/app/benchMetrics.ts`, which the CI runner also imports, so the metrics cannot drift.
-It picks WebGPU when `navigator.gpu` exists and `renderer.init()` succeeds, else WebGL2 (`?backend=webgl2` forces
-it); each scene gets a fresh registry and ledger, runs 10 warm-up and 60 measured frames with the deterministic
-clock, one overdraw measurement, then `decompile()` and disposal of every geometry, material and texture before
-the next scene, so phones do not run out of GPU memory. A two-second fill-rate probe (transparent fullscreen layers,
-doubled until a frame misses vsync) is reported as `env.fillRateGPix`, informational. The result
-(`{ schemaVersion: 1, kind: 'device', id, createdAt, env, scenes }`, `scenes` identical to a `pnpm bench` result)
-is submitted as a prefilled GitHub issue (metrics travel as arrays in `metricKeys` order to keep the URL short; a
-copy-and-paste fallback uses the issue template). `scripts/bench-ingest.mjs` extracts the JSON fence, expands the
-wire form, validates it with `scripts/bench-schema.mjs` (exact key sets, finite non-negative numbers, capped
-strings, known scenes, `unattributed === 0`), writes `bench/devices/<id>.json`; `scripts/bench-devices.mjs`
-rewrites `docs/devices.md` and `bench/devices/index.json` (served as `devices.json` on the page). The
-`bench-results` workflow runs on issues titled `bench:` or labelled `bench-result`, commits, and closes the issue
-with the file name; a rejected result gets the validation errors as a comment. Device numbers are published, never
-gated.
-
 ## 12. Development, tests, CI, release
 
-- `pnpm dev` opens the harness (`test/app`, `window.__forge`) with query parameters: `scene=naive|field|character|
-  gltf&asset=<name>|biome|arena|empty|vat` (the animated-instances twin of `asset`; `vatClip`, `vatTime`) or a
-  bench scene with `variant=naive|optimized`, `backend`, `compile=1`,
-  `overlay=1&budget=30`, `animate=1`, `dynamics=batch-sync`, `lod=1`, `chunk=40`, `culling=linear`, `threshold=N`,
-  `occlusion=1`, `wall=1`, `shadows=0`, `freeze=1`, `sceneOffset=1` (the whole scene translated, turned and scaled, the camera following), `materials=keep`, `nested=per-pass|reuse-main`, `bake=1|buried`, `env=0`,
-  `bloom=1`, `assemble=1`, `fighters`, `blocky`, `vfx=0`, `t`, `density`, `count`, `tier`.
-- `pnpm build:lib && node scripts/ledger-overhead.mjs [submissions…]` reports the ledger's own µs per submission and
-  bytes per frame (section 4, "Overhead"); it is not a gate.
-- `pnpm test` (Vitest units against a fake renderer that mirrors the backends' draw counting), `pnpm e2e`
-  (Playwright, projects `webgl2` and `webgpu`; screenshot baselines without platform suffixes), `pnpm budget` (naive
-  scene ≤ 30 submissions), `pnpm assets` / `pnpm assets:kits` (public glTF corpus and Kenney kits, gitignored),
-  `pnpm assets:report` (every downloaded asset compiled with pixel parity on each backend), `pnpm bench`,
-  `pnpm build` (library via tsc plus the CLI harness page via Vite), `pnpm typecheck`.
-- CI, four workflows in `.github/workflows` (prepared locally; none has run, since the repository has no remote yet).
-  `docs/release.md` ("What CI covers, and what it does not") has the measured test counts.
-  - `ci.yml`, on pull requests, pushes to `main` and `v*` tags: `commit-rules` (pull requests only:
-    `scripts/commit-rules.mjs` requires a `Budget:` line on every commit touching a rendering path); `unit`
-    (`pnpm typecheck`, `pnpm test`, `pnpm build`); `e2e` per backend, `--grep-invert "@corpus|@bench"`, downloading
-    nothing, with `FORGE_REQUIRE_WEBGPU=1` on `webgpu` so a runner without an adapter fails instead of skipping;
-    `bench` per backend, the only pull-request job that downloads (the kits), running the gate in
-    `scripts/bench-run.mjs` without a build or e2e; `publish` on `v*` tags, after `unit`, `e2e` and `bench`, refusing a
-    tag that differs from `package.json` and running `npm publish --provenance` (needs the `NPM_TOKEN` secret).
-  - **The `webgpu` e2e leg checks no pixels.** Its adapter is SwiftShader, whose canvas capture drops the device, so
-    `test/e2e/fixtures.ts` turns `pixelChecks` off: screenshot-gated tests skip whole and the rest skip their
-    screenshot steps. WebGPU pixel parity is proven only by a local run on a native adapter (`docs/release.md`, step 2 for the e2e
-    specs and step 3's corpus run for the corpus models).
-  - `assets.yml`, weekly and on dispatch: every non-`@bench` test on both backends with the kits and the corpus
-    downloaded strictly (`FORGE_FETCH_STRICT=1`), `FORGE_RUN_ID` pinned per job; it uploads `docs/assets-report*` as an
-    artifact and never commits.
-  - `pages.yml` deploys the device bench page (`dist/bench-app`) on pushes to `main`; `bench-results.yml` ingests a
-    submitted device result only after a collaborator with `write` or `admin` permission applies `bench-accepted`.
-- Repository rules for agents working in the repo: `CONTRIBUTING.md`.
+Commands, the harness query parameters and the repository rules are in [CONTRIBUTING.md](../CONTRIBUTING.md); the release
+procedure, what CI covers and does not, and the device-page settings are in [docs/release.md](release.md). Units run
+against a fake renderer that mirrors the backends' draw counting; anything touching the renderer also has a
+Playwright spec on both backends. The `webgpu` e2e leg in CI runs on SwiftShader and checks no pixels
+(`test/e2e/fixtures.ts` turns `pixelChecks` off), so WebGPU pixel parity is proven only by a local run on a native
+adapter. The four workflows are `ci.yml` (commit rules, unit, e2e per backend, bench per backend, publish on `v*`
+tags), `assets.yml` (weekly corpus run), `pages.yml` (the device bench page) and `bench-results.yml`.
+
+### Corpus report
+
+`pnpm assets` then `pnpm assets:report` compiles every downloaded public glTF model with pixel parity on each backend
+(`docs/assets-report.md`, `docs/assets-report-webgpu.md`; `FORGE_ASSETS=Fox,Duck` limits the run). The report is
+regenerated deliberately from a clean tree (`docs/release.md`, step 3); the current one was generated from 0.9.0 code
+at commit `a485e57`, run `corpus-20260916`, and passes 104 of 104 models on each backend: 0 unattributed draws,
+decompile restoring the naive count, and under 0.5 % of the pixels of one view changed at a per-channel tolerance of
+24. Its `diff` column is that percentage rounded to two decimals, so the 0 every row reads means under 0.005 %, not
+zero changed pixels. On native WebGPU, texture-heavy rows (`polyhaven-CoffeeCart_01`, `Sponza`) can show a non-zero
+`diff` of up to ~0.04 % that moves between regenerations with no code change: the two screenshots land at different
+points in the Metal adapter's texture and mip residency settling, which the fixed three-frame warm-up does not
+bound, so this is capture-side noise rather than a rendering difference and stays two orders of magnitude under the
+0.5 % gate. Bounding texture residency before capture is a harness improvement not yet made.
 
 ## 13. What we learned about three r186 (and how threeforge works around it)
 
-- `renderer.compileAsync()` queues `renderObject()` work and builds it after `material.side` is restored and the render
-  context is null: transparent double-sided and transmissive materials compile as single-pass DoubleSide and
-  transmission binds a viewport texture no frame writes. `needsUpdate` cannot fix the cached render objects;
-  `material.dispose()` can. threeforge's warm-up renders a scissored real frame instead (`docs/upstream-compileAsync.md`).
-- Shadow maps and the transmission backdrop re-render once per node frame id, which advances only on animation-frame
-  ticks: measurements must come from a frame after a real tick (`frameAsync()` everywhere).
-- On WebGPU a batch whose index rows change after a pass recorded its draw (a reflection or shadow map rendered from
-  inside that pass re-culls it) draws that pass with the new rows, and on WebGL the receiver that triggered a shadow
-  map draws the shadow camera's list: batches and compacted instanced meshes keep the enclosing rows as a stable
-  prefix (section 7). An instance matrix buffer above the uniform-buffer limit is one `InstancedInterleavedBuffer`
-  per mesh, synced once per frame per render object (`nodes/accessors/Instance.js`), and `Geometries.updateAttribute`
-  checks it at most once per `info.render.calls`, which a nested render advances and nothing restores: a mesh a
-  nested pass reaches first is compacted for the main camera before that pass draws it.
-- `renderer.compileAsync()` calls the scene's `onBeforeRender` but never its `onAfterRender`: `warmup({ mode: 'async' })`
-  resets the pass tracker afterwards so the warm-up frame counts as an outermost render.
-- Transmissive materials cannot be batched (thickness scales with the object matrix); reflectors fill their target
-  one frame late; `KTX2Loader` needs `detectSupport(renderer)` after `await renderer.init()` (`detectSupportAsync` is
-  deprecated since r181); `RenderObject.getDrawParameters()` returns null for
-  a zero-instance InstancedMesh (no draw, no count); `ShaderMaterial` does not render on `WebGPURenderer`.
-- Half-float render targets read back as raw 16-bit halves on both backends, and WebGPU returns rows padded to 256
-  bytes: the overdraw target uses 32-texel row multiples and decodes halves.
-- three's experimental `SceneOptimizer` batches everything including skinned meshes and disposes shared geometry; it
-  was measured as the spike baseline (`docs/spike-scene-optimizer.md`) and not used.
-- After `onBeforeRender`, `_renderObjectDirect` refreshes geometry attributes, nodes and bindings only when
-  `needsRefresh()` says the render object is new this frame; a second render object of the same object (a
-  reflection pass) gets a shared refresh without attribute uploads. Attributes written in a hook for a nested
-  pass are therefore what the main pass draws: sprite batches fill their instance attributes once per frame, for
-  the main camera, and nested passes reuse that list (the lake's raindrops stayed within the sprite e2e's bound,
-  under 0.5 % of pixels changed at a per-channel tolerance of 24, only after this).
+Moved to [docs/three-r186-notes.md](three-r186-notes.md): the r186 behaviours threeforge depends on or works
+around, each with the mechanism in this file that answers it.
 
 ## 14. Limits and roadmap
 
@@ -1516,74 +1131,61 @@ Overdraw modules shipped in 0.4.0, per-frame JS (freezing, `markDirty`, `RenderS
 (`DayNight`, `ShadowBudget`, lightmap path) in 0.6.0, skinning (`bakeAnimationTexture`, `AnimatedInstances`) in
 0.7.0 and memory and load (`createLoader`, `ResourceTracker`, chunk `Streamer`) in 0.8.0 (section 7);
 `threeforge optimize` shipped in 0.3.0 (section 10) and the device bench page with GitHub-native results is in
-section 11. What is not built: animated instances play one clip per instance without blending or root motion;
-soft-particle materials are documented, not built (`docs/vfx.md`); cascaded shadow maps (three's `CSMShadowNode`)
-are not wired yet; the Streamer keeps CPU copies and re-uploads, it does not fetch chunk data on demand (that needs
-incremental compile). Design notes live in `docs/design.md`.
+section 11. Not built: animated instances play one clip per instance without blending or root motion; soft-particle
+materials are documented, not built (`docs/vfx.md`); cascaded shadow maps (three's `CSMShadowNode`) are not wired;
+the Streamer keeps CPU copies and re-uploads rather than fetching chunk data on demand (that needs incremental
+compile). Design notes live in `docs/design.md`.
 
 ### Known limitations of 0.9.0
 
 Each is documented where the mechanism is, and none has a fix in this release.
 
-- **Occlusion hides a batch from shadow maps and reflections too** (section 7, "Occlusion"): with
-  `occlusion: true`, a target its proxy reads as occluded is `visible = false`, which three honours in every render,
-  so its shadow and its reflection vanish with it.
-- **A `World.compile()` that throws part-way leaves what it had done.** If it throws after batching or hiding
-  originals, the batches stay in the scene and the originals stay hidden, while `compiled` stays false, so
-  neither `decompile()` nor `dispose()` undoes any of it. Only the pass tracker's scene hooks are removed on that path. Rebuild the
-  scene (or reload) rather than retrying `compile()` on it.
-- **Batching and instancing move mesh-local space for node materials that shade from `positionLocal`, `alphaHash` and
-  object-space normal maps** (section 7, and section 8, "Groups the bake leaves to batching"): `batch()` (three r186
-  `Batch.js:148`) assigns `positionLocal = batchingMatrix * positionLocal`, and `instance()` (`Instance.js:206-207`) the
-  same with the instance matrix, so a colour or hash computed from local position differs once a static group is
-  batched or instanced, and the same once baked; an object-space normal map is transformed by the batch's (or baked
-  mesh's) normal matrix, not each module's (`NormalMapNode.js:120-122`), so a rotated module is lit as if unrotated.
-  Measured with `bake` off by `test/e2e/local-space.spec.ts` on both backends, on its own four transformed statics:
-  a `positionLocal` colour gradient 11.08 %, `alphaHash` 5.56 % (webgl2) / 5.59 % (webgpu), an object-space normal map
-  9.54 %, against a plain material on the same boxes at 0 changed pixels. The shares are scene-dependent — they scale
-  with how much of the frame the affected meshes cover — so the spec records them as annotations and asserts only that
-  the hint fires and that the picture changed. The `batch-local-space` hint (warn) names
-  the batches, instanced groups and baked meshes whose material has a node in any slot, custom material code (a class
-  that is not one of three's own, or an own function), `alphaHash` or an object-space normal map. Tag such meshes `dynamic` (without `dynamics: 'batch-sync'`) to keep them individual. All three cases are pinned on
-  both backends by `test/e2e/local-space.spec.ts`, which compiles each on transformed statics and asserts that the hint
-  fires and that the picture changed (with a plain material as the zero-change control); it records its own
-  arrangement's share as an annotation rather than asserting a percentage, which would pin its camera.
-- **The bake's seam and buried-face removals leave a hole when the camera's near plane cuts into a module**
-  (section 8, "Near-plane limitation").
-- **`memory.unreferenced` has residual blind spots** (section 4, "Limits of the memory section"): resources three
-  created before `ledger.attach()` count as unreferenced, a render target drawn once and abandoned without
-  `dispose()` is allowed as live, and transmission's and XR's viewport textures still count as unreferenced.
-- **WebGPU pixel parity is not checked in CI** (section 12): only a local run on a native adapter checks it.
-- **`optimize --parity 0` is zero only between the two files as loaded** (section 10, "Verdict"): each file's own
-  compile check stays at 0.5 % whatever `--parity` is, and is reported in `verify.optimized.parity`. Run
-  `analyze --parity 0` to ask about a compile directly.
-- **`palette` is the one `safe` step never swept across the corpus**. `weld` and `resample`
-  were each swept and moved out of `safe` on what the sweep showed; `palette` was not, and it is the step in `safe`
-  that quantises — it writes material factors into 8-bit palette textures and adds a float UV attribute once five or
-  more untextured materials differ (`src/cli/transform.ts`, `min: 5`). Its lossless proof is two assets: the Fox and
-  the Buggy's 148 materials, at zero changed pixels on both backends (`test/e2e/cli.spec.ts`). If any preset step
-  deserves the corpus sweep next, it is this one. `--no-palette` drops it from any preset.
-- **A shadow pass's `#k` suffix is positional** (section 3, "Passes"): `shadowPassIds` numbers
-  lights that share a name in scene order, so `shadow:DirectionalLight#1` and `#2` can swap between frames when the
-  scene order changes. The counts stay right; the labels move. Name shadow-casting lights distinctly to pin them. The
-  `#k` on a `nested:` or `scene:` id is positional in the same way and for the same reason — it is handed out in the
-  order the frame enters those passes — so two render targets or two scenes sharing a name can swap ids when the order
-  of the renders changes.
-- **Two lights sharing one `shadow.camera` object collapse into one pass**: the ledger keys
-  shadow passes by camera identity (`Map<Camera, ShadowPass>`), which is what makes a nested pass attributable at all,
-  so an app that assigns one light's `shadow.camera` onto another loses the second light's pass and its texels from
-  the frame. three itself renders both maps.
+- Occlusion hides a batch from shadow maps and reflections too (section 7, "Occlusion"): with `occlusion: true`, a
+  target its proxy reads as occluded is `visible = false`, which three honours in every render.
+- A `World.compile()` that throws part-way leaves what it had done: batches stay in the scene and originals stay
+  hidden while `compiled` stays false, so neither `decompile()` nor `dispose()` undoes it (only the pass tracker's
+  scene hooks are removed on that path). Rebuild the scene, or reload, rather than retrying `compile()` on it.
+- Batching and instancing move mesh-local space for node materials that shade from `positionLocal`, `alphaHash` and
+  object-space normal maps (section 7, "Options", and section 8, "Groups the bake leaves to batching"). Measured with
+  `bake` off by `test/e2e/local-space.spec.ts` on both backends, on its own four transformed statics: a
+  `positionLocal` colour gradient 11.08 %, `alphaHash` 5.56 % (webgl2) / 5.59 % (webgpu), an object-space normal map
+  9.54 %, against a plain material on the same boxes at 0 changed pixels. The shares scale with how much of the
+  frame the affected meshes cover, so the spec records them as annotations and asserts only that the
+  `batch-local-space` hint fires and that the picture changed. Tag such meshes `dynamic` (without `dynamics:
+  'batch-sync'`) to keep them individual.
+- The bake's seam and buried-face removals leave a hole when the camera's near plane cuts into a module (section 8,
+  "Near-plane limitation").
+- `memory.unreferenced` has residual blind spots (section 4 and `docs/memory.md`): resources three created before
+  `ledger.attach()` count as unreferenced, a render target drawn once and abandoned without `dispose()` is allowed
+  as live, and transmission's and XR's viewport textures still count as unreferenced.
+- WebGPU pixel parity is not checked in CI (section 12): only a local run on a native adapter checks it.
+- `optimize --parity 0` is zero only between the two files as loaded (section 10): each file's own compile check
+  stays at 0.5 % whatever `--parity` is, reported in `verify.optimized.parity`. Run `analyze --parity 0` to ask
+  about a compile directly.
+- `palette` is the one `safe` step never swept across the corpus (section 10). `weld` and `resample` were swept and
+  moved out of `safe` on what the sweep showed; `palette` is the step in `safe` that quantises, and its lossless
+  proof is two assets, the Fox and the Buggy's 148 materials, at zero changed pixels on both backends
+  (`test/e2e/cli.spec.ts`). If any preset step deserves the corpus sweep next, it is this one; `--no-palette` drops
+  it from any preset.
+- A shadow pass's `#k` suffix is positional (section 4, "Passes"): `shadowPassIds` numbers lights that share a name
+  in scene order, so `shadow:DirectionalLight#1` and `#2` can swap between frames when the scene order changes; the
+  counts stay right, the labels move. Name shadow-casting lights distinctly to pin them. The `#k` on a `nested:` or
+  `scene:` id is positional the same way, handed out in the order the frame enters those passes.
+- Two lights sharing one `shadow.camera` object collapse into one pass: the ledger keys shadow passes by camera
+  identity (`Map<Camera, ShadowPass>`), which is what makes a nested pass attributable at all, so an app that
+  assigns one light's `shadow.camera` onto another loses the second light's pass and its texels from the frame.
+  three itself renders both maps.
 
 ## 15. Glossary
 
-- **submission**: one render item three processed (a mesh, a material group of a mesh, a batch, a sprite) in one pass.
-- **sceneSubmissions**: submissions attributable to the user's scene; the budgeted number.
-- **gpuDraws**: draw calls those submissions add to `renderer.info` on this backend; **drawCommands** counts multi-draw
+- submission: one render item three processed (a mesh, a material group of a mesh, a batch, a sprite) in one pass.
+- sceneSubmissions: submissions attributable to the user's scene; the budgeted number.
+- gpuDraws: draw calls those submissions add to `renderer.info` on this backend; drawCommands counts multi-draw
   ranges with a non-zero index count.
-- **unattributed**: reported draw calls the ledger's model did not predict; always 0 in the tests.
-- **program**: a compiled shader variant, as counted by `renderer.info.memory.programs`.
-- **tier**: `desktop`, `phone-mid`, `phone-low`; drives budgets and hints.
-- **seam**: two coincident faces with opposite winding between touching solid modules (different, closed and
-  manifold, outward, opaque, front-side and casting no shadow); removed by the bake. Any other coincident, opposite pair is kept and counted
-  (`keptCoincidentFaces`).
-- **buried face**: a face with solid geometry right in front of it in every direction; removed only on request.
+- unattributed: reported draw calls the ledger's model did not predict; always 0 in the tests.
+- program: a compiled shader variant, as counted by `renderer.info.memory.programs`.
+- tier: `desktop`, `phone-mid`, `phone-low`; drives budgets and hints.
+- seam: two coincident faces with opposite winding between touching solid modules (different, closed and manifold,
+  outward, opaque, front-side and casting no shadow); removed by the bake. Any other coincident, opposite pair is
+  kept and counted (`keptCoincidentFaces`).
+- buried face: a face with solid geometry right in front of it in every direction; removed only on request.
