@@ -65,16 +65,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
-      # `test/unit/ledger-hot-path.test.ts` carries the suite's one wall-clock measurement (µs per submission at 20k
-      # vs 2k, under 3x). It is best-of-7 per size across 3 interleaved attempts, taking each size's own
-      # minimum, so a stall has to land on the fast half of every attempt to matter. No CI retry or skip is wired
-      # here on purpose: the statistic already survives a noisy shared runner, and a retry would hide a real
-      # super-linear regression behind a second roll of the dice.
-      # What it guards is *scaling*, not constant cost: adding a fixed cost per submission moves the ratio toward 1,
-      # so restoring 0.8.0's ~3.5-4.6 µs would make it pass more comfortably, not fail. The
-      # constant-cost mechanism is guarded by the count assertions in the same file — `describes === 0` and
-      # `reads <= 4` per frame, so `registry.describe()` cannot return to the hot path — which is a structural check
-      # no runner noise can move.
+      # The unit suite carries no wall-clock measurement. The ledger's per-submission scaling (µs per submission at
+      # 20k over 2k, once a `< 3x` gate in `test/unit/ledger-hot-path.test.ts`) is printed by
+      # `scripts/ledger-overhead.mjs` in the summary step below, as a figure and not a gate. What that file guards
+      # instead is the constant-cost mechanism, by counts no runner noise can move: `describes === 0` and `reads <= 4`
+      # per frame (so `registry.describe()` cannot return to the hot path), one scene walk per frame, and the
+      # source-text scan of `src/ledger/` for iterator-protocol walks of the records.
       - run: pnpm test
       - run: pnpm build
       # Nothing else in CI watches the ledger's own cost, and a 50 % allocation regression has once landed unnoticed

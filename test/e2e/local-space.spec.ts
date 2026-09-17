@@ -1,33 +1,15 @@
-import { expect, type ForgePage, test } from './fixtures.js';
+import { compileAndSettle, expect, type ForgePage, note, test } from './fixtures.js';
 import { differingPixels, pixelDiff, settle } from './pixels.js';
 
 /**
- * The measurements the `batch-local-space` hint and its docs rest on, pinned as a test instead of a comment.
- *
- * `docs/threeforge.md`, `src/compiler/batchStatics.ts` and `src/ledger/DrawCallLedger.ts` say that batching changes
- * the picture on **default settings** (bake off, `dynamics: 'separate'`) for three kinds of material, and cite this
- * spec for it. Nothing pinned that before: if three ever makes batching preserve mesh-local space — or someone
- * changes what the hint looks at — the claim, the hint's justification and the CHANGELOG rows would quietly become
- * wrong with nothing red.
- *
- * Each case asserts both halves of the claim: the `batch-local-space` hint fires, **and** the picture changed
- * (`changedPixels > 0` at tolerance 4). The control case asserts the converse — a plain `MeshStandardMaterial` on the
- * same transformed boxes gives no hint and no changed pixels — so a run that changed every pixel for an unrelated
- * reason cannot make the three cases pass by accident.
- *
- * What is pinned is that the change exists, not its size. Each case annotates the share of *this scene's* frame it
- * measured, currently about 11.1 % for the `positionLocal` gradient, 5.6 % for `alphaHash` and 9.5 % for the
- * object-space normal map on both backends; those shares scale with how much of the frame the affected meshes cover,
- * so they are recorded rather than asserted — asserting a percentage would pin the camera, not the mechanism. The
- * docs quote the same three numbers, from these annotations, and say the same about them.
- *
- * When this spec goes red because a case reached 0 changed pixels, that is the good outcome: batching became exact for
- * it, and the hint, the docs and the CHANGELOG rows for it should go, not the assertion.
+ * Pins what the `batch-local-space` hint and its docs rest on: on default settings (bake off, `dynamics: 'separate'`)
+ * batching changes the picture for three kinds of material (`docs/threeforge.md`, `src/compiler/batchStatics.ts` and
+ * `src/ledger/DrawCallLedger.ts` cite this spec). Each case asserts that the hint fires and that the picture changed
+ * (`changedPixels > 0` at tolerance 4); the plain `MeshStandardMaterial` control asserts the converse. Only the
+ * existence of the change is pinned; the annotated shares (about 11.1 % for the `positionLocal` gradient, 5.6 % for
+ * `alphaHash`, 9.5 % for the object-space normal map, both backends) are what the docs quote. A case reaching 0 changed
+ * pixels is the good outcome: batching became exact, and the hint, docs and CHANGELOG rows for it should go.
  */
-function note(description: string): void {
-  test.info().annotations.push({ type: 'local-space', description });
-}
-
 /** The tolerance these shares are measured at, as `docs/threeforge.md` states them; not the e2e default of 24. */
 const TOLERANCE = 4;
 
@@ -123,24 +105,6 @@ async function buildBoxes(
   }, kind);
 }
 
-async function compileAndSettle(forge: ForgePage) {
-  return forge.page.evaluate(async () => {
-    const f = window.__forge;
-    const report = f.compile();
-    for (let i = 0; i < 3; i++) await f.frameAsync();
-    // `localSpaceDraws` is gathered on the ledger's graph rescan, which runs every 60 frames: an app sees the hint
-    // within a second of compiling, a four-frame test would not, so ask for the rescan rather than render 60 frames.
-    f.ledger.rescan();
-    const frame = await f.frameAsync();
-    return {
-      after: report.after,
-      hints: frame.hints.map((h) => ({ code: h.code, severity: h.severity })),
-      submissions: frame.totals.sceneSubmissions,
-      unattributed: frame.totals.unattributed,
-    };
-  });
-}
-
 for (const [kind, label] of [
   ['gradient', 'a positionLocal colour gradient (this scene: about 11.1 % of the frame)'],
   ['alphaHash', 'alphaHash (this scene: about 5.6 % of the frame)'],
@@ -157,6 +121,7 @@ for (const [kind, label] of [
     const changedPixels = differingPixels(before, after, { threshold: TOLERANCE });
     const share = pixelDiff(before, after, { threshold: TOLERANCE });
     note(
+      'local-space',
       `[${forge.backend}] ${kind}: ${r.after.batches} batch, ${changedPixels} changed pixels, ${(share * 100).toFixed(4)}% of the frame`,
     );
     // The four boxes really did batch, and nothing else moved: the diff below is batching's.
@@ -185,7 +150,7 @@ test('the same boxes with a plain material batch at parity and raise no hint', a
   const r = await compileAndSettle(forge);
   const after = await forge.page.screenshot({ type: 'png' });
   const changedPixels = differingPixels(before, after, { threshold: TOLERANCE });
-  note(`[${forge.backend}] plain control: ${r.after.batches} batch, ${changedPixels} changed pixels`);
+  note('local-space', `[${forge.backend}] plain control: ${r.after.batches} batch, ${changedPixels} changed pixels`);
   expect(r.after.batches).toBe(1);
   expect(r.hints.map((h) => h.code)).not.toContain('batch-local-space');
   expect(changedPixels, 'the control changed pixels, so the cases above prove nothing about their materials').toBe(0);

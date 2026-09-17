@@ -19,8 +19,10 @@ import {
   Vector3,
 } from 'three';
 import type { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { tag } from 'threeforge';
+import { disposeLoader, tag } from 'threeforge';
 import { mulberry32 } from '../scenes/naive.js';
+import { applyRoomEnvironment } from './scenes/environment.js';
+import type { BenchBuilder } from './scenes/index.js';
 
 export interface BiomeOptions {
   loader: GLTFLoader;
@@ -332,3 +334,30 @@ export async function buildBiome({
   scene.add(new AmbientLight(0xbfd4ff, 0.55), sun, sun.target);
   return { scene, terrain, water: waterMesh, heightAt, counts, cars, size };
 }
+
+/** The harness's `scene=biome`: `density`, `water` and `hipoly` query params. */
+export const biomeScene: BenchBuilder = async ({ renderer, camera, params, loader: makeLoader }) => {
+  const loader = await makeLoader();
+  const biome = await buildBiome({
+    loader,
+    density: Number(params.get('density') ?? '1'),
+    water: params.get('water') !== '0',
+    hiPoly: params.get('hipoly') !== '0',
+  });
+  disposeLoader(loader);
+  applyRoomEnvironment(renderer, biome.scene);
+  camera.near = 2;
+  camera.far = 2500;
+  camera.position.set(-140, 150, 420);
+  camera.lookAt(60, 10, 0);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+  return {
+    scene: biome.scene,
+    counts: biome.counts,
+    biome,
+    animate: () => {
+      for (const car of biome.cars) car.position.x += Math.sin(car.rotation.y) * 0.3;
+    },
+  };
+};

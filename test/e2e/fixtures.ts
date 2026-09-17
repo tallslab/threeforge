@@ -59,3 +59,29 @@ export const test = base.extend<ForgeOptions & { forge: ForgePage }>({
 });
 
 export { expect };
+
+/** Records a measurement on the test (visible in the JSON and HTML reports) instead of printing it. */
+export function note(type: string, description: string): void {
+  test.info().annotations.push({ type, description });
+}
+
+/** Compiles in the page, lets three frames settle, rescans the ledger and returns the report with the next frame. */
+export async function compileAndSettle(forge: ForgePage) {
+  return forge.page.evaluate(async () => {
+    const f = window.__forge;
+    const report = f.compile();
+    for (let i = 0; i < 3; i++) await f.frameAsync();
+    // Hints such as `batch-local-space` are gathered on the ledger's graph rescan, which runs every 60 frames: an app
+    // sees them within a second of compiling, a four-frame test would not, so ask for the rescan.
+    f.ledger.rescan();
+    const frame = await f.frameAsync();
+    return {
+      /** Null when the World was made without `bake`. */
+      bake: report.bake,
+      after: report.after,
+      hints: frame.hints.map((h) => ({ code: h.code, severity: h.severity })),
+      submissions: frame.totals.sceneSubmissions,
+      unattributed: frame.totals.unattributed,
+    };
+  });
+}

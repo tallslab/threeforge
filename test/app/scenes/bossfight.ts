@@ -1,13 +1,10 @@
 import { disposeLoader, ShadowBudget } from 'threeforge';
 import { buildArena } from '../arena.js';
+import { applyRoomEnvironment } from './environment.js';
 import type { BenchBuilder } from './index.js';
 
 /** The fight arena with 30 simultaneous particle effects, sprites, decals and shadowed spot and point lights. */
 export const bossfight: BenchBuilder = async ({ renderer, camera, params, loader: makeLoader, tier }) => {
-  const [{ RoomEnvironment }, { PMREMGenerator }] = await Promise.all([
-    import('three/addons/environments/RoomEnvironment.js'),
-    import('three/webgpu'),
-  ]);
   const loader = await makeLoader();
   renderer.shadowMap.enabled = true;
   const arena = await buildArena({
@@ -19,12 +16,7 @@ export const bossfight: BenchBuilder = async ({ renderer, camera, params, loader
     effects: Number(params.get('effects') ?? '30'),
   });
   disposeLoader(loader);
-  const roomEnvironment = new RoomEnvironment();
-  const pmrem = new PMREMGenerator(renderer);
-  arena.scene.environment = pmrem.fromScene(roomEnvironment, 0.04).texture;
-  arena.scene.environmentIntensity = 0.15;
-  pmrem.dispose();
-  roomEnvironment.dispose();
+  applyRoomEnvironment(renderer, arena.scene, 0.15);
   camera.near = 0.5;
   camera.far = 400;
   camera.position.set(-38, 34, 58);

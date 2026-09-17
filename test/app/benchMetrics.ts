@@ -66,14 +66,11 @@ export const METRIC_KEYS: ReadonlyArray<keyof BenchMetrics> = [
 ];
 
 /**
- * Shared by the CI runner (test/e2e/bench.spec.ts) and the device bench page so the two cannot drift. `shadowTexels` is
- * `lighting.shadowTexels` of every measured frame: the metric is their mean, rounded, over the same fixed frame window
- * each run (a frozen or quantized map renders on a fixed share of those frames).
- *
- * `programs` comes from the caller rather than from `f`, because `f` is captured after `measureOverdraw()`: the count
- * materials' shader stages are counted in `renderer.info.memory.programs` and three frees a stage only once its
- * `usedTimes` reaches 0, so the final frame still counts the diagnostic's own shaders. Both callers pass what they read
- * from the last measured frame, before the measurement, which keeps the metric about the shaders the app compiled.
+ * Shared by the CI runner (test/e2e/bench.spec.ts) and the device bench page so the two cannot drift. `shadowTexels`
+ * is the rounded mean of `lighting.shadowTexels` over the same fixed frame window each run (a frozen or quantized map
+ * renders on a fixed share of those frames). `programs` comes from the caller because `f` is captured after
+ * `measureOverdraw()`, whose count materials' shader stages stay in `renderer.info.memory.programs` (three frees a
+ * stage only once its `usedTimes` reaches 0); both callers pass the value read from the last measured frame.
  */
 export function metricsOf(
   f: FrameSnapshot,

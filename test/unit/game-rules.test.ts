@@ -21,9 +21,9 @@ import {
 import { describe, expect, it } from 'vitest';
 import { classify } from '../../src/compiler/classify.js';
 import { World } from '../../src/compiler/World.js';
-import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { tag } from '../../src/tags.js';
-import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
+import { attachedLedger } from './helpers/ledger.js';
+import { reasonsIn } from './helpers/ledgerFixtures.js';
 
 const box = new BoxGeometry();
 const solid = (color: number) => new MeshStandardMaterial({ color, roughness: 0.7, metalness: 0 });
@@ -98,22 +98,19 @@ describe('game content rules', () => {
   });
 
   it('reports an untagged mesh the compiler classified dynamic (under a bone, animated) as dynamic, not untagged', () => {
-    const { scene, camera } = sceneWithCamera();
+    const { renderer, ledger, scene, camera } = attachedLedger();
     const root = new Bone();
     const sword = new Mesh(box, solid(1));
     sword.name = 'sword';
     root.add(sword);
     scene.add(root);
-    const renderer = new FakeRenderer();
-    const ledger = new DrawCallLedger();
-    ledger.attach(renderer as never);
     new World(scene, { ledger, policy: 'auto' }).compile();
     renderer.render(scene, camera);
     expect(ledger.frame({ items: true }).items?.find((i) => i.name === 'sword')?.reason).toBe('dynamic');
   });
 
   it('gives points, sprites and lines their own ledger reasons', () => {
-    const { scene, camera } = sceneWithCamera();
+    const { renderer, ledger, scene, camera } = attachedLedger();
     const points = new Points(
       new BufferGeometry().setAttribute('position', new Float32BufferAttribute([0, 0, 0], 3)),
       new PointsMaterial(),
@@ -127,16 +124,8 @@ describe('game content rules', () => {
     );
     line.name = 'beam';
     scene.add(points, sprite, line);
-    const renderer = new FakeRenderer();
-    const ledger = new DrawCallLedger();
-    ledger.attach(renderer as never);
     renderer.render(scene, camera);
-    const reasons = Object.fromEntries(
-      (ledger.frame({ items: true }).items ?? [])
-        .filter((i) => i.reason !== 'renderer-internal')
-        .map((i) => [i.name, i.reason]),
-    );
-    expect(reasons).toEqual({ sparks: 'points', health: 'sprite', beam: 'line' });
+    expect(reasonsIn(ledger)).toEqual({ sparks: 'points', health: 'sprite', beam: 'line' });
   });
 
   it('lets a batch share the canonical material when every instance is white, so runtime uniform changes propagate', () => {

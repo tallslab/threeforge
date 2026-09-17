@@ -1,75 +1,58 @@
 /**
- * A stand-in for three r186's common Renderer (`three/webgpu`) for node unit tests. It exposes the surface the ledger
- * patches and reads (render, renderAsync, renderObject, info, backend, shadowMap, getRenderTarget,
- * getDrawingBufferSize), the state the overdraw measurement saves and sets (render target, MRT, render-object function,
- * clear colour, `autoClear`, `opaque`/`transparent`, a zero read-back), and follows three's source where it decides what
- * is drawn:
+ * A stand-in for three r186's common Renderer (`three/webgpu`) for node unit tests: the surface the ledger patches and
+ * reads (render, renderAsync, renderObject, info, backend, shadowMap, lighting, getRenderTarget, getDrawingBufferSize)
+ * and the state the overdraw measurement saves and sets (render target, MRT, render-object function, clear colour,
+ * `autoClear`, `opaque`/`transparent`, read-backs). It follows three's source (node_modules/three/src) where that
+ * decides what is drawn:
  * - Renderer._projectObject: a hidden object hides its subtree; the camera's layers gate each object alone.
  * - Renderer._renderScene: the render list in traversal order, opaque items first, then a back-side pass of transmissive
- *   double-sided items, then transparent items (three also sorts each list; tests control order by insertion); the
- *   lights node of the projected lights as renderObject's argument 7; `scene.onAfterRender`, plus
- *   `scene.onBeforeRender` with `sceneHooks`, both given the render's target (`renderer.frameBufferTarget` for a canvas
- *   render). Non-Scene roots (quads) use an internal scene, like three's `_scene`.
- * - Renderer.renderObject: object hooks around the call, the override copy (`transparent`, the shadow side, restored
- *   side) and two draws, BackSide then FrontSide, for double-sided transparent materials.
- * - RenderObject.getDrawParameters and the backends' Info.update: nothing for zero instances or an empty range; one
- *   draw per call, N per BatchedMesh on WebGPU or on WebGL without WEBGL_multi_draw; triangles = instances x count / 3.
- * - ShadowNode and PointShadowNode: shadow maps per light (see `shadowLights`), six faces per point light, VSM quads,
- *   and `light.shadow.map` built as a light's map first renders.
- * Every render that writes the output target — one with no render target set — also draws an "Output Color Transform"
- * quad, like three's output pass (a QuadMesh: one fullscreen triangle), whatever the root's type and whatever the
- * scene's override material; a render into a target (a reflection, an overdraw count pass, a shadow map) draws none.
- * Not modelled: frustum culling, sorting, matrix updates (call `scene.updateMatrixWorld()`), pipeline readiness.
- *
- * Known gaps from three r186 that no current test relies on. A test that depends on one of
- * these cases must model it first, or it inherits a behaviour three does not have:
- * - `material.visible`: `projectItem` pushes an item whatever its material's `visible`; three's `_projectObject` pushes
- *   only visible materials, so a mesh with an invisible material counts as drawn here.
- * - Array materials: three walks `geometry.groups` for any Mesh, Line or Points with an array material and pushes nothing
- *   when there are no groups; the fake uses groups for meshes only and draws `materials[0]` for an array without groups.
- * - `LineLoop`: three logs an error and skips it; the fake draws it as a line.
- * - `shadowTrigger: 'first-receiver'` fires for any `receiveShadow` object; three builds a ShadowNode only for a lit node
- *   material (`NodeMaterial.lights`), so a receiver with an unlit custom node material triggers the map one draw early.
- * - Nested renders during a canvas render: three sets the renderer's target to the frame-buffer target while it renders
- *   the canvas, so a nested render with no explicit target is not an output render; the fake keeps `renderTarget` null
- *   there, so `getRenderTarget()` differs mid-frame and such a nested render draws an extra "Output Color Transform" quad.
+ *   double-sided items, then transparent items (insertion order: no sorting); the projected lights as renderObject's
+ *   lights node; `scene.onAfterRender`, plus `scene.onBeforeRender` with `sceneHooks`, given the render's target. A
+ *   render with no target set also draws the "Output Color Transform" quad (Renderer._renderOutput, one fullscreen
+ *   triangle); a render into a target (a reflection, a count pass, a shadow map) draws none.
+ * - Renderer.renderObject: the object hooks, the override copies (alphaTest, alphaMap, displacement, positionNode,
+ *   `transparent`, the shadow side) and their restore, and two draws, BackSide then FrontSide, for a double-sided
+ *   transparent material.
+ * - RenderObject.getDrawParameters and the backends' Info.update: nothing for zero instances or an empty range; one draw
+ *   per call, N per BatchedMesh on WebGPU or on WebGL without WEBGL_multi_draw; triangles = instances x count / 3
+ *   (`fakeRendererRules.ts`). A BatchedMesh draw reads its index texture as last uploaded: at the draw on WebGL, when
+ *   the render() call ends on WebGPU (the pass is submitted then).
+ * - Shadow maps (`fakeShadows.ts`) and instance buffers (`fakeInstancing.ts`) are separate models this class drives.
+ * Not modelled: frustum culling, sorting, matrix updates (call `scene.updateMatrixWorld()`), pipeline readiness,
+ * `material.visible` (an invisible material still draws), array materials without groups on Lines and Points,
+ * `LineLoop` (drawn as a line), a `first-receiver` trigger keyed on `receiveShadow` alone (three needs a lit node
+ * material), and the frame-buffer target as the current target during a canvas render (a nested render with no
+ * target of its own draws an extra output quad here). A test that depends on one of these must model it first.
  */
 import {
   BackSide,
   BatchedMesh,
-  type BufferAttribute,
   BufferGeometry,
   type Camera,
   Color,
   type CoordinateSystem,
-  DepthTexture,
+  DataUtils,
   DoubleSide,
   Float32BufferAttribute,
   FrontSide,
   Group,
   type Light,
-  type LightShadow,
   Material,
   type Matrix4,
   Mesh,
-  MeshDepthMaterial,
   type Object3D,
-  OrthographicCamera,
   PCFShadowMap,
   PerspectiveCamera,
-  RenderTarget,
   Scene,
   type ShadowMapType,
   type Side,
+  type Texture,
   Vector2,
-  Vector3,
   VSMShadowMap,
   WebGLCoordinateSystem,
-  WebGPUCoordinateSystem,
 } from 'three';
+import { FakeInstanceBuffers, type Instanced, type InstanceReads } from './fakeInstancing.js';
 import {
-  CUBE_FACES_WEBGL,
-  CUBE_FACES_WEBGPU,
   drawParameters,
   isTransparentItem,
   needsDoublePass,
@@ -78,6 +61,7 @@ import {
   slotIds,
   trianglesOf,
 } from './fakeRendererRules.js';
+import { FakeShadowMaps, type ShadowHost } from './fakeShadows.js';
 
 export interface FakeRendererOptions {
   webgpu?: boolean;
@@ -85,10 +69,8 @@ export interface FakeRendererOptions {
   /** One shadow-casting light; the same as `shadowLights: [shadowLight]`. */
   shadowLight?: Light;
   /**
-   * Lights whose shadow maps this renderer updates, like ShadowNode.updateBefore. A light renders its map when
-   * `renderer.shadowMap.enabled`, `light.castShadow`, the light is among the render's projected lights,
-   * `shadow.autoUpdate || shadow.needsUpdate`, and the map has not rendered for that camera in this frame; `needsUpdate`
-   * is then cleared. A map renders the scene with a shadow-pass override material and `shadow.camera` (directional and
+   * Lights whose shadow maps this renderer updates, like ShadowNode.updateBefore (see `FakeShadowMaps.update` for when a
+   * map renders). A map renders the scene with a shadow-pass override material and `shadow.camera` (directional and
    * spot lights after `shadow.updateMatrices(light)`; point lights six times, re-aiming that camera per face), drawing
    * casters only (plus receivers under VSM). `renderer.shadowMap.enabled` starts true when this or `shadowLight` is set.
    */
@@ -107,6 +89,12 @@ export interface FakeRendererOptions {
   sceneHooks?: boolean;
   /** Record the render() calls and draws of the last frame in `renderer.passes` (see FakePass). */
   record?: boolean;
+  /**
+   * With `record`: fields of the drawn material copied into `FakeDraw.slots` as each draw is issued, for callers that
+   * write per-draw slots on an override material and put them back after the draw (three's own override copies, the
+   * overdraw count's).
+   */
+  materialSlots?: readonly string[];
   /** With `renderer.shadowMap.type === VSMShadowMap`, render the two blur quads after each non-point map (ShadowNode.vsmPass). */
   vsmQuad?: boolean;
   /**
@@ -122,8 +110,12 @@ export interface FakeDraw {
   object: Object3D;
   /** The material drawn: the scene's override material when renderObject applied it. */
   material: Material;
+  /** The material renderObject was given (the object's own); the same as `material` when no override applied. */
+  source: Material;
   /** `material.side` when drawn: BackSide then FrontSide for the two draws of a double-sided transparent material. */
   side: Side;
+  /** `FakeRendererOptions.materialSlots` of the drawn material when the draw was issued, else null. */
+  slots: Record<string, unknown> | null;
   /** Added to `info.render.drawCalls`. */
   drawCalls: number;
   /** Added to `info.render.triangles`. */
@@ -139,12 +131,27 @@ export interface FakeDraw {
   batchIds: number[] | null;
   /**
    * InstancedMesh draws only (with `record`), else null: the matrix rows `[0, instanceCount)` the draw reads, 16 floats
-   * per row, from the GPU buffer three r186 would bind (see `uploadInstances`). Read when the draw is issued on WebGL,
-   * when its render() call ends on WebGPU (queue writes land at once; the pass is submitted then).
+   * per row, from the GPU buffer three r186 would bind (see `FakeInstanceBuffers.upload`). Read when the draw is issued
+   * on WebGL, when its render() call ends on WebGPU (queue writes land at once; the pass is submitted then).
    */
   instanceRows: Float32Array | null;
   /** InstancedMesh draws with `instanceColor` only (with `record`), else null: the colour rows `[0, instanceCount)`, 3 floats per row, read like `instanceRows`. */
   instanceColorRows: Float32Array | null;
+}
+
+/** The renderer and scene settings a render() call started with, as Renderer._renderScene read them. */
+export interface FakeRenderState {
+  overrideMaterial: Material | null;
+  background: unknown;
+  backgroundNode: unknown;
+  mrt: unknown;
+  renderObjectFunction: RenderObjectFunction | null;
+  /** getClearColor() and getClearAlpha(): [r, g, b, alpha]. */
+  clearColor: [number, number, number, number];
+  autoClear: boolean;
+  autoClearColor: boolean;
+  opaque: boolean;
+  transparent: boolean;
 }
 
 /** One render() call of the last frame. */
@@ -162,6 +169,7 @@ export interface FakePass {
   projectionMatrix: Matrix4;
   matrixWorldInverse: Matrix4;
   renderTarget: object | null;
+  state: FakeRenderState;
   /** The light of a 'shadow' or 'vsm' pass, else null. */
   light: Light | null;
   /** The cube face (0..5) of a point light's 'shadow' pass, else null. */
@@ -171,7 +179,7 @@ export interface FakePass {
 }
 
 /** LightsNode: the lights of the current render list (RenderList.finish), restored when a render ends (Lighting.finishRender). */
-class FakeLightsNode {
+export class FakeLightsNode {
   private lights: Light[] = [];
 
   getLights(): Light[] {
@@ -184,8 +192,7 @@ class FakeLightsNode {
   }
 }
 
-type ShadowLight = Light & { shadow: LightShadow; isPointLight?: boolean; distance?: number };
-type DrawGroup = { start: number; count: number; materialIndex?: number };
+export type DrawGroup = { start: number; count: number; materialIndex?: number };
 type IndexTexture = { version: number; image: { data: Uint32Array } };
 type Batch = Object3D & {
   isBatchedMesh?: boolean;
@@ -193,7 +200,7 @@ type Batch = Object3D & {
   _multiDrawCounts: Int32Array;
   _indirectTexture: IndexTexture;
 };
-type RenderObjectFunction = (
+export type RenderObjectFunction = (
   object: Object3D,
   scene: Scene,
   camera: Camera,
@@ -211,7 +218,7 @@ interface RenderItem {
   material: Material;
   group: DrawGroup | null;
 }
-type PassKind = Pick<FakePass, 'kind' | 'light' | 'face'>;
+export type PassKind = Pick<FakePass, 'kind' | 'light' | 'face'>;
 interface RenderCall {
   kind: PassKind;
   pass: FakePass | null;
@@ -220,45 +227,20 @@ interface RenderCall {
   /** WebGPU instanced draws whose rows resolve when the call ends. */
   pendingInstances: Array<{ draw: FakeDraw; read: InstanceReads; count: number }>;
 }
-type Instanced = Object3D & {
-  isInstancedMesh?: boolean;
-  count: number;
-  instanceMatrix: BufferAttribute;
-  instanceColor: BufferAttribute | null;
+/** The material fields Renderer.renderObject copies onto an override, and reads back, that the base type does not declare. */
+type OverrideMaterial = Material & {
+  isNodeMaterial?: boolean;
+  isShadowPassMaterial?: boolean;
+  colorNode?: unknown;
+  depthNode?: unknown;
+  positionNode?: { isNode?: boolean } | null;
+  alphaMap?: Texture | null;
+  displacementMap?: Texture | null;
+  displacementScale?: number;
+  displacementBias?: number;
 };
-/** How to read the matrix rows and colour rows a draw binds, at draw time (WebGL) or when its render() call ends (WebGPU). */
-interface InstanceReads {
-  rows: () => Float32Array;
-  colors: (() => Float32Array) | null;
-}
-/** A RenderObject of an InstancedMesh with its NodeBuilderState (three keys both by object, material and render context). */
-interface InstanceRenderObject {
-  /** `instanceMatrix.version` at the last refresh (NodeMaterialObserver). */
-  version: number;
-  /** `instanceColor.version` at the last refresh, null without colours. */
-  colorVersion: number | null;
-  /** frameId when its OnBeforeFrameUpdate event last ran. */
-  frame: number;
-  /** The uniform buffer of the uniform path. */
-  buffer: Float32Array | null;
-  /** Whether Geometries.updateAttribute has checked its attribute once (the first check is not keyed by the render call). */
-  checked: boolean;
-}
-/** Instance.js's InstancedInterleavedBuffer over `instanceMatrix` (or its InstancedBufferAttribute over `instanceColor`), and its GPU buffer. */
-interface InstanceVertexBuffer {
-  version: number;
-  ranges: { start: number; count: number }[];
-  /** The version uploaded last; -1 before the buffer exists. */
-  uploaded: number;
-  /** `info.render.calls` of the last upload check. */
-  call: number;
-  data: Float32Array;
-}
 
-const _position = new Vector3();
-const _target = new Vector3();
-
-export class FakeRenderer {
+export class FakeRenderer implements ShadowHost {
   readonly info = { render: { drawCalls: 0, triangles: 0, calls: 0, frameCalls: 0 }, memory: { programs: 0 } };
   readonly backend: {
     isWebGPUBackend?: boolean;
@@ -272,6 +254,8 @@ export class FakeRenderer {
   readonly shadowLights: Light[];
   /** What getDrawingBufferSize() reports: three's default 300x150 canvas at pixel ratio 1. */
   readonly drawingBufferSize = new Vector2(300, 150);
+  /** The red channel of the next read-backs, one entry per readRenderTargetPixelsAsync call in order; past the end, 0. */
+  readbacks: number[] = [];
   /** With `record`: the render() calls of the last frame, in the order they started. Reset by every outermost render(). */
   passes: FakePass[] = [];
   /** +1 at the start of every outermost render(): the fake's NodeFrame.frameId (three advances it once per animation frame). */
@@ -294,20 +278,13 @@ export class FakeRenderer {
   };
 
   private readonly options: FakeRendererOptions;
-  private readonly instanceObjects = new Map<string, InstanceRenderObject>();
-  private readonly instanceBuffers = new WeakMap<BufferAttribute, InstanceVertexBuffer>();
-  /** ShadowBaseNode's shadow material, flagged so renderObject derives the shadow side for it. */
-  private readonly shadowMaterial = Object.assign(new MeshDepthMaterial(), { isShadowPassMaterial: true });
+  private readonly shadows: FakeShadowMaps;
+  private readonly instancing: FakeInstanceBuffers;
   private readonly internalScene = new Scene();
   private readonly defaultLights = new FakeLightsNode();
   private readonly lightsNodes = new WeakMap<Object3D, FakeLightsNode>();
-  /** ShadowNode._cameraFrameId per light. */
-  private readonly shadowFrames = new WeakMap<Light, Map<Camera, number>>();
   /** The GPU copy of each batch index texture. */
   private readonly uploads = new WeakMap<IndexTexture, { version: number; data: Uint32Array }>();
-  private readonly vsmQuad: Mesh;
-  private readonly vsmCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  private readonly vsmMaterials: Material[];
   private renderObjectFunction: RenderObjectFunction | null = null;
   private activeCubeFace = 0;
   private activeMipmapLevel = 0;
@@ -320,8 +297,9 @@ export class FakeRenderer {
   constructor(options: FakeRendererOptions = {}) {
     this.options = options;
     const multiDraw = options.multiDraw ?? true;
+    const uniformBufferLimit = options.uniformBufferLimit ?? 65536;
     // WebGPUCapabilities / WebGLCapabilities.getUniformBufferLimit, which NodeBuilder.getUniformBufferLimit reads.
-    const capabilities = { getUniformBufferLimit: () => options.uniformBufferLimit ?? 65536 };
+    const capabilities = { getUniformBufferLimit: () => uniformBufferLimit };
     this.backend = options.webgpu
       ? { isWebGPUBackend: true, hasFeature: () => false, capabilities }
       : { hasFeature: (name: string) => name === 'WEBGL_multi_draw' && multiDraw, capabilities };
@@ -333,9 +311,8 @@ export class FakeRenderer {
     // Like three's "Output Color Transform" QuadMesh (Renderer._renderOutput): rendered every frame, never part of the user scene.
     this.outputQuad = Object.assign(new Mesh(triangle, new Material()), { isQuadMesh: true });
     this.outputQuad.name = 'Output Color Transform';
-    // ShadowNode.vsmPass draws a QuadMesh with each blur material.
-    this.vsmQuad = Object.assign(new Mesh(triangle, new Material()), { isQuadMesh: true });
-    this.vsmMaterials = ['VSMVertical', 'VSMHorizontal'].map((name) => Object.assign(new Material(), { name }));
+    this.shadows = new FakeShadowMaps(this, triangle, options.vsmQuad === true);
+    this.instancing = new FakeInstanceBuffers(uniformBufferLimit);
   }
 
   getRenderTarget(): object | null {
@@ -388,15 +365,21 @@ export class FakeRenderer {
     return this.clearAlpha;
   }
 
-  /** Renderer.readRenderTargetPixelsAsync on a half-float target: raw halves, all zero (the fake draws no pixels). */
+  /**
+   * Renderer.readRenderTargetPixelsAsync on a half-float target: width x height RGBA raw halves, every red the next
+   * entry of `readbacks` (0 past the end: the fake draws no pixels), so a caller decodes what the backends return.
+   */
   async readRenderTargetPixelsAsync(
     _target: object,
     _x: number,
     _y: number,
     width: number,
     height: number,
-  ): Promise<Uint16Array> {
-    return new Uint16Array(width * height * 4);
+  ): Promise<ArrayLike<number>> {
+    const red = DataUtils.toHalfFloat(this.readbacks.shift() ?? 0);
+    const px = new Uint16Array(width * height * 4);
+    if (red !== 0) for (let i = 0; i < width * height; i++) px[i * 4] = red;
+    return px;
   }
 
   getDrawingBufferSize(target: Vector2): Vector2 {
@@ -446,6 +429,18 @@ export class FakeRenderer {
         projectionMatrix: camera.projectionMatrix.clone(),
         matrixWorldInverse: camera.matrixWorldInverse.clone(),
         renderTarget: this.renderTarget,
+        state: {
+          overrideMaterial: sceneRef.overrideMaterial,
+          background: sceneRef.background,
+          backgroundNode: (sceneRef as { backgroundNode?: unknown }).backgroundNode,
+          mrt: this.mrt,
+          renderObjectFunction,
+          clearColor: [this.clearColor.r, this.clearColor.g, this.clearColor.b, this.clearAlpha],
+          autoClear: this.autoClear,
+          autoClearColor: this.autoClearColor,
+          opaque: this.opaque,
+          transparent: this.transparent,
+        },
         draws: [],
       };
       this.passes.push(call.pass);
@@ -469,7 +464,7 @@ export class FakeRenderer {
     project(scene);
     lightsNode.setLights(lights);
     const plainScene = sceneRef === root && root.overrideMaterial === null;
-    if (this.options.shadowTrigger === undefined && plainScene) this.updateShadows(root, camera, lightsNode);
+    if (this.options.shadowTrigger === undefined && plainScene) this.shadows.update(root, camera, lightsNode);
 
     const renderList = (items: RenderItem[], passId: string | null) => {
       for (const { object, geometry, material, group } of items) {
@@ -547,56 +542,105 @@ export class FakeRenderer {
     _passId: string | null = null, // three's 'backSide' pass id only keys its render-object cache
   ): void {
     object.onBeforeRender(this as never, scene, camera, geometry, material, group as never);
-    const overrideMaterial = material.allowOverride === true ? scene.overrideMaterial : null;
-    let overrideSide: Side = FrontSide;
+    const overrideMaterial = (
+      material.allowOverride === true ? scene.overrideMaterial : null
+    ) as OverrideMaterial | null;
+    const source = material as OverrideMaterial;
+    let saved: Pick<
+      OverrideMaterial,
+      'colorNode' | 'depthNode' | 'positionNode' | 'side' | 'displacementMap' | 'displacementScale' | 'displacementBias'
+    > | null = null;
     if (overrideMaterial !== null) {
-      overrideSide = overrideMaterial.side;
+      // Renderer.renderObject (Renderer.js ~3729-3777): what it keeps of the override to put back after the draw, then the
+      // copies from the drawn material. Not modelled: the shadow nodes `_getShadowNodes` copies for a shadow pass.
+      saved = {
+        colorNode: overrideMaterial.isNodeMaterial ? overrideMaterial.colorNode : null,
+        depthNode: overrideMaterial.isNodeMaterial ? overrideMaterial.depthNode : null,
+        positionNode: overrideMaterial.isNodeMaterial ? overrideMaterial.positionNode : null,
+        side: overrideMaterial.side,
+        displacementMap: overrideMaterial.displacementMap,
+        displacementScale: overrideMaterial.displacementScale,
+        displacementBias: overrideMaterial.displacementBias,
+      };
+      if (source.positionNode?.isNode) overrideMaterial.positionNode = source.positionNode;
+      overrideMaterial.alphaTest = source.alphaTest;
+      overrideMaterial.alphaMap = source.alphaMap;
+      overrideMaterial.displacementMap = source.displacementMap;
+      overrideMaterial.displacementScale = source.displacementScale;
+      overrideMaterial.displacementBias = source.displacementBias;
       overrideMaterial.transparent = overrideTransparent(material);
-      if ((overrideMaterial as Material & { isShadowPassMaterial?: boolean }).isShadowPassMaterial) {
+      if (overrideMaterial.isShadowPassMaterial) {
         overrideMaterial.side = shadowPassSide(material, this.shadowMap.type === VSMShadowMap);
       }
       material = overrideMaterial;
     }
     if (material.transparent === true && material.side === DoubleSide && material.forceSinglePass === false) {
       material.side = BackSide;
-      this.drawObject(object, material, scene, camera, lightsNode, group);
+      this.drawObject(object, material, source, scene, camera, lightsNode, group);
       material.side = FrontSide;
-      this.drawObject(object, material, scene, camera, lightsNode, group);
+      this.drawObject(object, material, source, scene, camera, lightsNode, group);
       material.side = DoubleSide;
     } else {
-      this.drawObject(object, material, scene, camera, lightsNode, group);
+      this.drawObject(object, material, source, scene, camera, lightsNode, group);
     }
-    if (overrideMaterial !== null) overrideMaterial.side = overrideSide; // `transparent` is not restored, as in three
+    if (saved !== null) {
+      // Renderer.js ~3803-3809 writes the restore to `scene.overrideMaterial` as it is then (its caller may have swapped
+      // the override), outside any finally; `transparent`, `alphaTest` and `alphaMap` are not put back, as in three.
+      const restored = (scene.overrideMaterial ?? overrideMaterial) as OverrideMaterial;
+      restored.colorNode = saved.colorNode;
+      restored.depthNode = saved.depthNode;
+      restored.positionNode = saved.positionNode;
+      restored.side = saved.side;
+      restored.displacementMap = saved.displacementMap;
+      restored.displacementScale = saved.displacementScale;
+      restored.displacementBias = saved.displacementBias;
+    }
     object.onAfterRender(this as never, scene, camera, geometry, material, group as never);
+  }
+
+  /** A nested render() of the given kind, through the (possibly patched) instance method, as three's nodes call it. */
+  renderPass(kind: PassKind, scene: Object3D, camera: Camera): void {
+    this.nextPass = kind;
+    this.render(scene, camera);
   }
 
   /** Renderer._renderObjectDirect and the backend's draw: the shadow maps a receiver needs, uploads, then the draw. */
   private drawObject(
     object: Object3D,
     material: Material,
+    source: Material,
     scene: Scene,
     camera: Camera,
     lightsNode: FakeLightsNode | null,
     group: DrawGroup | null,
   ): void {
     const call = this.calls[this.calls.length - 1];
-    // NodeMaterialObserver.needsRefresh decides the refresh before any updateBefore node runs.
+    // NodeMaterialObserver.needsRefresh decides the refresh before any updateBefore node runs. three keys the render
+    // object by object, material and render context (the target's attachments and the call depth); the pass's light
+    // stands in for the per-light shadow material the fake shares.
+    const target = this.renderTarget as { texture?: { name?: string } } | null;
     const instances =
       this.options.record && (object as Instanced).isInstancedMesh === true && call
-        ? this.instanceRenderObject(object as Instanced, material, call)
+        ? this.instancing.renderObject(
+            object as Instanced,
+            material,
+            `${call.kind.light?.uuid ?? ''}|${this.calls.length - 1}|${target?.texture?.name ?? 'default'}`,
+          )
         : null;
     // NodeManager.updateBefore runs the render object's updateBeforeNodes in order. The instance OnBeforeFrameUpdate event
     // sits in the position stack, which NodeBuilder.build flows before its fragment/vertex loop (NodeBuilder.js ~3193)
     // and Node.build registers in the setup branch, so it runs before a receiver's ShadowNode (dumped from three r186 on
     // both backends: ['EventNode:beforeFrame', 'ShadowNode']).
-    if (instances) this.syncInstances(object as Instanced, instances.state);
+    if (instances) this.instancing.sync(object as Instanced, instances.state, this.frameId);
     // Then a receiver's ShadowNode renders its map before this object draws.
-    const shadowPass = (material as Material & { isShadowPassMaterial?: boolean }).isShadowPassMaterial === true;
+    const shadowPass = (material as OverrideMaterial).isShadowPassMaterial === true;
     if (this.options.shadowTrigger === 'first-receiver' && object.receiveShadow && lightsNode !== null && !shadowPass) {
-      this.updateShadows(scene, camera, lightsNode);
+      this.shadows.update(scene, camera, lightsNode);
     }
     // Then Geometries.updateForRender and Bindings.updateForRender.
-    const readInstances = instances ? this.uploadInstances(object as Instanced, instances.state, instances.full) : null;
+    const readInstances = instances
+      ? this.instancing.upload(object as Instanced, instances.state, instances.full, this.info.render.calls)
+      : null;
     const params = drawParameters(object, material, group);
     if (params === null) return;
     let drawCalls = 1;
@@ -616,10 +660,15 @@ export class FakeRenderer {
     this.info.render.drawCalls += drawCalls;
     this.info.render.triangles += triangles;
     if (!call?.pass) return;
+    const slotNames = this.options.materialSlots;
     const draw: FakeDraw = {
       object,
       material,
+      source,
       side: material.side,
+      slots: slotNames
+        ? Object.fromEntries(slotNames.map((name) => [name, (material as unknown as Record<string, unknown>)[name]]))
+        : null,
       drawCalls,
       triangles,
       instanceCount: params.instanceCount,
@@ -648,126 +697,6 @@ export class FakeRenderer {
     }
     if (this.backend.isWebGPUBackend) call.pending.push({ draw, texture, counts });
     else draw.batchIds = slotIds(counts, upload.data);
-  }
-
-  /**
-   * The render object of an InstancedMesh draw and whether it refreshes in full (NodeMaterialObserver: the first draw, or
-   * `instanceMatrix.version` changed since its last refresh). three keys it by object, material and render context (the
-   * target's attachments and the call depth); a shadow map's override material is one per light
-   * (ShadowBaseNode `_shadowMaterialLib`), where the fake shares one, so the light is part of the key.
-   */
-  private instanceRenderObject(
-    mesh: Instanced,
-    material: Material,
-    call: RenderCall,
-  ): { state: InstanceRenderObject; full: boolean } {
-    const target = this.renderTarget as { texture?: { name?: string } } | null;
-    const key = `${mesh.uuid}|${material.uuid}|${call.kind.light?.uuid ?? ''}|${this.calls.length - 1}|${target?.texture?.name ?? 'default'}`;
-    let state = this.instanceObjects.get(key);
-    const colorVersion = mesh.instanceColor === null ? null : mesh.instanceColor.version;
-    const full =
-      state === undefined || state.version !== mesh.instanceMatrix.version || state.colorVersion !== colorVersion;
-    if (state === undefined) {
-      state = { version: 0, colorVersion: null, frame: -1, buffer: null, checked: false };
-      this.instanceObjects.set(key, state);
-    }
-    state.version = mesh.instanceMatrix.version;
-    state.colorVersion = colorVersion;
-    return { state, full };
-  }
-
-  /** Instance.js: matrices above `uniformBufferLimit` bytes go to the shared vertex buffer instead of a uniform buffer per render object. */
-  private instanceVertexPath(mesh: Instanced): boolean {
-    return mesh.instanceMatrix.count * 64 > (this.options.uniformBufferLimit ?? 65536);
-  }
-
-  private instanceBuffer(attribute: BufferAttribute): InstanceVertexBuffer {
-    let gpu = this.instanceBuffers.get(attribute);
-    if (gpu === undefined) {
-      gpu = { version: 0, ranges: [], uploaded: -1, call: -1, data: new Float32Array(attribute.array.length) };
-      this.instanceBuffers.set(attribute, gpu);
-    }
-    return gpu;
-  }
-
-  /**
-   * Instance.js's OnBeforeFrameUpdate event, which exists when the matrices use the vertex buffer or the mesh has
-   * colours: once per frame per node builder it copies each shared buffer's version and update ranges from its source
-   * attribute (replacing the ranges the buffer held) and clears the source's ranges.
-   */
-  private syncInstances(mesh: Instanced, state: InstanceRenderObject): void {
-    const vertexPath = this.instanceVertexPath(mesh);
-    if ((!vertexPath && mesh.instanceColor === null) || state.frame === this.frameId) return;
-    state.frame = this.frameId;
-    for (const attribute of [vertexPath ? mesh.instanceMatrix : null, mesh.instanceColor]) {
-      if (attribute === null) continue;
-      const gpu = this.instanceBuffer(attribute);
-      if (gpu.version === attribute.version) continue;
-      gpu.ranges = attribute.updateRanges.map((range) => ({ start: range.start, count: range.count }));
-      attribute.clearUpdateRanges();
-      gpu.version = attribute.version;
-    }
-  }
-
-  /**
-   * Geometries.updateForRender and Bindings.updateForRender for the instance attributes (`nodes/accessors/Instance.js`);
-   * returns how to read the buffers the draw binds.
-   * - Matrices up to `uniformBufferLimit` bytes: a uniform buffer per render object (objectGroup bindings are cloned per
-   *   render object, NodeBuilderState.createBindings), written from the array on a full refresh.
-   * - Matrices above it: the InstancedInterleavedBuffer, one GPU buffer for every render object. On a full refresh
-   *   Geometries.updateAttribute uploads when the GPU copy is older than the synced version: the ranges, or the whole
-   *   array when there are none (WebGPUAttributeUtils.updateAttribute). After a render object's first check of its
-   *   interleaved attribute, the shared buffer is checked at most once per `info.render.calls`, which every render()
-   *   advances and nothing restores after a nested one.
-   * - Divergence, on the strict side: three's Attributes.update keeps `data.version` per attribute object, and each render
-   *   object builds its own interleaved attributes over the shared buffer, so another render object that refreshes
-   *   later uploads again, with the ranges already consumed: the whole array (a second shadow light does). The fake keeps
-   *   one uploaded version per buffer, so it never re-uploads rows that way and never hides a lost range.
-   * - Colours: one InstancedBufferAttribute shared by every render object, checked at most once per render call.
-   */
-  private uploadInstances(mesh: Instanced, state: InstanceRenderObject, full: boolean): InstanceReads {
-    const matrices = mesh.instanceMatrix;
-    let rows: () => Float32Array;
-    if (!this.instanceVertexPath(mesh)) {
-      if (full || state.buffer === null) state.buffer = (matrices.array as Float32Array).slice();
-      rows = () => state.buffer!;
-    } else {
-      const gpu = this.instanceBuffer(matrices);
-      if (full && (!state.checked || gpu.call !== this.info.render.calls)) {
-        if (state.checked) gpu.call = this.info.render.calls;
-        state.checked = true;
-        this.uploadInstanceBuffer(gpu, matrices);
-      }
-      const data = gpu.data;
-      rows = () => data;
-    }
-    let colors: (() => Float32Array) | null = null;
-    if (mesh.instanceColor !== null) {
-      const gpu = this.instanceBuffer(mesh.instanceColor);
-      if (full && gpu.call !== this.info.render.calls) {
-        gpu.call = this.info.render.calls;
-        this.uploadInstanceBuffer(gpu, mesh.instanceColor);
-      }
-      const data = gpu.data;
-      colors = () => data;
-    }
-    return { rows, colors };
-  }
-
-  /** Attributes.update: creation uploads the whole array; later, a synced version newer than the upload writes the ranges, or everything without ranges. */
-  private uploadInstanceBuffer(gpu: InstanceVertexBuffer, attribute: BufferAttribute): void {
-    const array = attribute.array as Float32Array;
-    if (gpu.uploaded < 0) {
-      gpu.data.set(array);
-      gpu.uploaded = gpu.version;
-    } else if (gpu.uploaded < gpu.version) {
-      if (gpu.ranges.length === 0) gpu.data.set(array);
-      else
-        for (const range of gpu.ranges)
-          gpu.data.set(array.subarray(range.start, range.start + range.count), range.start);
-      gpu.ranges = [];
-      gpu.uploaded = gpu.version;
-    }
   }
 
   /** One visible object the camera's layers see, pushed where Renderer._projectObject puts it: a light, or render items. */
@@ -808,121 +737,6 @@ export class FakeRenderer {
       this.lightsNodes.set(root, node);
     }
     return node;
-  }
-
-  /** ShadowNode.updateBefore for every shadow light the render projected. */
-  private updateShadows(scene: Scene, camera: Camera, lightsNode: FakeLightsNode): void {
-    if (!this.shadowMap.enabled) return;
-    const projected = lightsNode.getLights();
-    for (const light of this.shadowLights as ShadowLight[]) {
-      if (!light.castShadow || !light.shadow || !projected.includes(light)) continue;
-      if (!(light.shadow.needsUpdate || light.shadow.autoUpdate)) continue;
-      let frames = this.shadowFrames.get(light);
-      if (!frames) {
-        frames = new Map();
-        this.shadowFrames.set(light, frames);
-      }
-      if (frames.get(camera) === this.frameId) continue;
-      frames.set(camera, this.frameId);
-      this.updateShadow(light, scene, camera);
-      light.shadow.needsUpdate = false;
-    }
-  }
-
-  /** ShadowNode.updateShadow: render the map with the shadow material and render-object function, then the VSM quads. */
-  private updateShadow(light: ShadowLight, scene: Scene, camera: Camera): void {
-    const shadow = light.shadow;
-    // ShadowNode.setupShadow builds the light's map when a receiver's lighting first sets up and sets `shadow.map`
-    // (ShadowNode.js ~529): a colour target with a depth texture (PointShadowNode.setupRenderTarget: a cube target and a
-    // cube depth texture, two textures too). Built here as the map first renders.
-    const built = shadow as unknown as { map: RenderTarget | null };
-    if (!built.map) {
-      built.map = new RenderTarget(shadow.mapSize.x, shadow.mapSize.y);
-      built.map.depthTexture = new DepthTexture(shadow.mapSize.x, shadow.mapSize.y);
-    }
-    const vsm = this.shadowMap.type === VSMShadowMap;
-    const layerMask = shadow.camera.layers.mask;
-    if ((layerMask & 0xfffffffe) === 0) shadow.camera.layers.mask = camera.layers.mask;
-    const saved = {
-      renderTarget: this.renderTarget,
-      overrideMaterial: scene.overrideMaterial,
-      renderObjectFunction: this.renderObjectFunction,
-    };
-    scene.overrideMaterial = this.shadowMaterial;
-    this.renderObjectFunction = this.shadowRenderObjectFunction(shadow, vsm);
-    this.renderTarget = { name: 'shadow', texture: { name: light.isPointLight ? 'PointShadowMap' : 'ShadowMap' } };
-    if (light.isPointLight) {
-      this.renderPointShadow(light, scene);
-    } else {
-      shadow.updateMatrices(light);
-      this.renderPass({ kind: 'shadow', light, face: null }, scene, shadow.camera);
-    }
-    this.renderObjectFunction = saved.renderObjectFunction;
-    if (vsm && !light.isPointLight && this.options.vsmQuad) {
-      for (const material of this.vsmMaterials) {
-        this.renderTarget = { texture: { name: '' } };
-        this.vsmQuad.material = material;
-        this.renderPass({ kind: 'vsm', light, face: null }, this.vsmQuad, this.vsmCamera);
-      }
-    }
-    shadow.camera.layers.mask = layerMask;
-    scene.overrideMaterial = saved.overrideMaterial;
-    this.renderTarget = saved.renderTarget;
-  }
-
-  /** PointShadowNode.renderShadow: six renders with the same camera, re-aimed along each cube face. */
-  private renderPointShadow(light: ShadowLight, scene: Scene): void {
-    const shadow = light.shadow;
-    const camera = shadow.camera as PerspectiveCamera;
-    const faces = this.coordinateSystem === WebGPUCoordinateSystem ? CUBE_FACES_WEBGPU : CUBE_FACES_WEBGL;
-    for (let face = 0; face < 6; face++) {
-      const far = light.distance || camera.far;
-      if (far !== camera.far) {
-        camera.far = far;
-        camera.updateProjectionMatrix();
-      }
-      _position.setFromMatrixPosition(light.matrixWorld);
-      camera.position.copy(_position);
-      camera.up.copy(faces.ups[face]!);
-      camera.lookAt(_target.copy(_position).add(faces.directions[face]!));
-      camera.updateMatrixWorld();
-      shadow.matrix.makeTranslation(-_position.x, -_position.y, -_position.z);
-      this.renderPass({ kind: 'shadow', light, face }, scene, camera);
-    }
-  }
-
-  /** ShadowBaseNode's render-object function: casters only (and receivers under VSM), bracketed by the shadow hooks. */
-  private shadowRenderObjectFunction(shadow: LightShadow, vsm: boolean): RenderObjectFunction {
-    return (object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId) => {
-      if (object.castShadow !== true && !(object.receiveShadow && vsm)) return;
-      const depthMaterial = scene.overrideMaterial as Material;
-      // three passes the object where @types/three declares a scene.
-      object.onBeforeShadow(
-        this as never,
-        object as never,
-        camera,
-        shadow.camera,
-        geometry,
-        depthMaterial,
-        group as never,
-      );
-      this.renderObject(object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId);
-      object.onAfterShadow(
-        this as never,
-        object as never,
-        camera,
-        shadow.camera,
-        geometry,
-        depthMaterial,
-        group as never,
-      );
-    };
-  }
-
-  /** A nested render() of the given kind, through the (possibly patched) instance method, as three's nodes call it. */
-  private renderPass(kind: PassKind, scene: Object3D, camera: Camera): void {
-    this.nextPass = kind;
-    this.render(scene, camera);
   }
 }
 

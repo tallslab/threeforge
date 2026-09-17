@@ -7,11 +7,11 @@ import {
   MeshStandardMaterial,
   PerspectiveCamera,
   Scene,
-  WebGLCoordinateSystem,
 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { FORGE_HIDDEN_LAYER, World } from '../../src/compiler/World.js';
 import { tag } from '../../src/tags.js';
+import { webglRenderer } from './helpers/renderers.js';
 
 const box = new BoxGeometry(1, 1, 1);
 const solid = (color: number) => new MeshStandardMaterial({ color, roughness: 0.7, metalness: 0 });
@@ -37,14 +37,7 @@ function sceneWithDynamics() {
 }
 
 function cullWith(batch: BatchedMesh | InstancedMesh, scene: Scene, camera: PerspectiveCamera) {
-  batch.onBeforeRender(
-    { coordinateSystem: WebGLCoordinateSystem } as never,
-    scene,
-    camera,
-    batch.geometry,
-    batch.material as never,
-    null as never,
-  );
+  batch.onBeforeRender(webglRenderer as never, scene, camera, batch.geometry, batch.material as never, null as never);
 }
 
 function camera() {

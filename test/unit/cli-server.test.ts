@@ -147,14 +147,11 @@ describe('serveStatic hardening', () => {
     expect(res.status).toBe(404);
   });
 
-  it('falls back to the literal path when decoding fails and that literal file exists in the root (100%.jpg)', async () => {
-    const res = await rawGet(server.url, '/100%.jpg');
-    expect(res.status).toBe(200);
-    expect(res.body).toBe('literal-percent-jpg-bytes');
-  });
-
-  it('still serves the same asset through its properly percent-encoded name (100%25.jpg decodes to 100%.jpg)', async () => {
-    const res = await rawGet(server.url, '/100%25.jpg');
+  it.each([
+    ['/100%.jpg', 'the literal path, when decoding fails and that literal file exists in the root'],
+    ['/100%25.jpg', 'its properly percent-encoded name, which decodes to 100%.jpg'],
+  ])('serves the percent-named asset at %s: %s', async (path) => {
+    const res = await rawGet(server.url, path);
     expect(res.status).toBe(200);
     expect(res.body).toBe('literal-percent-jpg-bytes');
   });

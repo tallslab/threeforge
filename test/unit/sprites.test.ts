@@ -1,4 +1,5 @@
 import {
+  Color,
   Frustum,
   Group,
   type Material,
@@ -16,6 +17,7 @@ import { ClippingGroup, SpriteNodeMaterial } from 'three/webgpu';
 import { describe, expect, it, vi } from 'vitest';
 import { SceneSpace } from '../../src/compiler/space.js';
 import { fillSpriteInstances, groupSprites, isVisibleInGraph, spriteRule } from '../../src/compiler/sprites.js';
+import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 
 /** Keys the way the registry describes materials: same map and flags → same variant, colour separate. */
 const describeMaterial = (m: Material) => {
@@ -433,5 +435,27 @@ describe('fillSpriteInstances ordering and column lengths', () => {
         Math.fround(Math.hypot(m[4]!, m[5]!, m[6]!)),
       ]);
     });
+  });
+});
+
+describe('sprite grouping uses the exact colorKey', () => {
+  it('does not merge sprites whose colours are 0.3/255 apart, even though they share an 8-bit display hex', () => {
+    const registry = new MaterialRegistry();
+    const base = new Color().setRGB(0.5, 0.5, 0.5);
+    const near = new Color().setRGB(0.5 + 0.3 / 255, 0.5, 0.5);
+    const a = new Sprite(new SpriteMaterial({ color: base }));
+    const b = new Sprite(new SpriteMaterial({ color: near }));
+    expect(registry.describe(a.material).colorHex).toBe(registry.describe(b.material).colorHex);
+    const { groups } = groupSprites([a, b], 1, (m) => registry.describe(m));
+    expect(groups).toHaveLength(2);
+  });
+
+  it('merges sprites with the exact same colour into one group', () => {
+    const registry = new MaterialRegistry();
+    const a = new Sprite(new SpriteMaterial({ color: 0x336699 }));
+    const b = new Sprite(new SpriteMaterial({ color: 0x336699 }));
+    const { groups } = groupSprites([a, b], 1, (m) => registry.describe(m));
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.sprites).toHaveLength(2);
   });
 });

@@ -4,17 +4,15 @@ import { type AgentHook, exposeToAgents } from '../../src/agent/expose.js';
 import { World } from '../../src/compiler/World.js';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { tag } from '../../src/tags.js';
-import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
+import { sceneWithCamera } from './helpers/fakeRenderer.js';
+import { attachedLedger } from './helpers/ledger.js';
 
 describe('exposeToAgents', () => {
   it('publishes the hook on the target, renders through frameAsync, compiles once and disposes cleanly', async () => {
-    const { scene, camera } = sceneWithCamera();
+    const { renderer, ledger, scene, camera } = attachedLedger();
     const box = new BoxGeometry();
     const material = new MeshStandardMaterial();
     for (let i = 0; i < 3; i++) scene.add(tag.static(new Mesh(box, material)));
-    const renderer = new FakeRenderer();
-    const ledger = new DrawCallLedger();
-    ledger.attach(renderer as never);
     const world = new World(scene, { ledger });
     const target: { __threeforge?: AgentHook } = {};
     const dispose = exposeToAgents({

@@ -59,17 +59,11 @@ for (const id of SCENE_IDS) {
         { warm: WARM, measured: MEASURED },
       );
       expect(out.frame.totals.unattributed, 'unattributed draws').toBe(0);
-      // `programs` is read from the last measured frame, *before* `measureOverdraw()`. The overdraw
-      // count materials are real materials whose shader stages stay counted in `renderer.info.memory.programs`
-      // afterwards — three frees a stage only once its `usedTimes` reaches 0 — so a capture taken after the
-      // measurement reports the diagnostic's own shaders as if the scene had compiled them, and any edit to
-      // `src/ledger/overdraw.ts` then moves a gated bench metric that has nothing to do with the scene. That capture
-      // point was held only by a comment in each of the two callers, so moving it back below the measurement left
-      // every test green. `out.frame` is the post-measurement, post-rescan frame: the recorded value must never be it.
-      // This `<=` was sampled on zen and village only. It is expected to hold for the other six because
-      // `measureOverdraw()` only ever *adds* count-material stages to `info.memory.programs`, and three frees a stage
-      // only once its `usedTimes` reaches 0, so a post-measurement frame can never report fewer programs than the
-      // pre-measurement capture, whatever the scene draws.
+      // `programs` is read from the last measured frame, before `measureOverdraw()`: the overdraw count materials'
+      // shader stages stay counted in `renderer.info.memory.programs` afterwards (three frees a stage only once its
+      // `usedTimes` reaches 0), so a capture taken after the measurement would report the diagnostic's own shaders
+      // and any edit to `src/ledger/overdraw.ts` would move a gated bench metric. `out.frame` is the post-measurement
+      // frame, so it can never report fewer programs than the capture (sampled on zen and village).
       expect(out.programs, 'programs must be read before measureOverdraw()').toBeLessThanOrEqual(
         out.frame.totals.programs,
       );

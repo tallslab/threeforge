@@ -465,38 +465,28 @@ describe('summarize', () => {
 });
 
 describe('analyze bake progress line', () => {
-  it('counts the removed faces and the coincident faces the seam guard kept', () => {
-    const bake = {
-      groups: 1,
-      inputTriangles: 48,
-      triangles: 36,
-      contactFaces: 12,
-      keptCoincidentFaces: 4,
-      duplicateFaces: 1,
-      buriedFaces: 2,
-      weldedVertices: 10,
-      excludedEntries: 0,
-      keptDuplicateFaces: 24,
-      unbakeableEntries: 3,
-    };
-    expect(bakeProgressLine(bake)).toBe(
-      'bake: 48 -> 36 triangles (12 seam, 1 duplicate, 2 buried faces removed; 4 coincident and 24 duplicate faces kept; 10 vertices welded; 3 meshes batched, not baked: a node, instance function, subclass or displacementMap in their material, or an attribute the bake drops)',
-    );
-  });
+  const removed = {
+    groups: 1,
+    inputTriangles: 48,
+    triangles: 36,
+    contactFaces: 12,
+    duplicateFaces: 1,
+    buriedFaces: 2,
+    weldedVertices: 10,
+    excludedEntries: 0,
+  };
 
-  it('prints 0 kept coincident faces when an older report lacks the field', () => {
-    const old = {
-      groups: 1,
-      inputTriangles: 48,
-      triangles: 36,
-      contactFaces: 12,
-      duplicateFaces: 1,
-      buriedFaces: 2,
-      weldedVertices: 10,
-      excludedEntries: 0,
-    } as unknown as Parameters<typeof bakeProgressLine>[0];
-    expect(bakeProgressLine(old)).toBe(
-      'bake: 48 -> 36 triangles (12 seam, 1 duplicate, 2 buried faces removed; 0 coincident and 0 duplicate faces kept; 10 vertices welded; 0 meshes batched, not baked: a node, instance function, subclass or displacementMap in their material, or an attribute the bake drops)',
+  it.each([
+    [
+      'counts the removed faces and the coincident faces the seam guard kept',
+      { keptCoincidentFaces: 4, keptDuplicateFaces: 24, unbakeableEntries: 3 },
+      [4, 24, 3],
+    ],
+    ['prints 0 kept coincident faces when an older report lacks the field', {}, [0, 0, 0]],
+  ])('%s', (_label, kept, [coincident, duplicate, unbakeable]) => {
+    const report = { ...removed, ...kept } as unknown as Parameters<typeof bakeProgressLine>[0];
+    expect(bakeProgressLine(report)).toBe(
+      `bake: 48 -> 36 triangles (12 seam, 1 duplicate, 2 buried faces removed; ${coincident} coincident and ${duplicate} duplicate faces kept; 10 vertices welded; ${unbakeable} meshes batched, not baked: a node, instance function, subclass or displacementMap in their material, or an attribute the bake drops)`,
     );
   });
 });

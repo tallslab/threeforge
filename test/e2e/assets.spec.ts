@@ -1,13 +1,10 @@
 /**
- * Dogfooding on public glTF assets (test/assets/files, fetched by `pnpm assets`). Every asset is loaded, rendered
- * naively, compiled with policy 'auto', rendered again and compared pixel by pixel, then decompiled. Assertions are
- * soft so the whole report gets written to docs/assets-report.{json,md}; the run still fails if any asset misbehaves.
- * A model the index lists but whose download failed fails too, instead of being left out. FORGE_ASSETS=Fox,Duck
- * limits the run.
- *
- * Every row records the commit it was measured at and the id of the run that measured it, because rows merge on
- * disk across worker restarts and across runs. The Markdown is rewritten only after a run that measured every
- * asset (see the afterAll below); a partial run's rows still land in the JSON, stamped as its own.
+ * Dogfooding on public glTF assets (test/assets/files, fetched by `pnpm assets`): each is loaded, rendered naively,
+ * compiled with policy 'auto', rendered again and compared pixel by pixel, then decompiled. Assertions are soft so the
+ * whole report gets written to docs/assets-report.{json,md}; the run still fails if any asset misbehaves, and a model
+ * the index lists but whose download failed fails too. FORGE_ASSETS=Fox,Duck limits the run. Every row records the
+ * commit and run id it was measured at, because rows merge on disk across worker restarts and runs; the Markdown is
+ * rewritten only after a run that measured every asset (the afterAll below).
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import {

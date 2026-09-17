@@ -14,12 +14,12 @@ import {
   Scene,
   type Sphere,
   Vector3,
-  WebGLCoordinateSystem,
 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import type { CulledInstancedMesh } from '../../src/compiler/instancing.js';
 import { World } from '../../src/compiler/World.js';
 import { tag } from '../../src/tags.js';
+import { webglRenderer } from './helpers/renderers.js';
 
 const box = new BoxGeometry(1, 1, 1);
 const dodeca = new DodecahedronGeometry(0.5);
@@ -116,8 +116,6 @@ describe('World.markDirty', () => {
 });
 
 describe('World.markDirty bounds', () => {
-  const renderer = { coordinateSystem: WebGLCoordinateSystem };
-
   /** A camera looking straight down at (x, 0, 0), as three's whole-object culling sees it. */
   function frustumAt(x: number): Frustum {
     const camera = new PerspectiveCamera(60, 1, 0.1, 100);
@@ -180,7 +178,7 @@ describe('World.markDirty bounds', () => {
     camera.position.set(0, 5, 0);
     camera.lookAt(0, 0, 0);
     camera.updateMatrixWorld();
-    mesh.onBeforeRender(renderer as never, scene, camera, mesh.geometry, mesh.material as never, null as never);
+    mesh.onBeforeRender(webglRenderer as never, scene, camera, mesh.geometry, mesh.material as never, null as never);
     expect(mesh.levels[0]!.count + mesh.levels[1]!.count).toBe(1);
     meshes[3]!.position.x = 500;
     expect(world.markDirty(meshes[3]!)).toBe(1);
@@ -205,8 +203,6 @@ describe('World.markDirty bounds', () => {
 });
 
 describe('World.markDirty with originals: "detach"', () => {
-  const renderer = { coordinateSystem: WebGLCoordinateSystem };
-
   /**
    * A translated, scaled scene: two direct-child statics (former parent is the scene itself), and a transformed
    * `group` holding two nested-batched statics and four nested statics repeated enough to instance.
@@ -263,7 +259,7 @@ describe('World.markDirty with originals: "detach"', () => {
     scene: Scene,
     camera: PerspectiveCamera,
   ): Matrix4 | null {
-    mesh.onBeforeRender(renderer as never, scene, camera, mesh.geometry, mesh.material as never, null as never);
+    mesh.onBeforeRender(webglRenderer as never, scene, camera, mesh.geometry, mesh.material as never, null as never);
     const k = mesh.visibleIds.indexOf(id);
     if (k < 0) return null;
     const row = new Matrix4();

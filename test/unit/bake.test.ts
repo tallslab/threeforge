@@ -334,30 +334,29 @@ describe('bakeGeometries seam guard: a coincident opposite pair goes only betwee
     expect(report.triangles).toBe(22);
   });
 
-  it('keeps and counts the faces between an inside-out box and a box filling it', () => {
-    const inside = merged([{ geometry: new BoxGeometry(1, 1, 1), insideOut: true }]);
-    const { report } = bakeGeometries([
-      { geometry: inside, matrix: new Matrix4(), opaque: true, side: FrontSide, castShadow: false },
-      box(0),
-    ]);
-    expect(report.contactFaces).toBe(0);
-    expect(report.keptCoincidentFaces).toBe(24);
-    expect(report.triangles).toBe(24);
-  });
-
-  it("checks every connected component: an inside-out part keeps its faces although the entry's total volume is positive", () => {
-    const entry = merged([
-      { geometry: new BoxGeometry(3, 3, 3), matrix: new Matrix4().makeTranslation(10, 0, 0) },
-      { geometry: new BoxGeometry(1, 1, 1), insideOut: true },
-    ]);
-    const { report } = bakeGeometries([
-      { geometry: entry, matrix: new Matrix4(), opaque: true, side: FrontSide, castShadow: false },
-      box(0),
-    ]);
-    expect(report.contactFaces).toBe(0);
-    expect(report.keptCoincidentFaces).toBe(24);
-    expect(report.triangles).toBe(36);
-  });
+  it.each([
+    ['an inside-out box', [{ geometry: new BoxGeometry(1, 1, 1), insideOut: true }], 24],
+    [
+      // Every connected component is checked: the entry's total volume is positive.
+      'an inside-out part of an entry whose total volume is positive',
+      [
+        { geometry: new BoxGeometry(3, 3, 3), matrix: new Matrix4().makeTranslation(10, 0, 0) },
+        { geometry: new BoxGeometry(1, 1, 1), insideOut: true },
+      ],
+      36,
+    ],
+  ] as Array<[string, Parameters<typeof merged>[0], number]>)(
+    'keeps and counts the faces between %s and a box filling it',
+    (_label, parts, triangles) => {
+      const { report } = bakeGeometries([
+        { geometry: merged(parts), matrix: new Matrix4(), opaque: true, side: FrontSide, castShadow: false },
+        box(0),
+      ]);
+      expect(report.contactFaces).toBe(0);
+      expect(report.keptCoincidentFaces).toBe(24);
+      expect(report.triangles).toBe(triangles);
+    },
+  );
 
   it('treats mirrored matrices consistently: outward shells stay outward, so their seams still go', () => {
     const mirroredAt = (x: number): BakeEntry => ({
@@ -778,13 +777,6 @@ describe('bakeGeometries duplicate rule: a copy goes only when every coincident 
     expect(colours(geometry).slice(12)).toEqual(Array(12).fill('0.00,0.00,1.00'));
   });
 
-  it('still removes a duplicate whose copies are interchangeable (same tint), and counts nothing kept', () => {
-    const { report } = bakeGeometries([box(0, 1, { color: green }), box(0, 1, { color: green })]);
-    expect(report.duplicateFaces).toBe(12);
-    expect(report.keptDuplicateFaces).toBe(0);
-    expect(report.triangles).toBe(12);
-  });
-
   it.each([
     ['uvs', shiftedUv],
     ['normals', tiltedNormals],
@@ -795,26 +787,24 @@ describe('bakeGeometries duplicate rule: a copy goes only when every coincident 
     expect(report.triangles).toBe(24);
   });
 
-  it('keeps all three copies when the middle one differs: removing the last would show the middle one', () => {
-    const { report } = bakeGeometries([
-      box(0, 1, { color: red }),
-      box(0, 1, { color: blue }),
-      box(0, 1, { color: red }),
-    ]);
-    expect(report.duplicateFaces).toBe(0);
-    expect(report.keptDuplicateFaces).toBe(36);
-    expect(report.triangles).toBe(36);
-  });
-
-  it('keeps both removable copies when an excluded entry (bake: false) draws the same triangles between them', () => {
-    const { report } = bakeGeometries([
-      box(0, 1, { color: green }),
-      box(0, 1, { color: blue, bake: false }),
-      box(0, 1, { color: green }),
-    ]);
-    expect(report.duplicateFaces).toBe(0);
-    expect(report.keptDuplicateFaces).toBe(24);
-    expect(report.triangles).toBe(36);
+  it.each([
+    [
+      'still removes a duplicate whose copies are interchangeable (same tint), and counts nothing kept',
+      [box(0, 1, { color: green }), box(0, 1, { color: green })],
+      { duplicateFaces: 12, keptDuplicateFaces: 0, triangles: 12 },
+    ],
+    [
+      'keeps all three copies when the middle one differs: removing the last would show the middle one',
+      [box(0, 1, { color: red }), box(0, 1, { color: blue }), box(0, 1, { color: red })],
+      { duplicateFaces: 0, keptDuplicateFaces: 36, triangles: 36 },
+    ],
+    [
+      'keeps both removable copies when an excluded entry (bake: false) draws the same triangles between them',
+      [box(0, 1, { color: green }), box(0, 1, { color: blue, bake: false }), box(0, 1, { color: green })],
+      { duplicateFaces: 0, keptDuplicateFaces: 24, triangles: 36 },
+    ],
+  ])('%s', (_label, entries, expected) => {
+    expect(bakeGeometries(entries).report).toMatchObject(expected);
   });
 
   it('keeps both removable copies when a double-sided copy with the opposite winding draws the same triangle', () => {

@@ -1,10 +1,5 @@
-import { expect, type ForgePage, test } from './fixtures.js';
+import { compileAndSettle, expect, type ForgePage, note, test } from './fixtures.js';
 import { differingPixels, pixelDiff, settle } from './pixels.js';
-
-/** Records a measurement on the test (visible in the JSON and HTML reports) instead of printing it. */
-function note(description: string): void {
-  test.info().annotations.push({ type: 'bake', description });
-}
 
 /**
  * The bake must never change a pixel: a wrong deletion is visible, a missed one is invisible. Every case compares the
@@ -45,6 +40,7 @@ test('baking the village keeps the pixels and draws one mesh per group', async (
   const diff = pixelDiff(before, after, { threshold: 4 });
   const restoredDiff = differingPixels(before, restored, { threshold: 4 });
   note(
+    'bake',
     `[${forge.backend}] village bake: ${r.after.baked} baked, pixel diff ${(diff * 100).toFixed(4)}%, after decompile ${restoredDiff} pixels`,
   );
   expect(diff).toBeLessThan(0.0005);
@@ -91,15 +87,6 @@ async function buildWall(forge: ForgePage, options: { block: boolean; mirrored: 
   }, options);
 }
 
-async function compileAndSettle(forge: ForgePage) {
-  return forge.page.evaluate(async () => {
-    const f = window.__forge;
-    const report = f.compile();
-    for (let i = 0; i < 3; i++) await f.frameAsync();
-    return { bake: report.bake!, after: report.after, submissions: (await f.frameAsync()).totals.sceneSubmissions };
-  });
-}
-
 test('a modular wall loses only its seams; a block buried inside a solid goes only with removeBuried', async ({
   forge,
 }) => {
@@ -114,12 +101,13 @@ test('a modular wall loses only its seams; a block buried inside a solid goes on
     expect(r.after.baked, mode).toBe(1);
     expect(r.submissions, mode).toBe(1);
     // 6x3 wall: 5x3 vertical seams + 6x2 horizontal seams = 27 seams x 4 triangles; the guard keeps none of them.
-    expect(r.bake.contactFaces, mode).toBe(27 * 4);
-    expect(r.bake.keptCoincidentFaces, mode).toBe(0);
-    expect(r.bake.buriedFaces, mode).toBe(mode === 'buried' ? 12 : 0);
+    expect(r.bake!.contactFaces, mode).toBe(27 * 4);
+    expect(r.bake!.keptCoincidentFaces, mode).toBe(0);
+    expect(r.bake!.buriedFaces, mode).toBe(mode === 'buried' ? 12 : 0);
     const diff = pixelDiff(before, after, { threshold: 4 });
     note(
-      `[${forge.backend}] wall bake=${mode}: ${r.bake.contactFaces} seam faces removed, ${r.bake.keptCoincidentFaces} kept, ${r.bake.buriedFaces} buried, pixel diff ${(diff * 100).toFixed(4)}%`,
+      'bake',
+      `[${forge.backend}] wall bake=${mode}: ${r.bake!.contactFaces} seam faces removed, ${r.bake!.keptCoincidentFaces} kept, ${r.bake!.buriedFaces} buried, pixel diff ${(diff * 100).toFixed(4)}%`,
     );
     expect(diff, mode).toBeLessThan(0.0005);
   }
@@ -135,11 +123,12 @@ test('a modular wall under a mirrored scene loses exactly its seams and keeps it
   const after = await forge.page.screenshot({ type: 'png' });
   expect(r.after.baked).toBe(1);
   expect(r.submissions).toBe(1);
-  expect(r.bake.contactFaces).toBe(27 * 4);
-  expect(r.bake.keptCoincidentFaces).toBe(0);
+  expect(r.bake!.contactFaces).toBe(27 * 4);
+  expect(r.bake!.keptCoincidentFaces).toBe(0);
   const diff = pixelDiff(before, after, { threshold: 4 });
   note(
-    `[${forge.backend}] mirrored wall: ${r.bake.contactFaces} seam faces removed, ${r.bake.keptCoincidentFaces} kept, pixel diff ${(diff * 100).toFixed(4)}%`,
+    'bake',
+    `[${forge.backend}] mirrored wall: ${r.bake!.contactFaces} seam faces removed, ${r.bake!.keptCoincidentFaces} kept, pixel diff ${(diff * 100).toFixed(4)}%`,
   );
   expect(diff).toBeLessThan(0.0005);
 });
@@ -201,12 +190,13 @@ test('back-to-back sign cards and a floor under a ceiling keep both faces, seen 
   const r = await compileAndSettle(forge);
   expect(r.after.baked).toBe(1);
   expect(r.submissions).toBe(1);
-  expect(r.bake.contactFaces).toBe(0);
-  expect(r.bake.keptCoincidentFaces).toBe(8);
+  expect(r.bake!.contactFaces).toBe(0);
+  expect(r.bake!.keptCoincidentFaces).toBe(8);
   for (let i = 0; i < views.length; i++) {
     const diff = pixelDiff(before[i]!, await shoot(views[i]!.position), { threshold: 4 });
     note(
-      `[${forge.backend}] cards and floor/ceiling from ${views[i]!.name}: ${r.bake.contactFaces} removed, ${r.bake.keptCoincidentFaces} kept, pixel diff ${(diff * 100).toFixed(4)}%`,
+      'bake',
+      `[${forge.backend}] cards and floor/ceiling from ${views[i]!.name}: ${r.bake!.contactFaces} removed, ${r.bake!.keptCoincidentFaces} kept, pixel diff ${(diff * 100).toFixed(4)}%`,
     );
     expect(diff, views[i]!.name).toBeLessThan(0.0005);
   }
@@ -287,6 +277,7 @@ test('a mirrored, normal-mapped mesh baked by bakeGeometries keeps its tangents 
   expect(r.report.triangles).toBe(r.report.inputTriangles);
   const diff = pixelDiff(before, after, { threshold: 4 });
   note(
+    'bake',
     `[${forge.backend}] mirrored normal-mapped sphere through bakeGeometries: tangent ${r.hasTangent ? 'carried' : 'dropped'}, w ${JSON.stringify(r.bakedW)}, pixel diff ${(diff * 100).toFixed(4)}%`,
   );
   expect(diff).toBeLessThan(0.0005);
@@ -340,12 +331,13 @@ test('touching BackSide rooms keep the wall between them, seen from inside a roo
   const r = await compileAndSettle(forge);
   expect(r.after.baked).toBe(1);
   expect(r.submissions).toBe(1);
-  expect(r.bake.contactFaces).toBe(0);
-  expect(r.bake.keptCoincidentFaces).toBe(4);
+  expect(r.bake!.contactFaces).toBe(0);
+  expect(r.bake!.keptCoincidentFaces).toBe(4);
   for (let i = 0; i < views.length; i++) {
     const diff = pixelDiff(before[i]!, await shoot(views[i]!.position), { threshold: 4 });
     note(
-      `[${forge.backend}] BackSide rooms from ${views[i]!.name}: ${r.bake.contactFaces} removed, ${r.bake.keptCoincidentFaces} kept, pixel diff ${(diff * 100).toFixed(4)}%`,
+      'bake',
+      `[${forge.backend}] BackSide rooms from ${views[i]!.name}: ${r.bake!.contactFaces} removed, ${r.bake!.keptCoincidentFaces} kept, pixel diff ${(diff * 100).toFixed(4)}%`,
     );
     expect(diff, views[i]!.name).toBeLessThan(0.0005);
   }
@@ -397,11 +389,12 @@ test('touching toon boxes that cast shadows keep their seam, lit along it with s
   const after = await forge.page.screenshot({ type: 'png' });
   const diff = pixelDiff(before, after, { threshold: 4 });
   note(
-    `[${forge.backend}] shadow-casting toon boxes: ${r.bake.contactFaces} removed, ${r.bake.keptCoincidentFaces} kept, pixel diff ${(diff * 100).toFixed(4)}%`,
+    'bake',
+    `[${forge.backend}] shadow-casting toon boxes: ${r.bake!.contactFaces} removed, ${r.bake!.keptCoincidentFaces} kept, pixel diff ${(diff * 100).toFixed(4)}%`,
   );
   expect(r.after.baked).toBe(1);
-  expect(r.bake.contactFaces).toBe(0);
-  expect(r.bake.keptCoincidentFaces).toBe(4);
+  expect(r.bake!.contactFaces).toBe(0);
+  expect(r.bake!.keptCoincidentFaces).toBe(4);
   expect(diff).toBeLessThan(0.0005);
 });
 
@@ -443,13 +436,14 @@ test('a tinted duplicate keeps the colour three draws on top, and an interchange
   const after = await forge.page.screenshot({ type: 'png' });
   const diff = pixelDiff(before, after, { threshold: 4 });
   note(
-    `[${forge.backend}] tinted and interchangeable duplicate crates: ${r.bake.duplicateFaces} duplicate faces removed, ${r.bake.keptDuplicateFaces} kept, pixel diff ${(diff * 100).toFixed(4)}%`,
+    'bake',
+    `[${forge.backend}] tinted and interchangeable duplicate crates: ${r.bake!.duplicateFaces} duplicate faces removed, ${r.bake!.keptDuplicateFaces} kept, pixel diff ${(diff * 100).toFixed(4)}%`,
   );
   expect(diff).toBeLessThan(0.0005);
   expect(r.after.baked).toBe(1);
   expect(r.submissions).toBe(1);
-  expect(r.bake.duplicateFaces).toBe(12);
-  expect(r.bake.keptDuplicateFaces).toBe(24);
+  expect(r.bake!.duplicateFaces).toBe(12);
+  expect(r.bake!.keptDuplicateFaces).toBe(24);
 });
 
 test('vertex colours with alpha and a custom attribute a node material reads stay out of the bake, batched at parity', async ({
@@ -509,12 +503,13 @@ test('vertex colours with alpha and a custom attribute a node material reads sta
   const after = await forge.page.screenshot({ type: 'png' });
   const diff = pixelDiff(before, after, { threshold: 4 });
   note(
-    `[${forge.backend}] RGBA vertex colours and a custom attribute: ${r.after.baked} baked, ${r.after.batches} batches, ${r.bake.unbakeableEntries} unbakeable, pixel diff ${(diff * 100).toFixed(4)}%`,
+    'bake',
+    `[${forge.backend}] RGBA vertex colours and a custom attribute: ${r.after.baked} baked, ${r.after.batches} batches, ${r.bake!.unbakeableEntries} unbakeable, pixel diff ${(diff * 100).toFixed(4)}%`,
   );
   expect(diff).toBeLessThan(0.0005);
   expect(r.after.baked).toBe(0);
   expect(r.after.batches).toBe(2);
-  expect(r.bake.unbakeableEntries).toBe(4);
+  expect(r.bake!.unbakeableEntries).toBe(4);
 });
 
 test('a node material reading a colour attribute its vertexColors flag ignores stays out of the bake, batched at parity', async ({
@@ -572,12 +567,13 @@ test('a node material reading a colour attribute its vertexColors flag ignores s
   const after = await forge.page.screenshot({ type: 'png' });
   const diff = pixelDiff(before, after, { threshold: 4 });
   note(
-    `[${forge.backend}] vertexColor() node with vertexColors false: ${r.after.baked} baked, ${r.after.batches} batches, ${r.bake.unbakeableEntries} unbakeable, pixel diff ${(diff * 100).toFixed(4)}%`,
+    'bake',
+    `[${forge.backend}] vertexColor() node with vertexColors false: ${r.after.baked} baked, ${r.after.batches} batches, ${r.bake!.unbakeableEntries} unbakeable, pixel diff ${(diff * 100).toFixed(4)}%`,
   );
   expect(diff).toBeLessThan(0.0005);
   expect(r.after.baked).toBe(1);
   expect(r.after.batches).toBe(1);
-  expect(r.bake.unbakeableEntries).toBe(2);
+  expect(r.bake!.unbakeableEntries).toBe(2);
 });
 
 test('a node material shading from object-local normals, and a displacement map, stay out of the bake, batched at parity', async ({
@@ -650,10 +646,11 @@ test('a node material shading from object-local normals, and a displacement map,
   const after = await forge.page.screenshot({ type: 'png' });
   const diff = pixelDiff(before, after, { threshold: 4 });
   note(
-    `[${forge.backend}] normalLocal node material and displacement map: ${r.after.baked} baked, ${r.after.batches} batches, ${r.bake.unbakeableEntries} unbakeable, pixel diff ${(diff * 100).toFixed(4)}%`,
+    'bake',
+    `[${forge.backend}] normalLocal node material and displacement map: ${r.after.baked} baked, ${r.after.batches} batches, ${r.bake!.unbakeableEntries} unbakeable, pixel diff ${(diff * 100).toFixed(4)}%`,
   );
   expect(diff).toBeLessThan(0.0005);
   expect(r.after.baked).toBe(1);
   expect(r.after.batches).toBe(2);
-  expect(r.bake.unbakeableEntries).toBe(4);
+  expect(r.bake!.unbakeableEntries).toBe(4);
 });

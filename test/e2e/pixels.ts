@@ -1,11 +1,8 @@
 /**
- * Shared pixel-comparison helpers for e2e specs. `pixelDiff` counts a pixel as differing when any RGB channel
- * differs by more than `threshold` (default 24, matching every prior copy) and returns the ratio of differing
- * pixels to total pixels. `settle` advances the harness a few animation frames so reflectors, async pipeline
- * compiles and similar one-frame-late effects have time to settle before a screenshot is taken.
- *
- * Only a type-level import is taken from `@playwright/test` (erased by `verbatimModuleSyntax`) so this module has
- * no runtime dependency on Playwright and can be imported from `test/unit` under Vitest.
+ * Shared pixel-comparison helpers for e2e specs. `pixelDiff` counts a pixel as differing when any RGB channel differs
+ * by more than `threshold` (default 24) and returns the ratio of differing pixels; `settle` advances the harness a few
+ * animation frames so reflectors, async pipeline compiles and similar one-frame-late effects settle before a
+ * screenshot. Only a type-level import is taken from `@playwright/test`, so `test/unit` can import this under Vitest.
  */
 import { writeFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';

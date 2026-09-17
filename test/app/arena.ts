@@ -37,8 +37,10 @@ import {
 } from 'three';
 import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
 import type { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { assembleCharacter, tag } from 'threeforge';
+import { assembleCharacter, disposeLoader, tag } from 'threeforge';
 import { mulberry32 } from '../scenes/naive.js';
+import { applyRoomEnvironment } from './scenes/environment.js';
+import type { BenchBuilder } from './scenes/index.js';
 
 export interface ArenaOptions {
   loader: GLTFLoader;
@@ -640,3 +642,34 @@ export async function buildArena({
   setTime(0);
   return { scene, animations, mixers, setTime, counts, lights: { spots, points } };
 }
+
+/** The harness's `scene=arena`: `fighters`, `blocky`, `vfx`, `shadows`, `assemble`, `env` and `t` query params. */
+export const arenaScene: BenchBuilder = async ({ renderer, camera, params, loader: makeLoader }) => {
+  const loader = await makeLoader();
+  if (params.get('shadows') !== '0') renderer.shadowMap.enabled = true;
+  const arena = await buildArena({
+    loader,
+    fighters: Number(params.get('fighters') ?? '12'),
+    blocky: Number(params.get('blocky') ?? '16'),
+    vfx: params.get('vfx') !== '0',
+    shadows: params.get('shadows') !== '0',
+    assemble: params.get('assemble') === '1',
+  });
+  disposeLoader(loader);
+  const { scene } = arena;
+  if (params.get('env') !== '0') applyRoomEnvironment(renderer, scene, 0.15);
+  camera.near = 0.5;
+  camera.far = 400;
+  camera.position.set(-38, 34, 58);
+  camera.lookAt(0, 3, 0);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+  arena.setTime(Number(params.get('t') ?? '1'));
+  return {
+    scene,
+    counts: arena.counts,
+    arena,
+    animations: arena.animations,
+    setTime: arena.setTime,
+  };
+};

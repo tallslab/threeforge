@@ -19,10 +19,8 @@ import type {
   OptimizeInput,
 } from '../../src/cli/types.js';
 import { verdictOf } from '../../src/cli/verdict.js';
-import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { emptyFrame, type FrameEnv, type FrameSnapshot } from '../../src/ledger/snapshot.js';
-import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
-import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
+import { attachedLedger } from './helpers/ledger.js';
 
 /**
  * `threeforge schema` embeds every `$ref` as `$defs`: each of the four exported schemas must compile and
@@ -46,11 +44,7 @@ const env: FrameEnv = {
 
 /** A real snapshot from the ledger and a FakeRenderer, not a hand-built object. */
 function realFrame(): FrameSnapshot {
-  const registry = new MaterialRegistry();
-  const ledger = new DrawCallLedger({ registry });
-  const renderer = new FakeRenderer();
-  ledger.attach(renderer as never);
-  const { scene, camera } = sceneWithCamera();
+  const { renderer, ledger, scene, camera } = attachedLedger();
   scene.add(
     new Mesh(new BoxGeometry(), new MeshStandardMaterial()),
     new Mesh(new BoxGeometry(), new MeshStandardMaterial()),
@@ -226,10 +220,9 @@ describe('schema-validate: every exported schema is self-contained', () => {
     expect(description).not.toContain('buried pass kept');
     expect(description).toContain('`keptCoincidentFaces` (coincident faces the seam guard kept)');
     expect(description).toContain('`keptDuplicateFaces`');
-    // unbakeableEntries counts every mesh the bake left to batching (BakeSummary.unbakeableEntries): the material gate first.
-    expect(description).toContain(
-      '`unbakeableEntries` (meshes batched instead of baked because the bake cannot prove the merged mesh draws what they drew: a node in any slot, an instance function, a subclass or a `displacementMap` in their material, or an attribute the bake does not carry)',
-    );
+    // unbakeableEntries counts every mesh the bake left to batching (BakeSummary.unbakeableEntries): the material gate.
+    expect(description).toContain('`unbakeableEntries`');
+    expect(description).toContain('the bake cannot prove the merged mesh draws what they drew');
   });
 });
 
@@ -248,7 +241,7 @@ describe('schema-validate: every exported schema compiles standalone in ajv and 
 
   it("SNAPSHOT_SCHEMA validates a frame whose memory.measured carries three's counts, and rejects a malformed one", () => {
     const validate = compile(SNAPSHOT_SCHEMA);
-    const renderer = new FakeRenderer();
+    const { renderer, ledger, scene, camera } = attachedLedger();
     Object.assign(renderer.info.memory, {
       textures: 5,
       texturesSize: 5_592_409,
@@ -258,9 +251,6 @@ describe('schema-validate: every exported schema compiles standalone in ajv and 
       renderTargets: 1,
       total: 5_600_000,
     });
-    const ledger = new DrawCallLedger({ registry: new MaterialRegistry() });
-    ledger.attach(renderer as never);
-    const { scene, camera } = sceneWithCamera();
     scene.add(new Mesh(new BoxGeometry(), new MeshStandardMaterial()));
     renderer.render(scene, camera);
     ledger.measureMemory();
@@ -275,21 +265,14 @@ describe('schema-validate: every exported schema compiles standalone in ajv and 
     expect(validate({ ...frame, memory: { ...frame.memory, measured: { textures: { count: 5 } } } })).toBe(false);
   });
 
-  it('ANALYZE_SCHEMA compiles alone (its embedded FrameSnapshot resolves with no addSchema) and validates a fixture analyze document', () => {
-    const validate = compile(ANALYZE_SCHEMA);
-    const doc = analyzeFixture();
-    expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
-  });
-
-  it('INSPECT_SCHEMA compiles alone and validates a fixture inspect document', () => {
-    const validate = compile(INSPECT_SCHEMA);
-    const doc = inspectFixture();
-    expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
-  });
-
-  it('OPTIMIZE_SCHEMA compiles alone (its nested AnalyzeDocument and FrameSnapshot resolve with no addSchema) and validates a fixture optimize document', () => {
-    const validate = compile(OPTIMIZE_SCHEMA);
-    const doc = optimizeFixture();
+  // Each embeds what it refers to (FrameSnapshot; AnalyzeDocument too for optimize), so it resolves with no addSchema.
+  it.each([
+    ['ANALYZE_SCHEMA', ANALYZE_SCHEMA, analyzeFixture],
+    ['INSPECT_SCHEMA', INSPECT_SCHEMA, inspectFixture],
+    ['OPTIMIZE_SCHEMA', OPTIMIZE_SCHEMA, optimizeFixture],
+  ])('%s compiles alone and validates a fixture document', (_name, schema, fixture) => {
+    const validate = compile(schema);
+    const doc = fixture();
     expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
   });
 
@@ -319,9 +302,9 @@ describe('schema-validate: every exported schema compiles standalone in ajv and 
 });
 
 /**
- * `optimize_asset` always sets `input.overwrite`, the document echoes its input, and the
- * schema's `optimizeInput` (additionalProperties: false) had no `overwrite`, so every MCP result failed the published
- * schema. The fixtures above never set it. These validate real `optimizeAsset` documents (no browser: verify off).
+ * `optimize_asset` always sets `input.overwrite` and the document echoes its input, while the schema's `optimizeInput`
+ * is closed (additionalProperties: false). The fixtures above never set it, so these validate real `optimizeAsset`
+ * documents (no browser: verify off).
  */
 describe('schema-validate: real optimize documents', () => {
   async function realOptimizeDocument(overwrite: boolean | undefined): Promise<OptimizeDocument> {

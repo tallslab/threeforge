@@ -19,6 +19,7 @@ import { describe, expect, it } from 'vitest';
 import { createCulledInstancedMesh, FORGE_HOOK } from '../../src/compiler/instancing.js';
 import { PassTracker } from '../../src/compiler/passTracker.js';
 import { mulberry32 } from '../../test/scenes/naive.js';
+import { webglRenderer } from './helpers/renderers.js';
 
 const box = new BoxGeometry(1, 1, 1);
 box.computeBoundingBox();
@@ -40,7 +41,7 @@ function field(count: number, area = 2000) {
   const scene = new Scene();
   const cull = (cam = camera) =>
     instanced.onBeforeRender(
-      { coordinateSystem: WebGLCoordinateSystem } as never,
+      webglRenderer as never,
       scene,
       cam,
       instanced.geometry,
@@ -137,7 +138,7 @@ describe('createCulledInstancedMesh', () => {
     camera.lookAt(0, 0, 0);
     camera.updateMatrixWorld();
     mesh.onBeforeRender(
-      { coordinateSystem: WebGLCoordinateSystem } as never,
+      webglRenderer as never,
       new Scene(),
       camera,
       mesh.geometry,

@@ -19,7 +19,6 @@ import {
   SubtractEquation,
   type Texture,
   Vector3,
-  WebGLCoordinateSystem,
   ZeroFactor,
 } from 'three';
 import { positionWorld, vec2, vec3 } from 'three/tsl';
@@ -27,9 +26,8 @@ import { ClippingGroup, type Node, type NodeBuilder, SpriteNodeMaterial } from '
 import { describe, expect, it } from 'vitest';
 import { FORGE_HOOK } from '../../src/compiler/culling.js';
 import { FORGE_HIDDEN_LAYER, World } from '../../src/compiler/World.js';
-import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
-import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
-import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
+import { attachedLedger } from './helpers/ledger.js';
+import { webglRenderer } from './helpers/renderers.js';
 
 function sprites(scene: Scene, n: number, material: SpriteMaterial, prefix: string): Sprite[] {
   const out: Sprite[] = [];
@@ -44,11 +42,7 @@ function sprites(scene: Scene, n: number, material: SpriteMaterial, prefix: stri
 }
 
 function setup() {
-  const renderer = new FakeRenderer();
-  const registry = new MaterialRegistry();
-  const ledger = new DrawCallLedger({ registry });
-  ledger.attach(renderer as never);
-  const { scene, camera } = sceneWithCamera();
+  const { renderer, registry, ledger, scene, camera } = attachedLedger();
   const rain = sprites(scene, 6, new SpriteMaterial({ color: 0xffffff, transparent: true, depthWrite: false }), 'rain');
   const hits = sprites(scene, 6, new SpriteMaterial({ color: 0xff4040, transparent: true }), 'hit');
   const singles = sprites(scene, 2, new SpriteMaterial({ color: 0x00ff00 }), 'bar');
@@ -93,11 +87,7 @@ describe('World sprite batching', () => {
   });
 
   it('skips sprites under a render-ordered Group ancestor or an enabled ClippingGroup ancestor, naming the rule (root threaded from the scene)', () => {
-    const renderer = new FakeRenderer();
-    const registry = new MaterialRegistry();
-    const ledger = new DrawCallLedger({ registry });
-    ledger.attach(renderer as never);
-    const { scene } = sceneWithCamera();
+    const { registry, ledger, scene } = attachedLedger();
     const shared = new SpriteMaterial({ color: 0xffffff });
     const ordered = new Group();
     ordered.renderOrder = 3;
@@ -223,14 +213,7 @@ describe('World sprite batch material', () => {
       const camera = new PerspectiveCamera(60, 1, 0.1, 100);
       camera.updateMatrixWorld();
       const atCompile = mismatches(`${label}, at compile`);
-      batch.onBeforeRender(
-        { coordinateSystem: WebGLCoordinateSystem } as never,
-        scene,
-        camera,
-        batch.geometry,
-        material as never,
-        null as never,
-      );
+      batch.onBeforeRender(webglRenderer as never, scene, camera, batch.geometry, material as never, null as never);
       expect([...atCompile, ...mismatches(`${label}, after a render`)]).toEqual([]);
     }
   });

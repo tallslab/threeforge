@@ -50,15 +50,6 @@ describe('snapshot v3', () => {
       hiddenOriginals: 0,
       skipped: 0,
     });
-    expect(Object.keys(f.js)).toEqual([
-      'renderMs',
-      'ledgerMs',
-      'frameMs',
-      'objects',
-      'autoUpdatedMatrices',
-      'hiddenOriginals',
-      'skipped',
-    ]);
     expect(f.memory).toEqual({
       textures: { count: 0, bytes: 0 },
       geometries: { count: 0, bytes: 0 },

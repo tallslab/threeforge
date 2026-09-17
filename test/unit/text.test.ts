@@ -30,17 +30,12 @@ describe('capName / capMessage', () => {
     );
   });
 
-  it('caps a name at 120 characters', () => {
-    const long = 'x'.repeat(500);
-    const capped = capName(long);
-    expect(capped.length).toBe(MAX_NAME_LENGTH);
-    expect(capped.endsWith('…')).toBe(true);
-  });
-
-  it('caps a message at 300 characters', () => {
-    const long = 'y'.repeat(1000);
-    const capped = capMessage(long);
-    expect(capped.length).toBe(MAX_MESSAGE_LENGTH);
+  it.each([
+    { what: 'a name', cap: capName, long: 'x'.repeat(500), max: MAX_NAME_LENGTH },
+    { what: 'a message', cap: capMessage, long: 'y'.repeat(1000), max: MAX_MESSAGE_LENGTH },
+  ])('caps $what at $max characters', ({ cap, long, max }) => {
+    const capped = cap(long);
+    expect(capped.length).toBe(max);
     expect(capped.endsWith('…')).toBe(true);
   });
 

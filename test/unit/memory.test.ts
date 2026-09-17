@@ -34,6 +34,7 @@ import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { estimateMemory, geometryBytes, textureBytes } from '../../src/ledger/memory.js';
 import { disposeOverdraw, measureOverdraw, overdrawTargetOf } from '../../src/ledger/overdraw.js';
 import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
+import { attachedLedger } from './helpers/ledger.js';
 
 /** A shadow map as three r186 allocates it (ShadowNode.setupRenderTarget): a colour target with a depth texture. */
 function allocateShadowMap(light: Light, size: number): RenderTarget {
@@ -399,11 +400,8 @@ describe('three r186 renderer internals the memory section reads (canary)', () =
 describe('the ledger memory section', () => {
   it("reads the renderer's frame-buffer targets only in three r186's shape, else keeps the fixed colour-and-depth allowance", () => {
     const measure = (frameBufferTargets: unknown): number => {
-      const renderer = new FakeRenderer();
+      const { renderer, ledger, scene, camera } = attachedLedger();
       if (frameBufferTargets !== undefined) Object.assign(renderer, { _frameBufferTargets: frameBufferTargets });
-      const ledger = new DrawCallLedger();
-      ledger.attach(renderer as never);
-      const { scene, camera } = sceneWithCamera();
       scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial({ map: new DataTexture(new Uint8Array(4), 1, 1) })));
       scene.updateMatrixWorld();
       renderer.render(scene, camera);
@@ -428,10 +426,7 @@ describe('the ledger memory section', () => {
   });
 
   it('a ledger that measured overdraw reports no unreferenced textures on a scene with nothing else unreferenced', async () => {
-    const renderer = new FakeRenderer();
-    const ledger = new DrawCallLedger();
-    ledger.attach(renderer as never);
-    const { scene, camera } = sceneWithCamera();
+    const { renderer, ledger, scene, camera } = attachedLedger();
     scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial({ map: new DataTexture(new Uint8Array(4), 1, 1) })));
     scene.updateMatrixWorld();
     renderer.render(scene, camera);
@@ -558,11 +553,8 @@ describe('the ledger memory section', () => {
   });
 
   it('allows a render target a render drew into until it is disposed, and none that no render drew into', () => {
-    const renderer = new FakeRenderer();
+    const { renderer, ledger, scene, camera } = attachedLedger();
     const memory = Object.assign(renderer.info.memory, { textures: 0, geometries: 0 });
-    const ledger = new DrawCallLedger();
-    ledger.attach(renderer as never);
-    const { scene, camera } = sceneWithCamera();
     scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial()));
     scene.updateMatrixWorld();
     // Drawn once and kept, as CubeMapNode keeps the cube it renders an equirect background into (nodes/utils/CubeMapNode.js ~115).

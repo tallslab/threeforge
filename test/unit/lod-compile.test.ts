@@ -12,10 +12,9 @@ import {
 import { describe, expect, it } from 'vitest';
 import type { CulledInstancedMesh } from '../../src/compiler/instancing.js';
 import { World } from '../../src/compiler/World.js';
-import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { lodsOf, prepareLods } from '../../src/lod/generateLods.js';
 import { tag } from '../../src/tags.js';
-import { FakeRenderer } from './helpers/fakeRenderer.js';
+import { attachedLedger } from './helpers/ledger.js';
 
 const solid = (color: number) => new MeshStandardMaterial({ color, roughness: 0.7, metalness: 0 });
 
@@ -130,9 +129,7 @@ describe('World lod (instanced path)', () => {
 
   it('is counted by the ledger as one instanced submission per level with instances tallied once', async () => {
     const { scene } = await instancedScene();
-    const renderer = new FakeRenderer();
-    const ledger = new DrawCallLedger();
-    ledger.attach(renderer as never);
+    const { renderer, ledger } = attachedLedger();
     new World(scene, { lod: { distances: [30] }, ledger }).compile();
     renderer.render(scene, cameraAtOrigin());
     const frame = ledger.frame();

@@ -9,3 +9,4 @@ bench/results/
 cli-app/public/
 bench-app/public/
 .superpowers/
+.vitest/

@@ -196,49 +196,35 @@ describe('RenderScheduler running-mixer internals (canary)', () => {
 });
 
 describe('RenderScheduler running-mixer rule (real AnimationMixer)', () => {
-  it('lets ticks skip once a LoopOnce clip with clampWhenFinished finishes, even though the mixer still reports it in use', () => {
-    const { mixer, action } = makeAnimatedMixer();
-    action.setLoop(LoopOnce, 1);
-    action.clampWhenFinished = true;
-    action.play();
-    const { scheduler } = setup({ mixers: [mixer] });
+  it.each([
+    ['with', true],
+    ['without', false],
+  ])(
+    'lets ticks skip once a LoopOnce clip %s clampWhenFinished finishes, even though the mixer still reports it in use',
+    (_label, clampWhenFinished) => {
+      const { mixer, action } = makeAnimatedMixer();
+      action.setLoop(LoopOnce, 1);
+      action.clampWhenFinished = clampWhenFinished;
+      action.play();
+      const { scheduler } = setup({ mixers: [mixer] });
 
-    let time = 0;
-    expect(scheduler.tick(time)).toBe(true); // first tick always renders (invalidated)
-    for (let i = 0; i < 5; i++) {
-      time += 500;
-      scheduler.tick(time);
-    } // 2.5s of mixer time, well past the clip's 1s duration
+      let time = 0;
+      expect(scheduler.tick(time)).toBe(true); // first tick always renders (invalidated)
+      for (let i = 0; i < 5; i++) {
+        time += 500;
+        scheduler.tick(time);
+      } // 2.5s of mixer time, well past the clip's 1s duration
 
-    expect(action.isRunning()).toBe(false);
-    expect(action.paused).toBe(true); // clampWhenFinished holds the last frame (AnimationAction.js ~771)
-    expect(mixer.stats.actions.inUse).toBe(1); // the bug's premise: still "in use" per AnimationMixer.js ~233
+      expect(action.isRunning()).toBe(false);
+      // clampWhenFinished holds the last frame, paused (AnimationAction.js ~771); without it the action is disabled instead.
+      expect(action.paused).toBe(clampWhenFinished);
+      expect(action.enabled).toBe(clampWhenFinished);
+      expect(mixer.stats.actions.inUse).toBe(1); // the bug's premise: still "in use" per AnimationMixer.js ~233
 
-    time += 16;
-    expect(scheduler.tick(time)).toBe(false); // fixed scheduler: a finished action lets the tick skip
-  });
-
-  it('lets ticks skip once a LoopOnce clip without clampWhenFinished finishes', () => {
-    const { mixer, action } = makeAnimatedMixer();
-    action.setLoop(LoopOnce, 1);
-    action.clampWhenFinished = false;
-    action.play();
-    const { scheduler } = setup({ mixers: [mixer] });
-
-    let time = 0;
-    expect(scheduler.tick(time)).toBe(true);
-    for (let i = 0; i < 5; i++) {
-      time += 500;
-      scheduler.tick(time);
-    }
-
-    expect(action.isRunning()).toBe(false);
-    expect(action.enabled).toBe(false); // no clamp: disabled instead of paused (AnimationAction.js ~772)
-    expect(mixer.stats.actions.inUse).toBe(1); // still counted in use
-
-    time += 16;
-    expect(scheduler.tick(time)).toBe(false);
-  });
+      time += 16;
+      expect(scheduler.tick(time)).toBe(false); // fixed scheduler: a finished action lets the tick skip
+    },
+  );
 
   it('keeps rendering while a looping clip plays', () => {
     const { mixer, action } = makeAnimatedMixer();

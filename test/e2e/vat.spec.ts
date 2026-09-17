@@ -3,20 +3,13 @@ import { expect, test } from './fixtures.js';
 import { pixelDiff } from './pixels.js';
 
 /**
- * A two-part rig whose parts sit at different offsets from the character root: a Kenney mini character with its head
- * part moved off the root (`vatPartOffset`; every Kenney part sits at the root). Bound in attached mode, the skinned
- * original draws the same wherever its parts sit, so its AnimatedInstances twin must draw each part at that part's own
- * offset to match it. Like for like: one frame of the original alone and one of the twin alone, at the same place, clip
- * and time (0.5 s of `walk`, baked frame 15 at 30 fps, so the mixer and the texture hold the same pose), framed close.
- *
- * The placement carries a y rotation rather than being a bare translation. `AnimatedInstances` builds each part's model
- * matrix as `instanceMatrix.mul(offset)` (src/skinning/AnimatedInstances.ts ~113); two translations commute, so under a
- * pure translation a reordered `offset.mul(instanceMatrix)` draws exactly the same picture and this test would pass
- * straight through that bug. A rotation does not commute with the part offset, so the order is pinned for positions.
- * It is not pinned for normals: `vatPartOffset` only translates the part, so the offset's upper 3x3 is the identity and
- * `mat3(instanceMatrix * offset)` equals `mat3(offset * instanceMatrix)` (`normalLocal`, ~118): a reordered normal matrix
- * draws the same picture here. The likeness is measured on a lit surface (`litSpread`), which catches normals that ignore
- * the instance rotation altogether, not the order of that multiply.
+ * A two-part rig whose parts sit at different offsets from the character root (a Kenney mini character with its head
+ * moved off the root via `vatPartOffset`). Bound in attached mode the skinned original draws the same wherever its
+ * parts sit, so its AnimatedInstances twin must draw each part at its own offset: one frame of each alone, same place,
+ * clip and time (0.5 s of `walk`, baked frame 15 at 30 fps). The placement carries a y rotation because
+ * `AnimatedInstances` builds each part's matrix as `instanceMatrix.mul(offset)` (src/skinning/AnimatedInstances.ts
+ * ~113) and two translations commute. Normals are not pinned (the offset's upper 3x3 is the identity, `normalLocal`
+ * ~118); `litSpread` only catches normals that ignore the instance rotation altogether.
  */
 
 /** Luminance spread across the pixels the character covers. A flat or unlit surface would have almost none. */

@@ -1,16 +1,11 @@
 /**
  * Shadow passes on compiled batches and compacted instanced meshes: casters outside the main view must still shadow
- * what is in view.
- *
- * three renders a light's shadow map from inside the first `receiveShadow` object's draw, nested in the main pass. A
- * batch's or an instanced mesh's shadow draw must therefore add the casters the shadow camera sees without rewriting
- * the rows the main pass already recorded (WebGPU submits the main pass only when it ends; on WebGL the receiver draws
- * right after the shadow render returns). Every scene compares the naive scene (one mesh per prop, three's own
- * per-object culling) with the compiled one, under the default policy ('per-pass' on both backends) and 'reuse-main'.
- *
- * Without pixel checks (the SwiftShader WebGPU adapter, where capturing the canvas drops the device) each test still
- * runs: the pass counts, `unattributed` and the missing-caster spies need no screenshot, and only the captures and the
- * pixel comparison are skipped.
+ * what is in view. three renders a light's shadow map from inside the first `receiveShadow` object's draw, nested in
+ * the main pass, so a batch's shadow draw must add the casters the shadow camera sees without rewriting the rows the
+ * main pass already recorded (WebGPU submits the main pass only when it ends; on WebGL the receiver draws right after
+ * the shadow render returns). Every scene compares the naive scene with the compiled one under 'per-pass' (the default
+ * on both backends) and 'reuse-main'. Without pixel checks (SwiftShader WebGPU) the pass counts, `unattributed` and
+ * the missing-caster spies still run; only the captures and the pixel comparison are skipped.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { expect, type ForgePage, test } from './fixtures.js';
@@ -26,12 +21,9 @@ const nestedQuery = (nested: Nested): Record<string, string> => (nested === 'aut
 
 /**
  * Without pixel checks the adapter is SwiftShader, which drops the WebGPU device between test steps (docs/design.md,
- * "WebGPU in the test harness"): every frame after that is empty, so the assertions that follow would fail on the
- * environment rather than on threeforge. Skips with the loss message instead; with pixel checks (native) it does nothing.
- *
- * The same skip would hide a device loss threeforge itself caused, so the reason also says when the loss was recorded
- * against threeforge's first `compile()` (`deviceLostOrder`): a loss before it is the environment's, one after it needs
- * a look. Which tests skip does not depend on it.
+ * "WebGPU in the test harness"): every frame after that is empty, so the assertions would fail on the environment.
+ * Skips with the loss message instead, saying whether the loss came before threeforge's first `compile()` (the
+ * environment's) or after (needs a look); with pixel checks (native) it does nothing.
  */
 async function skipIfDeviceLost(forge: ForgePage): Promise<void> {
   if (forge.pixelChecks) return;

@@ -14,10 +14,9 @@ import {
 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { World } from '../../src/compiler/World.js';
-import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
-import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 import { tag } from '../../src/tags.js';
-import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
+import { FakeRenderer } from './helpers/fakeRenderer.js';
+import { attachedLedger } from './helpers/ledger.js';
 
 const box = new BoxGeometry();
 
@@ -125,21 +124,18 @@ describe('World.warmup', () => {
   it('with a ledger attached, the warm-up frame is one main frame, the same as the render after it (both modes)', async () => {
     const outcome: string[] = [];
     for (const mode of ['frame', 'async'] as const) {
-      const { scene, camera } = sceneWithCamera();
+      const { renderer: attached, registry, ledger, scene, camera } = attachedLedger();
       for (let i = 0; i < 3; i++) scene.add(tag.static(new Mesh(box, new MeshStandardMaterial({ name: `m${i}` }))));
-      const registry = new MaterialRegistry();
-      const ledger = new DrawCallLedger({ registry });
       const world = new World(scene, { registry, ledger });
       world.compile();
       // FakeRenderer's renderAsync is three's: `await this.init(); this.render(scene, camera);`.
-      const renderer = Object.assign(new FakeRenderer(), {
+      const renderer = Object.assign(attached, {
         getScissor: (target: Vector4) => target.set(0, 0, 300, 150),
         setScissor: () => undefined,
         getScissorTest: () => false,
         setScissorTest: () => undefined,
         async compileAsync() {},
       });
-      ledger.attach(renderer as never);
       const result = await world.warmup(renderer as never, camera, { mode });
       const warm = ledger.frame();
       renderer.render(scene, camera);

@@ -1,9 +1,4 @@
-import { expect, test } from './fixtures.js';
-
-/** Records a measurement on the test (visible in the JSON and HTML reports). */
-function note(description: string): void {
-  test.info().annotations.push({ type: 'memory', description });
-}
+import { expect, note, test } from './fixtures.js';
 
 /** createLoader decodes Draco and meshopt content; a tracked subtree, released, returns the renderer's counts to where they were. */
 for (const asset of ['Duck-Draco', 'BrainStem-Meshopt']) {
@@ -72,6 +67,7 @@ test('memory: measuring overdraw adds the count target to info.memory.textures a
   });
   const added = r.measured.textures - r.before.textures;
   note(
+    'memory',
     `[${forge.backend}] the overdraw count target adds ${added} texture(s) to info.memory.textures: ${JSON.stringify(r)}`,
   );
   console.log(`memory [${forge.backend}] overdraw count target textures: ${added}`, JSON.stringify(r));
@@ -99,7 +95,7 @@ test('memory: on the naive scene the overdraw count target adds one texture to i
     await f.frameAsync();
     return { before, measured: read() };
   });
-  note(`[${forge.backend}] naive scene, before and after measureOverdraw: ${JSON.stringify(r)}`);
+  note('memory', `[${forge.backend}] naive scene, before and after measureOverdraw: ${JSON.stringify(r)}`);
   expect(r.measured.textures - r.before.textures).toBe(1);
   expect(r.before.unreferenced).toEqual({ geometries: 0, textures: 0 });
   expect(r.measured.unreferenced).toEqual({ geometries: 0, textures: 0 });
@@ -136,7 +132,7 @@ test('memory: one shadow light with a [0, 0] viewport reports no unreferenced te
       renderTargets: m.renderTargets,
     };
   });
-  note(`[${forge.backend}] one shadow light, viewport [0, 0]: ${JSON.stringify(r)}`);
+  note('memory', `[${forge.backend}] one shadow light, viewport [0, 0]: ${JSON.stringify(r)}`);
   expect(r.built).toBe(true);
   expect(r.viewport).toEqual([0, 0]);
   expect(r.unreferenced).toEqual({ geometries: 0, textures: 0 });
@@ -195,7 +191,7 @@ test("memory.measured is three's own renderer.info.memory", async ({ forge }) =>
     };
     return { measured, info, snapshot: f.frame().memory.measured };
   });
-  note(`[${forge.backend}] memory.measured on the naive scene: ${JSON.stringify(r.measured)}`);
+  note('memory', `[${forge.backend}] memory.measured on the naive scene: ${JSON.stringify(r.measured)}`);
   expect(r.measured).toEqual({
     textures: { count: r.info.textures, bytes: r.info.texturesSize },
     geometries: { count: r.info.geometries, bytes: r.info.attributesSize + r.info.indexAttributesSize },
@@ -251,7 +247,7 @@ test('memory: bakeDebug() twice, attached and then disposed: reachable while att
       disposed: counts(),
     };
   });
-  note(`[${forge.backend}] bakeDebug twice: ${JSON.stringify(r)}`);
+  note('memory', `[${forge.backend}] bakeDebug twice: ${JSON.stringify(r)}`);
   expect(r.baked).toBeGreaterThan(0);
   expect(r.debugMeshes.every((n) => n > 0)).toBe(true);
   expect(r.start.unreferenced).toEqual({ geometries: 0, textures: 0 });
@@ -329,7 +325,7 @@ test('memory: a tinted group batches with a clone sharing the source texture, co
     for (let i = 0; i < 3; i++) await f.frameAsync();
     return { naive, compiled, decompiled, recompiled, worldDisposed: counts(), disposed };
   });
-  note(`[${forge.backend}] tinted group: ${JSON.stringify(r)}`);
+  note('memory', `[${forge.backend}] tinted group: ${JSON.stringify(r)}`);
   expect(r.compiled.batches).toBe(1);
   expect(r.compiled.isClone, 'the batch draws with a white clone carrying the tints, not a source material').toBe(true);
   expect(r.compiled.sharesMap).toBe(true);
@@ -363,7 +359,7 @@ test('memory: occlusion proxies add nothing unreferenced while compiled, and dec
     for (let i = 0; i < 3; i++) await f.frameAsync();
     return { naive, compiled, decompiled: counts() };
   });
-  note(`[${forge.backend}] occlusion proxies: ${JSON.stringify(r)}`);
+  note('memory', `[${forge.backend}] occlusion proxies: ${JSON.stringify(r)}`);
   expect(r.compiled.proxies).toBeGreaterThan(4);
   expect(r.naive.unreferenced).toEqual({ geometries: 0, textures: 0 });
   expect(r.compiled.unreferenced).toEqual({ geometries: 0, textures: 0 });
@@ -397,7 +393,7 @@ test('memory: a VSM shadow light: its map, depth and two blur targets are allowe
     const m = f.ledger.measureMemory();
     return { built: sun.shadow.map !== null, textures: f.renderer.info.memory.textures, unreferenced: m.unreferenced };
   });
-  note(`[${forge.backend}] VSM shadow light: ${JSON.stringify(r)}`);
+  note('memory', `[${forge.backend}] VSM shadow light: ${JSON.stringify(r)}`);
   expect(r.built).toBe(true);
   // The frame buffer (2), the DFG LUT (1), the map and its depth (2), the two blur targets (2).
   expect(r.textures).toBe(7);
@@ -405,13 +401,12 @@ test('memory: a VSM shadow light: its map, depth and two blur targets are allowe
 });
 
 /*
- * Resources three creates for itself that nothing in the scene reaches, identified from three r186's source:
- * - PMREM (an equirect `scene.environment` and `background`): PMREMNode's own PMREMGenerator (nodes/pmrem/PMREMNode.js
- *   ~323) renders LOD plane meshes with an `outputDirection` attribute (renderers/common/extras/PMREMGenerator.js ~821)
- *   into render targets whose textures carry `isPMREMTexture` (~850-853);
- * - the background sphere (renderers/common/Background.js ~131), drawn as an object outside the scene;
- * - morph targets: one float DataArrayTexture per morphed geometry (nodes/accessors/Morph.js ~93);
- * - post-processing: PassNode's and BloomNode's render targets, drawn into every frame.
+ * Resources three creates for itself that nothing in the scene reaches (three r186): PMREM for an equirect
+ * `scene.environment`/`background` (PMREMNode's own generator, nodes/pmrem/PMREMNode.js ~323, renders LOD planes with
+ * an `outputDirection` attribute, renderers/common/extras/PMREMGenerator.js ~821, into targets whose textures carry
+ * `isPMREMTexture`, ~850-853); the background sphere (renderers/common/Background.js ~131), drawn outside the scene;
+ * one float DataArrayTexture per morphed geometry (nodes/accessors/Morph.js ~93); and post-processing's PassNode and
+ * BloomNode render targets, drawn every frame.
  */
 test("memory: three's own PMREM, background, morph and post-processing resources are not unreferenced, while a real leak still is", async ({
   forge,
@@ -470,7 +465,7 @@ test("memory: three's own PMREM, background, morph and post-processing resources
     await f.frameAsync();
     return { clean, leaked: f.ledger.measureMemory().unreferenced };
   });
-  note(`[${forge.backend}] PMREM + background + morph + bloom: ${JSON.stringify(r)}`);
+  note('memory', `[${forge.backend}] PMREM + background + morph + bloom: ${JSON.stringify(r)}`);
   expect(r.clean.unreferenced).toEqual({ geometries: 0, textures: 0 });
   expect(r.clean.hints).not.toContain('unreferenced-resources');
   expect(r.leaked).toEqual({ geometries: 1, textures: 1 });

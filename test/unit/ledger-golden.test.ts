@@ -1,33 +1,11 @@
 /**
- * Frozen ledger output (golden).
- *
- * Renders one deterministic scene for 3 frames and snapshots `DrawCallLedger.frame({ items: true })` to
- * `ledger-golden.snapshot.json`, stored next to this file. The scene touches every submission reason and pass
- * kind the ledger currently classifies (see the table in this file's describe block), with
- * one exception: `static-unbatched`. That reason needs two statics that share a material, and every static here has
- * its own — the only shared material in the scene belongs to the two skinned meshes, `body` and `body-2` — so no
- * item in the snapshot carries it. `draw-call-ledger.test.ts` covers `static-unbatched` instead.
- * A hot-path rewrite of the ledger must keep this file byte-identical; a change that moves a number on purpose
- * updates it, and the diff is read by a human — that reading is the point of a golden file.
- *
- * To update after an intentional change to the ledger's output:
- *
- *   pnpm exec vitest run test/unit/ledger-golden.test.ts -u
- *
- * Every resulting diff to ledger-golden.snapshot.json must be reviewed before merge: it is the proof that the
- * change was the one you meant to make, not a regression. Do not run `-u` to make a failing run pass without
- * reading the diff first.
- *
- * Determinism:
- * - The ledger's `now` option is an injected counter (see `js-section.test.ts`), never `performance.now()`.
- * - Nothing in the snapshot is a `uuid` or an `Object3D.id` (the ledger never emits either).
- * - One exception needed correcting: `computeMaterialKeys()` (src/registry/materialKey.ts) folds a
- *   ShaderMaterial's own `material.uuid` into its `programHash`/`variantHash`, because it has no other way to
- *   key an unsupported material. Three.js assigns a fresh random `uuid` to every `Material` it constructs, so
- *   the golden's `shader` item would render a different programHash on every run. We pin that one material's
- *   `uuid` to a fixed string below (a test-file change, not a src/ change) so the hash — and everything that
- *   depends on it (byReason.unsupported-material, programs) — is stable and still fully present in the
- *   snapshot, not filtered out.
+ * Frozen ledger output: one deterministic scene rendered for 3 frames, `DrawCallLedger.frame({ items: true })`
+ * snapshotted to `ledger-golden.snapshot.json`. The scene touches every submission reason and pass kind the ledger
+ * classifies except `static-unbatched` (every static here has its own material; `hints.test.ts` covers it). A change
+ * that moves a number on purpose updates the file with `pnpm exec vitest run test/unit/ledger-golden.test.ts -u`, and
+ * the diff is reviewed. The clock is an injected counter, and the snapshot holds no `uuid` or `Object3D.id`, with one
+ * exception: `computeMaterialKeys()` (src/registry/materialKey.ts) folds a ShaderMaterial's `uuid` into its
+ * `programHash`/`variantHash`, so that one material's `uuid` is pinned below.
  */
 
 import {
@@ -68,13 +46,11 @@ interface RenderLike {
 }
 
 /**
- * Builds the golden scene once. Covers, in one graph:
- * - named vs. unnamed siblings, a nested group (unnamed child -> path-based name), tags and an annotation
- * - batched (BatchedMesh), instanced with count 0 and count n, a sprite batch (InstancedBufferGeometry mesh)
- * - two skinned meshes sharing one Skeleton, a morph target, Points with a drawRange, a multi-material mesh
- * - a ShaderMaterial (unsupported), a shadow-casting light
- * - a nested render of the SAME scene into a named target ('mirror', reason unique-material, flag custom-hook)
- * - a second, distinct Scene rendered from within the first ('portal', reason unique-material, flag custom-hook)
+ * The golden scene, in one graph: named and unnamed siblings, a nested group (unnamed child, path-based name), tags
+ * and an annotation; a BatchedMesh, instanced with count 0 and count n, a sprite batch; two skinned meshes sharing one
+ * Skeleton, a morph target, Points with a drawRange, a multi-material mesh; a ShaderMaterial (unsupported) and a
+ * shadow-casting light; a nested render of the same scene into a named target ('mirror') and a second Scene rendered
+ * from within the first ('portal'), both unique-material with the custom-hook flag.
  */
 function buildScene() {
   const { scene, camera } = sceneWithCamera();

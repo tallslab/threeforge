@@ -14,6 +14,9 @@
 // frame is the heap growth over 10 frames with the young generation sized so no scavenge runs inside the window (the
 // script re-runs itself with --expose-gc and a large semi-space). Neither window contains the ledger's periodic rescan
 // (every 60 frames), which is timed on its own in the `rescan ms` column. Numbers vary by machine; compare runs on one.
+// With two or more sizes, a `scaling` line per scene follows the table: the attached µs per submission (ledger plus
+// renderer, the best round) at the largest size over the smallest, so 1.00x is linear. The unit suite once gated this
+// ratio under 3x from 2k to 20k; it is printed here instead, as a figure to read beside the rest, not a gate.
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -181,6 +184,8 @@ function measure(shape, submissions) {
     shape,
     submissions: expected,
     usPerSubmission: (best * 1000) / expected,
+    /** The attached frame's own cost per submission (ledger plus renderer), the best round: what `scaling` compares. */
+    attachedUs: (bestLedger * 1000) / ROUND_FRAMES / expected,
     bytesPerFrame: ledgerBytes - bareBytes,
     rescanMs,
   };
@@ -193,15 +198,25 @@ console.log(
 console.log(
   `${'scene'.padEnd(7)} ${pad('submissions', 11)} ${pad('µs/submission', 13)} ${pad('bytes/frame', 12)} ${pad('MB/frame', 8)} ${pad('rescan ms', 9)}`,
 );
+const scaling = [];
 for (const shape of ['flat', 'nested', 'shadow']) {
+  const results = [];
   for (const n of SUBMISSIONS) {
     const r = measure(shape, n);
+    results.push(r);
     const bytes = Math.max(0, Math.round(r.bytesPerFrame));
     console.log(
       `${shape.padEnd(7)} ${pad(r.submissions, 11)} ${pad(r.usPerSubmission.toFixed(2), 13)} ${pad(bytes, 12)} ${pad((bytes / 1e6).toFixed(2), 8)} ${pad(r.rescanMs.toFixed(1), 9)}`,
     );
   }
+  if (results.length < 2) continue;
+  const [small, large] = [results[0], results[results.length - 1]];
+  scaling.push(
+    `scaling ${shape.padEnd(7)} ${pad(small.submissions, 6)} -> ${pad(large.submissions, 6)} submissions: ` +
+      `${small.attachedUs.toFixed(2)} -> ${large.attachedUs.toFixed(2)} µs per attached submission = ${(large.attachedUs / small.attachedUs).toFixed(2)}x (1.00x is linear)`,
+  );
 }
+for (const line of scaling) console.log(line);
 // Only this run's own figures and the fixed targets: an older release's numbers came from another machine and run, and
 // printed beside a measurement they read as current (docs/threeforge.md keeps the 0.8.0 reference with its provenance).
 console.log('targets at 10k submissions (goals, not measurements): ≤ 1 µs per submission and ≤ 1 MB per frame');

@@ -435,16 +435,11 @@ test('optimize changes zero pixels of the Fox at --parity 0 in every view, skin 
 });
 
 /**
- * `--resample` under `safe` is the one lossless path with no end-to-end cover.
- *
- * `resample` left `safe`, and `--resample` adds it back — where it runs at `tolerance: 0`,
- * because glTF-Transform's default is a lossy `1e-4` that drops keyframes merely *near* the value interpolated from
- * their neighbours. That tolerance is the entire difference between lossless and not, and until now it was pinned
- * only in `test/unit/pipeline.test.ts`, which tests `planSteps` — a pure function that decides the number. Nothing
- * checked that the shipped CLI carries it through to `fns.resample()`, and `fns.resample()` called with no options
- * silently takes 1e-4 back. That regression would shift the Fox's posed silhouette by 1-5 pixels of 921,600 — under
- * `diffPct`'s three-decimal rounding on WebGL2, so even a percentage-based parity check would have missed it. The
- * raw changed-pixel count on both backends is the guard.
+ * `--resample` under `safe` is the one lossless path with no end-to-end cover: it runs resample at `tolerance: 0`,
+ * where glTF-Transform's default is a lossy `1e-4` that drops keyframes merely near the interpolated value. Only
+ * `test/unit/pipeline.test.ts` pinned that number (in `planSteps`); `fns.resample()` called with no options silently
+ * takes 1e-4 back, which shifts the Fox's posed silhouette by 1-5 pixels of 921,600, under `diffPct`'s three-decimal
+ * rounding on WebGL2. The raw changed-pixel count on both backends is the guard.
  */
 test('optimize --preset safe --resample changes zero pixels of the Fox at --parity 0: the flag runs resample losslessly', {
   tag: '@corpus',
@@ -542,19 +537,13 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
     expect(doc.verify.parity.pass).toBe(true);
     expect(doc.verdict.pass).toBe(true);
 
-    // Pinned here because this asset is the one that can tell the two questions apart, and an attempt to
-    // conflate them shipped and was reverted.
-    //
-    // `--parity` is the ORIGINAL-versus-OPTIMIZED threshold. `--parity 0` asks "is the optimized asset exactly the
-    // original?" and for the Buggy the answer is yes: every view above is exactly 0 changed pixels, on both backends
-    // (CONTRIBUTING.md rule 7). Whether COMPILING a file moves a pixel is a different question: threeforge's batching of
-    // this asset moves 1 px on webgl2 and 2 px of 921,600 on webgpu, measured from the built binary twice per
-    // backend, and identically on the ORIGINAL file — so it is a property of the asset, not of the rewrite. It is
-    // reported in `verify.optimized.parity` (threshold 0.5 %, never tightened by `--parity`) and an agent that needs
-    // compile exactness reads that field or runs `analyze --parity 0`, which asks it directly.
-    //
-    // Carrying a stricter `--parity` into those inner checks made this run exit 1 — answering "no" to a question
-    // whose answer is yes. If someone reintroduces that, the two expectations below go red together.
+    // `--parity` is the ORIGINAL-versus-OPTIMIZED threshold: `--parity 0` asks whether the optimized asset is exactly
+    // the original, and for the Buggy it is (0 changed pixels in every view, both backends; CONTRIBUTING.md rule 7). Whether
+    // COMPILING a file moves a pixel is a different question: batching this asset moves 1 px on webgl2 and 2 px of
+    // 921,600 on webgpu, identically on the ORIGINAL file, so it is a property of the asset. It is reported in
+    // `verify.optimized.parity` (threshold 0.5 %, never tightened by `--parity`); `analyze --parity 0` asks it directly.
+    // Carrying the stricter `--parity` into those inner checks once shipped, made this run exit 1 and was reverted:
+    // the two expectations below go red together if it returns.
     const compileDrift = (side: 'original' | 'optimized'): number[] =>
       (doc.verify[side].parity.views as Array<{ changedPixels: number }>).map((v) => v.changedPixels);
     expect(doc.verify.original.parity.threshold, '--parity must not reach the inner compile checks').toBe(0.5);
@@ -580,14 +569,11 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
 });
 
 /**
- * The tolerance is measured, not guessed. `optimize --preset balanced --parity 100` on the Fox, three times per
- * backend (twice before `weld` left `safe` and again after, which does not change what `balanced` runs), reported the
- * same figures every time: webgl2 default 0.008 %, orbit-0 0.005 %, orbit-1 0.002 %; webgpu default 0.014 %,
- * orbit-0 0.014 %, orbit-1 0.015 %. So the worst view measured is 0.015 % and 0.05 % leaves ~3.3x headroom.
- * It covers three lossy sources together: `weld` (which moved here out of `safe`, and which is most of the
- * webgpu figure — 0.013 % of the 0.015 % on its own), `quantize` (positions, UVs and weights to integers) and
- * `textures` (the base colour map re-encoded as WebP at quality 85). It is deliberately far below the CLI's own
- * 0.5 % default: balanced is lossy, but only just, and a step that starts moving a tenth of a percent should fail.
+ * Measured, not guessed: `optimize --preset balanced --parity 100` on the Fox, three times per backend, reported
+ * webgl2 default 0.008 %, orbit-0 0.005 %, orbit-1 0.002 %; webgpu default 0.014 %, orbit-0 0.014 %, orbit-1 0.015 %.
+ * The worst view is 0.015 %, so 0.05 % leaves ~3.3x headroom over three lossy sources together: `weld` (most of the
+ * webgpu figure, 0.013 % on its own), `quantize` and `textures` (base colour re-encoded as WebP at quality 85). It is
+ * far below the CLI's own 0.5 % default: a step that starts moving a tenth of a percent should fail.
  */
 const BALANCED_PARITY = 0.05;
 
@@ -659,18 +645,12 @@ test('optimize --preset balanced quantizes and re-encodes the Fox, changing pixe
 });
 
 /**
- * `--parity 0` has to fail the *process*, not only the decision.
- *
- * `test/unit/cli-core.test.ts` drives the whole chain — `parityOf` → `verdictOf` → `exitCodeOf` — on a one-pixel
- * difference, but in process. That proves the decision and nothing about the wiring. `src/cli/index.ts` is what turns
- * a verdict into `process.exitCode`, and a change there (an `optimize` case that returns 0, a lost `exitCodeOf` call,
- * a watchdog that exits before the code is read) leaves every unit test green while the shipped binary reports
- * success on a run that moved pixels. Agents branch on the exit code, so that is the failure that matters, and until
- * now the only evidence for it was a one-off manual run.
- *
- * `balanced` is the fixture because it is measurably lossy — weld, quantize and the WebP re-encode move 21-141 pixels
- * per view across the two backends — so `--parity 0` must reject it, on both. The `safe` tests above are the
- * complement: the same binary, the same flag, exit 0.
+ * `--parity 0` has to fail the process, not only the decision. `test/unit/cli-core.test.ts` drives `parityOf` ->
+ * `verdictOf` -> `exitCodeOf` in process; `src/cli/index.ts` is what turns a verdict into `process.exitCode`, and a
+ * change there (an `optimize` case that returns 0, a lost `exitCodeOf` call, a watchdog that exits first) leaves every
+ * unit test green while the binary reports success on a run that moved pixels. Agents branch on the exit code.
+ * `balanced` is the fixture because it is measurably lossy (weld, quantize and the WebP re-encode move 21-141 pixels
+ * per view across the two backends), so `--parity 0` must reject it on both; the `safe` tests above exit 0.
  */
 test('optimize exits 1 when --parity 0 is not met, from the built binary and not only the decision path', {
   tag: '@corpus',

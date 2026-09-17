@@ -37,28 +37,19 @@ describe('pixelDiff', () => {
     expect(pixelDiff(a, b)).toBe(0);
   });
 
-  it('counts a pixel whose channel differs by more than the default threshold of 24', () => {
+  it.each([
+    [25, 0.5], // one channel off by 25: counts, 1 of 2 pixels differs
+    [24, 0], // exactly at the threshold: not > 24, so not counted
+  ])('counts a pixel whose channel differs by %i only beyond the default threshold of 24 (diff %d)', (delta, diff) => {
     const a = png(2, 1, [
       [0, 0, 0],
       [0, 0, 0],
     ]);
     const b = png(2, 1, [
-      [25, 0, 0], // one channel off by 25: counts
+      [delta, 0, 0],
       [0, 0, 0],
     ]);
-    expect(pixelDiff(a, b)).toBe(0.5); // 1 of 2 pixels differs
-  });
-
-  it('does not count a pixel whose channel differs by exactly the threshold', () => {
-    const a = png(2, 1, [
-      [0, 0, 0],
-      [0, 0, 0],
-    ]);
-    const b = png(2, 1, [
-      [24, 0, 0], // exactly at the threshold: not > 24, so not counted
-      [0, 0, 0],
-    ]);
-    expect(pixelDiff(a, b)).toBe(0);
+    expect(pixelDiff(a, b)).toBe(diff);
   });
 
   it('respects a custom threshold option', () => {

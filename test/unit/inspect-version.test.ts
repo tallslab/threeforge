@@ -7,8 +7,7 @@ import { printDocument, summarize } from '../../src/cli/format.js';
 import { inspectApp } from '../../src/cli/inspect.js';
 import { measureViaHook } from '../../src/cli/measure.js';
 import type { InspectInput } from '../../src/cli/types.js';
-import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
-import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
+import { attachedLedger } from './helpers/ledger.js';
 
 /**
  * `inspect` and the frame snapshot `schemaVersion`. A fake Playwright page evaluates the CLI's own expressions (the
@@ -44,19 +43,16 @@ function pageOn(window: FakeWindow, evaluated: string[] = []): PlaywrightPage {
 }
 
 /**
- * An app with 4 meshes, a ledger on an injected clock and the agent hook. Every render() call costs 3 ms; each frame's
- * filing reads the scheduler once, which costs the next of `filingCosts` (so it lands in that frame's `js.ledgerMs`).
+ * An app with 4 meshes, a ledger on an injected clock and the agent hook. Every render() call costs 3 ms (ticked from
+ * `scene.onBeforeRender`, which the fake calls inside render()); each frame's filing reads the scheduler once, which
+ * costs the next of `filingCosts` (so it lands in that frame's `js.ledgerMs`).
  */
 function app(options: { schemaVersion?: number; filingCosts?: number[] } = {}): { window: FakeWindow } {
   let t = 0;
-  const ledger = new DrawCallLedger({ now: () => t });
-  const renderer = new FakeRenderer();
-  const render = renderer.render.bind(renderer);
-  (renderer as { render: typeof render }).render = (scene, camera) => {
+  const { renderer, ledger, scene, camera } = attachedLedger({ sceneHooks: true }, { now: () => t });
+  scene.onBeforeRender = () => {
     t += 3;
-    return render(scene, camera);
   };
-  ledger.attach(renderer as never);
   const costs = [...(options.filingCosts ?? [])];
   ledger.attachScheduler({
     skippedRecently: () => {
@@ -64,7 +60,6 @@ function app(options: { schemaVersion?: number; filingCosts?: number[] } = {}): 
       return 0;
     },
   });
-  const { scene, camera } = sceneWithCamera();
   for (let i = 0; i < 4; i++) scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial()));
   const window: FakeWindow = {};
   exposeToAgents({

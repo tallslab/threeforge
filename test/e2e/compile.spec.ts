@@ -1,10 +1,5 @@
-import { expect, type ForgePage, test } from './fixtures.js';
+import { expect, type ForgePage, note, test } from './fixtures.js';
 import { differingPixels, pixelDiff, settle } from './pixels.js';
-
-/** Records a measurement on the test (visible in the JSON and HTML reports) instead of printing it. */
-function note(description: string): void {
-  test.info().annotations.push({ type: 'materials', description });
-}
 
 interface View {
   name: string;
@@ -167,28 +162,13 @@ test('world.compile() takes the naive scene from 503 to 28 submissions, under 0.
     );
   }
   expect(compiledDraw.triangles, 'oblique: triangles drawn').toBe(naiveDraw.triangles);
-  // `expectedGpuDraws` used to be recorded in the annotation below and never asserted, so a backend-specific draw-count
-  // anomaly could only be found by reading a report. It cannot be compared naive-against-compiled — batching is
-  // *supposed* to change it — but each side has a per-backend law it must obey, and this scene is simple enough to
-  // state it: one pass (`main`), nothing nested, so no batch has slots an enclosing pass zeroed.
-  //   with WEBGL_multi_draw: a batch collapses to one call, so every submission costs exactly one draw
-  //           (naive 500 -> 500, compiled 28 -> 28).
-  //   without it (WebGPU, and any WebGL2 context lacking the extension): one call per multi-draw slot, so a pass
-  //           costs one draw per drawn instance (naive 500 -> 500, compiled 28 submissions -> 500).
-  // The law keys on `frame.env.multiDraw`, the capability the ledger predicts from, not on the Playwright project
-  // name: a webgl2 context without `WEBGL_multi_draw` would obey the second law, and selecting by backend name would
-  // fail there blaming a threeforge property for an environment condition. (The SwiftShader webgl2 context the bench
-  // baselines were recorded on does report `multiDraw: true`; the guard is for any context that does not.)
-  //
-  // What this adds over `unattributed`, asserted at 0 for each of these two draw sets just below: that assertion ties
-  // the ledger's cost *model* to the number the backend actually reported, so a model-only regression fails there
-  // (breaking the webgl2 folding rule in `expectedDraws.ts` alone lands as `unattributed: -475`, not here). It says
-  // nothing about what the backend is doing. These two lines do: that a multi-draw context really is folding each
-  // batch into one call, and that a non-multi-draw one really is issuing one per drawn instance. If the platform
-  // stopped offering WEBGL_multi_draw, or three stopped using it, the compiled frame would cost 500 calls instead of
-  // 28, the ledger would report that faithfully, `unattributed` would stay 0 — and submissions, instances drawn,
-  // triangles and every pixel would be unchanged, so nothing else in this spec would notice a scene that got 18x
-  // more expensive to draw.
+  // Per-backend draw-count law for this one-pass scene, keyed on `frame.env.multiDraw` (the capability the ledger
+  // predicts from, not the Playwright project name): with WEBGL_multi_draw a batch collapses to one call, so every
+  // submission costs one draw (naive 500 -> 500, compiled 28 -> 28); without it (WebGPU, or a WebGL2 context lacking
+  // the extension) a pass costs one draw per drawn instance (naive 500 -> 500, compiled 28 submissions -> 500).
+  // `unattributed === 0` below only ties the ledger's cost model to what the backend reported; this checks that the
+  // backend really folds (or does not), which nothing else in the spec would notice: if the platform stopped offering
+  // WEBGL_multi_draw the compiled frame would cost 500 calls instead of 28 with every pixel and submission unchanged.
   for (const [label, set] of [
     ['naive', naiveDraw],
     ['compiled', compiledDraw],
@@ -231,6 +211,7 @@ test('world.compile() takes the naive scene from 503 to 28 submissions, under 0.
     'skinned-1',
   ]);
   note(
+    'materials',
     `[${forge.backend}] oblique draw set: triangles ${naiveDraw.triangles} naive / ${compiledDraw.triangles} compiled; ` +
       Object.keys(naiveDraw.byPass)
         .map(
@@ -246,7 +227,10 @@ test('world.compile() takes the naive scene from 503 to 28 submissions, under 0.
     for (const view of VIEWS) {
       const compiled = pixelDiff(naiveShots[view.name]!, compiledShots[view.name]!, { threshold: 4 });
       const back = differingPixels(naiveShots[view.name]!, restoredShots[view.name]!, { threshold: 4 });
-      note(`[${forge.backend}] ${view.name} view: compile ${(compiled * 100).toFixed(4)}%, decompile ${back} pixels`);
+      note(
+        'materials',
+        `[${forge.backend}] ${view.name} view: compile ${(compiled * 100).toFixed(4)}%, decompile ${back} pixels`,
+      );
       // The measured baseline, so whoever next sees this fail reads it against the known margin instead of rediscovering
       // it: at the 800x600 viewport pixelDiff divides by 480,000, and the oblique view sits at 0.0467% (webgl2) /
       // 0.0471% (webgpu) of the 0.0500% bound — 224 / 226 differing pixels, about 14 px of headroom. It is draw-order
@@ -324,13 +308,11 @@ test('tinted node-material statics keep an instance setupOutput, alphaTest, a us
       // Alpha in stripes that alphaTest cuts out, and an instance setupOutput that darkens the colour by a user-added own
       // property and mixes in a uniform node kept in userData, both read through `this`. NodeMaterial.copy() carries none
       // of them: alphaTest is an accessor on Material.prototype, instance functions and user-added properties are not on
-      // a fresh instance, and userData is JSON-copied, which turns the uniform node into a plain object. (A uniform
-      // reached only from inside a setup method is uploaded once, on the render object's first frame, in the naive
-      // render too, so this cell keeps its value fixed while the classic cell animates its userData uniform. The
-      // mechanism is NodeMaterialObserver.containsNode (r186, ~325-342): it walks the material's own properties and
-      // reports the material as holding nodes only when one of those properties is itself a node, so a node reachable
-      // only through a closure leaves hasNode false and needsRefresh returns FULL only on the render object's first
-      // frame. The uniform -- objectGroup, UniformNode's default -- is uploaded in that refresh and never again.)
+      // a fresh instance, and userData is JSON-copied, which turns the uniform node into a plain object. The uniform is
+      // uploaded once, on the render object's first frame, in the naive render too: NodeMaterialObserver.containsNode
+      // (r186, ~325-342) only sees nodes on the material's own properties, so one reached through a closure leaves
+      // hasNode false and needsRefresh returns FULL only on that first frame. This cell therefore keeps its value fixed
+      // while the classic cell animates its userData uniform.
       const size = 32;
       const data = new Uint8Array(size * size * 4);
       for (let y = 0; y < size; y++) {
@@ -395,6 +377,7 @@ test('tinted node-material statics keep an instance setupOutput, alphaTest, a us
     const after = await forge.page.screenshot({ type: 'png' });
     const diff = pixelDiff(before, after, { threshold: 4 });
     note(
+      'materials',
       `[${forge.backend}] tinted node materials with extra and a userData uniform node, ${mode}: ${r.after.batches} batches, ${r.after.baked} baked, pixel diff ${(diff * 100).toFixed(4)}%`,
     );
     expect(r.after.batches + r.after.baked, `${mode}: the tinted group is compiled`).toBe(1);
@@ -474,6 +457,7 @@ test('tinted classic statics keep a custom onBeforeCompile, define, user-added p
     const animated = pixelDiff(png(r.naive[0]!), png(r.naive[1]!), { threshold: 4 });
     const diffs = [0, 1].map((k) => pixelDiff(png(r.naive[k]!), png(r.compiled[k]!), { threshold: 4 }));
     note(
+      'materials',
       `[${forge.backend}] tinted classic materials with onBeforeCompile, MY_DEFINE, extra and a userData uniform (WebGLRenderer), ${mode}: ${r.after.batches} batches, ${r.after.baked} baked, the wave uniform changes the naive render by ${(animated * 100).toFixed(4)}%, pixel diff at wave 0 ${(diffs[0]! * 100).toFixed(4)}%, at wave 0.6 set through the source ${(diffs[1]! * 100).toFixed(4)}%`,
     );
     expect(r.after.batches + r.after.baked, `${mode}: the tinted group is compiled`).toBe(1);

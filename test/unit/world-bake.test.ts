@@ -25,9 +25,8 @@ import { describe, expect, it } from 'vitest';
 import type { BakeReport } from '../../src/compiler/bake.js';
 import { bakeEntriesOf } from '../../src/compiler/batchStatics.js';
 import { World } from '../../src/compiler/World.js';
-import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { tag } from '../../src/tags.js';
-import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
+import { attachedLedger } from './helpers/ledger.js';
 
 /** A row of touching unit boxes sharing one material (or one per box): every pair has a seam of two contact faces. */
 function wall(
@@ -603,10 +602,7 @@ describe('World with bake', () => {
 
   it('the ledger attributes a baked mesh to the reason "baked"', () => {
     const { scene: base } = wall(2);
-    const { camera } = sceneWithCamera();
-    const renderer = new FakeRenderer();
-    const ledger = new DrawCallLedger();
-    ledger.attach(renderer as never);
+    const { renderer, ledger, camera } = attachedLedger();
     const world = new World(base, { bake: true, ledger });
     world.compile();
     renderer.render(base, camera);

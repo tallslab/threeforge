@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 import { attachBvhCulling, FORGE_HOOK } from '../../src/compiler/culling.js';
 import { cameraView, frustumFor, viewProjection } from '../../src/compiler/instanceBvh.js';
 import { mulberry32 } from '../../test/scenes/naive.js';
+import { webglRenderer } from './helpers/renderers.js';
 
 const box = new BoxGeometry(1, 1, 1);
 const _scratch = new Matrix4();
@@ -38,10 +39,9 @@ function field(count: number, area = 2000) {
   camera.lookAt(100, 1, 0);
   camera.updateMatrixWorld();
   camera.updateProjectionMatrix();
-  const renderer = { coordinateSystem: WebGLCoordinateSystem };
   const scene = new Scene();
   const cull = () =>
-    batch.onBeforeRender(renderer as never, scene, camera, batch.geometry, batch.material as never, null as never);
+    batch.onBeforeRender(webglRenderer as never, scene, camera, batch.geometry, batch.material as never, null as never);
   /**
    * The instance ids of the multi-draw list, **in draw order**.
    *
@@ -248,7 +248,7 @@ describe('attachBvhCulling margin changes what is drawn', () => {
     camera.updateProjectionMatrix();
     const handle = attachBvhCulling(batch, WebGLCoordinateSystem, margin > 0 ? { margin } : {});
     batch.onBeforeRender(
-      { coordinateSystem: WebGLCoordinateSystem } as never,
+      webglRenderer as never,
       new Scene(),
       camera,
       batch.geometry,
@@ -379,7 +379,7 @@ describe('attachBvhCulling slot writer', () => {
     camera.updateProjectionMatrix();
     const cull = () =>
       batch.onBeforeRender(
-        { coordinateSystem: WebGLCoordinateSystem } as never,
+        webglRenderer as never,
         new Scene(),
         camera,
         batch.geometry,

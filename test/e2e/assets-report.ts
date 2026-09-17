@@ -1,16 +1,10 @@
 /**
- * Row bookkeeping for the public asset report (`pnpm assets:report`, test/e2e/assets.spec.ts), split out of the
- * spec so it can be unit-tested without the corpus (test/unit/assets-report.test.ts).
- *
- * It exists to answer two questions the report could not answer before. *When was this row measured?* Rows merge
- * into docs/assets-report[-backend].json one test at a time, because Playwright restarts its worker after a
- * failure, so one file routinely holds rows from several runs; each row therefore carries the commit it was
- * measured at and the id of the run that measured it. And *did this table really cover the corpus?* A run over two
- * assets (FORGE_ASSETS=Fox,Duck), a crashed run, or a run of the other backend used to rewrite the whole Markdown
- * table as if it had measured every asset: `missingFromRun` is the gate that leaves the tracked Markdown alone
- * until one run has measured everything it set out to.
- *
- * Everything here is pure except `currentStamp`, which asks git once per process.
+ * Row bookkeeping for the public asset report (`pnpm assets:report`, test/e2e/assets.spec.ts), split out of the spec
+ * so it can be unit-tested without the corpus (test/unit/assets-report.test.ts). Rows merge into
+ * docs/assets-report[-backend].json one test at a time (Playwright restarts its worker after a failure), so each row
+ * carries the commit and run id it was measured at, and `missingFromRun` keeps a partial run (FORGE_ASSETS=Fox,Duck,
+ * a crash, the other backend) from rewriting the tracked Markdown table. Everything here is pure except
+ * `currentStamp`, which asks git once per process.
  */
 import { execFileSync } from 'node:child_process';
 import { hash8 } from '../../scripts/bench-id.mjs';
@@ -68,12 +62,9 @@ export function shortCommit(commit: string): string {
 /**
  * The id every row of one `playwright test` invocation carries. It must survive a worker restart, so it is derived
  * from the runner process (the worker's parent), the commit and the UTC day, never from the worker's own pid or
- * clock: measured on Playwright 1.63.0, a worker's pid changes across a restart and its `ppid` does not.
- *
- * `day` is in the id because a pid alone can repeat: an OS that recycles the runner pid at the same commit would
- * otherwise let a later partial run inherit an earlier full run's rows and republish the table. A run that crosses
- * midnight UTC splits into two ids, which blocks the Markdown instead of publishing a mixed table — the safe
- * direction. `FORGE_RUN_ID` pins the id outright, which is what CI should set.
+ * clock: measured on Playwright 1.63.0, a worker's pid changes across a restart and its `ppid` does not. `day` keeps
+ * a recycled runner pid at the same commit from inheriting an earlier full run's rows; a run that crosses midnight
+ * UTC splits into two ids and blocks the Markdown, the safe direction. `FORGE_RUN_ID` pins the id; CI should set it.
  */
 export function runIdOf(env: { FORGE_RUN_ID?: string | undefined }, ppid: number, commit: string, day: string): string {
   const pinned = (env.FORGE_RUN_ID ?? '').trim();
@@ -133,16 +124,11 @@ export interface CorpusPlan {
 const MODEL = /\.(gltf|glb)$/i;
 
 /**
- * The assets a run must measure, judged against what the index says *should* be there rather than what happened to
- * download. `fetch-assets.mjs` records a failed download as `{ error }` and exits 0; the spec used to drop such
- * entries from both its tests and the gate's `expected`, so a partial fetch produced a green run and a silently
- * shorter table. Now an errored model stays in `expected` and in `attempt`, where its test fails naming the fetch
- * error and saves no row, so the gate reports it missing too.
- *
- * `only` (FORGE_ASSETS) narrows `attempt` and nothing else: an asset left out on purpose is not missing, even if it
- * errored, while one it names is attempted whatever its state. An errored entry with no `entry` counts as a model,
- * since nothing shows it is not one. Kits, non-glTF entries (textures) and malformed rows are skipped; a repeated
- * name keeps its first entry. Pure.
+ * The assets a run must measure, judged against what the index says should be there rather than what downloaded:
+ * `fetch-assets.mjs` records a failed download as `{ error }` and exits 0, and such a model stays in `expected` and
+ * `attempt`, where its test fails naming the fetch error, so the gate reports it missing. `only` (FORGE_ASSETS)
+ * narrows `attempt` and nothing else. An errored entry with no `entry` counts as a model; kits, non-glTF entries
+ * (textures) and malformed rows are skipped; a repeated name keeps its first entry. Pure.
  */
 export function corpusPlan(lists: readonly unknown[], only: readonly string[] | undefined): CorpusPlan {
   const models: IndexEntry[] = [];
