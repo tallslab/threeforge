@@ -42,7 +42,7 @@ describe('World material ownership', () => {
     return counts;
   }
 
-  it('never disposes a registered material the compiler shared with a batch or an instanced group (decompile, dispose); it disposes the clones it made', () => {
+  it('never disposes a registered material a batch shares, only the clones it made', () => {
     const registry = new MaterialRegistry();
     // App code registers its materials. Every instance white: the batch and the instanced group draw with these very objects.
     const sharedBatch = registry.register(solid(0xffffff, { roughness: 0.3 }));
@@ -143,7 +143,7 @@ describe('World material ownership', () => {
 });
 
 describe('World.dispose', () => {
-  it('decompiles first (listeners hear it), clears the dirty listeners, uninstalls the pass tracker hooks, and is safe to call twice', () => {
+  it('dispose decompiles, clears listeners, removes the hooks, and is safe to call twice', () => {
     const { scene } = mixedScene();
     const world = new World(scene);
     const events: string[] = [];
@@ -163,7 +163,7 @@ describe('World.dispose', () => {
     expect(events).toEqual(['compile', 'decompile']);
   });
 
-  it('refuses a recompile from a decompile listener while disposing: no scene hook or batch is left behind', () => {
+  it('refuses a recompile from a decompile listener while disposing', () => {
     const { scene } = mixedScene();
     const world = new World(scene);
     const errors: string[] = [];

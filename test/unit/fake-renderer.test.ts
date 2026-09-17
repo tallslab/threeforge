@@ -49,7 +49,7 @@ const cube = (name: string, material: Material = new MeshStandardMaterial()) => 
 const shadowPasses = (renderer: FakeRenderer): FakePass[] => renderer.passes.filter((p) => p.kind === 'shadow');
 
 describe('FakeRenderer sceneHooks', () => {
-  it('calls scene.onBeforeRender(renderer, scene, camera, renderTarget) at the start of every render only when sceneHooks is on', () => {
+  it('calls scene.onBeforeRender at the start of every render only with sceneHooks on', () => {
     const { scene, camera } = sceneWithCamera();
     const calls: unknown[][] = [];
     const afterTargets: unknown[] = [];
@@ -80,7 +80,7 @@ describe('FakeRenderer output quad', () => {
   /** The names drawn by the outermost render() call. */
   const drawn = (renderer: FakeRenderer): string[] => renderer.passes[0]!.draws.map((d) => d.object.name);
 
-  it('draws the output quad for every render that goes to the output target, whatever the root type or override material, and none for a render into a target', () => {
+  it('draws the output quad for every render to the output target, none into a target', () => {
     // Renderer._renderScene takes the frame-buffer target (and so calls _renderOutput) when _getFrameBufferTarget()
     // returns one: `needsFrameBufferTarget` (Renderer.js:1563, :2609) is tone mapping or colour space against the
     // working space, and both are read through `isOutputTarget` (:2686), which is `_renderTarget === null` here. So the
@@ -213,7 +213,8 @@ describe('FakeRenderer record', () => {
     ]);
   });
 
-  it('resolves batch ids against the index texture as uploaded: at draw time on WebGL, at the end of the render() call on WebGPU', () => {
+  it('resolves batch ids against the index texture as each backend uploads it', () => {
+    // WebGL uploads it at draw time, WebGPU at the end of the render() call.
     for (const webgpu of [false, true]) {
       const light = sun();
       light.position.set(100, 10, 0);
@@ -252,7 +253,7 @@ describe('FakeRenderer record', () => {
 });
 
 describe('FakeRenderer shadowLights (ShadowNode.updateBefore)', () => {
-  it('renders one map per shadow light, only while renderer.shadowMap.enabled and light.castShadow', () => {
+  it('renders one map per shadow light only while shadowMap.enabled and castShadow', () => {
     const a = sun('a');
     const b = sun('b');
     const renderer = new FakeRenderer({ shadowLights: [a, b], record: true });
@@ -272,7 +273,8 @@ describe('FakeRenderer shadowLights (ShadowNode.updateBefore)', () => {
     expect(new FakeRenderer().shadowMap.enabled).toBe(false);
   });
 
-  it('builds light.shadow.map as a map first renders, a colour target with a depth texture, as ShadowNode.setupShadow sets it; none while shadow maps are disabled', () => {
+  it('builds light.shadow.map on first render, none while shadow maps are disabled', () => {
+    // A colour target with a depth texture, as ShadowNode.setupShadow sets it.
     const a = sun('a');
     const renderer = new FakeRenderer({ shadowLights: [a] });
     const { scene, camera } = sceneWithCamera();
@@ -309,7 +311,7 @@ describe('FakeRenderer shadowLights (ShadowNode.updateBefore)', () => {
     expect(shadowPasses(renderer)).toHaveLength(0);
   });
 
-  it('renders a map once per camera per frame: a second receiver does not, a nested render with another camera does', () => {
+  it('renders a map once per camera per frame, again for a nested render with another camera', () => {
     const light = sun();
     const renderer = new FakeRenderer({ shadowLights: [light], shadowTrigger: 'first-receiver', record: true });
     const { scene, camera } = sceneWithCamera();
@@ -368,7 +370,7 @@ describe('FakeRenderer override material (Renderer.renderObject)', () => {
     return { renderer, draws: shadowPasses(renderer)[0]!.draws };
   }
 
-  it('resolves the shadow side as shadowSide ?? the flipped side, and keeps the source side under VSM', () => {
+  it('resolves shadowSide ?? the flipped side, and keeps the source side under VSM', () => {
     const sides = (material: Material, setup?: (renderer: FakeRenderer) => void) =>
       shadowDraws(material, setup).draws.map((d) => d.side);
     expect(sides(new MeshStandardMaterial({ side: FrontSide }))).toEqual([BackSide]);
@@ -382,7 +384,7 @@ describe('FakeRenderer override material (Renderer.renderObject)', () => {
     ]);
   });
 
-  it('copies transparent onto the override material, draws double-sided transparent twice and restores the override side', () => {
+  it('copies transparent onto the override, draws double-sided twice, restores its side', () => {
     const material = new MeshStandardMaterial({ transparent: true, side: DoubleSide });
     const { renderer, draws } = shadowDraws(material);
     expect(draws.map((d) => [d.side, d.drawCalls])).toEqual([
@@ -430,7 +432,8 @@ describe('FakeRenderer render list (Renderer._renderScene, _renderTransparents)'
     expect(seen[0]![0]).toBe(key);
   });
 
-  it('projects nothing under a hidden object, but still the children of an object the camera layers exclude (Renderer._projectObject)', () => {
+  it('projects nothing under a hidden object, but the children of a layer-excluded one', () => {
+    // As Renderer._projectObject does.
     const renderer = new FakeRenderer({ record: true });
     const { scene, camera } = sceneWithCamera();
     const key = new DirectionalLight();
@@ -457,7 +460,7 @@ describe('FakeRenderer render list (Renderer._renderScene, _renderTransparents)'
     expect(seen[0]).toEqual([key]);
   });
 
-  it('renders opaque items, then a back-side pass of transmissive double-sided items, then the transparent list', () => {
+  it('renders opaque, then the transmissive back-side pass, then the transparent list', () => {
     const renderer = new FakeRenderer({ record: true });
     const { scene, camera } = sceneWithCamera();
     const glass = cube('glass', new MeshPhysicalMaterial({ transmission: 1, side: DoubleSide }));
@@ -479,7 +482,7 @@ describe('FakeRenderer render list (Renderer._renderScene, _renderTransparents)'
     expect(glass.material.side).toBe(DoubleSide);
   });
 
-  it('renders the two VSM blur quads after each non-point shadow map when vsmQuad is on and the type is VSM', () => {
+  it('renders two VSM blur quads after each non-point shadow map under vsmQuad and VSM', () => {
     const run = (options: FakeRendererOptions, vsm: boolean) => {
       const light = sun();
       const lamp = named(new PointLight(), 'lamp');
@@ -512,7 +515,7 @@ describe('FakeRenderer render list (Renderer._renderScene, _renderTransparents)'
 });
 
 describe('FakeRenderer draw rules (RenderObject.getDrawParameters, Info.update)', () => {
-  it('draws nothing for an InstancedBufferGeometry with instanceCount 0 but still runs the object hooks', () => {
+  it('draws nothing at instanceCount 0 but still runs the object hooks', () => {
     const renderer = new FakeRenderer();
     const { scene, camera } = sceneWithCamera();
     const plane = new PlaneGeometry(1, 1);
@@ -614,7 +617,8 @@ describe('FakeRenderer draw rules (RenderObject.getDrawParameters, Info.update)'
   });
 });
 
-describe('FakeRenderer instance matrices (nodes/accessors/Instance.js, NodeMaterialObserver, Geometries)', () => {
+describe('FakeRenderer instance matrices', () => {
+  // Models nodes/accessors/Instance.js, NodeMaterialObserver and Geometries.
   const at = (x: number): Matrix4 => new Matrix4().makeTranslation(x, 0, 0);
   /** The x translation of every row a draw read. */
   const xs = (rows: Float32Array | null): number[] | null =>
@@ -627,7 +631,7 @@ describe('FakeRenderer instance matrices (nodes/accessors/Instance.js, NodeMater
   const drawn = (renderer: FakeRenderer, mesh: InstancedMesh): (number[] | null)[][] =>
     renderer.passes.map((p) => p.draws.filter((d) => d.object === mesh).map((d) => xs(d.instanceRows)));
 
-  it('reads a uniform buffer per render object, written only when instanceMatrix.version changed since that render object refreshed', () => {
+  it('reads a uniform buffer per render object, written only on a new instanceMatrix.version', () => {
     for (const webgpu of [false, true]) {
       const renderer = new FakeRenderer({ webgpu, record: true });
       const { scene, camera } = sceneWithCamera();
@@ -649,7 +653,8 @@ describe('FakeRenderer instance matrices (nodes/accessors/Instance.js, NodeMater
     }
   });
 
-  it('above uniformBufferLimit shares one vertex buffer, synced once per frame per render object and uploaded with its update ranges; WebGPU reads it when the render() call ends', () => {
+  it('shares one vertex buffer above uniformBufferLimit, synced once per frame per object', () => {
+    // Uploaded with its update ranges; WebGPU reads it when the render() call ends.
     for (const webgpu of [false, true]) {
       // 4 instances x 64 bytes > 64: the InstancedInterleavedBuffer path.
       const renderer = new FakeRenderer({ webgpu, record: true, uniformBufferLimit: 64 });
@@ -740,7 +745,9 @@ describe('FakeRenderer instance matrices (nodes/accessors/Instance.js, NodeMater
     }
   });
 
-  it('checks a shared vertex buffer at most once per render() call: drawn after a nested render that checked it, a render object cannot upload what changed since (Geometries.updateAttribute keys the check by info.render.calls)', () => {
+  it('checks a shared vertex buffer at most once per render() call', () => {
+    // Drawn after a nested render that checked it, a render object cannot upload what changed since:
+    // Geometries.updateAttribute keys the check by info.render.calls.
     for (const webgpu of [false, true]) {
       const renderer = new FakeRenderer({ webgpu, record: true, uniformBufferLimit: 64 });
       const { scene, camera } = sceneWithCamera();

@@ -53,7 +53,7 @@ describe('ParticleBudget', () => {
     expect(a.geometry.drawRange.count).toBe(Infinity);
   });
 
-  it('scales every system by the same ratio over budget, caps sprite batches, scales point sizes, and releases', () => {
+  it('scales every system by one ratio, caps sprite batches, scales points and releases', () => {
     const { scene: s, a, b, c, batch } = scene();
     const budget = new ParticleBudget({ tier: 'phone-low', particles: 2500, pointSizeScale: 0.75 });
     const report = budget.apply(s);
@@ -76,7 +76,7 @@ describe('ParticleBudget', () => {
     expect((a.material as PointsMaterial).size).toBe(2);
   });
 
-  it('respects an existing drawRange as the count and defaults pointSizeScale to 0.75 on phone-low', () => {
+  it('takes an existing drawRange as the count and defaults pointSizeScale to 0.75', () => {
     const { scene: s, a } = scene();
     a.geometry.setDrawRange(0, 400);
     const report = new ParticleBudget({ tier: 'phone-low', particles: 2200 }).apply(s);

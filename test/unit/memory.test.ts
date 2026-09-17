@@ -77,7 +77,7 @@ describe('memory estimate', () => {
     expect(textureBytes(compressed)).toBe(125);
   });
 
-  it('takes channels from the format and bytes per channel from the type, as three r186 Info does (packed types included)', () => {
+  it('sizes a texture by format channels and type bytes, as three r186 Info does', () => {
     const data = (format: number, type: number) => new DataTexture(null, 16, 16, format as never, type as never);
     expect(textureBytes(data(RedFormat, UnsignedByteType))).toBe(16 * 16); // R8
     expect(textureBytes(data(RGFormat, UnsignedByteType))).toBe(16 * 16 * 2); // RG8
@@ -96,7 +96,7 @@ describe('memory estimate', () => {
     expect(textureBytes(array)).toBe(8 * 8 * 3);
   });
 
-  it('sums the mip levels three uploads from explicit mipmaps: every level of a 2D texture, the levels after the base of a cube', () => {
+  it('sums the explicit mip levels three uploads for a 2D texture and a cube', () => {
     // A 2D texture's mipmaps hold every level from the base (Textures.getMipLevels: mipmaps.length; the backends upload
     // mipmaps[i] at level i).
     const levels = new DataTexture(new Uint8Array(8 * 8 * 4), 8, 8, RGBAFormat, UnsignedByteType);
@@ -155,7 +155,7 @@ describe('memory estimate', () => {
     });
   });
 
-  it('one shadow light with a [0, 0] viewport reports no unreferenced textures: the allowance does not depend on the viewport', () => {
+  it("allows a shadow light's map whatever the viewport, [0, 0] included", () => {
     const { scene } = sceneWithMap();
     const sun = new DirectionalLight();
     sun.castShadow = true;
@@ -167,7 +167,7 @@ describe('memory estimate', () => {
     expect(m.renderTargets).toEqual({ count: 1, bytes: 512 * 512 * 4 });
   });
 
-  it('allows the shadow maps three allocated: none for a casting light whose map three never built, colour and depth for a point light', () => {
+  it('allows the shadow maps three built: none for an unbuilt map, two for a point light', () => {
     const { scene } = sceneWithMap();
     const idle = new DirectionalLight(); // castShadow, but its ShadowNode never set up (shadowMap disabled, or never lit)
     idle.castShadow = true;
@@ -182,7 +182,7 @@ describe('memory estimate', () => {
     expect(m.renderTargets).toEqual({ count: 2, bytes: 512 * 512 * 4 * 6 + 800 * 600 * 8 });
   });
 
-  it('allows the render targets passed in for the renderer (the overdraw count target), counting the textures three gives each', () => {
+  it('allows the passed-in renderer targets with the textures three gives each', () => {
     const { scene } = sceneWithMap();
     const colourOnly = new RenderTarget(128, 96, { depthBuffer: false });
     const withDepth = new RenderTarget(16, 16);
@@ -194,7 +194,7 @@ describe('memory estimate', () => {
     expect(estimateMemory(scene, info, [800, 600], { renderTargets: [null] }).unreferenced.textures).toBe(3);
   });
 
-  it('allows the two blur targets of each built non-point VSM map: on the shadow node for a plain map, read off an array map', () => {
+  it('allows the two blur targets of each built non-point VSM map', () => {
     const { scene } = sceneWithMap();
     const sun = new DirectionalLight();
     sun.castShadow = true;
@@ -227,7 +227,7 @@ describe('memory estimate', () => {
     ).toBe(0);
   });
 
-  it('counts the two blur targets of each built non-point VSM map in renderTargets, from the shadow node and from an array map', () => {
+  it('counts the two blur targets of each built non-point VSM map in renderTargets', () => {
     const { scene } = sceneWithMap();
     const sun = new DirectionalLight();
     sun.castShadow = true;
@@ -267,7 +267,7 @@ describe('memory estimate', () => {
     });
   });
 
-  it("sizes a point light's shadow target by its map width on every face, agreeing with lighting.shadowTexels", () => {
+  it("sizes a point light's shadow target by its map width, as shadowTexels does", () => {
     const { scene } = sceneWithMap();
     const lamp = new PointLight();
     lamp.castShadow = true;
@@ -290,7 +290,7 @@ describe('memory estimate', () => {
     expect(estimateMemory(scene, info, [800, 600], { internalTextures: 1 }).unreferenced.textures).toBe(0);
   });
 
-  it('allows the geometries the renderer drew for itself (options.internalGeometries), once when a mesh also reaches one', () => {
+  it('allows options.internalGeometries, once when a mesh also reaches one', () => {
     const { scene, geometry } = sceneWithMap();
     // Two of PMREM's LOD planes and a background sphere, three's own; the output quad is INTERNAL_GEOMETRIES.
     const planes = [new BoxGeometry(), new BoxGeometry()];
@@ -306,7 +306,7 @@ describe('memory estimate', () => {
     ).toBe(1);
   });
 
-  it('allows the textures the renderer created for itself by identity (options.rendererTextures), once when the scene reaches one', () => {
+  it('allows options.rendererTextures by identity, once when the scene reaches one', () => {
     const { scene } = sceneWithMap();
     const pmrem = [new DataTexture(), new DataTexture()]; // the ping-pong and the cube-UV targets' textures
     const info = { textures: 1 + 2 + 2, geometries: 2 };
@@ -321,7 +321,8 @@ describe('memory estimate', () => {
     ).toBe(1);
   });
 
-  it('allows one morph texture per reachable geometry with morph attributes (three r186 Morph.js ~93, keyed by geometry)', () => {
+  it('allows one morph texture per reachable geometry with morph attributes', () => {
+    // three r186 Morph.js ~93 keys the morph texture by geometry.
     const { scene } = sceneWithMap();
     const morphed = new BoxGeometry();
     morphed.morphAttributes.position = [morphed.attributes.position!.clone()];
@@ -332,7 +333,7 @@ describe('memory estimate', () => {
     expect(estimateMemory(scene, { ...info, textures: info.textures + 1 }, [0, 0]).unreferenced.textures).toBe(1);
   });
 
-  it("counts a held render target's colour texture once when a material reaches it (options.renderTargets)", () => {
+  it("counts a held render target's colour texture once when a material reaches it", () => {
     const { scene } = sceneWithMap();
     const mirror = new RenderTarget(64, 64); // colour and depth
     scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial({ map: mirror.texture })));
@@ -344,7 +345,7 @@ describe('memory estimate', () => {
     ).toBe(1);
   });
 
-  it("memory.measured copies renderer.info.memory's counts and byte sizes, and is null without them", () => {
+  it('copies renderer.info.memory into memory.measured, null without it', () => {
     const { scene } = sceneWithMap();
     const info = {
       textures: 9,
@@ -370,7 +371,8 @@ describe('memory estimate', () => {
 // fails, three renamed or reshaped the field, and `frameBufferTargetsOf` in DrawCallLedger.ts must change with it; until
 // then the ledger falls back to its fixed allowance of a colour and a depth texture (see the test after this one).
 describe('three r186 renderer internals the memory section reads (canary)', () => {
-  it('pins Renderer._frameBufferTargets: a Map of the RenderTargets _getFrameBufferTarget() creates, marked isPostProcessingRenderTarget', () => {
+  it('pins the shape of Renderer._frameBufferTargets in three r186', () => {
+    // A Map of the RenderTargets _getFrameBufferTarget() creates, each marked isPostProcessingRenderTarget.
     const backend = { getDomElement: () => ({ width: 300, height: 150, style: {} }) };
     const renderer = new Renderer(backend as never) as unknown as {
       _frameBufferTargets: unknown;
@@ -398,7 +400,7 @@ describe('three r186 renderer internals the memory section reads (canary)', () =
 });
 
 describe('the ledger memory section', () => {
-  it("reads the renderer's frame-buffer targets only in three r186's shape, else keeps the fixed colour-and-depth allowance", () => {
+  it("reads frame-buffer targets in three r186's shape, else keeps the fixed allowance", () => {
     const measure = (frameBufferTargets: unknown): number => {
       const { renderer, ledger, scene, camera } = attachedLedger();
       if (frameBufferTargets !== undefined) Object.assign(renderer, { _frameBufferTargets: frameBufferTargets });
@@ -425,7 +427,7 @@ describe('the ledger memory section', () => {
     expect(measure(null), 'null').toBe(0);
   });
 
-  it('a ledger that measured overdraw reports no unreferenced textures on a scene with nothing else unreferenced', async () => {
+  it('reports no unreferenced textures after the ledger measured overdraw', async () => {
     const { renderer, ledger, scene, camera } = attachedLedger();
     scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial({ map: new DataTexture(new Uint8Array(4), 1, 1) })));
     scene.updateMatrixWorld();
@@ -438,7 +440,7 @@ describe('the ledger memory section', () => {
     ledger.detach();
   });
 
-  it("allows three's DFG_LUT while the attached renderer holds it, counted through info.createTexture and destroyTexture, which detach() restores", () => {
+  it("allows three's DFG_LUT while the renderer holds it, through the info texture hooks", () => {
     const renderer = new FakeRenderer();
     const memory = Object.assign(renderer.info.memory, { textures: 0, geometries: 0 });
     const calls: unknown[] = [];
@@ -480,7 +482,7 @@ describe('the ledger memory section', () => {
     expect(info.destroyTexture).toBe(destroyTexture);
   });
 
-  it("allows three's PMREM planes and textures, the background sphere and the targets a pass draws into, and counts them again once gone", () => {
+  it("allows three's PMREM, background sphere and pass targets until they are gone", () => {
     const renderer = new FakeRenderer();
     const memory = Object.assign(renderer.info.memory, { textures: 0, geometries: 0 });
     const info = Object.assign(renderer.info, {
@@ -552,7 +554,7 @@ describe('the ledger memory section', () => {
     ledger.detach();
   });
 
-  it('allows a render target a render drew into until it is disposed, and none that no render drew into', () => {
+  it('allows a drawn-into render target until disposed, and never an undrawn one', () => {
     const { renderer, ledger, scene, camera } = attachedLedger();
     const memory = Object.assign(renderer.info.memory, { textures: 0, geometries: 0 });
     scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial()));
@@ -573,7 +575,7 @@ describe('the ledger memory section', () => {
     ledger.detach();
   });
 
-  it('allows the frame-buffer targets the renderer shows by identity, and none when it drew into none', () => {
+  it('allows the frame-buffer targets by identity, and none when it drew into none', () => {
     const { scene } = sceneWithMap();
     const info = { textures: 1 + 2, geometries: 2 };
     const frameBuffer = new RenderTarget(800, 600); // colour, and the depth texture three creates for its depth buffer
@@ -588,7 +590,7 @@ describe('the ledger memory section', () => {
     ).toBe(0);
   });
 
-  it("allows three's DFG_LUT when info's texture hooks are prototype methods, and detach() makes the prototype's own visible again", () => {
+  it("allows three's DFG_LUT through prototype info hooks, which detach() uncovers again", () => {
     // three's Info (renderers/common/Info.js ~230-252) defines createTexture and destroyTexture on its prototype, not
     // as own properties. attach() adds own wrappers, which shadow them, and detach() removes those with `delete`, which
     // is the only reason the prototype's methods come back (DrawCallLedger.ts ~289-292). The test above installs own
@@ -646,7 +648,7 @@ describe('the ledger memory section', () => {
     expect(info.destroyTexture).toBe(proto.destroyTexture);
   });
 
-  it('overdrawTargetOf(renderer) is the count target measureOverdraw keeps for that renderer, until disposeOverdraw()', async () => {
+  it('overdrawTargetOf() is the count target of that renderer until disposeOverdraw()', async () => {
     const renderer = new FakeRenderer();
     const other = new FakeRenderer();
     const { scene, camera } = sceneWithCamera();

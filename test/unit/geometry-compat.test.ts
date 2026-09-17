@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { attributeSignature, ensureIndexed, isBatchCompatible } from '../../src/compiler/geometryCompat.js';
 
 describe('attributeSignature', () => {
-  it('describes attribute names, item sizes, array types and normalisation, independent of insertion order', () => {
+  it('describes attribute names, sizes, types and normalisation in any insertion order', () => {
     const a = new BufferGeometry();
     a.setAttribute('position', new Float32BufferAttribute([0, 0, 0], 3));
     a.setAttribute('uv', new Float32BufferAttribute([0, 0], 2));
@@ -58,7 +58,7 @@ describe('ensureIndexed', () => {
 });
 
 describe('isBatchCompatible', () => {
-  it('is true for geometries with the same attribute signature regardless of vertex counts or indexing', () => {
+  it('is true for the same attribute signature whatever the vertex count or indexing', () => {
     expect(isBatchCompatible(new BoxGeometry(), new DodecahedronGeometry(2))).toBe(true);
   });
 

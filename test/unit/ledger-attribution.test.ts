@@ -118,7 +118,7 @@ describe('DrawCallLedger attribution', () => {
 });
 
 describe('DrawCallLedger reconciliation with renderer.info', () => {
-  it('expects one GPU draw per BatchedMesh on WebGL with multi-draw and reconciles to zero unattributed', () => {
+  it('expects one GPU draw per BatchedMesh on WebGL with multi-draw', () => {
     const { renderer, ledger, scene, camera } = attachedLedger({ webgpu: false, multiDraw: true });
     scene.add(batchedOf(5, new MeshStandardMaterial(), box));
     renderer.render(scene, camera);
@@ -152,7 +152,7 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     expect(frame.totals).toMatchObject({ sceneSubmissions: 1, gpuDraws: 1, reportedDrawCalls: 1, unattributed: 0 });
   });
 
-  it('files an InstancedMesh whose userData is null instead of throwing on the per-submission path', () => {
+  it('files an InstancedMesh whose userData is null on the per-submission path', () => {
     const { renderer, ledger, scene, camera } = attachedLedger();
     const instanced = new InstancedMesh(box, new MeshStandardMaterial(), 4);
     instanced.count = 3;
@@ -183,7 +183,7 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
    * `totals.unattributed` negative. The FakeRenderer follows three's rule (`helpers/fakeRendererRules.ts`), so these
    * scenes are a parity check.
    */
-  it('expects no GPU draw where three draws nothing: no index and no position under an infinite drawRange, a drawRange disjoint from a group, and a drawRange past the end', () => {
+  it('expects no GPU draw for the drawRanges under which three draws nothing', () => {
     const { renderer, ledger, scene, camera } = attachedLedger();
     // (a) A geometry whose vertices come from somewhere else (storage buffers) and whose author forgot setDrawRange:
     // itemCount is Infinity, drawRange.count is Infinity, so count is Infinity and three draws nothing.
@@ -272,7 +272,7 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     expect(ledger.frame().totals.unattributed).toBe(2);
   });
 
-  it('expects no GPU draw for an empty sprite batch or VAT batch: an InstancedBufferGeometry with instanceCount 0', () => {
+  it('expects no GPU draw for a sprite or VAT batch with instanceCount 0', () => {
     const { renderer, registry, ledger, scene, camera } = attachedLedger();
     const rain = new SpriteMaterial({ color: 0xffffff, transparent: true });
     for (let i = 0; i < 6; i++) {
@@ -311,7 +311,9 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     expect(frame.totals).toMatchObject({ sceneSubmissions: 2, unattributed: 0 });
   });
 
-  it('predicts each shadow pass with the material three draws (shadowSide, else the side; its own for allowOverride = false) and flags double-sided transparency per pass, under PCF and VSM', () => {
+  it('predicts each shadow pass with the material and side three draws, under PCF and VSM', () => {
+    // Three draws a shadow pass with shadowSide, else the material's side, and the material's own when allowOverride
+    // is false; double-sided transparency is flagged per pass.
     for (const vsm of [false, true]) {
       const light = casting(new DirectionalLight(), 'sun');
       const { renderer, ledger, scene, camera } = attachedLedger({ shadowLight: light });
@@ -359,7 +361,7 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     }
   });
 
-  it('predicts a scene override material with its own side and the source transparency, and flags it per submission', () => {
+  it('predicts a scene override with its own side and the source transparency', () => {
     const { renderer, ledger, scene, camera } = attachedLedger();
     scene.overrideMaterial = new MeshBasicMaterial({ side: DoubleSide });
     const materials: Record<string, Material> = {
@@ -390,7 +392,7 @@ describe('DrawCallLedger reconciliation with renderer.info', () => {
     expect(frame.totals).toMatchObject({ sceneSubmissions: 3, unattributed: 0 });
   });
 
-  it('predicts a double-sided transmissive material as two single-draw submissions, the back-side pass then the front, in its shadow pass too', () => {
+  it('predicts double-sided transmission as a back then a front submission per pass', () => {
     const light = casting(new DirectionalLight(), 'sun');
     const { renderer, ledger, scene, camera } = attachedLedger({ shadowLight: light });
     const glass = tag.static(new Mesh(box, new MeshPhysicalMaterial({ transmission: 1, side: DoubleSide })));

@@ -93,7 +93,7 @@ const launchOn = (page: PlaywrightPage) => async (): Promise<BrowserHandle> => (
 });
 
 describe('inspect and the frame snapshot schemaVersion', () => {
-  it('measures an app whose hook exposes schemaVersion 3; js.renderMs and js.ledgerMs are medians over the measured frames', async () => {
+  it('measures a schemaVersion 3 app with median renderMs and ledgerMs', async () => {
     const { window } = app({ filingCosts: [9, 1, 1, 50] });
     expect(window.__threeforge!.schemaVersion).toBe(3);
     const doc = await inspectApp(input(), undefined, { launch: launchOn(pageOn(window)) });
@@ -104,7 +104,8 @@ describe('inspect and the frame snapshot schemaVersion', () => {
     expect(doc.before.js.ledgerMs).toBe(1);
   });
 
-  it('a schemaVersion 2 app (threeforge 0.8.0) fails at once naming its version: nothing is measured, compiled or formatted', async () => {
+  it('fails at once on a schemaVersion 2 app, naming its version', async () => {
+    // schemaVersion 2 is what threeforge 0.8.0 exposes: nothing is measured, compiled or formatted.
     const { window } = app({ schemaVersion: 2 });
     const evaluated: string[] = [];
     const printed: string[] = [];

@@ -206,7 +206,7 @@ function buildScene() {
 }
 
 describe('DrawCallLedger golden output', () => {
-  it('renders a scene covering every reason, pass kind and section for 3 frames with a stable snapshot', async () => {
+  it('snapshots 3 frames of a scene covering every reason, pass kind and section', async () => {
     let t = 0;
     const registry = new MaterialRegistry();
     const ledger = new DrawCallLedger({ registry, now: () => t });

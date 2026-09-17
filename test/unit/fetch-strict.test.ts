@@ -34,7 +34,8 @@ describe('downloadFailures', () => {
 describe('strictExitCode', () => {
   const failed = [{ name: 'Buggy', error: '404' }];
 
-  it('stays 0 without FORGE_FETCH_STRICT, whatever failed, so local pnpm assets keeps working offline', () => {
+  it('stays 0 without FORGE_FETCH_STRICT, whatever failed', () => {
+    // Local pnpm assets keeps working offline.
     const lines: string[] = [];
     expect(strictExitCode(failed, {}, (l) => lines.push(l))).toBe(0);
     expect(strictExitCode(failed, { FORGE_FETCH_STRICT: '0' }, (l) => lines.push(l))).toBe(0);

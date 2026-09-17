@@ -2,7 +2,7 @@ import { expect, test } from './fixtures.js';
 import { pixelDiff } from './pixels.js';
 
 /** The crowd as animated instances: 200 skinned characters become one draw per prototype part, still moving. */
-test('crowd: animated instances replace 200 skinned draws with 16, animate, and look like the mixers', {
+test('crowd: animated instances replace 200 skinned draws with 16, moving like the mixers', {
   tag: '@corpus',
 }, async ({ forge }) => {
   test.setTimeout(300_000);

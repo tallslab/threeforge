@@ -62,7 +62,7 @@ function makeAnimatedMixer() {
 }
 
 describe('RenderScheduler', () => {
-  it('renders on the first tick, skips idle ticks, and renders again when the camera moves or invalidate() is called', () => {
+  it('renders first, skips idle ticks, renders again on a camera move or invalidate()', () => {
     const { renderer, camera, scheduler } = setup();
     expect(scheduler.tick(0)).toBe(true);
     for (let i = 1; i <= 9; i++) expect(scheduler.tick(i * 16)).toBe(false);
@@ -78,7 +78,7 @@ describe('RenderScheduler', () => {
     expect(renderer.renders).toBe(3);
   });
 
-  it('renders when a watched object moves, while a mixer has running actions, on buffer resize, and on keep-alive', () => {
+  it('renders on a watched move, running mixer actions, buffer resize and keep-alive', () => {
     const mixer = fakeMixer(0);
     const { renderer, scene, scheduler } = setup({ mixers: [mixer], keepAliveMs: 100 });
     const watched = new Mesh();
@@ -177,7 +177,7 @@ describe('RenderScheduler running-mixer internals (canary)', () => {
     expect(startTimeOf(action)).toBe(10);
   });
 
-  it('pins AnimationAction._weightInterpolant: set by fadeOut(), evaluated while paused, cleared at the end of the fade', () => {
+  it('pins AnimationAction._weightInterpolant across a paused fadeOut()', () => {
     // AnimationAction.js ~922 (_scheduleFading) sets `_weightInterpolant`; ~638 (_updateWeight) evaluates it whenever
     // the action is enabled, before ~386 (stopFading) clears it and a fade to 0 disables the action.
     const { mixer, action } = makeAnimatedMixer();
@@ -251,7 +251,7 @@ describe('RenderScheduler running-mixer rule (real AnimationMixer)', () => {
     expect(scheduler.tick(32)).toBe(true);
   });
 
-  it('keeps counting as running through isRunning() once startAt(future) hands off to actual playback', () => {
+  it('keeps rendering once startAt(future) hands off to real playback', () => {
     const { mixer, action } = makeAnimatedMixer();
     action.play().startAt(2); // starts 2s of mixer time from now
     const startTimeOf = () => (action as unknown as { _startTime: number | null })._startTime;
@@ -276,7 +276,7 @@ describe('RenderScheduler running-mixer rule (real AnimationMixer)', () => {
     expect(scheduler.tick(time)).toBe(true); // still running, now via the isRunning() branch
   });
 
-  it('keeps rendering while a finished, clamped (paused) clip fades out, through the tick the fade ends on, then skips', () => {
+  it('keeps rendering while a clamped clip fades out, through the last fade tick', () => {
     const { root, mixer, action } = makeAnimatedMixer();
     action.setLoop(LoopOnce, 1);
     action.clampWhenFinished = true;
@@ -306,7 +306,7 @@ describe('RenderScheduler running-mixer rule (real AnimationMixer)', () => {
     expect(scheduler.tick((time += 16))).toBe(false);
   });
 
-  it('treats an active, enabled, unpaused action with weight 0 as running (a fadeIn() target starts there)', () => {
+  it('treats an enabled, unpaused action with weight 0 as running', () => {
     const { mixer, action } = makeAnimatedMixer();
     action.play();
     action.weight = 0; // e.g. the action fadeIn() is fading in, before any weight has been applied
@@ -317,7 +317,7 @@ describe('RenderScheduler running-mixer rule (real AnimationMixer)', () => {
     expect(scheduler.tick(16)).toBe(true); // still counts as running despite weight 0: errs toward rendering
   });
 
-  it('falls back to stats.actions.inUse when a mixer-like object has no private _actions/_nActiveActions fields', () => {
+  it('falls back to stats.actions.inUse on a mixer without private action fields', () => {
     const fake = {
       deltas: [] as number[],
       stats: { actions: { inUse: 0 } },
@@ -365,7 +365,7 @@ describe('RenderScheduler and a disposed World', () => {
     expect(() => setup({ world })).toThrow(/disposed/i);
   });
 
-  it('does not throw when an uncompiled World is disposed mid-lifecycle, and other change signals keep working', () => {
+  it('keeps other change signals working after an uncompiled World is disposed', () => {
     // Uncompiled: World.decompile() (called by dispose()) returns early when `!this.compiled`, so no 'decompile'
     // dirty event is ever emitted here. Kept separate from the compiled case below, which does emit one.
     const world = new World(new Scene());
@@ -380,7 +380,7 @@ describe('RenderScheduler and a disposed World', () => {
     expect(() => scheduler.dispose()).not.toThrow(); // teardown after a disposed World must not throw
   });
 
-  it('renders once more when a compiled World is disposed mid-lifecycle (its own decompile event), then lets ticks skip', () => {
+  it('renders once more when a compiled World is disposed, then lets ticks skip', () => {
     // Compiled: dispose() -> decompile() emits a 'decompile' dirty event to still-attached listeners (World.ts
     // emitDirty(), before dirtyListeners.clear() in dispose()'s finally block), and the scheduler's onDirty
     // callback calls invalidate() synchronously. The next tick sees `invalidated` and renders once; nothing

@@ -40,7 +40,7 @@ describe('resolveOptimizeOut (optimize_asset.out confinement and overwrite rules
     );
   });
 
-  it('accepts an out in a child directory whose name begins with two dots (..cache is not a parent reference)', () => {
+  it('accepts an out under a child directory named with two leading dots', () => {
     expect(resolveOptimizeOut(file, '..cache/out.glb', false, cwd, never)).toBe('/repo/..cache/out.glb');
     expect(resolveOptimizeOut(file, '/repo/assets/Fox/..tmp/out.glb', false, cwd, never)).toBe(
       '/repo/assets/Fox/..tmp/out.glb',
@@ -68,7 +68,7 @@ describe('resolveOptimizeOut (optimize_asset.out confinement and overwrite rules
     expect(resolveOptimizeOut(file, '/repo/build/out.glb', true, cwd, always)).toBe('/repo/build/out.glb');
   });
 
-  it('never checks existence before extension and scope are valid (out-of-scope wins even if it also "exists")', () => {
+  it('rejects the extension and scope before checking existence', () => {
     expect(() => resolveOptimizeOut(file, '/tmp/x.txt', false, cwd, always)).toThrow(/\.glb or \.gltf/);
   });
 });
@@ -101,7 +101,7 @@ describe('resolveOptimizeOut symlink confinement (real filesystem)', () => {
     if (root) rmSync(root, { recursive: true, force: true });
   });
 
-  it('rejects an out that lexically sits inside the input directory but escapes through a symlink to outside both roots', () => {
+  it('rejects an out escaping the input directory through a symlink', () => {
     setUp();
     // inputDir/escape -> outsideDir: lexically "assets/escape/evil.glb" looks contained, really is not.
     symlinkSync(outsideDir, join(inputDir, 'escape'), 'dir');
@@ -113,7 +113,7 @@ describe('resolveOptimizeOut symlink confinement (real filesystem)', () => {
     ).toThrow(/input's directory|working directory/);
   });
 
-  it('rejects an out that lexically sits inside the working directory but escapes through a symlink to outside both roots', () => {
+  it('rejects an out escaping the working directory through a symlink', () => {
     setUp();
     // projectDir/escape -> outsideDir: lexically "escape/evil.glb" looks contained in cwd, really is not.
     symlinkSync(outsideDir, join(projectDir, 'escape'), 'dir');
@@ -145,7 +145,7 @@ describe('resolveOptimizeOut symlink confinement (real filesystem)', () => {
     throw new Error('expected resolveOptimizeOut to throw, but it returned');
   }
 
-  it('rejects the default out when <name>.forge.glb is a dangling symlink leading outside both roots (code 2)', () => {
+  it('rejects a default out that is a dangling symlink leading outside', () => {
     setUp();
     const stolen = join(outsideDir, 'authorized_keys');
     symlinkSync(stolen, join(inputDir, 'Fox.forge.glb'));
@@ -156,7 +156,7 @@ describe('resolveOptimizeOut symlink confinement (real filesystem)', () => {
     expect(existsSync(stolen)).toBe(false);
   });
 
-  it('rejects an explicit out that is a dangling symlink leading outside, even with overwrite: true', () => {
+  it('rejects a dangling symlink out leading outside, even with overwrite: true', () => {
     setUp();
     const stolen = join(outsideDir, 'x.glb');
     symlinkSync(stolen, join(projectDir, 'out.glb'));
@@ -167,7 +167,8 @@ describe('resolveOptimizeOut symlink confinement (real filesystem)', () => {
     expect(existsSync(stolen)).toBe(false);
   });
 
-  it('rejects an out that is a dangling symlink even when its target would lie inside a root (a write would follow it)', () => {
+  it('rejects a dangling symlink out whose target would lie inside a root', () => {
+    // A write would follow the link.
     setUp();
     symlinkSync(join(inputDir, 'later.glb'), join(inputDir, 'link.glb'));
     expect(() => resolveOptimizeOut(inputFile, join(inputDir, 'link.glb'), false, projectDir)).toThrow(UsageError);
@@ -194,7 +195,7 @@ describe('resolveOptimizeOut symlink confinement (real filesystem)', () => {
    * today; a change that stopped following the final link (while still refusing dangling ones) would let
    * `overwrite: true` write through it.
    */
-  it('rejects an out that is a symlink to an existing file outside both roots, even with overwrite: true', () => {
+  it('rejects a symlink out to an existing file outside, even with overwrite: true', () => {
     setUp();
     const victim = join(outsideDir, 'existing.glb');
     writeFileSync(victim, 'outside bytes');
@@ -213,7 +214,7 @@ describe('resolveOptimizeOut symlink confinement (real filesystem)', () => {
    * that is not there). `/Xprivate/var/…/x.glb` then canonicalised to `/private/var/…/x.glb` and passed as inside the
    * working directory. The working directory is canonical here (`realpathSync`), so the mangled path would match it.
    */
-  it('keeps a missing top-level segment whole: an out under a non-existent "/X<cwd>" is outside, not the working directory', () => {
+  it('treats an out under a non-existent "/X<cwd>" as outside the working directory', () => {
     setUp();
     const cwd = realpathSync(projectDir);
     const out = `/X${cwd.slice(1)}/x.glb`;
@@ -226,7 +227,7 @@ describe('resolveOptimizeOut symlink confinement (real filesystem)', () => {
     }
   });
 
-  it('still accepts a plain out with no symlink involved (no false positives from the realpath check)', () => {
+  it('accepts a plain out with no symlink involved', () => {
     setUp();
     const out = resolveOptimizeOut(inputFile, join(inputDir, 'plain.glb'), false, projectDir, () => false);
     expect(out).toBe(join(inputDir, 'plain.glb'));

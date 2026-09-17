@@ -95,9 +95,8 @@ const TINTED_MODES = [
   ['bake: true', { bake: '1' }],
 ] as const;
 
-test('world.compile() takes the naive scene from 503 to 28 submissions, under 0.05 % of pixels changed at tolerance 4 from each of two cameras, and decompile() puts the picture back within 8 pixels', async ({
-  forge,
-}) => {
+test('world.compile() takes the naive scene from 503 to 28 submissions within 0.05 % of pixels', async ({ forge }) => {
+  // Pixels are compared at tolerance 4 from each of two cameras; decompile() must put the picture back within 8 pixels.
   await forge.open('naive');
   const before = await forge.page.evaluate(() => window.__forge.frame());
   expect(before.totals.sceneSubmissions).toBe(503);
@@ -295,9 +294,8 @@ test("dynamics: 'batch-sync' folds the 10 movers into their batches: 28 -> 18 su
     await expect(forge.page).toHaveScreenshot(`naive-${forge.backend}.png`, { maxDiffPixelRatio: 0.002 });
 });
 
-test('tinted node-material statics keep an instance setupOutput, alphaTest, a user-added property and a userData uniform node when a group clone carries the tints', async ({
-  forge,
-}) => {
+test('tinted node statics keep setupOutput, alphaTest, an own property and a userData uniform', async ({ forge }) => {
+  // The compiler's group clone carries the tints; it must carry these along with them.
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   for (const [mode, query] of TINTED_MODES) {
     await forge.open('empty', { ...query });
@@ -385,9 +383,8 @@ test('tinted node-material statics keep an instance setupOutput, alphaTest, a us
   }
 });
 
-test('tinted classic statics keep a custom onBeforeCompile, define, user-added property and a userData uniform animated through the source when a group clone carries the tints (drawn by WebGLRenderer, which runs them)', async ({
-  forge,
-}) => {
+test('tinted classic statics keep onBeforeCompile, a define, own property and userData uniform', async ({ forge }) => {
+  // The compiler's group clone carries the tints; it must carry these too, the uniform animated through the source.
   // three r186 runs material onBeforeCompile and defines only in renderers/WebGLRenderer.js; the harness's WebGPURenderer
   // (both backends) ignores them, so this cell draws the same scene with a classic WebGLRenderer inside the page.
   for (const [mode, query] of TINTED_MODES) {

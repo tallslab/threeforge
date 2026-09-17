@@ -37,7 +37,7 @@ describe('collectResources', () => {
     expect(r.textures.size).toBe(2);
   });
 
-  it('sees node-material textures listed in userData.forgeTextures, BatchedMesh textures and skeleton bone textures', () => {
+  it('collects userData.forgeTextures, BatchedMesh and bone textures', () => {
     const node = tex();
     const material = new MeshStandardMaterial();
     material.userData.forgeTextures = [node];
@@ -49,7 +49,7 @@ describe('collectResources', () => {
     expect(r.textures.size).toBeGreaterThanOrEqual(3);
   });
 
-  it('reads each material once per call however many meshes share it, and still collects textures into sets that already hold the material', () => {
+  it('reads a shared material once and still collects textures of filed materials', () => {
     const map = tex();
     const geometry = new BoxGeometry();
     const shared = new MeshStandardMaterial({ map });
@@ -109,7 +109,7 @@ describe('ResourceTracker', () => {
 });
 
 describe('unreferencedResources', () => {
-  it('counts renderer-held resources the scene no longer reaches, minus an allowance, never below zero', () => {
+  it('counts unreachable renderer resources minus an allowance, never below zero', () => {
     const scene = new Scene();
     scene.add(new Mesh(new BoxGeometry(), new MeshStandardMaterial({ map: tex() })));
     expect(unreferencedResources({ geometries: 3, textures: 4 }, scene)).toEqual({ geometries: 2, textures: 3 });
@@ -150,7 +150,7 @@ describe('ResourceTracker and the material registry', () => {
     expect(registry.stats().registered).toBe(0);
   });
 
-  it('keeps a canonical another live material still merges into, so nothing resolves to a material the registry dropped', () => {
+  it('keeps a canonical a live duplicate still merges into', () => {
     const registry = new MaterialRegistry();
     const canonical = registry.register(new MeshStandardMaterial({ color: 0x113355, roughness: 0.75 }));
     const duplicate = new MeshStandardMaterial({ color: 0x113355, roughness: 0.75 });

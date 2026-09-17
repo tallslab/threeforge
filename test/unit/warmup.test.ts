@@ -95,7 +95,7 @@ describe('World.warmup', () => {
     expect(result).toEqual({ mode: 'frame', textures: 1, repaired: 0 });
   });
 
-  it('awaits renderer.init() before it changes any state, then renders with render(), never the deprecated renderAsync (both modes)', async () => {
+  it('awaits renderer.init() before touching state, then render(), never renderAsync', async () => {
     // three r186's renderAsync logs a deprecation warning and is `await this.init(); this.render(...)`: its await would sit
     // between the 1x1 scissor (and the occlusion suspension) and the render.
     const calls: Record<string, string[]> = {};
@@ -121,7 +121,7 @@ describe('World.warmup', () => {
     });
   });
 
-  it('with a ledger attached, the warm-up frame is one main frame, the same as the render after it (both modes)', async () => {
+  it('counts the warm-up frame as one main frame, like the render after it', async () => {
     const outcome: string[] = [];
     for (const mode of ['frame', 'async'] as const) {
       const { renderer: attached, registry, ledger, scene, camera } = attachedLedger();
@@ -156,7 +156,7 @@ describe('World.warmup', () => {
     );
   });
 
-  it('async mode pre-compiles with compileAsync, then rebuilds the materials three renders in two passes or through a viewport texture', async () => {
+  it('async mode pre-compiles, then rebuilds two-pass and viewport-texture materials', async () => {
     const scene = new Scene();
     const foliage = new MeshStandardMaterial({ name: 'foliage', transparent: true, side: DoubleSide });
     const glass = new MeshPhysicalMaterial({ name: 'glass', transmission: 0.9 });
@@ -190,7 +190,7 @@ describe('World.warmup', () => {
     expect(result).toEqual({ mode: 'async', textures: 0, repaired: 2 });
   });
 
-  it('async mode forgets the render compileAsync opens: three calls scene.onBeforeRender there but never onAfterRender', async () => {
+  it('async mode forgets the render compileAsync opens and never closes', async () => {
     const scene = new Scene();
     for (let i = 0; i < 4; i++) scene.add(tag.static(new Mesh(box, new MeshStandardMaterial({ name: `m${i}` }))));
     const world = new World(scene);

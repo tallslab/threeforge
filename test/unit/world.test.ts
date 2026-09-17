@@ -26,7 +26,7 @@ import { batchesIn, box, dodeca, meshesIn, mixedScene, solid, texture } from './
 const OWN = (object: object, key: string): boolean => Object.hasOwn(object, key);
 
 describe('World.compile', () => {
-  it('batches statics per material variant, leaves dynamic, skinned and untagged meshes alone, and reports it', () => {
+  it('batches statics per material variant and leaves dynamic, skinned, untagged alone', () => {
     const { scene } = mixedScene();
     const world = new World(scene);
     const report = world.compile();
@@ -65,7 +65,7 @@ describe('World.compile', () => {
     expect(dynamic.matrixAutoUpdate).toBe(true);
   });
 
-  it('copies world transforms and colours per instance and gives the batch a white clone of the canonical material', () => {
+  it('copies per-instance transforms and colours and gives the batch a white clone', () => {
     const { scene, statics } = mixedScene();
     const world = new World(scene);
     world.compile();
@@ -98,7 +98,7 @@ describe('World.compile', () => {
     expect(batch.boundingBox).not.toBeNull();
   });
 
-  it('never batches a singleton (nothing to share a draw with) but still canonicalises its material', () => {
+  it('never batches a singleton but still canonicalises its material', () => {
     const scene = new Scene();
     const a = tag.static(new Mesh(box, solid(0xabcdef)));
     const b = tag.dynamic(new Mesh(box, solid(0xabcdef)));
@@ -201,7 +201,7 @@ describe('World.compile that throws', () => {
   const hookRestores = (world: World): number =>
     (world as unknown as { sceneHookRestores: unknown[] }).sceneHookRestores.length;
 
-  it('uninstalls the pass tracker hooks when resolving the animations throws, so a retry installs them once', () => {
+  it('uninstalls the pass tracker hooks when compile throws, so a retry installs once', () => {
     const { scene } = mixedScene();
     const clip = new AnimationClip('broken', 1, [new NumberKeyframeTrack('.', [0, 1], [0, 1])]);
     const animations: AnimationClip[] = [clip];
@@ -253,7 +253,7 @@ describe('World.decompile', () => {
     expect(report.after.batches).toBe(2);
   });
 
-  it('freezes all-static groups and unbatched statics at compile, restores them on decompile, and can be turned off', () => {
+  it('freezes all-static groups and lone statics at compile, restores them on decompile', () => {
     const { scene, statics } = mixedScene();
     const props = new Group();
     props.name = 'props';
@@ -376,7 +376,7 @@ describe('World instancing', () => {
     return scene;
   }
 
-  it('turns a geometry repeated at least instanceThreshold times into one culled InstancedMesh, batching the rest', () => {
+  it('instances a geometry repeated instanceThreshold times and batches the rest', () => {
     const scene = repeatedScene(70, 5);
     const world = new World(scene);
     const report = world.compile();
@@ -449,7 +449,7 @@ describe('World and the ledger under policy auto', () => {
     expect(reasons).toEqual({ lonely: 'unique-material', other: 'unique-material' });
   });
 
-  it('relabels lone statics static-unbatched when their canonical material is shared: same material, groups split by castShadow', () => {
+  it('relabels lone statics sharing a canonical material as static-unbatched', () => {
     const { renderer, ledger, scene, camera } = attachedLedger();
     const caster = new Mesh(box, solid(0x13579b));
     caster.name = 'caster';

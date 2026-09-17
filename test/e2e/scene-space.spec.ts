@@ -42,9 +42,7 @@ for (const offset of ['0', '1'] as const) {
   });
 }
 
-test('the offset village moved after compile, with batch-synced dynamics turning, matches the same scene decompiled', async ({
-  forge,
-}) => {
+test('the offset village moved after compile, synced dynamics turning, matches decompiled', async ({ forge }) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   await forge.open('village', { variant: 'naive', sceneOffset: '1', dynamics: 'batch-sync' });
   await settle(forge.page);
@@ -76,9 +74,7 @@ test('the offset village moved after compile, with batch-synced dynamics turning
   expect(diff).toBeLessThan(0.0005);
 });
 
-test('the village in a mirrored scene compiles at parity: children mirrored again stay unbatched, the rest batch', async ({
-  forge,
-}) => {
+test('the village in a mirrored scene compiles at parity, twice-mirrored children unbatched', async ({ forge }) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   await forge.open('village', { variant: 'naive' });
   const setup = await forge.page.evaluate(() => {

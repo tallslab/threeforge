@@ -184,7 +184,6 @@ function measure(shape, submissions) {
     shape,
     submissions: expected,
     usPerSubmission: (best * 1000) / expected,
-    /** The attached frame's own cost per submission (ledger plus renderer), the best round: what `scaling` compares. */
     attachedUs: (bestLedger * 1000) / ROUND_FRAMES / expected,
     bytesPerFrame: ledgerBytes - bareBytes,
     rescanMs,

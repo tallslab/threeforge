@@ -74,7 +74,8 @@ describe('planSteps', () => {
     });
   });
 
-  it('applies overrides: --no-<step>, --<step>, join implies flatten, meshopt replaces quantize, textures none', () => {
+  it('applies --no-<step> and --<step> overrides with their implied steps', () => {
+    // join implies flatten; meshopt replaces quantize; textures: none.
     expect(names({ steps: { palette: false, resample: false } })).toEqual(['dedup', 'prune']);
     expect(names({ steps: { quantize: true, instance: true } })).toEqual([
       'dedup',
@@ -117,7 +118,7 @@ describe('planSteps', () => {
    * is now 0 and it too left `safe`). Pinned here so a future preset edit cannot quietly put weld back: `safe` is
    * the one preset without it, and `--weld` is still the way to ask for it anywhere.
    */
-  it('keeps weld out of safe and in the lossy presets, with --weld able to add it back in pipeline order', () => {
+  it('keeps weld out of safe and in the lossy presets, --weld adding it in order', () => {
     expect(names({})).not.toContain('weld');
     expect(names({ preset: 'balanced' })).toContain('weld');
     expect(names({ preset: 'aggressive' })).toContain('weld');
@@ -152,7 +153,7 @@ describe('planSteps', () => {
    * posed silhouette by a few pixels. `safe` therefore asks for tolerance 0 explicitly. Pinned per preset because
    * the value is the entire fix: passing no options at all would silently restore the lossy default.
    */
-  it('resamples at tolerance 0 when added to safe, and at the lossy 1e-4 default under the lossy presets', () => {
+  it('resamples at tolerance 0 under safe and at 1e-4 under the lossy presets', () => {
     const resampleOptions = (preset: OptimizeInput['preset'], steps: OptimizeInput['steps'] = {}): unknown =>
       planSteps({ ...base, preset, steps }).find((s) => s.name === 'resample')!.options;
     // `safe` no longer runs it, but `--resample` under `safe` must still be the lossless one.

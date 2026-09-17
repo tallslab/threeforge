@@ -21,7 +21,7 @@ describe('assembleCharacter', () => {
     expect(Array.isArray(character.mesh.material)).toBe(false);
   });
 
-  it('remaps skin indices by bone name so parts skinned to differently ordered skeletons deform correctly', () => {
+  it('remaps skin indices by bone name across differently ordered skeletons', () => {
     const { body, gear, skeleton } = buildCharacter();
     const helmet = gear[0]!; // its skeleton is ordered [head, spine, root]
     const character = assembleCharacter({ skeleton, wardrobe: [body, helmet], equipped: [body, helmet] });

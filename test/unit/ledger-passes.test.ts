@@ -75,7 +75,8 @@ describe('DrawCallLedger and multi-draw slots a nested pass zeroed', () => {
     return { scene, light, camera };
   }
 
-  it("expects every slot as a GPU draw, as three's Info counts them, and counts only slots with a non-zero index count as drawn instances and draw commands", () => {
+  it('expects every slot as a GPU draw and only non-empty slots as drawn instances', () => {
+    // three's Info counts every slot as a draw; only slots with a non-zero index count draw instances or commands.
     const variants = [
       { label: 'webgl2 multi-draw', webgpu: false, multiDraw: true },
       { label: 'webgl2', webgpu: false, multiDraw: false },
@@ -130,7 +131,7 @@ describe('DrawCallLedger and multi-draw slots a nested pass zeroed', () => {
     expect(drawn['webgl2 multi-draw']).toEqual(drawn.webgl2);
   });
 
-  it('predicts a compacted InstancedMesh from the count each pass draws, so a shadow pass appending only its own light stays attributed', () => {
+  it('predicts a compacted InstancedMesh from the count each pass draws', () => {
     const isInstanced = (draw: FakeDraw): boolean =>
       (draw.object as { isInstancedMesh?: boolean }).isInstancedMesh === true;
     for (const webgpu of [false, true]) {
@@ -169,7 +170,7 @@ describe('DrawCallLedger and multi-draw slots a nested pass zeroed', () => {
     }
   });
 
-  it('predicts every pass of a frame with two shadow lights, each pass narrowed against the other', () => {
+  it('predicts every pass of a two-shadow-light frame, each narrowed to its light', () => {
     // With one light, the casters it reaches and the casters any light of the frame reaches are the same set. Two
     // lights whose shadow cameras cover different slices of the rows tell a pass narrowed to its own light from one
     // that appended the frame's whole union.
@@ -231,7 +232,7 @@ describe('DrawCallLedger and multi-draw slots a nested pass zeroed', () => {
 });
 
 describe('DrawCallLedger frames and passes', () => {
-  it('treats nested render() calls as passes of one frame and names shadow passes after their light', () => {
+  it('treats nested render() calls as passes and names shadow passes after their light', () => {
     const light = casting(new DirectionalLight(), 'sun');
     const { renderer, ledger, scene, camera } = attachedLedger({ shadowLight: light });
     const nonCaster = tag.static(new Mesh(box, new MeshStandardMaterial()));
@@ -373,7 +374,8 @@ describe('DrawCallLedger frames and passes', () => {
 const depthOf = (ledger: DrawCallLedger): number => (ledger as unknown as { depth: number }).depth;
 
 describe('DrawCallLedger and renderAsync', () => {
-  it("relies on three's renderAsync awaiting init() and then calling this.render() (Renderer.js, r186), so it does not patch renderAsync", () => {
+  it('pins renderAsync awaiting init() then calling render(), so it needs no patch', () => {
+    // The ledger wraps render() only; renderAsync (three r186 Renderer.js) reaches it after init().
     const source = readFileSync(
       createRequire(import.meta.url).resolve('three/src/renderers/common/Renderer.js'),
       'utf8',
@@ -386,7 +388,7 @@ describe('DrawCallLedger and renderAsync', () => {
     expect(body.indexOf('await this.init()')).toBeLessThan(body.indexOf('this.render('));
   });
 
-  it('a frame rendered through renderAsync is one main frame: its shadow pass and skinning count as they do through render()', async () => {
+  it('files a renderAsync frame as one main frame with its shadow pass and skinning', async () => {
     const setup = () => {
       const light = casting(new DirectionalLight(), 'sun');
       const pair = attachedLedger({ shadowLight: light });
@@ -415,7 +417,7 @@ describe('DrawCallLedger and renderAsync', () => {
     expect(frame.lighting).toEqual(expected.lighting);
   });
 
-  it('a render() while renderAsync awaits init() is a frame of its own, and so is the render renderAsync then makes: two main frames', async () => {
+  it('files a render() during renderAsync init() and the async render as two frames', async () => {
     const { renderer, ledger, scene, camera } = attachedLedger();
     scene.add(
       tag.static(new Mesh(box, new MeshStandardMaterial())),
@@ -440,7 +442,7 @@ describe('DrawCallLedger and renderAsync', () => {
     ]);
   });
 
-  it('depth is back at 0 after renderAsync, after an interleaved render() and after a render or renderAsync that throws', async () => {
+  it('returns depth to 0 after renderAsync, an interleaved render() and a throw', async () => {
     const { renderer, ledger, scene, camera } = attachedLedger();
     scene.add(tag.static(new Mesh(box, new MeshStandardMaterial())));
     const pending = renderer.renderAsync(scene, camera);
@@ -467,7 +469,7 @@ describe('DrawCallLedger and renderAsync', () => {
     ).toEqual([['main'], 1]);
   });
 
-  it('attach() and detach() leave renderAsync untouched: no own property shadows the prototype method', () => {
+  it('attach() and detach() leave the renderAsync prototype method unshadowed', () => {
     const renderer = new FakeRenderer();
     const original = renderer.renderAsync;
     const own = () => Object.hasOwn(renderer, 'renderAsync');
@@ -478,7 +480,7 @@ describe('DrawCallLedger and renderAsync', () => {
     expect([renderer.renderAsync === original, own()], 'detached').toEqual([true, false]);
   });
 
-  it('attach() after a detach() from inside a draw starts from depth 0, so the next render is a main frame', () => {
+  it('starts from depth 0 when re-attached after a detach() from inside a draw', () => {
     const { renderer, ledger, scene, camera } = attachedLedger();
     let detachNext = true;
     const mesh = tag.static(new Mesh(box, new MeshStandardMaterial()));

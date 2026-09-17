@@ -137,7 +137,7 @@ describe('validateDeviceResult', () => {
     expect(bad((r) => (r.env.gpu = 'Bad`GPU'))).toEqual([expect.stringContaining('gpu')]);
   });
 
-  it('accepts realistic GPU renderer strings and browser UAs (parentheses, semicolons, commas, slashes)', () => {
+  it('accepts realistic GPU renderer strings and browser UAs', () => {
     const r = JSON.parse(JSON.stringify(result));
     r.env.gpu = 'ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)';
     r.env.ua =
@@ -146,7 +146,7 @@ describe('validateDeviceResult', () => {
     expect(validateDeviceResult(r)).toEqual({ ok: true, result: r });
   });
 
-  it('rejects a wire scenes block that uses __proto__ as a scene id, with a missing-scene error and no prototype pollution', () => {
+  it('rejects __proto__ as a scene id without polluting the prototype', () => {
     const keys = Object.keys(metrics(1));
     const withoutZen = Object.fromEntries(
       Object.entries(scenes)
@@ -218,7 +218,7 @@ describe('ingest', () => {
    * `for` loop over the characters would call neither and go uncounted. The size cap asserted at the end is what
    * bounds the cost of any form, and it is the reason the cap exists.
    */
-  it('finds the fence with a fixed number of native passes and no regular expression, at any body size', () => {
+  it('finds the fence in a fixed number of native passes at any body size', () => {
     const probe = (body: string) => {
       const counts = { indexOf: 0, wholeString: 0 };
       const restore: Array<[Record<PropertyKey, unknown>, PropertyKey, unknown]> = [];
@@ -305,7 +305,7 @@ describe('renderDevices', () => {
     }
   });
 
-  it('escapes | and newlines in device/platform strings so a malicious value cannot break the table', () => {
+  it('escapes | and newlines in device and platform strings', () => {
     const evil = { ...result, env: { ...env, gpu: 'Bad | GPU\nInjected row', platform: 'Plat|form' } };
     const md = renderDevices([evil]);
     // A raw newline in a cell would start a new, unescaped Markdown line; a raw `|` would look like a cell
@@ -348,7 +348,7 @@ describe('renderDevices inline Markdown and HTML', () => {
     });
   }
 
-  it('cannot be closed early: a backtick in an unvalidated value is replaced, never ends the span', () => {
+  it('cannot be closed early: a backtick in a value is replaced, never ends the span', () => {
     const row = renderDevices([{ ...result, env: { ...env, gpu: 'a`[x](https://phish.example)`b' } }])
       .split('\n')
       .find((l) => l.startsWith('| ') && !l.startsWith('| device'))!;

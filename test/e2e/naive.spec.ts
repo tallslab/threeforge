@@ -1,8 +1,6 @@
 import { expect, test } from './fixtures.js';
 
-test('the naive scene costs one scene submission per visible mesh, plus the renderer-internal output quad', async ({
-  forge,
-}) => {
+test('the naive scene costs one submission per visible mesh plus the output quad', async ({ forge }) => {
   await forge.open('naive');
   const { visible, result } = await forge.page.evaluate(() => ({
     visible: window.__forge.visibleMeshes(),

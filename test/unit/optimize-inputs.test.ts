@@ -188,7 +188,8 @@ describe('optimize --out', () => {
     expect(error.message).toMatch(/input file/);
   });
 
-  it('writes an upper-case .GLB as binary glTF (glTF-Transform picks GLB only for a lower-case .glb)', async () => {
+  it('writes an upper-case .GLB out as binary glTF', async () => {
+    // glTF-Transform picks GLB only for a lower-case .glb.
     const file = await inputGlb();
     const out = join(dir, 'Optimized.GLB');
     await optimizeAsset(inputFor(file, '--out', out));
@@ -211,7 +212,7 @@ describe('optimize --out', () => {
     expect((await new NodeIO().read(out)).getRoot().listMeshes()).toHaveLength(1);
   });
 
-  it('refuses a .gltf output whose resource URIs would leave its directory, before writing anything', async () => {
+  it('refuses, before writing, a .gltf out whose resources would leave its directory', async () => {
     const file = await inputGlb();
     // glTF-Transform names the buffer after the output (`..%2F..%2Fescape.bin`) and writes it to path.join(dir, decodeURIComponent(uri)).
     const out = join(dir, '..%2F..%2Fescape.gltf');
@@ -238,7 +239,7 @@ describe("optimize --out overwrite (protects resource files, not just the input'
     return file;
   }
 
-  it('refuses a .gltf out whose single-buffer resource (<basename>.bin) clashes with an unrelated pre-existing file, leaving it byte-identical', async () => {
+  it('refuses a .gltf out whose .bin clashes with an unrelated file, leaving it intact', async () => {
     const file = await inputGlb();
     const out = join(dir, 'x.gltf');
     const clashing = join(dir, 'x.bin');
@@ -276,7 +277,7 @@ describe("optimize --out overwrite (protects resource files, not just the input'
     expect(readFileSync(clashing, 'utf8')).not.toBe('stale bytes');
   });
 
-  it('refuses a .glb out that already exists with overwrite: false — one consistent rule for .glb and .gltf', async () => {
+  it('refuses an existing .glb out with overwrite: false, as it does a .gltf', async () => {
     const file = await inputGlb();
     const out = join(dir, 'existing.glb');
     writeFileSync(out, 'stale glb bytes');
@@ -288,7 +289,7 @@ describe("optimize --out overwrite (protects resource files, not just the input'
     expect(readFileSync(out, 'utf8')).toBe('stale glb bytes');
   });
 
-  it('with overwrite: false, a dangling symlink at a .glb or .gltf out counts as existing and nothing is written through it', async () => {
+  it('treats a dangling symlink out as existing with overwrite: false and writes nothing', async () => {
     const file = await inputGlb();
     for (const name of ['dangling.glb', 'dangling.gltf']) {
       const target = join(root, `outside-${name}`);
@@ -310,7 +311,7 @@ describe("optimize --out overwrite (protects resource files, not just the input'
    * would refuse it, after `io.writeBinary` has run. (A dangling link at a .gltf *resource* target cannot show this:
    * `assertConfinedUris` refuses it first, as a symlink that cannot be resolved.)
    */
-  it('with overwrite: false, a dangling symlink at a .glb out is refused by the check before anything is serialized (the lstat check)', async () => {
+  it('refuses a dangling symlink .glb out before serializing, with overwrite: false', async () => {
     const file = await inputGlb();
     const out = join(dir, 'dangling-check.glb');
     const target = join(root, 'outside-dangling-check.glb');
@@ -332,7 +333,8 @@ describe("optimize --out overwrite (protects resource files, not just the input'
    * `io.writeBinary(doc)` between `assertNotClobbering(out)` and the write, so the link is planted inside that await.
    * With a plain `w` the write would follow it and create the file outside.
    */
-  it('with overwrite: false, a symlink planted at a .glb out between the check and the write is refused, not followed (the wx flag)', async () => {
+  it('refuses, not follows, a symlink planted at a .glb out between check and write', async () => {
+    // The wx open flag refuses an existing entry, a symlink included.
     const file = await inputGlb();
     const out = join(dir, 'raced.glb');
     const target = join(root, 'outside-raced.glb');
@@ -393,7 +395,7 @@ describe("optimize never overwrites a .gltf input's resources", () => {
     return file;
   }
 
-  it("refuses a .gltf output beside the input whose resources would replace the input's, leaving the input byte-identical and loadable", async () => {
+  it("refuses a .gltf out beside the input whose resources would replace the input's", async () => {
     const file = await gltfInput();
     const before = snapshotOf(dir);
     const error = await rejection(optimizeAsset(inputFor(file, '--out', join(dir, 'scene.opt.gltf'))));
@@ -426,7 +428,7 @@ describe("optimize never overwrites a .gltf input's resources", () => {
     expect(readFileSync(join(dir, 'skin.gltf'), 'utf8')).toBe('not really an image');
   });
 
-  it('writes a .gltf output into another directory, re-runs over its own resources, and leaves the input byte-identical', async () => {
+  it('writes a .gltf out into another directory and re-runs over it, input untouched', async () => {
     const file = await gltfInput();
     const before = snapshotOf(dir);
     const outDir = join(root, 'out');
@@ -449,14 +451,14 @@ describe("optimize never overwrites a .gltf input's resources", () => {
  * and `cli.spec.ts`'s Buggy case, which pins the consequence end to end. This pins the decision itself:
  * `verifyAnalyzeInput` is the object `verifyPair` hands to each `analyzeAssetWithShots` call.
  */
-describe('verifyAnalyzeInput: the inner compile checks keep the analyze default, whatever --parity says', () => {
+describe('verifyAnalyzeInput keeps the analyze default parity for the inner compile checks', () => {
   const optimizeInput = (...extra: string[]): OptimizeInput => {
     const command = parseArgs(['optimize', 'x.glb', ...extra]);
     if (command.name !== 'optimize') throw new Error(`parsed as ${command.name}`);
     return command.input;
   };
 
-  it('does not follow --parity down: a run asking for zero between the files still compiles at the default', () => {
+  it('compiles at the default parity when --parity 0 is asked between the files', () => {
     // The question `--parity 0` asks is "is the optimized asset exactly the original?", which `verify.parity`
     // answers. Whether compiling either file moves a pixel is a separate question, reported in
     // `verify.optimized.parity` and asked directly by `analyze --parity 0`.

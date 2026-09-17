@@ -35,7 +35,7 @@ async function connect(): Promise<{
 }
 
 /** The MCP server over stdio, driven by the SDK's own client: the tools list and a pure tool call. */
-test('threeforge mcp lists analyze_asset, inspect_app, optimize_asset, explain_hint and answers explain_hint', async () => {
+test('threeforge mcp lists its four tools and answers explain_hint', async () => {
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
   await ready();
   const { client, close } = await connect();
@@ -113,7 +113,7 @@ test('analyze_asset rejects frames: 0 as an isError with code 2, without opening
   }
 });
 
-test('analyze_asset rejects a bad enum value and a non-integer frames the same way: isError with code 2', {
+test('analyze_asset rejects a bad enum and a non-integer frames alike: isError, code 2', {
   tag: '@corpus',
 }, async () => {
   // A tight z.enum()/`.int()` in the MCP schema made these two return
@@ -184,7 +184,7 @@ test('optimize_asset rejects an out that does not end in .glb or .gltf as an isE
   }
 });
 
-test('optimize_asset rejects a default out that is a dangling symlink leading outside both roots, writing nothing there', {
+test('optimize_asset rejects a default out that is a dangling symlink out of both roots', {
   tag: '@corpus',
 }, async () => {
   // `<name>.forge.glb -> <outside>` passed the confinement check (realpath of a dangling
@@ -217,7 +217,7 @@ test('optimize_asset rejects a default out that is a dangling symlink leading ou
   }
 });
 
-test('every run tool marks its error result as data: analyze_asset, inspect_app and optimize_asset, including asset text an error quotes', {
+test('every run tool marks its error result as data, including asset text an error quotes', {
   tag: '@corpus',
 }, async () => {
   // DATA_NOTE rode only on success. glTF-Transform quotes an input's extensionsRequired
@@ -279,7 +279,7 @@ test('optimize_asset refuses to silently overwrite an existing out file, matchin
   }
 });
 
-test('optimize_asset refuses a .gltf out whose resource file (not the out path itself) already exists, matching /exists/ with code 2', {
+test('optimize_asset refuses a .gltf out whose resource file already exists: /exists/, code 2', {
   tag: '@corpus',
 }, async () => {
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
@@ -310,7 +310,7 @@ test('optimize_asset refuses a .gltf out whose resource file (not the out path i
   }
 });
 
-test('optimize_asset with overwrite: true replaces both the out file and a pre-existing resource clash', {
+test('optimize_asset overwrite: true replaces the out file and a pre-existing resource clash', {
   tag: '@corpus',
 }, async () => {
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
@@ -373,7 +373,7 @@ test('a spawned mcp process exits within 5 s when stdin closes', async () => {
   expect(ms).toBeLessThan(5_000);
 });
 
-test('a real analyze_asset call on the Fox returns the document in content[0] and the data note in content[1]', {
+test('analyze_asset on the Fox returns the document in content[0], the data note in content[1]', {
   tag: '@corpus',
 }, async ({ forge }) => {
   test.setTimeout(300_000);
@@ -402,7 +402,7 @@ test('a real analyze_asset call on the Fox returns the document in content[0] an
  * absolute `http://` resource URIs straight to headless Chromium; it now returns the CLI's `{ error, code: 2 }` before
  * a browser opens. No downloaded content, so this runs in CI's `--grep-invert "@corpus|@bench"` selection.
  */
-test('analyze_asset refuses an asset whose buffer URI points off the served origin: isError with code 2', async () => {
+test('analyze_asset refuses an off-origin buffer URI: isError with code 2', async () => {
   test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
   await ready();
   const dir = mkdtempSync(join(tmpdir(), 'forge-mcp-uri-'));

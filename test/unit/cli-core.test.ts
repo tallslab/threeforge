@@ -167,7 +167,8 @@ describe('verdict', () => {
     expect(exitCodeOf(verdictOf(clean, clean, null, null))).toBe(0);
   });
 
-  it('worstChangedPixels is the largest changedPixels over the views, 0 without views (verdict and summaries share it)', () => {
+  it('worstChangedPixels takes the largest changedPixels over the views, or 0', () => {
+    // The verdict and the summaries share this number.
     expect(worstChangedPixels([])).toBe(0);
     expect(
       worstChangedPixels([
@@ -185,7 +186,7 @@ describe('verdict', () => {
    * passing verdict and exit 0. That is the defect the e2e's own per-view assertion covered while the product did
    * not. `parityOf` judges a threshold of 0 on the raw counts; everything else still compares the percentage.
    */
-  it('fails --parity 0 on a one-pixel difference that rounds to 0.000, all the way to the exit code', () => {
+  it('fails --parity 0 on a one-pixel difference that rounds to 0.000', () => {
     const movedOnePixel = [{ view: 'default', diffPct: 0, changedPixels: 1 }];
     expect(parityOf(movedOnePixel, 0).diffPct, 'the rounded percentage still reads zero').toBe(0);
     expect(parityOf(movedOnePixel, 0).pass, 'but a moved pixel is not parity').toBe(false);
@@ -307,7 +308,8 @@ describe('schema', () => {
       expect(s.properties.schemaVersion).toEqual({ const: 2 });
   });
 
-  it('names each document schema by the schemaVersion it validates, so a cache keyed by $id cannot serve the v1 schema', () => {
+  it('names each document schema $id by the schemaVersion it validates', () => {
+    // A cache keyed by $id must not serve the v1 schema for a later version.
     for (const [command, s] of [
       ['analyze', ANALYZE_SCHEMA],
       ['inspect', INSPECT_SCHEMA],
@@ -428,7 +430,7 @@ describe('summarize', () => {
     expect(summarize(doc)).not.toContain('256 skipped');
   });
 
-  it('prints the bake line with the coincident and duplicate faces kept and the meshes left unbaked', () => {
+  it('prints the bake line with the faces kept and the meshes left unbaked', () => {
     const doc = bakeDoc({
       groups: 1,
       inputTriangles: 48,
@@ -447,7 +449,7 @@ describe('summarize', () => {
     );
   });
 
-  it('prints 0 for the kept and unbaked counts of a bake report from an older threeforge that lacks the fields', () => {
+  it('prints 0 for kept and unbaked counts an older bake report lacks', () => {
     const doc = bakeDoc({
       groups: 1,
       inputTriangles: 48,
@@ -654,7 +656,7 @@ describe('parseArgs flag model', () => {
     expect(usage(['analyze', 'a.glb', '--no-json'])).toMatch(/--no-json/);
   });
 
-  it('rejects extra positionals, values on boolean flags, missing values, repeats and flags before the command', () => {
+  it('rejects extra positionals, misused values, repeated flags and flags before the command', () => {
     expect(usage(['analyze', 'a.glb', 'b.glb'])).toMatch(/b\.glb/);
     expect(usage(['inspect', 'http://x', 'http://y'])).toMatch(/http:\/\/y/);
     expect(usage(['explain', 'untagged', 'sprite'])).toMatch(/sprite/);
@@ -830,7 +832,7 @@ describe('printDocument', () => {
   };
   const doc = { tool: 'threeforge', verdict: { pass: true } };
 
-  it('writes the JSON before building the summary, so a throwing summarizer still leaves parseable stdout', () => {
+  it('writes the JSON before the summary, so a throwing summarizer leaves parseable stdout', () => {
     const { out, streams } = capture();
     expect(() =>
       printDocument(
@@ -856,7 +858,8 @@ describe('printDocument', () => {
     expect(human.out).toEqual({ stdout: 'PASS\n', stderr: '' });
   });
 
-  it('cleans ANSI/control characters out of the summary (a name from the asset can reach it) while keeping its line structure, in both modes', () => {
+  it('strips ANSI and control characters from the summary, keeping its lines, in both modes', () => {
+    // A name from the asset can reach the summary.
     const dirty = () => 'threeforge analyze \x1b[31mscene\x1b[0m\n! untagged: 3 meshes\ttag them';
     const json = capture();
     printDocument(doc, dirty, true, json.streams);

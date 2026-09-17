@@ -63,7 +63,7 @@ describe('AnimatedInstances', () => {
     expect(material.roughness).toBe(0.4);
   });
 
-  it('places instances by the character matrix, which getMatrixAt returns; assigns clips and drives time', () => {
+  it('places instances by the character matrix, assigns clips and drives time', () => {
     const { animation, instances } = setup();
     // A part offset changed after construction: the part's uniform reads it; the instance row stays the character's.
     animation.parts[0]!.matrix.makeTranslation(0, 0.5, 0);
@@ -105,7 +105,7 @@ describe('AnimatedInstances', () => {
     );
   });
 
-  it('puts every vertex of both parts where three skins the same rig placed at the character matrix', () => {
+  it('puts every vertex where three skins the same rig at the character matrix', () => {
     const prototype = buildTwoPartRig();
     const animation = bakeAnimationTexture(prototype.root, [prototype.clip], { fps: 10 });
     const instances = new AnimatedInstances({ animation, count: 1 });

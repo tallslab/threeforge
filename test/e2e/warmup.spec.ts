@@ -20,7 +20,7 @@ const cases = [
 
 for (const mode of ['frame', 'async'] as const) {
   for (const c of cases) {
-    test(`warmup(${mode}) keeps ${c.what} within 0.05 % changed pixels of a cold frame at tolerance 4`, {
+    test(`warmup(${mode}) keeps ${c.what} within 0.05 % changed pixels of a cold frame, tolerance 4`, {
       tag: '@corpus',
     }, async ({ forge }) => {
       test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');

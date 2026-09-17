@@ -82,7 +82,7 @@ describe('assertConfinedUri', () => {
     expect(() => assertConfinedUri(42, 'images[0].uri', base)).toThrow(/not a string/);
   });
 
-  it('refuses a symlink inside the directory that leads outside it: a file, a folder, and a dangling link', () => {
+  it('refuses a file, folder or dangling symlink that leads outside the directory', () => {
     symlinkSync(join(root, 'secret.png'), join(base, 'link.png'));
     symlinkSync(join(root, 'outside'), join(base, 'linked'));
     symlinkSync(join(root, 'outside', 'not-yet.bin'), join(base, 'dangling.bin'));

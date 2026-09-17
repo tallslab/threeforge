@@ -37,9 +37,7 @@ for (const asset of ['Duck-Draco', 'BrainStem-Meshopt']) {
  * texture (nodes/functions/BSDF/DFGLUT.js), which nothing in the scene reaches and the ledger must still allow.
  */
 
-test('memory: measuring overdraw adds the count target to info.memory.textures and nothing to memory.unreferenced', async ({
-  forge,
-}) => {
+test('memory: the overdraw count target shows in info.memory.textures, never as unreferenced', async ({ forge }) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -79,9 +77,7 @@ test('memory: measuring overdraw adds the count target to info.memory.textures a
   expect(r.resized.unreferenced).toEqual({ geometries: 0, textures: 0 });
 });
 
-test('memory: on the naive scene the overdraw count target adds one texture to info.memory and nothing to memory.unreferenced', async ({
-  forge,
-}) => {
+test('memory: on the naive scene the overdraw count target adds one texture, none unreferenced', async ({ forge }) => {
   await forge.open('naive');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -139,9 +135,7 @@ test('memory: one shadow light with a [0, 0] viewport reports no unreferenced te
   expect(r.renderTargets).toEqual({ count: 1, bytes: 512 * 512 * 4 });
 });
 
-test('memory: a casting light whose shadow map three never built is not allowed for, so a texture removed without dispose() still counts', async ({
-  forge,
-}) => {
+test('memory: an unbuilt shadow map is not allowed for; an undisposed removal still counts', async ({ forge }) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -202,9 +196,7 @@ test("memory.measured is three's own renderer.info.memory", async ({ forge }) =>
   expect(r.snapshot).toEqual(r.measured);
 });
 
-test('memory: bakeDebug() twice, attached and then disposed: reachable while attached, and the counts return to where they were', async ({
-  forge,
-}) => {
+test('memory: bakeDebug() twice is reachable while attached and its counts return once disposed', async ({ forge }) => {
   await forge.open('empty', { bake: '1' });
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -256,9 +248,7 @@ test('memory: bakeDebug() twice, attached and then disposed: reachable while att
   expect(r.disposed).toEqual(r.start);
 });
 
-test('memory: a tinted group batches with a clone sharing the source texture, counted once, and decompile() and world.dispose() return the counts to the naive ones', async ({
-  forge,
-}) => {
+test('memory: a tinted clone shares one texture; decompile() and dispose() restore the counts', async ({ forge }) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -339,9 +329,7 @@ test('memory: a tinted group batches with a clone sharing the source texture, co
   expect(r.disposed).toEqual(['clone released by decompile()', 'clone released by dispose()']);
 });
 
-test('memory: occlusion proxies add nothing unreferenced while compiled, and decompile() returns the counts to the naive ones', async ({
-  forge,
-}) => {
+test('memory: occlusion proxies add nothing unreferenced; decompile() restores the naive counts', async ({ forge }) => {
   await forge.open('naive', { chunk: '40', occlusion: '1', wall: '1' });
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -366,9 +354,7 @@ test('memory: occlusion proxies add nothing unreferenced while compiled, and dec
   expect(r.decompiled).toEqual(r.naive);
 });
 
-test('memory: a VSM shadow light: its map, depth and two blur targets are allowed, so nothing reads as unreferenced', async ({
-  forge,
-}) => {
+test('memory: VSM shadow map, depth and blur targets are allowed; nothing reads unreferenced', async ({ forge }) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;

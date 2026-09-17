@@ -60,7 +60,7 @@ describe.each(backends)('BatchedMesh in a shadow pass nested in the main pass (w
   describe.each(policies)("nestedPasses: '%s'", (nested) => {
     const resolved: NestedPassPolicy = nested === 'auto' ? 'per-pass' : nested;
 
-    it('draws in every pass each id its frustum needs, once, and nothing else, on two consecutive frames', () => {
+    it('draws in every pass exactly the ids its frustum needs, on two consecutive frames', () => {
       const r = rig({ webgpu, nested });
       expect(r.report.nestedPasses).toBe(resolved);
       expect(r.report.after).toMatchObject({ batches: 2, instanced: 0 });
@@ -101,7 +101,7 @@ describe.each(backends)('BatchedMesh in a shadow pass nested in the main pass (w
       }
     });
 
-    it("serves a point light's six faces, each drawing exactly what its face needs, and restores the counts after every face", () => {
+    it("serves a point light's six faces exactly and restores the counts after each", () => {
       const r = rig({ webgpu, nested, suns: (cs) => [pointLight('bulb', 50, cs)] });
       const faceCamera = r.suns[0]!.shadow.camera;
       const afterFace: number[][][] = [];
@@ -162,7 +162,7 @@ describe.each(backends)('BatchedMesh in a shadow pass nested in the main pass (w
         expect(rowsAfterReflection, 'the reflection kept the previous main rows').toEqual(mainRows);
     });
 
-    it('keeps the prefix order of a sorted transparent batch and sorts the appended ids for the nested camera', () => {
+    it('keeps a sorted transparent prefix and sorts the appended ids for the nested camera', () => {
       const r = rig({ webgpu, nested, litMaterial: new MeshStandardMaterial({ transparent: true, opacity: 0.5 }) });
       r.renderer.render(r.scene, r.main);
       const [main, shadow] = r.renderer.passes as [FakePass, FakePass];
@@ -190,7 +190,7 @@ describe.each(backends)('BatchedMesh in a shadow pass nested in the main pass (w
         expect(depth(appended[i]!), `appended[${i}]`).toBeLessThanOrEqual(depth(appended[i - 1]!) + 1e-6);
     });
 
-    it('uploads the index texture again only when a nested pass appends rows the texture does not hold yet', () => {
+    it('re-uploads the index texture only when a nested pass appends rows it lacks', () => {
       const version = (b: BatchedMesh): number => internals(b)._indirectTexture.version;
       // A sun inside the main view: the shadow pass needs nothing the main list lacks.
       const inside = rig({ webgpu, nested, suns: (cs) => [sunLight('sun', 0, cs, 8)] });
@@ -226,7 +226,7 @@ describe.each(backends)('BatchedMesh in a shadow pass nested in the main pass (w
       expectPassesExact(outside, 'frame 3');
     });
 
-    it('draws every instance in both passes with perObjectFrustumCulled off, and uploads nothing once nothing changes', () => {
+    it('draws every instance with perObjectFrustumCulled off, then uploads nothing', () => {
       const r = rig({ webgpu, nested });
       r.unlit.perObjectFrustumCulled = false;
       r.renderer.render(r.scene, r.main);
@@ -347,7 +347,7 @@ describe('attachBvhCulling without a pass tracker', () => {
 // ---- World options --------------------------------------------------------------------------------------------------
 
 describe('World nestedPasses option', () => {
-  it("resolves 'auto' to 'per-pass' on both backends, and tracks the main camera through the scene hooks", () => {
+  it("resolves 'auto' to 'per-pass' on both backends and tracks the main camera", () => {
     const scene = new Scene();
     for (let i = 0; i < 4; i++)
       scene.add(tag.static(new Mesh(box, new MeshStandardMaterial({ color: new Color(i * 0x111111) }))));

@@ -24,7 +24,7 @@ describe('SceneSpace', () => {
     expect(space.scaleY).toBe(1);
   });
 
-  it('multiplies by the inverse of the root world matrix, so the root times the result is the world matrix', () => {
+  it('multiplies by the inverse root world matrix, so root times result is world', () => {
     const scene = new Scene();
     scene.position.set(5, -2, 7);
     scene.rotation.set(0.3, 0.6, -0.2);
@@ -38,7 +38,7 @@ describe('SceneSpace', () => {
     expect(space.scaleY).toBeCloseTo(3, 12);
   });
 
-  it('re-derives the inverse when the root moves after it was first used, and returns to the fast path at identity', () => {
+  it('re-derives the inverse when the root moves, fast path again at identity', () => {
     const root = new Object3D();
     root.position.set(10, 0, 0);
     root.updateMatrixWorld();

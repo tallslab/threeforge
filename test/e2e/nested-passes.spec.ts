@@ -59,7 +59,7 @@ async function attachNumbers(name: string, value: unknown): Promise<void> {
 }
 
 for (const nested of POLICIES) {
-  test(`tall casters out of view shadow a receiving batch through a narrow sun frustum (nestedPasses: ${nested})`, async ({
+  test(`out-of-view casters shadow a batch through a narrow sun frustum (nestedPasses: ${nested})`, async ({
     forge,
   }) => {
     // threshold=1000 keeps the 289 repeated tiles in the BatchedMesh (the default 64 would make them an InstancedMesh).
@@ -213,9 +213,7 @@ for (const nested of POLICIES) {
     expect(diff).toBeLessThan(0.0005);
   });
 
-  test(`reproduction: the shadowed naive scene seen from (24, 10, 18) compiles with the same pixels (nestedPasses: ${nested})`, async ({
-    forge,
-  }) => {
+  test(`the shadowed naive scene from (24, 10, 18) compiles at parity (nestedPasses: ${nested})`, async ({ forge }) => {
     test.setTimeout(180_000);
     // transparent=keep: transparent statics stay individual meshes, so their draw order does not enter the comparison.
     await forge.open('naive', { shadows: '1', transparent: 'keep', ...nestedQuery(nested) });
@@ -338,7 +336,7 @@ for (const nested of POLICIES) {
   });
 
   for (const receiver of ['instanced', 'ground'] as const) {
-    test(`1,500 tall instanced boxes shadow themselves through a sun and a spot light with casters out of view (first receiver: ${receiver}, nestedPasses: ${nested})`, async ({
+    test(`1,500 boxes self-shadow under sun and spot (${receiver} first, nestedPasses: ${nested})`, async ({
       forge,
     }) => {
       test.setTimeout(180_000);
@@ -398,9 +396,7 @@ for (const nested of POLICIES) {
     });
   }
 
-  test(`1,500 tall instanced boxes stay exact when the camera moves after the first compiled frame, the boxes receiving the sun's shadows first (nestedPasses: ${nested})`, async ({
-    forge,
-  }) => {
+  test(`1,500 boxes stay exact when the camera moves after compile (nestedPasses: ${nested})`, async ({ forge }) => {
     test.setTimeout(180_000);
     await forge.open('empty', nestedQuery(nested));
     // The sun only. In three r186 Attributes.update keeps a version per attribute object, and every render object builds its

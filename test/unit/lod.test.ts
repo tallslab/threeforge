@@ -12,7 +12,7 @@ import { disposeLods, generateLods, lodsOf, prepareLods } from '../../src/lod/ge
 import { tag } from '../../src/tags.js';
 
 describe('generateLods', () => {
-  it('produces one geometry per ratio with roughly that share of the triangles and the same attributes', async () => {
+  it('produces one level per ratio with about that share of the triangles', async () => {
     const base = new TorusKnotGeometry(1, 0.3, 128, 24); // ~18k triangles
     const lods = await generateLods(base, { ratios: [0.5, 0.2] });
     expect(lods).toHaveLength(2);
@@ -36,7 +36,7 @@ describe('generateLods', () => {
     expect(lods[0]!.index!.count / 3).toBeLessThan(beforeCount / 3);
   });
 
-  it('never returns a level with more triangles than the previous one, even when the simplifier stalls', async () => {
+  it('never returns a level with more triangles than the previous one', async () => {
     const base = new SphereGeometry(1, 8, 6); // tiny: simplifier may refuse to go below a floor
     const lods = await generateLods(base, { ratios: [0.5, 0.25, 0.1] });
     let previous = base.index!.count;
@@ -70,7 +70,7 @@ describe('prepareLods', () => {
 });
 
 describe('disposeLods', () => {
-  it('disposes every attached level, drops them from the geometry, and leaves the geometry itself alone', async () => {
+  it('disposes and drops every attached level and leaves the geometry alone', async () => {
     const base = new SphereGeometry(1, 16, 12);
     base.userData.forgeLods = await generateLods(base, { ratios: [0.5, 0.2] });
     const levels = lodsOf(base);

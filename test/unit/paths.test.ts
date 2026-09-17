@@ -25,7 +25,7 @@ describe('isInside', () => {
     expect(isInside(base, join(base, '...'))).toBe(true);
   });
 
-  it('refuses the parent, an ancestor, a sibling and a sibling that shares the base name as a prefix', () => {
+  it('refuses the parent, an ancestor, a sibling and a prefix-sharing sibling', () => {
     expect(isInside(base, join(base, '..'))).toBe(false);
     expect(isInside(base, sep)).toBe(false);
     expect(isInside(base, join(sep, 'other'))).toBe(false);
@@ -54,7 +54,7 @@ describe('realPathOf', () => {
     expect(realPathOf(join(root, 'alias', 'file.bin'))).toBe(join(root, 'real', 'file.bin'));
   });
 
-  it('resolves a missing path through its nearest existing ancestor with the missing segments appended', () => {
+  it('resolves a missing path through its nearest existing ancestor', () => {
     expect(realPathOf(join(root, 'alias', 'new', 'deep.bin'))).toBe(join(root, 'real', 'new', 'deep.bin'));
     expect(realPathOf(join(root, 'real', 'new.bin'))).toBe(join(root, 'real', 'new.bin'));
   });
@@ -66,7 +66,8 @@ describe('realPathOf', () => {
 });
 
 describe('entryExists', () => {
-  it('is true for a dangling symlink (lstat, never following the final link) and false for nothing', () => {
+  it('is true for a dangling symlink and false for nothing', () => {
+    // lstat: the final link is never followed.
     const root = mkdtempSync(join(tmpdir(), 'forge-paths-exists-'));
     try {
       symlinkSync(join(root, 'nowhere'), join(root, 'dangling'));

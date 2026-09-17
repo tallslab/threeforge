@@ -24,7 +24,7 @@ describe('shadowPassIds', () => {
     expect(ids).toEqual(['shadow:lamp#1', 'shadow:sun', 'shadow:lamp#2']);
   });
 
-  it('names an unnamed light after its type, so unnamed lights of one type are numbered and two types are not', () => {
+  it('names unnamed lights by type, numbering only those that share a type', () => {
     const ids = shadowPassIds([light(''), light(''), light('', 'SpotLight')], new Set());
     expect(ids).toEqual(['shadow:DirectionalLight#1', 'shadow:DirectionalLight#2', 'shadow:SpotLight']);
   });

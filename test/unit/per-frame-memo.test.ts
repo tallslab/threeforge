@@ -20,7 +20,7 @@ function counted(registry: { keysRevision: number }) {
 }
 
 describe('PerFrameMemo', () => {
-  it('resolves each material once, however the materials interleave, and returns the same answer for it', () => {
+  it('resolves each material once, however they interleave, and repeats its answer', () => {
     const registry = { keysRevision: 0 };
     const { memo, resolves } = counted(registry);
     const materials = [material(), material(), material(), material()];
@@ -42,7 +42,7 @@ describe('PerFrameMemo', () => {
     expect(resolves).toHaveLength(2);
   });
 
-  it('drops every answer when keysRevision moves, the material just seen included, even mid-frame', () => {
+  it('drops every answer when keysRevision moves, even mid-frame', () => {
     const registry = { keysRevision: 0 };
     const { memo, resolves } = counted(registry);
     const a = material();

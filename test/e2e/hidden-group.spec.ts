@@ -12,9 +12,7 @@ import { pixelDiff, settle } from './pixels.js';
 
 const OUT = 'test-results/hidden-group';
 
-test('static meshes under an invisible ancestor Group stay excluded from batching: naive and compiled render the same pixels', async ({
-  forge,
-}) => {
+test('statics under an invisible ancestor Group stay out of batching with the same pixels', async ({ forge }) => {
   test.skip(!forge.pixelChecks, 'pixel checks need a native WebGPU adapter');
   await forge.open('empty');
 

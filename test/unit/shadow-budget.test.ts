@@ -41,7 +41,7 @@ describe('ShadowBudget', () => {
     ]);
   });
 
-  it('turns point shadows off on phone tiers, respects minMapSize, and can switch shadows off for listed tiers', () => {
+  it('drops point shadows on phone tiers, honours minMapSize, turns off listed tiers', () => {
     const { scene, sun, spot, point } = lit();
     const mid = new ShadowBudget({ tier: 'phone-mid' }).apply(scene);
     expect(point.castShadow).toBe(false);

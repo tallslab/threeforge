@@ -55,7 +55,7 @@ describe('bench-app-assets without the Kenney kits', () => {
     expect(r.out).toContain('FORGE_KITS_ONLY=1 pnpm assets:kits');
   });
 
-  it('degrades under FORGE_BENCH_APP_OPTIONAL=1: warns, writes an empty kit index, still writes decoders, exits 0', () => {
+  it('degrades under FORGE_BENCH_APP_OPTIONAL=1: warns, empty kit index, exit 0', () => {
     const dir = sandbox();
     const r = run(dir, { FORGE_BENCH_APP_OPTIONAL: '1' });
     expect(r.out).toContain('FORGE_BENCH_APP_OPTIONAL');
@@ -66,7 +66,7 @@ describe('bench-app-assets without the Kenney kits', () => {
     expect(existsSync(join(dir, 'bench-app/public/_decoders/basis'))).toBe(true);
   });
 
-  it('does not degrade when the kits are there, flag or no flag: the eight characters and the water map are copied', () => {
+  it('copies the eight characters and the water map when the kits are there, flag or not', () => {
     for (const env of [{}, { FORGE_BENCH_APP_OPTIONAL: '1' }]) {
       const dir = sandbox();
       withKits(dir);

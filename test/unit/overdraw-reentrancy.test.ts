@@ -46,7 +46,7 @@ describe('measureOverdraw re-entrancy', () => {
     return reasons;
   }
 
-  it('a call from a hook the count render runs returns the measurement in progress and renders nothing; a call once the counts rendered measures again', async () => {
+  it('returns the measurement in progress to a call from a count-render hook', async () => {
     const renderer = new FakeRenderer();
     const { scene, camera } = sceneWithCamera();
     const mesh = new Mesh(geometry, new MeshBasicMaterial());
@@ -80,7 +80,7 @@ describe('measureOverdraw re-entrancy', () => {
     expect(rejections).toEqual([]);
   });
 
-  it('a ledger measurement from a hook the count render runs again joins the one in progress: the ledger stays paused through the counts and the frame files only its own draws', async () => {
+  it('joins a re-entered ledger measurement to the one in progress, ledger paused', async () => {
     const { renderer, ledger, scene, camera } = attachedLedger();
     const mesh = new Mesh(geometry, new MeshBasicMaterial());
     scene.add(mesh, new Mesh(geometry, new MeshBasicMaterial({ transparent: true })));
@@ -113,8 +113,9 @@ describe('measureOverdraw re-entrancy', () => {
   });
 });
 
-describe('measureOverdraw: renders inside a count draw, a throwing count render, disposal during the counts', () => {
-  it("a scene a hook renders during a count draw passes straight through: its draws neither write the count material's slots nor run the count's skip rules", async () => {
+describe('measureOverdraw: nested renders, a throwing count render, disposal mid-count', () => {
+  it('passes a scene a hook renders during a count draw straight through', async () => {
+    // Its draws neither write the count material's slots nor run the count's skip rules.
     const { scene, camera } = sceneWithCamera();
     const renderer = new FakeRenderer();
     const outerMap = new DataTexture(new Uint8Array(4), 1, 1);
@@ -153,7 +154,8 @@ describe('measureOverdraw: renders inside a count draw, a throwing count render,
     expect(drawnInNested).toEqual([nestedMesh, noColour]);
   });
 
-  it("a same-scene render inside a count draw (a reflector's updateBefore, after three's copies) puts back the positionNode and displacementMap the outer draw copied", async () => {
+  it("puts back the outer draw's positionNode and displacementMap after a nested render", async () => {
+    // A reflector's updateBefore renders the same scene inside the draw, after three's copies.
     const { scene, camera } = sceneWithCamera();
     const renderer = new FakeRenderer();
     const outerPosition = float(1);
@@ -204,7 +206,7 @@ describe('measureOverdraw: renders inside a count draw, a throwing count render,
     expect([countMaterial!.positionNode ?? null, countMaterial!.displacementMap ?? null]).toEqual([null, null]);
   });
 
-  it('the re-entrancy guard clears when a count render throws: the next measurement renders fresh and resolves', async () => {
+  it('clears the re-entrancy guard when a count render throws', async () => {
     const { scene, camera } = sceneWithCamera();
     const renderer = new FakeRenderer();
     const render = renderer.render;
@@ -224,7 +226,8 @@ describe('measureOverdraw: renders inside a count draw, a throwing count render,
     await expect(next).resolves.toEqual({ opaque: 0, transparent: 0 });
   });
 
-  it('disposeOverdraw() called while the count renders run releases once they end: a hook that disposes and measures on every draw renders the counts once', async () => {
+  it('defers a disposeOverdraw() made during the count renders until they end', async () => {
+    // A hook that disposes and measures on every draw renders the counts once.
     const renderer = new FakeRenderer();
     const { scene, camera } = sceneWithCamera();
     const mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());

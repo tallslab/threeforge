@@ -1,9 +1,7 @@
 import { expect, test } from './fixtures.js';
 import { pixelDiff, settle } from './pixels.js';
 
-test('freezing: the compiled village recomposes far fewer matrices per frame with the same pixels', async ({
-  forge,
-}) => {
+test('freezing the compiled village recomposes far fewer matrices with the same pixels', async ({ forge }) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   await forge.open('village', { variant: 'naive', freeze: '1' });
   await settle(forge.page);

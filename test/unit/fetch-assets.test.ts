@@ -20,7 +20,7 @@ describe('mergeIndex (fetch-assets run limited to some names)', () => {
     expect(mergeIndex([entry('A')], [entry('Z'), entry('A', 5)])).toEqual([entry('A', 5), entry('Z')]);
   });
 
-  it('two consecutive single-asset runs over a full index leave the full index (the Fox, then SimpleSkin case)', () => {
+  it('leaves a full index intact after two consecutive single-asset runs', () => {
     const full = [entry('Duck'), entry('Fox'), entry('Buggy'), entry('SimpleSkin')];
     const afterFox = mergeIndex(full, [entry('Fox')]);
     const afterSkin = mergeIndex(afterFox, [entry('SimpleSkin')]);

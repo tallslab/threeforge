@@ -64,9 +64,10 @@ test('analyze renders a sample asset, compiles it and prints the document', { ta
   expect(r.stderr).toContain('PASS');
 });
 
-test('analyze --parity 0 judges compile parity on the raw changed-pixel count, from the built binary', {
+test('analyze --parity 0 judges compile parity on the raw changed-pixel count', {
   tag: '@corpus',
 }, async ({ forge }) => {
+  // Through the built binary, not the in-process decision path.
   test.setTimeout(600_000);
   const r = run([
     'analyze',
@@ -99,7 +100,7 @@ test('analyze --parity 0 judges compile parity on the raw changed-pixel count, f
   expect(bad.stderr).toContain('--parity must be a number from 0 to 100');
 });
 
-test('analyze reports no false unreferenced-resources hint for the Fox (harness environment disposal)', {
+test('analyze reports no false unreferenced-resources hint for the Fox', {
   tag: '@corpus',
 }, async ({ forge }) => {
   test.setTimeout(600_000);
@@ -122,7 +123,7 @@ test('analyze reports no false unreferenced-resources hint for the Fox (harness 
   expect(snapshot.memory.unreferenced).toEqual({ geometries: 0, textures: 0 });
 });
 
-test('analyze fails the verdict on a tiny budget (exit 1), usage on a missing file (exit 2), and --no-compile skips the compile', {
+test('analyze exits 1 over budget, 2 on a missing file, and skips compile with --no-compile', {
   tag: '@corpus',
 }, async ({ forge }) => {
   test.setTimeout(600_000);
@@ -254,7 +255,7 @@ test('explain, schema and help are pure and fast', () => {
   expect(help.stdout).toContain('analyze');
 });
 
-test('usage errors exit 2 with nothing on stdout, and a boolean flag never swallows the argument after it', {
+test('usage errors exit 2 with nothing on stdout; a boolean flag swallows no argument', {
   tag: '@corpus',
 }, () => {
   const typo = run(['explain', 'untagged', '--jsonn']);
@@ -274,7 +275,7 @@ test('usage errors exit 2 with nothing on stdout, and a boolean flag never swall
   expect(JSON.parse(swallowed.stdout).code).toBe('untagged');
 });
 
-test('analyze --bake --views keeps parity on a multi-part static asset and reports what the bake removed', {
+test('analyze --bake --views keeps parity on a multi-part asset and reports the bake', {
   tag: '@corpus',
 }, async ({ forge }) => {
   test.setTimeout(600_000);
@@ -307,7 +308,7 @@ test('analyze --bake --views keeps parity on a multi-part static asset and repor
   expect(r.stderr).toContain('bake:');
 });
 
-test('analyze --bake --json output validates against ANALYZE_SCHEMA, compiled standalone in ajv (self-contained $defs)', {
+test('analyze --bake --json validates against ANALYZE_SCHEMA compiled standalone in ajv', {
   tag: '@corpus',
 }, async ({ forge }) => {
   test.setTimeout(600_000);
@@ -441,7 +442,7 @@ test('optimize changes zero pixels of the Fox at --parity 0 in every view, skin 
  * takes 1e-4 back, which shifts the Fox's posed silhouette by 1-5 pixels of 921,600, under `diffPct`'s three-decimal
  * rounding on WebGL2. The raw changed-pixel count on both backends is the guard.
  */
-test('optimize --preset safe --resample changes zero pixels of the Fox at --parity 0: the flag runs resample losslessly', {
+test('optimize --preset safe --resample changes zero Fox pixels at --parity 0', {
   tag: '@corpus',
 }, async ({ forge }) => {
   test.setTimeout(600_000);
@@ -577,7 +578,7 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
  */
 const BALANCED_PARITY = 0.05;
 
-test('optimize --preset balanced quantizes and re-encodes the Fox, changing pixels but staying inside a measured 0.05 %', {
+test('optimize --preset balanced changes Fox pixels but stays inside a measured 0.05 %', {
   tag: '@corpus',
 }, async ({ forge }) => {
   test.setTimeout(600_000);
@@ -652,7 +653,7 @@ test('optimize --preset balanced quantizes and re-encodes the Fox, changing pixe
  * `balanced` is the fixture because it is measurably lossy (weld, quantize and the WebP re-encode move 21-141 pixels
  * per view across the two backends), so `--parity 0` must reject it on both; the `safe` tests above exit 0.
  */
-test('optimize exits 1 when --parity 0 is not met, from the built binary and not only the decision path', {
+test('optimize exits 1 from the built binary when --parity 0 is not met', {
   tag: '@corpus',
 }, async ({ forge }) => {
   test.setTimeout(600_000);
@@ -699,7 +700,7 @@ test('optimize exits 1 when --parity 0 is not met, from the built binary and not
   }
 });
 
-test('optimize --preset aggressive --compress meshopt lowers triangles, needs the decoder, and loads through the harness', {
+test('optimize aggressive --compress meshopt cuts triangles and loads with the decoder', {
   tag: '@corpus',
 }, async ({ forge }) => {
   test.setTimeout(600_000);
@@ -747,7 +748,7 @@ test('optimize --preset aggressive --compress meshopt lowers triangles, needs th
   }
 });
 
-test('optimize --no-verify runs without a browser; a missing file, an out-of-directory resource URI and a non-glTF --out are usage errors', {
+test('optimize --no-verify needs no browser; bad file, resource URI and --out are usage errors', {
   tag: '@corpus',
 }, () => {
   const dir = mkdtempSync(join(tmpdir(), 'forge-opt-'));
@@ -781,7 +782,7 @@ test('optimize --no-verify runs without a browser; a missing file, an out-of-dir
  * outside the confined static server. The whole run is the temporary file below, so this test needs no downloaded
  * content and runs in CI's `--grep-invert "@corpus|@bench"` selection.
  */
-test('analyze refuses an asset whose buffer URI points off the served origin (exit 2, before a browser opens)', () => {
+test('analyze refuses an off-origin buffer URI with exit 2 before a browser opens', () => {
   const dir = mkdtempSync(join(tmpdir(), 'forge-analyze-uri-'));
   try {
     const hostile = join(dir, 'hostile.gltf');

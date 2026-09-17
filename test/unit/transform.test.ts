@@ -65,7 +65,7 @@ describe('countsOf and statsOf', () => {
 });
 
 describe('applySteps', () => {
-  it('dedup shares identical accessors, palette merges colour-only materials, prune drops the leftovers', async () => {
+  it('dedup shares accessors, palette merges colour-only materials, prune drops leftovers', async () => {
     const doc = quads(6);
     const deps = await loadDeps([], false);
     const reports = await applySteps(doc, [step('dedup'), step('palette', { min: 5 }), step('prune')], deps, log);
@@ -80,7 +80,7 @@ describe('applySteps', () => {
     expect(doc.getRoot().listMeshes()[0]!.listPrimitives()[0]!.listSemantics()).toEqual(['POSITION', 'TEXCOORD_0']);
   });
 
-  it('weld merges duplicate vertices; simplify lowers triangles; quantize and meshopt add their extensions', async () => {
+  it('weld merges vertices, simplify cuts triangles, quantize and meshopt add extensions', async () => {
     const doc = quads(1, { unwelded: true });
     const deps = await loadDeps(
       [step('simplify', { ratio: 0.5, error: 0.001 }), step('meshopt', { level: 'medium' })],

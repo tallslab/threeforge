@@ -46,7 +46,7 @@ function batchedScene() {
 }
 
 describe('World.markDirty', () => {
-  it('moves a batched original: recomposes matrices, updates the batch matrix and the BVH leaf, returns the count', () => {
+  it('updates the batch matrix and BVH leaf of a moved original and returns the count', () => {
     const { scene, props, a } = batchedScene();
     const world = new World(scene);
     world.compile();
@@ -140,7 +140,7 @@ describe('World.markDirty bounds', () => {
     }
   }
 
-  it('recomputes the bounds of a touched batch once, so an instance moved to x = 500 stays inside them and in view', () => {
+  it('recomputes touched batch bounds once, so an instance moved to x = 500 stays in view', () => {
     const { scene, props, a } = batchedScene();
     const world = new World(scene);
     world.compile();
@@ -274,7 +274,7 @@ describe('World.markDirty with originals: "detach"', () => {
     return new Matrix4().multiplyMatrices(formerParent.matrixWorld, mesh.matrix);
   }
 
-  it('rewrites a detached direct child of the translated, scaled scene to its former scene-relative transform', () => {
+  it('rewrites a detached direct child of a transformed scene to its scene-relative place', () => {
     const { scene, direct } = detachedScene();
     const world = new World(scene, { originals: 'detach' });
     world.compile();
@@ -292,7 +292,7 @@ describe('World.markDirty with originals: "detach"', () => {
     drawn.elements.forEach((e, i) => expect(e).toBeCloseTo(expected.elements[i]!, 3));
   });
 
-  it('rewrites a detached nested original (scene, a transformed group, then the mesh) to its former scene-relative transform: batched and instanced', () => {
+  it('rewrites detached nested originals, batched and instanced, to their former place', () => {
     const { scene, group, nestedBatched, nestedInstanced } = detachedScene();
     const world = new World(scene, { originals: 'detach', instanceThreshold: 4 });
     world.compile();
@@ -321,7 +321,7 @@ describe('World.markDirty with originals: "detach"', () => {
     drawnInstanced!.elements.forEach((e, i) => expect(e).toBeCloseTo(expectedInstanced.elements[i]!, 3));
   });
 
-  it('markDirty on the former parent rewrites its detached descendants (batched and instanced), using the parent’s current transform', () => {
+  it('markDirty on a former parent rewrites its detached descendants at its new place', () => {
     const { scene, group, nestedBatched, nestedInstanced } = detachedScene();
     const world = new World(scene, { originals: 'detach', instanceThreshold: 4 });
     world.compile();
@@ -347,7 +347,8 @@ describe('World.markDirty with originals: "detach"', () => {
     drawnInstanced!.elements.forEach((e, i) => expect(e).toBeCloseTo(expectedInstanced.elements[i]!, 3));
   });
 
-  it('keeps a detached original’s composed world matrix through an unforced updateMatrixWorld(), so a detached child composed from it lands right', () => {
+  it('keeps a detached original’s composed matrix through an unforced updateMatrixWorld()', () => {
+    // A detached child composed from that matrix has to land where the original was.
     const scene = new Scene();
     scene.position.set(10, -3, 4);
     scene.scale.set(2, 1, 3);
@@ -396,7 +397,7 @@ describe('World.markDirty with originals: "detach"', () => {
     drawn.elements.forEach((e, i) => expect(e, `child drawn[${i}]`).toBeCloseTo(expected.elements[i]!, 4));
   });
 
-  it('rebakes a detached, nested, baked original at its former scene-relative place, after markDirty on the module and on its former parent', () => {
+  it('rebakes a detached nested original in place from markDirty on it or its old parent', () => {
     const scene = new Scene();
     scene.position.set(10, -3, 4);
     scene.scale.set(2, 1, 3);

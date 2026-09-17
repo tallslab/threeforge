@@ -86,7 +86,7 @@ describe('World sprite batching', () => {
     expect(report.after.spriteBatches).toBe(3);
   });
 
-  it('skips sprites under a render-ordered Group ancestor or an enabled ClippingGroup ancestor, naming the rule (root threaded from the scene)', () => {
+  it('skips sprites under a render-ordered Group or a ClippingGroup, naming the rule', () => {
     const { registry, ledger, scene } = attachedLedger();
     const shared = new SpriteMaterial({ color: 0xffffff });
     const ordered = new Group();
@@ -218,7 +218,7 @@ describe('World sprite batch material', () => {
     }
   });
 
-  it('compiles sprites whose material userData cannot be serialised (circular, BigInt), restores it, and leaves the batch material userData empty', () => {
+  it('compiles sprites with unserialisable userData, restores it, leaves the batch none', () => {
     const circular: Record<string, unknown> = { name: 'loop' };
     circular.self = circular;
     const cases: Array<[string, Record<string, unknown>]> = [
@@ -244,7 +244,8 @@ describe('World sprite batch material', () => {
     }
   });
 
-  it('leaves unbatched, with their rule, node-material sprites with a node slot set and sprites that draw other than one instance; a node material with every slot null still batches', () => {
+  it('skips, naming a rule, sprites with a node slot set or a count other than one', () => {
+    // A node material with every slot null still batches.
     const scene = new Scene();
     const node = (set: (m: SpriteNodeMaterial) => void): SpriteMaterial => {
       const material = new SpriteNodeMaterial({ transparent: false });

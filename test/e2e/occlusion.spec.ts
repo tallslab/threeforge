@@ -92,9 +92,7 @@ function windowScene(mirror: boolean): void {
   f.scene.updateMatrixWorld(true);
 }
 
-test('the camera inside a batch box keeps the batch visible, and queries issued from inside never hide it after the camera leaves', async ({
-  forge,
-}) => {
+test('the camera inside a batch box keeps it visible; queries from inside never hide it later', async ({ forge }) => {
   await forge.open('empty', { occlusion: '1' });
   await forge.page.evaluate(() => {
     const f = window.__forge;
@@ -245,7 +243,7 @@ for (const mirrored of [false, true] as const) {
 }
 
 for (const mode of ['frame', 'async'] as const) {
-  test(`warmup (${mode}) issues no occlusion queries: a batch seen through a window stays visible in the frames after it`, async ({
+  test(`warmup (${mode}) issues no occlusion queries; a batch seen through a window stays visible`, async ({
     forge,
   }) => {
     await forge.open('empty', { occlusion: '1' });
@@ -300,9 +298,7 @@ for (const mode of ['frame', 'async'] as const) {
   });
 }
 
-test('a batch-synced mover that leaves its batch box stays visible: batches holding synced movers get no proxy', async ({
-  forge,
-}) => {
+test('a batch-synced mover leaving its batch box stays visible: synced batches get no proxy', async ({ forge }) => {
   await forge.open('empty', { occlusion: '1', dynamics: 'batch-sync' });
   await forge.page.evaluate(() => {
     const f = window.__forge;

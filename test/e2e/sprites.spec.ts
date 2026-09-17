@@ -3,7 +3,7 @@ import { pixelDiff, settle } from './pixels.js';
 
 /** Sprite batching must not change a pixel: every case compares the naive render with the compiled one. */
 
-test('the lake: 2000 raindrop sprites become one submission per pass, pixels stay, decompile restores', {
+test('the lake: 2000 raindrop sprites become one submission per pass and decompile at parity', {
   tag: '@corpus',
 }, async ({ forge }) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');

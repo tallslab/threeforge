@@ -5,7 +5,7 @@ import { attachedLedger } from './helpers/ledger.js';
 // The fake calls `scene.onBeforeRender` inside render(), so a clock ticked there lands inside the ledger's timing of the
 // render, and `scene.onAfterRender` runs after the draws and before the ledger files the frame.
 describe('js section', () => {
-  it('measures render duration and frame interval with the injected clock, and counts auto-updated matrices', () => {
+  it('measures render time, frame interval and auto-updated matrices', () => {
     let t = 0;
     const { renderer, ledger, scene, camera } = attachedLedger({ sceneHooks: true }, { now: () => t });
     // render() takes 3 ms; frames start 16 ms apart
@@ -27,7 +27,7 @@ describe('js section', () => {
     expect(js.autoUpdatedMatrices).toBe(1);
   });
 
-  it('stops renderMs when the ledger starts filing the frame: a 20 ms rescan shows in ledgerMs and leaves renderMs unchanged (queued clock)', () => {
+  it('charges a rescan to ledgerMs and leaves renderMs unchanged', () => {
     // The injected clock moves only by the costs queued on it: 3 ms per render() call, 20 ms per rescan.
     let t = 0;
     const { renderer, ledger, scene, camera } = attachedLedger({ sceneHooks: true }, { now: () => t });
@@ -66,7 +66,7 @@ describe('js section', () => {
    * value the render cost alone produced) and once when filing is done, so a correct split reports renderMs 3 and
    * ledgerMs 7.
    */
-  it("charges the ledger's own filing work to ledgerMs on an ordinary frame, and leaves renderMs the render alone", () => {
+  it('charges its own filing to ledgerMs and leaves renderMs to the render', () => {
     let t = 0;
     let filing = false;
     // Post-increment: the reading is what the clock said before the ledger's own 7 ms of filing began.

@@ -82,7 +82,7 @@ describe('DrawCallLedger snapshot, report and budget', () => {
     expect(over.offenders[0]).toMatchObject({ reason: 'dynamic', submissions: 4 });
   });
 
-  it('counts particles (points honouring drawRange, sprites, sprite batches) and drawing-buffer pixels', () => {
+  it('counts points by drawRange, sprites, sprite batches and drawing-buffer pixels', () => {
     const { renderer, ledger, scene, camera } = attachedLedger();
     (renderer as unknown as { getDrawingBufferSize: (t: Vector2) => Vector2 }).getDrawingBufferSize = (t: Vector2) =>
       t.set(800, 600);
@@ -136,7 +136,7 @@ describe('DrawCallLedger snapshot, report and budget', () => {
     expect(ledger.frame().js.skipped).toBe(0);
   });
 
-  it('rescans a scene holding a node whose userData is null instead of throwing, and still fills the memory and hint sections', () => {
+  it('rescans past a null userData and still fills the memory and hint sections', () => {
     const { renderer, ledger, scene, camera } = attachedLedger();
     const statics = ['a', 'b', 'c'].map((name) => {
       const mesh = tag.static(new Mesh(box, new MeshStandardMaterial()));
@@ -161,7 +161,7 @@ describe('DrawCallLedger snapshot, report and budget', () => {
     expect(ledger.frame().js.objects).toBe(4);
   });
 
-  it('names no point light or transmissive mesh under a hidden parent, and no point-light shadow while shadow maps are off', () => {
+  it('names nothing under a hidden parent and no point-light shadow with shadow maps off', () => {
     const { renderer, ledger, scene, camera } = attachedLedger();
     const hidden = new Group();
     hidden.name = 'hidden';

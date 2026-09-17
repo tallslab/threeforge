@@ -148,7 +148,7 @@ describe('analyze --parity judges the compile parity like optimize', () => {
     expect(doc.verdict.pass).toBe(true);
   });
 
-  it('fails one changed pixel at --parity 0, judged on the raw count, with the same verdict reason as optimize', async () => {
+  it('fails one changed pixel at --parity 0 with the same verdict reason as optimize', async () => {
     const doc = await analyzeWith(['--parity', '0'], onePixel);
     expect(doc.parity).toMatchObject({ threshold: 0, pass: false });
     expect(doc.verdict.pass).toBe(false);

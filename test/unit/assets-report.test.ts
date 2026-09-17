@@ -223,7 +223,7 @@ describe('renderReport', () => {
     expect(lines.at(-1)).toBe('| Fox | 1 |  |  |  | 1 | 1 |  |  | 0 | 0 | 1 |  |  |');
   });
 
-  it('counts an asset as clean only when it has no error, nothing unattributed, few changed pixels and decompiles back', () => {
+  it('counts an asset as clean only when none of the four checks trips', () => {
     const rows = [
       stampRow(row('Ok'), stamp),
       stampRow(row('Errored', { error: 'boom' }), stamp),
@@ -350,7 +350,8 @@ describe('corpusPlan', () => {
     { name: 'three-textures', entry: 'three-textures/spark1.png', error: '404 spark1.png' },
   ];
 
-  it('expects an asset that failed to download, and attempts it so its test fails instead of vanishing', () => {
+  it('expects and attempts an asset that failed to download, so its test fails', () => {
+    // Attempted so its test fails instead of the asset vanishing from the run.
     const plan = corpusPlan(lists, undefined);
     expect(plan.expected).toEqual(['Duck', 'Fox', 'Buggy', 'Sponza']);
     expect(plan.attempt.map((a) => a.name)).toEqual(['Duck', 'Fox', 'Buggy', 'Sponza']);
@@ -371,7 +372,8 @@ describe('corpusPlan', () => {
     expect(markdownBlock({ backend: 'webgl2', rows, expected: shrunken, run: stamp.run, env: {} })).toBeNull();
   });
 
-  it('does not attempt an errored asset FORGE_ASSETS filtered out on purpose, so a subset run still passes', () => {
+  it('does not attempt an errored asset FORGE_ASSETS filtered out', () => {
+    // A subset run must still pass when the errored asset was left out on purpose.
     const plan = corpusPlan(lists, ['Fox', 'Duck']);
     expect(plan.attempt.map((a) => a.name)).toEqual(['Duck', 'Fox']);
     expect(plan.attempt.some((a) => a.error)).toBe(false);
@@ -382,7 +384,8 @@ describe('corpusPlan', () => {
     expect(markdownBlock({ backend: 'webgl2', rows, expected: plan.expected, run: stamp.run, env: {} })).not.toBeNull();
   });
 
-  it('attempts an errored asset FORGE_ASSETS names, because asking for it and not getting it is a failure', () => {
+  it('attempts an errored asset FORGE_ASSETS names', () => {
+    // Asking for an asset and not getting it is a failure.
     const plan = corpusPlan(lists, ['Buggy']);
     expect(plan.attempt).toEqual([model('Buggy', { error: '404 https://example.invalid/Buggy.glb' })]);
   });
@@ -393,7 +396,8 @@ describe('corpusPlan', () => {
     expect(plan.unknown).toEqual(['Foxx', 'waternormals']);
   });
 
-  it('counts an errored entry of unknown type as expected: without an entry it cannot be shown not to be a model', () => {
+  it('counts an errored entry of unknown type as expected', () => {
+    // Without an entry, the item cannot be shown not to be a model.
     const plan = corpusPlan([model('Fox'), { name: 'polyhaven-boulder_01', error: 'no gltf variant' }], undefined);
     expect(plan.expected).toEqual(['Fox', 'polyhaven-boulder_01']);
   });

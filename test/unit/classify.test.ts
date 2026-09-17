@@ -97,14 +97,15 @@ describe('classify', () => {
     expect(one(hidden)).toMatchObject({ kind: 'excluded', rule: 'invisible' });
   });
 
-  it('excludes transmissive materials: three scales volume thickness by the object matrix, which a batch cannot reproduce', () => {
+  it('excludes transmissive materials, whose thickness follows the object matrix', () => {
+    // three scales volume thickness by the object matrix, which a batch cannot reproduce.
     const glass = tag.static(new Mesh(box, new MeshPhysicalMaterial({ transmission: 0.8 })));
     expect(one(glass)).toMatchObject({ kind: 'excluded', rule: 'transmission' });
     const solidPhysical = tag.static(new Mesh(box, new MeshPhysicalMaterial({ transmission: 0, clearcoat: 1 })));
     expect(one(solidPhysical)).toMatchObject({ kind: 'static' });
   });
 
-  it('excludes mirrored meshes (negative world determinant) without requiring matrices to be updated first', () => {
+  it('excludes a negative-determinant mesh without updating matrices first', () => {
     const mirrored = tag.static(new Mesh(box, mat()));
     mirrored.scale.x = -1;
     expect(one(mirrored)).toMatchObject({ kind: 'excluded', rule: 'mirrored' });
@@ -117,7 +118,8 @@ describe('classify', () => {
     expect(classify(scene)[0]).toMatchObject({ kind: 'excluded', rule: 'mirrored' });
   });
 
-  it('under a mirrored scene, decides mirrored by the determinant relative to the root: three flips a batch by the scene, never per instance', () => {
+  it('decides mirrored by the determinant relative to a mirrored scene root', () => {
+    // three flips a batch by the scene matrix, never per instance.
     const scene = new Scene();
     scene.scale.x = -1;
     // Case A: mirrored again, so positive in the world but mirrored relative to the scene.
@@ -211,7 +213,8 @@ describe('classify', () => {
     expect(classify(scene)[0]).toMatchObject({ kind: 'excluded', rule: 'group-render-order' });
   });
 
-  it('a non-Group Object3D ancestor never sets groupOrder: three only reads renderOrder off isGroup objects', () => {
+  it('ignores renderOrder on a non-Group ancestor for groupOrder', () => {
+    // three reads renderOrder only off isGroup objects.
     const scene = new Scene();
     const group = new Group();
     group.renderOrder = 0;
@@ -232,7 +235,8 @@ describe('classify', () => {
     expect(classify(scene)[0]).toMatchObject({ kind: 'excluded', rule: 'invisible-ancestor' });
   });
 
-  it('skips the ancestor-scoped rules when exclusionRule is called without a root: there is no boundary to walk to', () => {
+  it('skips the ancestor-scoped rules when exclusionRule has no root', () => {
+    // Without a root there is no boundary to walk to.
     const group = new Group();
     group.visible = false;
     const child = tag.static(new Mesh(box, mat()));

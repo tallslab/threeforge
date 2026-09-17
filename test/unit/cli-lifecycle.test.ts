@@ -168,7 +168,7 @@ describe('Resources after an abort', () => {
     expect(closed).toBe(2);
   });
 
-  it('a client that disconnects while the browser launches: analyze closes the browser it gets and never opens a page', async () => {
+  it('closes the browser and opens no page when the client leaves during launch', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'forge-lifecycle-'));
     try {
       const file = join(dir, 'a.glb');
@@ -352,7 +352,7 @@ describe('analyze and inspect release what they opened', () => {
     }
   });
 
-  it('an inspect hook that never resolves becomes a PageError after the timeout, and the browser is closed', async () => {
+  it('times out a hook that never resolves as a PageError and closes the browser', async () => {
     let browserClosed = 0;
     const launch = async (): Promise<BrowserHandle> => ({
       newPage: async () => stuckPage(),
@@ -452,7 +452,8 @@ describe('every wait is governed by --timeout', () => {
     });
   });
 
-  it('passes the same bound to Playwright, so the operation itself is cancelled and not merely abandoned', async () => {
+  it('passes the same bound to Playwright, cancelling the operation itself', async () => {
+    // With its own bound, Playwright cancels the operation rather than leaving it abandoned.
     await withAsset(async (file, dir) => {
       const options: Array<Record<string, unknown> | undefined> = [];
       const launch = async (): Promise<BrowserHandle> => ({

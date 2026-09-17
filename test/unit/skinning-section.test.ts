@@ -24,7 +24,7 @@ const record = (over: Partial<SubmissionRecord>): SubmissionRecord => ({
 });
 
 describe('skinningOf with animated instances', () => {
-  it('counts vat instances and their vertices next to bone-skinned draws, main pass only (numbered shadow passes included)', () => {
+  it('counts vat instances and vertices beside skinned draws, main pass only', () => {
     const items = [
       record({ name: 'hero', kind: 'skinned', vertices: 1200, bones: 40, skeleton: 0 }),
       record({ name: 'forge:vat:body', reason: 'vat-instanced', instances: 25, instancesDrawn: 25, vertices: 804 }),

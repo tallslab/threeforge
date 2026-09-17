@@ -45,7 +45,8 @@ describe('MaterialRegistry.register', () => {
     expect(registry.stats().merged).toBe(1);
   });
 
-  it('keeps materials that differ only by colour as separate canonicals under one variant (batchable via per-instance colour)', () => {
+  it('keeps colour-only variants as separate canonicals under one program variant', () => {
+    // One variant, so both batch into one BatchedMesh with per-instance colour.
     const registry = new MaterialRegistry();
     const red = registry.register(new MeshStandardMaterial({ color: 0xff0000 }));
     const blue = registry.register(new MeshStandardMaterial({ color: 0x0000ff }));
@@ -68,7 +69,7 @@ describe('MaterialRegistry.register', () => {
     expect(registry.stats().byProgram[0]).toMatchObject({ variants: 2 });
   });
 
-  it('treats a texture slot, transparency, side and material type as shader variants (new programs)', () => {
+  it('treats a texture slot, transparency, side and material type as new programs', () => {
     const registry = new MaterialRegistry();
     const base = registry.register(new MeshStandardMaterial());
     const mapped = registry.register(new MeshStandardMaterial({ map: texture() }));
@@ -83,7 +84,7 @@ describe('MaterialRegistry.register', () => {
     expect(registry.stats().programs).toBe(5);
   });
 
-  it('merges materials sharing the same texture object and separates different texture objects within one program', () => {
+  it('merges materials that share a texture object and separates different ones', () => {
     const registry = new MaterialRegistry();
     const t1 = texture();
     const t2 = texture();
@@ -105,7 +106,7 @@ describe('MaterialRegistry.register', () => {
     expect(registry.describe(a).programHash).not.toBe(registry.describe(b).programHash);
   });
 
-  it('treats physical feature gates (transmission > 0) as program-affecting but their magnitude as uniform', () => {
+  it('treats transmission > 0 as a program gate and its magnitude as a uniform', () => {
     const registry = new MaterialRegistry();
     const off = registry.register(new MeshPhysicalMaterial({ transmission: 0 }));
     const low = registry.register(new MeshPhysicalMaterial({ transmission: 0.3 }));
@@ -187,7 +188,7 @@ describe('MaterialRegistry exact colour keys', () => {
     expect(registry.describe(a).variantHash).not.toBe(registry.describe(b).variantHash);
   });
 
-  it('keeps colours 0.3/255 apart as separate canonicals, not merged, even though they share an 8-bit hex', () => {
+  it('keeps colours 0.3/255 apart separate though they share an 8-bit hex', () => {
     const registry = new MaterialRegistry();
     const base = new Color().setRGB(0.5, 0.5, 0.5);
     const near = new Color().setRGB(0.5 + 0.3 / 255, 0.5, 0.5);
@@ -201,7 +202,7 @@ describe('MaterialRegistry exact colour keys', () => {
     expect(db.outcome).toBe('color-variant');
   });
 
-  it('joins the variant key with `visible` only when it is false, so a hidden material never merges with a visible twin', () => {
+  it('never merges a hidden material with a visible twin: `visible` keys when false', () => {
     const registry = new MaterialRegistry();
     const visible = registry.register(new MeshStandardMaterial({ color: 0xff0000 }));
     const invisible = registry.register(new MeshStandardMaterial({ color: 0xff0000, visible: false }));
@@ -217,7 +218,7 @@ describe('MaterialRegistry exact colour keys', () => {
 });
 
 describe('MaterialRegistry caching', () => {
-  it('describe() does not re-hash on repeated calls: computeMaterialKeys and hashKey each run once per material', () => {
+  it('describe() runs computeMaterialKeys and hashKey once per material', () => {
     const registry = new MaterialRegistry();
     const computeSpy = vi.spyOn(materialKeyModule, 'computeMaterialKeys');
     const hashSpy = vi.spyOn(materialKeyModule, 'hashKey');
@@ -236,7 +237,7 @@ describe('MaterialRegistry caching', () => {
     hashSpy.mockRestore();
   });
 
-  it('invalidate() re-keys a mutated material: describe() keeps returning stale hashes until invalidate is called', () => {
+  it('invalidate() re-keys a mutated material whose hashes were stale until then', () => {
     const registry = new MaterialRegistry();
     const material = new MeshStandardMaterial({ roughness: 0.2 });
     registry.register(material);
@@ -250,7 +251,7 @@ describe('MaterialRegistry caching', () => {
     expect(after.programHash).toBe(before.programHash); // roughness is a uniform, not a program key
   });
 
-  it('forget() drops a canonical material: describe() reports it unregistered and stats shrink back', () => {
+  it('forget() drops a canonical: describe() says unregistered and stats shrink back', () => {
     const registry = new MaterialRegistry();
     const a = registry.register(new MeshStandardMaterial({ color: 0xff0000 }));
     const before = registry.stats();
@@ -262,7 +263,7 @@ describe('MaterialRegistry caching', () => {
     expect(after.canonical).toBe(before.canonical - 1);
   });
 
-  it('stats().registered counts materials, not register() calls: a repeat registration adds nothing and one forget() undoes it', () => {
+  it('stats().registered counts materials, not register() calls', () => {
     const registry = new MaterialRegistry();
     const a = new MeshStandardMaterial({ color: 0xff0000 });
     const unsupported = new ShaderMaterial();
@@ -279,7 +280,7 @@ describe('MaterialRegistry caching', () => {
     expect(registry.stats()).toMatchObject({ registered: 0, canonical: 0, merged: 0, unsupported: 0 });
   });
 
-  it('stats() registered, merged and unsupported follow the records through register, merge, invalidate and forget', () => {
+  it('stats() follows the records through register, merge, invalidate and forget', () => {
     const registry = new MaterialRegistry();
     const counts = () => {
       const { registered, canonical, merged, unsupported } = registry.stats();
@@ -365,7 +366,7 @@ describe('MaterialRegistry caching', () => {
 });
 
 describe('MaterialRegistry.keys', () => {
-  it('returns the hashes describe() reports from the key cache: the same object on every call, no key or hash recomputed', () => {
+  it('returns the cached hashes describe() reports, the same object on every call', () => {
     const registry = new MaterialRegistry();
     const computeSpy = vi.spyOn(materialKeyModule, 'computeMaterialKeys');
     const hashSpy = vi.spyOn(materialKeyModule, 'hashKey');
@@ -396,7 +397,7 @@ describe('MaterialRegistry.keys', () => {
     expect(registry.keys(shader).programHash).toBe(registry.describe(shader).programHash);
   });
 
-  it('returns the re-filed hashes after invalidate(), and leaves a result held from before unchanged', () => {
+  it('returns re-filed hashes after invalidate() and leaves an earlier result unchanged', () => {
     const registry = new MaterialRegistry();
     const material = new MeshStandardMaterial({ roughness: 0.2 });
     registry.register(material);
@@ -438,7 +439,7 @@ describe('MaterialRegistry.keys', () => {
 });
 
 describe('MaterialRegistry.invalidate: re-files under the new keys, not just the describe() cache', () => {
-  it('removes the stale canonicalByFullKey entry: a fresh material matching the OLD state no longer merges into the mutated canonical', () => {
+  it('drops the stale full-key entry, so a match for the old state no longer merges', () => {
     const registry = new MaterialRegistry();
     const a = new MeshStandardMaterial({ roughness: 0.2 });
     expect(registry.register(a)).toBe(a);
@@ -500,7 +501,7 @@ describe('MaterialRegistry.invalidate: re-files under the new keys, not just the
     expect(another).toBe(duplicate); // findable at its new key
   });
 
-  it('leaves a material already merged into the old canonical resolving to it, even after the canonical mutates', () => {
+  it('keeps a merged material resolving to its canonical after that canonical mutates', () => {
     const registry = new MaterialRegistry();
     const a = new MeshStandardMaterial({ roughness: 0.2 });
     expect(registry.register(a)).toBe(a);
@@ -519,7 +520,7 @@ describe('MaterialRegistry.invalidate: re-files under the new keys, not just the
 });
 
 describe('MaterialRegistry.forget: disposal hazard and re-registration', () => {
-  it('forgetting a canonical does not clear its dependents: they keep resolving to the (still live) forgotten object', () => {
+  it('keeps dependents resolving to a forgotten canonical, which stays live', () => {
     const registry = new MaterialRegistry();
     const a = registry.register(new MeshStandardMaterial({ color: 0xff0000, roughness: 0.5 }));
     const duplicate = new MeshStandardMaterial({ color: 0xff0000, roughness: 0.5 });
@@ -529,7 +530,7 @@ describe('MaterialRegistry.forget: disposal hazard and re-registration', () => {
     expect(registry.canonicalOf(duplicate)).toBe(a); // untouched bookkeeping; disposing `a` now would break `duplicate`
   });
 
-  it('forgetting a canonical, then registering an identical new material, creates a fresh distinct canonical', () => {
+  it('registers a fresh canonical for a twin of a forgotten one', () => {
     const registry = new MaterialRegistry();
     const a = registry.register(new MeshStandardMaterial({ color: 0xff0000 }));
     registry.forget(a);

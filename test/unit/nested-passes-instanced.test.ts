@@ -48,7 +48,7 @@ const _box = new Box3();
 describe.each(backends)(
   'more shadow cameras in a frame than the caster bitmask has bits (webgpu: $webgpu)',
   ({ webgpu }) => {
-    it('falls back to appending the whole union past the 32nd camera, and still draws every caster that camera needs', () => {
+    it('appends the whole union past the 32nd camera and still draws every caster', () => {
       // `bitFor` (src/compiler/instancing.ts) gives each shadow camera of the frame one bit of a Uint32, and
       // `appendCasters` appends only the casters the camera reaches. Past the 32nd camera no bit is left, so the
       // per-light filter is skipped and the pass appends the frame's whole union: more than the light needs, but never
@@ -166,7 +166,7 @@ describe.each(backends)('compacted InstancedMesh in nested passes (webgpu: $webg
         }
       });
 
-      it("serves two suns and a point light's six faces from rows appended once, restoring count after every shadow render", () => {
+      it('serves two suns and six point faces from rows appended once, restoring count', () => {
         const r = instancedRig({
           webgpu,
           nested,
@@ -192,7 +192,7 @@ describe.each(backends)('compacted InstancedMesh in nested passes (webgpu: $webg
         }
       });
 
-      it('appends to each shadow light only the casters that light reaches, on top of the enclosing rows in their order', () => {
+      it('appends to each shadow light only the casters it reaches, after the enclosing rows', () => {
         // Two suns with disjoint volumes, neither overlapping the main view: every appended caster belongs to exactly
         // one of them, so a pass that appended the frame's union would draw the other light's casters too.
         const r = instancedRig({
@@ -235,7 +235,7 @@ describe.each(backends)('compacted InstancedMesh in nested passes (webgpu: $webg
         }
       });
 
-      it('rewrites the appended tail once per shadow light whose casters differ from the rows it holds', () => {
+      it('rewrites the appended tail only for a light whose casters differ from the rows', () => {
         // The worst case for uploads: two disjoint caster sets, so each pass rewrites what the pass before it wrote.
         // A light whose casters are the rows already there (a point light's faces, or a set the tail starts with)
         // writes nothing; `writeRows` marks only rows that change.
@@ -256,7 +256,7 @@ describe.each(backends)('compacted InstancedMesh in nested passes (webgpu: $webg
         expect(bumps(), 'frame 2').toEqual([2, 2]);
       });
 
-      it("draws the main camera's list in a reflection drawn between the rows, which renders its own shadow map", () => {
+      it("draws the main camera's list in a reflection rendered between the rows", () => {
         const r = instancedRig({ webgpu, nested, buffers });
         insertBefore(r.scene, mirrorMesh(r.scene, cameraAt(-60, r.cs)), r.lit);
         for (let frame = 1; frame <= 2; frame++) {
@@ -276,7 +276,7 @@ describe.each(backends)('compacted InstancedMesh in nested passes (webgpu: $webg
         }
       });
 
-      it('uploads only rows that change: the main cull and one append on the first frame, nothing on a static frame, one append when the light moves', () => {
+      it('uploads only the rows that change across a first, a static and a moved-light frame', () => {
         const r = instancedRig({ webgpu, nested, buffers });
         const versions = (): number[] => [r.unlit, r.lit].map((m) => m.instanceMatrix.version);
         const frame = (): number[] => {
@@ -296,7 +296,7 @@ describe.each(backends)('compacted InstancedMesh in nested passes (webgpu: $webg
         expectInstancedPasses(r, 'frame 3');
       });
 
-      it('recovers when a nested render throws: count and the lists are exact again on the next animation frame', () => {
+      it('recovers exact count and lists on the animation frame after a nested render throws', () => {
         const r = instancedRig({ webgpu, nested, buffers });
         const thrower = new Mesh(box, new MeshBasicMaterial());
         thrower.name = 'thrower';
@@ -338,7 +338,7 @@ describe.each(backends)('compacted InstancedMesh in nested passes (webgpu: $webg
 });
 
 describe('compacted InstancedMesh driven by a PassTracker', () => {
-  function field(nestedPasses: NestedPassPolicy) {
+  function field() {
     const main = new PerspectiveCamera(60, 1.5, 0.1, 300);
     main.position.set(0, 2, 0);
     main.lookAt(100, 1, 0);
@@ -375,49 +375,41 @@ describe('compacted InstancedMesh driven by a PassTracker', () => {
     return { main, mirror, mesh, passes, run, inView };
   }
 
-  it.each(['per-pass', 'reuse-main'] as const)(
-    "draws the enclosing pass's list in a nested render that is not a shadow map, without an upload (%s)",
-    (nestedPasses) => {
-      const f = field(nestedPasses);
-      f.passes.begin(f.main);
-      f.run(f.main);
-      const ids = [...f.mesh.visibleIds];
-      expect(new Set(ids)).toEqual(f.inView(f.main));
-      const version = f.mesh.instanceMatrix.version;
+  it("draws the enclosing pass's list in a nested render that is not a shadow map, without an upload", () => {
+    const f = field();
+    f.passes.begin(f.main);
+    f.run(f.main);
+    const ids = [...f.mesh.visibleIds];
+    expect(new Set(ids)).toEqual(f.inView(f.main));
+    const version = f.mesh.instanceMatrix.version;
+    f.passes.begin(f.mirror);
+    f.run(f.mirror);
+    expect(f.mesh.visibleIds).toEqual(ids);
+    expect(f.mesh.count).toBe(ids.length);
+    expect(f.mesh.instanceMatrix.version, 'no upload for the nested pass').toBe(version);
+    f.passes.end();
+    f.passes.end();
+    expect([f.mesh.count, f.mesh.visibleIds]).toEqual([ids.length, ids]);
+  });
+
+  it('compacts for the main camera first when a nested render reaches the mesh before it', () => {
+    const f = field();
+    for (let frame = 1; frame <= 2; frame++) {
+      f.passes.begin(f.main); // the outermost render has not drawn the mesh yet
       f.passes.begin(f.mirror);
       f.run(f.mirror);
-      expect(f.mesh.visibleIds).toEqual(ids);
+      const ids = [...f.mesh.visibleIds];
+      expect(new Set(ids), `frame ${frame}: the nested render draws the main camera's list`).toEqual(f.inView(f.main));
       expect(f.mesh.count).toBe(ids.length);
-      expect(f.mesh.instanceMatrix.version, 'no upload for the nested pass').toBe(version);
       f.passes.end();
+      const version = f.mesh.instanceMatrix.version;
+      f.run(f.main);
+      expect([f.mesh.count, f.mesh.visibleIds], `frame ${frame}: the outermost render draws the same list`).toEqual([
+        ids.length,
+        ids,
+      ]);
+      expect(f.mesh.instanceMatrix.version, 'without another upload').toBe(version);
       f.passes.end();
-      expect([f.mesh.count, f.mesh.visibleIds]).toEqual([ids.length, ids]);
-    },
-  );
-
-  it.each(['per-pass', 'reuse-main'] as const)(
-    'compacts for the main camera when a nested render reaches the mesh before its outermost render does, and serves that render from it (%s)',
-    (nestedPasses) => {
-      const f = field(nestedPasses);
-      for (let frame = 1; frame <= 2; frame++) {
-        f.passes.begin(f.main); // the outermost render has not drawn the mesh yet
-        f.passes.begin(f.mirror);
-        f.run(f.mirror);
-        const ids = [...f.mesh.visibleIds];
-        expect(new Set(ids), `frame ${frame}: the nested render draws the main camera's list`).toEqual(
-          f.inView(f.main),
-        );
-        expect(f.mesh.count).toBe(ids.length);
-        f.passes.end();
-        const version = f.mesh.instanceMatrix.version;
-        f.run(f.main);
-        expect([f.mesh.count, f.mesh.visibleIds], `frame ${frame}: the outermost render draws the same list`).toEqual([
-          ids.length,
-          ids,
-        ]);
-        expect(f.mesh.instanceMatrix.version, 'without another upload').toBe(version);
-        f.passes.end();
-      }
-    },
-  );
+    }
+  });
 });

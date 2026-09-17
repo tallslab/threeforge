@@ -113,7 +113,8 @@ describe('World with bake', () => {
     }
   });
 
-  it('bakes a wall under a mirrored scene with its seams removed: the modules are outward shells in scene space', () => {
+  it('bakes a wall under a mirrored scene with its seams removed', () => {
+    // In scene space the modules are still outward shells, so every seam goes.
     const { scene } = wall(4);
     scene.scale.x = -1;
     scene.updateMatrixWorld(true);
@@ -122,7 +123,7 @@ describe('World with bake', () => {
     expect(report.bake).toEqual(expect.objectContaining({ contactFaces: 12, keptCoincidentFaces: 0, triangles: 36 }));
   });
 
-  it('keeps seams and buried faces when the material draws faces the rules assume hidden, or moves or cuts them', () => {
+  it('keeps seams and buried faces when the material draws, moves or cuts hidden faces', () => {
     const bake = (material: Material) => bakeSealed(material);
     expect(bake(new MeshStandardMaterial()).bake, 'control').toEqual(
       expect.objectContaining({ contactFaces: 4, keptCoincidentFaces: 0, buriedFaces: 12 }),
@@ -141,7 +142,8 @@ describe('World with bake', () => {
     }
   });
 
-  it('keeps seams and buried faces when the modules cast shadows: non-VSM shadow maps draw the back faces of a front-side material', () => {
+  it('keeps seams and buried faces when the modules cast shadows', () => {
+    // Non-VSM shadow maps draw the back faces of a front-side material, so a hidden face still casts.
     expect(bakeSealed(new MeshStandardMaterial()).bake, 'control').toEqual(
       expect.objectContaining({ contactFaces: 4, keptCoincidentFaces: 0, buriedFaces: 12 }),
     );
@@ -168,7 +170,7 @@ describe('World with bake', () => {
     },
   );
 
-  it('a rebake keeps the opacity decided at bake time: a tinted group whose material has extra defines keeps its seams after setVisible', () => {
+  it('rebakes a tinted group with extra defines keeping its seams after setVisible', () => {
     // A tinted group bakes with a vertex-colour clone of its material, and MeshStandardMaterial.copy() resets `defines`
     // (Material.copy() does not copy an instance `onBeforeCompile` either), so the clone alone would pass the allowlist.
     const tints = [0xff0000, 0x00ff00, 0x0000ff];
@@ -184,7 +186,7 @@ describe('World with bake', () => {
     expect(report, 'after the rebake').toEqual(expect.objectContaining({ contactFaces: 0, keptCoincidentFaces: 4 }));
   });
 
-  it('a rebake keeps the seams of shadow casters: originals that stop casting while the baked mesh still casts lose nothing', () => {
+  it('keeps the seams of shadow casters on a rebake after the originals stop casting', () => {
     const { scene, boxes } = wall(4);
     for (const box of boxes) box.castShadow = true;
     const world = new World(scene, { bake: true });
@@ -264,7 +266,7 @@ describe('World with bake', () => {
     },
   );
 
-  it('does not pair outlines shortened by an edge used three times: the top of a longer box beside a doubled box stays covered', () => {
+  it('does not pair outlines shortened by an edge used three times', () => {
     // The probe: above y = 0 a unit box at x in [0,1], one at [1,2] and a copy of it turned about y; below,
     // a unit box at [0,1], a 2x1x1 box at [1,3] and a 1x1x2 box turned about y into the same place.
     const scene = new Scene();
@@ -346,7 +348,7 @@ describe('World with bake', () => {
     for (const [label, material] of notOpaque) expect(entry(material).opaque, label).toBe(false);
   });
 
-  it('colours tinted modules by their tint alone when the material ignores vertex colours, also after a rebake', () => {
+  it('colours modules by tint alone when the material ignores vertex colours, rebake too', () => {
     const tints = [0xff0000, 0x00ff00, 0x0000ff];
     const gray = (): BufferGeometry => {
       const g = new BoxGeometry(1, 1, 1);
@@ -444,7 +446,7 @@ describe('World with bake', () => {
     expect(beforeRebake.geometry.getAttribute('position').count).toBeGreaterThan(0);
   });
 
-  it('batches instead of baking a group whose geometry carries an attribute the bake drops, and counts its meshes', () => {
+  it('batches, and counts, a group whose geometry carries an attribute the bake drops', () => {
     const rgba = (): BufferGeometry => {
       const g = new BoxGeometry(1, 1, 1);
       g.setAttribute('color', new BufferAttribute(new Float32Array(g.attributes.position!.count * 4).fill(0.4), 4));
@@ -478,7 +480,7 @@ describe('World with bake', () => {
    * the bake drops a colour the flag ignores: the baked mesh drew the default white. Only a material whose attribute reads
    * are all three's own may lose the attribute; any other goes to batching, which keeps every attribute, and is counted.
    */
-  it('batches instead of baking a group whose material may read a colour attribute its vertexColors flag ignores, and counts it', () => {
+  it('batches, and counts, a group whose material may read colour it says it ignores', () => {
     const rgb = (): BufferGeometry => {
       const g = new BoxGeometry(1, 1, 1);
       g.setAttribute('color', new BufferAttribute(new Float32Array(g.attributes.position!.count * 3).fill(0.25), 3));

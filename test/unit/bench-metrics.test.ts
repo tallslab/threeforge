@@ -93,7 +93,8 @@ describe('benchMetrics', () => {
     ).toEqual([...METRIC_KEYS].sort());
   });
 
-  it('takes programs from its argument, not from the snapshot, so the overdraw count cannot inflate it', () => {
+  it('takes programs from its argument, not from the snapshot', () => {
+    // Read from the snapshot, the overdraw count's renders could inflate it.
     const frame = emptyFrame({
       three: '186',
       backend: 'webgl2',

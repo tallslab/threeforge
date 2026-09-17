@@ -127,7 +127,7 @@ describe('createCulledInstancedMesh', () => {
     m.elements.forEach((e, i) => expect(e).toBeCloseTo(f.matrices[master]!.elements[i]!, 3));
   });
 
-  it("refreshBounds recomputes every level's box and sphere from the master matrices, not from the compacted rows", () => {
+  it('refreshBounds recomputes level bounds from master matrices, not compacted rows', () => {
     const matrices = [0, 1, 2, 3].map((i) => new Matrix4().makeTranslation(i * 2, 0, 0));
     const mesh = createCulledInstancedMesh(box, new MeshBasicMaterial(), matrices, null, WebGLCoordinateSystem, {
       lods: [new BoxGeometry(1, 1, 1)],
@@ -219,7 +219,7 @@ describe('createCulledInstancedMesh update ranges on the vertex-buffer path', ()
     return first < 0 ? null : [first, last];
   }
 
-  it('marks exactly the rows an outermost compaction changed, and both whole buffers when a nested pass writes rows', () => {
+  it('marks changed rows for an outermost compaction and whole buffers for a nested pass', () => {
     const f = rangedField();
     const before = Float32Array.from(f.mesh.instanceMatrix.array);
     f.passes.begin(f.camera);

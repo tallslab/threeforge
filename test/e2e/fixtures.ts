@@ -76,7 +76,6 @@ export async function compileAndSettle(forge: ForgePage) {
     f.ledger.rescan();
     const frame = await f.frameAsync();
     return {
-      /** Null when the World was made without `bake`. */
       bake: report.bake,
       after: report.after,
       hints: frame.hints.map((h) => ({ code: h.code, severity: h.severity })),

@@ -250,7 +250,7 @@ describe('World in a transformed scene', () => {
     return { scene, plain, again };
   }
 
-  it('writes instance data in scene space: batched, instanced, baked, sprite and synced results draw at each original', () => {
+  it('writes instance data in scene space, so every compiled result draws at its original', () => {
     const f = transformedScene();
     const world = new World(f.scene, { instanceThreshold: 6, dynamics: 'batch-sync', bake: true });
     const report = world.compile();
@@ -261,7 +261,7 @@ describe('World in a transformed scene', () => {
     expectCompiled(world, f, 'after the mover moved');
   });
 
-  it('uses the scene matrix of the moment: after the scene moves, synced movers, sprites and markDirty still land on the originals', () => {
+  it('keeps landing on the originals after the scene itself moves', () => {
     const f = transformedScene();
     const world = new World(f.scene, { instanceThreshold: 6, dynamics: 'batch-sync', bake: true });
     world.compile();
@@ -280,7 +280,7 @@ describe('World in a transformed scene', () => {
     expectCompiled(world, f, 'after markDirty in the moved scene');
   });
 
-  it('rewrites synced movers when only the scene moves: a world-anchored mover whose world matrix never changes stays where it is', () => {
+  it('rewrites synced movers when only the scene moves; a world-anchored one stays put', () => {
     const scene = new Scene();
     scene.position.set(10, 0, -5);
     scene.rotation.y = 0.3;
@@ -350,7 +350,7 @@ describe('World in a transformed scene', () => {
     ).toEqual(before);
   });
 
-  it('under a mirrored scene, batches children not mirrored relative to it and leaves children mirrored again unbatched', () => {
+  it('under a mirrored scene, batches unmirrored children and skips ones mirrored again', () => {
     const f = mirroredScene();
     const world = new World(f.scene);
     const report = world.compile();
@@ -369,7 +369,7 @@ describe('World in a transformed scene', () => {
     }
   });
 
-  it('under a mirrored scene, instances children not mirrored relative to it, with a positive instance determinant', () => {
+  it('under a mirrored scene, instances unmirrored children with a positive determinant', () => {
     // Regression guard: a repeated, non-mirrored-relative-to-root child must still compile into
     // an InstancedMesh under a mirrored scene, and its instance matrix (three flips the mesh's front face by the
     // group's own world determinant, never per instance) must keep a positive determinant, like a batched one.
@@ -413,7 +413,7 @@ describe('World in a transformed scene', () => {
     }
   });
 
-  it('under a mirrored scene, bakes children not mirrored relative to it with every front face outward, like the originals', () => {
+  it('under a mirrored scene, bakes unmirrored children with every front face outward', () => {
     const f = mirroredScene();
     for (const m of [...f.plain, ...f.again]) expect(inwardFaces(m), `${m.name} (naive)`).toBe(0);
     const world = new World(f.scene, { bake: true });

@@ -5,7 +5,7 @@ import { expect, test } from './fixtures.js';
  * on a kit-less runner this would pass green against an empty arena — a boss-fight shadow budget measured with no
  * fighters to cast the shadows. The second test below uses the procedural naive scene and stays in CI.
  */
-test('ShadowBudget on phone-low fits the boss fight shadows into 262k texels and drops the point-light shadow', {
+test('ShadowBudget on phone-low fits the boss fight in 262k texels, dropping the point light', {
   tag: '@corpus',
 }, async ({ forge }) => {
   test.setTimeout(300_000);
@@ -35,9 +35,7 @@ test('ShadowBudget on phone-low fits the boss fight shadows into 262k texels and
   expect(r.unattributed).toBe(0);
 });
 
-test('a frozen sun shadow renders once, then only on refresh, and counts texels only on the frames it renders', async ({
-  forge,
-}) => {
+test('a frozen sun shadow renders once, then on refresh, counting texels only when it renders', async ({ forge }) => {
   await forge.open('naive', { shadows: '1', 'freeze-shadow': '1' });
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;

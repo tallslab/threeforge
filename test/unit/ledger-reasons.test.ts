@@ -28,7 +28,7 @@ describe('flagsInto', () => {
     return { flags, writes: () => writes };
   };
 
-  it("rewrites a pooled record's flags in place, writing nothing when they are unchanged: no length = 0 per submission per frame", () => {
+  it("rewrites a pooled record's flags in place and writes nothing when unchanged", () => {
     // V8 releases an array's backing store when its length is set to 0, so resetting a flagged record's array and pushing
     // its flags again allocated a new store for every flagged submission of every frame (~40 bytes per submission at the
     // ledger-overhead scenes, where a quarter of the meshes cast shadows and every shadow-pass record is flagged).
@@ -52,7 +52,7 @@ describe('flagsInto', () => {
 });
 
 describe('reasonOf', () => {
-  it('finds the root and the nearest tag in one walk: tags on the object, an ancestor, the root and above the root', () => {
+  it('finds the root and the nearest tag in one walk, wherever the tag sits', () => {
     const material = new MeshStandardMaterial();
     const holder = new Group();
     const scene = new Scene();
@@ -83,7 +83,7 @@ describe('reasonOf', () => {
     expect(reasonOf(mesh, material, null, scene, false, 'excluded:mirrored')).toBe('excluded:mirrored'); // an annotation wins over tags
   });
 
-  it('walks past a null userData on the drawn object and on an ancestor instead of throwing, and still finds a tag above them', () => {
+  it('walks past a null userData on the object and an ancestor to a tag above them', () => {
     const material = new MeshStandardMaterial();
     const scene = new Scene();
     const group = new Group();

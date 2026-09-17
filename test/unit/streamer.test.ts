@@ -59,7 +59,7 @@ describe('Streamer', () => {
     expect(() => new Streamer({ world: new World(new Scene()), camera: new PerspectiveCamera() })).toThrow(/chunkSize/);
   });
 
-  it('indexes compiled objects and static tiles by cell, loads within radius and unloads past radius + margin', () => {
+  it('indexes objects by cell, loads within radius and unloads past radius + margin', () => {
     const { scene, camera, world: w, tiles } = world();
     const streamer = new Streamer({ world: w, camera }); // radius = camera.far = 25, margin one cell (20)
     const events: string[] = [];
@@ -99,7 +99,7 @@ describe('Streamer', () => {
     expect((batch as unknown as { _matricesTexture: unknown })._matricesTexture).toBeTruthy(); // not BatchedMesh.dispose()
   });
 
-  it('releases its chunks and its object index on dispose, so a decompiled World is not kept alive by the streamer', () => {
+  it('releases its chunks and object index on dispose', () => {
     const { scene, camera, world: w, tiles } = world();
     const streamer = new Streamer({ world: w, camera, radius: 5, margin: 0 }); // only cell 0 stays
     streamer.update();
@@ -185,7 +185,7 @@ describe('Streamer construction cost', () => {
     return scans;
   }
 
-  it('places every object without walking the chunks, so construction scans do not grow with the object count', () => {
+  it('places every object without walking the chunks at construction', () => {
     // Built outside the counted region: only the Streamer's own construction is measured.
     const small = spread(2000);
     const large = spread(20_000);

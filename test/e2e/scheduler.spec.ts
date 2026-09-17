@@ -1,9 +1,7 @@
 import { expect, test } from './fixtures.js';
 
 /** Render on change: idle ticks draw nothing; a camera move or invalidate() draws one frame. */
-test('RenderScheduler renders once for ten idle ticks, again on camera move and invalidate, and reports skipped ticks', async ({
-  forge,
-}) => {
+test('RenderScheduler renders once for ten idle ticks, again on camera move and invalidate', async ({ forge }) => {
   await forge.open('naive', { compile: '1', scheduler: '1' });
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;

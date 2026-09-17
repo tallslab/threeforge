@@ -89,7 +89,7 @@ function sphereTests(batch: BatchedMesh, run: () => void): number {
 }
 
 describe('attachBvhCulling', () => {
-  it('draws a subset of what the linear sphere scan draws and never drops an instance fully inside the frustum', () => {
+  it('draws a subset of the linear scan and never drops an instance inside the frustum', () => {
     const f = field(5000);
     f.cull();
     const linear = f.drawn();
@@ -189,7 +189,7 @@ describe('attachBvhCulling', () => {
     expect(f.drawn()).not.toContain(id);
   });
 
-  it('tests a small fraction of the 20k instance spheres the linear scan tests, for the same picture', () => {
+  it('tests a small fraction of the 20k spheres the linear scan tests, for the same picture', () => {
     const f = field(20_000);
     const linearTests = sphereTests(f.batch, f.cull);
     const linear = f.drawn();
@@ -265,7 +265,7 @@ describe('attachBvhCulling margin changes what is drawn', () => {
     };
   }
 
-  it('leaves out an instance whose sphere meets the frustum but whose exact box does not, and a margin draws it', () => {
+  it('skips an instance whose box misses a frustum its sphere meets, unless a margin draws it', () => {
     const none = parked(0);
     // The precondition, checked with three's own maths rather than assumed.
     const frustum = new Frustum().setFromProjectionMatrix(
@@ -319,7 +319,7 @@ describe('frustumFor', () => {
     expect(matrix.elements).toEqual(expected.elements);
   });
 
-  it('sets the shared frustum as three would, in the coordinate system and depth convention it is given', () => {
+  it('sets the shared frustum as three would for the given coordinate system and depth', () => {
     const { camera, target, expected } = setup();
     for (const coordinateSystem of [WebGLCoordinateSystem, WebGPUCoordinateSystem]) {
       for (const reversedDepth of [undefined, true]) {

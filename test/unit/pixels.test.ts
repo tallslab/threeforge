@@ -60,7 +60,7 @@ describe('pixelDiff', () => {
     expect(pixelDiff(a, b, { threshold: 15 })).toBe(0); // 15 is not > 15
   });
 
-  it('reads images of different sizes as entirely different, whichever is smaller: a render-size change is not parity', () => {
+  it('reads images of different sizes as entirely different, whichever is smaller', () => {
     // Before, a 2x1 image against a 1x1 one compared the second pixel against data past the end (NaN > threshold is
     // false) and read 0; the other way round it compared the overlap only.
     const a = png(2, 1, [
@@ -95,7 +95,7 @@ describe('pixelDiff', () => {
  * every number in `verify.parity` and the docs' measurement of `safe` at zero changed pixels rest on them.
  */
 describe('differingPixels', () => {
-  it('counts the pixels pixelDiff would, as an integer, and every pixel of the larger image when the sizes differ', () => {
+  it('counts what pixelDiff would, as an integer, and every pixel when sizes differ', () => {
     const a = png(3, 1, [
       [0, 0, 0],
       [0, 0, 0],
@@ -124,7 +124,7 @@ describe('pixelDiffPct (the CLI parity tolerance)', () => {
     expect(pixelDiffPct(png(2, 2, pixels), png(2, 2, pixels))).toBe(0);
   });
 
-  it('counts a pixel only when a channel differs by MORE than 24, and reports a percent of the pixels compared', () => {
+  it('counts a pixel only when a channel differs by more than 24, as a percent', () => {
     const a = png(4, 1, [
       [0, 0, 0],
       [0, 0, 0],
@@ -209,7 +209,7 @@ describe('pixelDiffPct (the CLI parity tolerance)', () => {
     expect(comparePixels(a, b)).toEqual({ changedPixels: 2, comparedPixels: 4, diffPct: 50 });
   });
 
-  it('reports images of different sizes as every pixel of the larger changed, so no parity threshold passes them', () => {
+  it('reports images of different sizes as every pixel of the larger changed', () => {
     // Before, the CLI's copy compared min(n) pixels by flat index: a resized canvas read as parity over the overlap,
     // with rows misaligned when the widths differ, and `--parity 0` reported it pixel-identical.
     const a = png(2, 1, [

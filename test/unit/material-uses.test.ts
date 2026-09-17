@@ -27,7 +27,7 @@ class FakeRegistry {
 const material = () => new MeshBasicMaterial();
 
 describe('MaterialUses', () => {
-  it('indexes materials in first-use order, one index per canonical, and marks one two objects draw as shared', () => {
+  it('indexes canonicals in first-use order and marks one two objects draw as shared', () => {
     const registry = new FakeRegistry();
     const first = material();
     const second = material();
@@ -54,7 +54,7 @@ describe('MaterialUses', () => {
     expect(uses.shared(index)).toBe(false);
   });
 
-  it('adds no use when `counts` is false, so renderer-internal work never makes a material shared', () => {
+  it('adds no use when `counts` is false: internal work never makes a material shared', () => {
     const uses = new MaterialUses(new FakeRegistry());
     uses.beginFrame();
     const shared = material();
@@ -82,7 +82,7 @@ describe('MaterialUses', () => {
     expect(uses.shared(0)).toBe(false);
   });
 
-  it('resolves the canonical at most once per material instance per frame, however the materials interleave', () => {
+  it("resolves each material's canonical once per frame, however they interleave", () => {
     const registry = new FakeRegistry();
     const materials = [material(), material(), material(), material()];
     const uses = new MaterialUses(registry);
@@ -113,7 +113,7 @@ describe('MaterialUses', () => {
     expect(uses.shared(index)).toBe(true);
   });
 
-  it('keeps the canonical the frame started with when register() merges a material without moving keysRevision', () => {
+  it("keeps the frame's canonical when register() merges without moving keysRevision", () => {
     // register() files a material against an existing canonical but never moves keysRevision — only invalidate() and
     // forget() do. So within a frame the answer stays the one the frame started with, exactly as the ledger's hash
     // reads behave. This is the one place an output could differ from the pre-memo ledger, so it is pinned.

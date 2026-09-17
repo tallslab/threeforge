@@ -98,7 +98,7 @@ describe('a listen failure is an EnvironmentError, not an uncaught exception', (
     expect((value as Error).message).toContain('127.0.0.1');
   });
 
-  it('keeps a handler attached after it is listening, so a later error cannot crash the process either', async () => {
+  it('keeps an error handler attached after it is listening', async () => {
     const { value: server } = await serveWith(null);
     expect(server).not.toBeInstanceOf(Error);
     expect((server as { url: string }).url).toBe('http://127.0.0.1:4321');
@@ -156,7 +156,7 @@ describe('serveStatic hardening', () => {
     expect(res.body).toBe('literal-percent-jpg-bytes');
   });
 
-  it('answers 400 for a malformed URI with no matching literal file, and the server survives to serve the next request', async () => {
+  it('answers 400 for a malformed URI with no literal file, then keeps serving', async () => {
     const bad = await rawGet(server.url, '/%E0%A4%A');
     expect(bad.status).toBe(400);
     const after = await rawGet(server.url, '/normal.txt');

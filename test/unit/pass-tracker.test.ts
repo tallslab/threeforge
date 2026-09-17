@@ -84,7 +84,7 @@ describe('PassTracker', () => {
     expect(t.depth).toBe(0);
   });
 
-  it('runs end callbacks when the pass that registered them ends, innermost first, with that depth', () => {
+  it('runs end callbacks when their pass ends, innermost first, with that depth', () => {
     const t = new PassTracker();
     const calls: string[] = [];
     t.atEnd((depth) => calls.push(`outside:${depth}`));
@@ -123,7 +123,7 @@ describe('PassTracker', () => {
     expect(t.mainCamera).toBeNull();
   });
 
-  it('heals a depth left open by a render that threw once a new animation frame starts, running the pending callbacks', () => {
+  it('heals a depth a throwing render left open when a new animation frame starts', () => {
     const t = new PassTracker();
     const c = camera();
     const info = { frame: 7 };

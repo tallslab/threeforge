@@ -34,9 +34,7 @@ test('attributes every draw of the naive scene and reconciles with renderer.info
   expect(typeof frame.totals.programs).toBe('number');
 });
 
-test('renders the same number of programs as distinct registry programs (shader variants are real)', async ({
-  forge,
-}) => {
+test('renders as many programs as distinct registry programs: shader variants are real', async ({ forge }) => {
   await forge.open('naive');
   const { programs, registryPrograms, memoryPrograms } = await forge.page.evaluate(() => {
     const f = window.__forge;

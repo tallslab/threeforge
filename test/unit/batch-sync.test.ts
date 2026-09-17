@@ -57,7 +57,7 @@ function batchesIn(scene: Scene): BatchedMesh[] {
 }
 
 describe("World with dynamics: 'batch-sync'", () => {
-  it('folds batchable dynamics into the batch and keeps their matrices auto-updating while hidden', () => {
+  it('folds batchable dynamics into the batch, keeping hidden originals auto-updating', () => {
     const { scene, mover, lonely } = sceneWithDynamics();
     const world = new World(scene, { dynamics: 'batch-sync' });
     const report = world.compile();

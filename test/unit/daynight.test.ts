@@ -32,7 +32,7 @@ describe('DayNight', () => {
     expect(material.depthWrite).toBe(false);
   });
 
-  it('places the sun by the hour and shapes intensity, colour, sky, fog and background from its elevation', () => {
+  it('places the sun by the hour and shades the scene from its elevation', () => {
     const { scene, dn } = setup();
     dn.setTime(12);
     expect(dn.elevation).toBeCloseTo(1, 5);
@@ -73,7 +73,7 @@ describe('DayNight', () => {
     expect(every.sun.shadow.autoUpdate).toBe(true);
   });
 
-  it('skips the dome write when the sky colours are unchanged, and still moves the sun and its shading direction', () => {
+  it('skips the dome write when the sky colours are unchanged, still moving the sun', () => {
     // Day and night share one palette, so every setTime computes the same zenith and horizon whatever the hour.
     const flat = { dayZenith: 0x336699, nightZenith: 0x336699, dayHorizon: 0x99bbdd, nightHorizon: 0x99bbdd };
     const scene = new Scene();
@@ -106,7 +106,7 @@ describe('DayNight', () => {
     expect(domeColors(real.dome!)).not.toEqual(domeColors(dn.dome!));
   });
 
-  it('refreshDome() drops the colour cache, so the next setTime rewrites a dome the caller overwrote', () => {
+  it('refreshDome() drops the cache so the next setTime rewrites the dome', () => {
     const flat = { dayZenith: 0x336699, nightZenith: 0x336699, dayHorizon: 0x99bbdd, nightHorizon: 0x99bbdd };
     const dn = new DayNight(new Scene(), { shadow: false, colors: flat });
     const attribute = dn.dome!.geometry.getAttribute('color') as BufferAttribute;

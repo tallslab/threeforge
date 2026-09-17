@@ -92,7 +92,7 @@ describe('snapshot.ts caps names pushed into byReason[].top', () => {
 });
 
 describe('hints.ts caps names and messages coming from HintContext', () => {
-  it('a 10,000-character point light name yields a hint message <= 300 chars and an objects entry <= 120 chars', () => {
+  it('caps the hint for a 10,000-character light name at 300 and 120 chars', () => {
     const f = emptyFrame(env);
     const longName = 'P'.repeat(10_000);
     const hints = hintsFor(f, budgetsFor('desktop'), { pointShadowLights: [longName] });
@@ -126,7 +126,7 @@ describe('hints.ts caps names and messages coming from HintContext', () => {
 });
 
 describe('formatCount / formatBytes', () => {
-  it('formats counts as the overlay always has: k below a million (no trailing .0), M above, integers below 1000', () => {
+  it('formats counts as integers below 1000, k below a million, M above', () => {
     expect(formatCount(27)).toBe('27');
     expect(formatCount(999)).toBe('999');
     expect(formatCount(120_000)).toBe('120k');

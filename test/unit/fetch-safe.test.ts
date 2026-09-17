@@ -34,7 +34,7 @@ describe('safeLocalPath', () => {
     }
   });
 
-  it('returns the joined, decoded path for a plain name and its percent-encoded equivalent, staying inside root', () => {
+  it('returns the joined, decoded path for a plain or percent-encoded name inside root', () => {
     const root = tmpRoot();
     const expected = join(root, 'textures/a b.png');
     for (const uri of ['textures/a b.png', 'textures/a%20b.png']) {

@@ -121,7 +121,7 @@ describe('table', () => {
 });
 
 describe('normalizeEnvString', () => {
-  it('maps ®/™/©, strips accents to their ASCII base, and replaces anything still outside the schema charset', () => {
+  it('maps ®/™/©, strips accents and replaces what is still outside the charset', () => {
     expect(normalizeEnvString('NVIDIA®')).toBe('NVIDIA(R)');
     expect(normalizeEnvString('RTX™')).toBe('RTX(TM)');
     expect(normalizeEnvString('© 2026')).toBe('(C) 2026');
@@ -131,7 +131,7 @@ describe('normalizeEnvString', () => {
     expect(normalizeEnvString('a\nb')).toBe('a b');
   });
 
-  it('normalizes env before hashing the id and validating: a real ®/™-bearing GPU string and a non-ASCII UA still validate, and the id matches', () => {
+  it('normalizes env before hashing the id, so a ®/™ GPU string still validates', () => {
     const rawGpu = 'NVIDIA® GeForce RTX™ 4080';
     const rawUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) CaféBrowser/1.0';
     const normalizedEnv = {

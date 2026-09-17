@@ -52,7 +52,7 @@ describe('serveMcp aborts an in-flight tool call and closes its resources on std
     };
   }
 
-  it('closes the fake browser and static server opened by a stuck analyze_asset call, and serveMcp still resolves', async () => {
+  it('closes the browser and server of a stuck analyze_asset call and still resolves', async () => {
     const stdin = new PassThrough(); // the server's stdin: the hand-rolled client writes requests here
     const stdout = new PassThrough(); // the server's stdout: the hand-rolled client reads responses here
     const incoming = reader(stdout);

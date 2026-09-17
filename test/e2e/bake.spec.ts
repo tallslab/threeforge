@@ -87,9 +87,7 @@ async function buildWall(forge: ForgePage, options: { block: boolean; mirrored: 
   }, options);
 }
 
-test('a modular wall loses only its seams; a block buried inside a solid goes only with removeBuried', async ({
-  forge,
-}) => {
+test('a modular wall loses only its seams; a buried block goes only with removeBuried', async ({ forge }) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   for (const mode of ['1', 'buried'] as const) {
     await forge.open('empty', { bake: mode });
@@ -283,9 +281,7 @@ test('a mirrored, normal-mapped mesh baked by bakeGeometries keeps its tangents 
   expect(diff).toBeLessThan(0.0005);
 });
 
-test('touching BackSide rooms keep the wall between them, seen from inside a room and from outside', async ({
-  forge,
-}) => {
+test('touching BackSide rooms keep their shared wall from inside and from outside', async ({ forge }) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   await forge.open('empty', { bake: '1' });
   await forge.page.evaluate(() => {
@@ -398,9 +394,7 @@ test('touching toon boxes that cast shadows keep their seam, lit along it with s
   expect(diff).toBeLessThan(0.0005);
 });
 
-test('a tinted duplicate keeps the colour three draws on top, and an interchangeable duplicate still goes', async ({
-  forge,
-}) => {
+test('a tinted duplicate keeps the colour three draws on top; an interchangeable one goes', async ({ forge }) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   await forge.open('empty', { bake: '1' });
   await forge.page.evaluate(() => {
@@ -446,9 +440,7 @@ test('a tinted duplicate keeps the colour three draws on top, and an interchange
   expect(r.bake!.keptDuplicateFaces).toBe(24);
 });
 
-test('vertex colours with alpha and a custom attribute a node material reads stay out of the bake, batched at parity', async ({
-  forge,
-}) => {
+test('RGBA vertex colours and a custom node attribute stay out of the bake, batched at parity', async ({ forge }) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   await forge.open('empty', { bake: '1' });
   await forge.page.evaluate(() => {
@@ -512,9 +504,7 @@ test('vertex colours with alpha and a custom attribute a node material reads sta
   expect(r.bake!.unbakeableEntries).toBe(4);
 });
 
-test('a node material reading a colour attribute its vertexColors flag ignores stays out of the bake, batched at parity', async ({
-  forge,
-}) => {
+test('a vertexColor() node with vertexColors false stays out of the bake, batched at parity', async ({ forge }) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   await forge.open('empty', { bake: '1' });
   await forge.page.evaluate(() => {
@@ -576,9 +566,7 @@ test('a node material reading a colour attribute its vertexColors flag ignores s
   expect(r.bake!.unbakeableEntries).toBe(2);
 });
 
-test('a node material shading from object-local normals, and a displacement map, stay out of the bake, batched at parity', async ({
-  forge,
-}) => {
+test('object-local normals and a displacement map stay out of the bake, batched at parity', async ({ forge }) => {
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
   await forge.open('empty', { bake: '1' });
   await forge.page.evaluate(() => {

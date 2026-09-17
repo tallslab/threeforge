@@ -91,7 +91,7 @@ describe('lighting', () => {
     rec({ pass: 'main', name: 'a' }),
   ];
 
-  it('lightingOf counts shadow-map passes and submissions from the items, and takes texels and casters from the shadow work the ledger saw', () => {
+  it('lightingOf counts passes from the items, texels and casters from the shadow work', () => {
     expect(lightingOf(lights, items, { texels: 512 * 512 * 6, casters: 3 })).toEqual({
       lights: { directional: 1, point: 2, spot: 0, hemisphere: 0, ambient: 1, other: 0 },
       shadowLights: 3,
@@ -102,7 +102,7 @@ describe('lighting', () => {
     });
   });
 
-  it('lightingOf without shadow work reports no texels and no casters, whatever the lights are configured to', () => {
+  it('lightingOf reports zero texels and casters without shadow work', () => {
     expect(lightingOf(lights, items, NO_SHADOW_WORK)).toMatchObject({
       shadowLights: 3,
       shadowPasses: 2,
@@ -112,7 +112,8 @@ describe('lighting', () => {
     });
   });
 
-  it('NO_SHADOW_WORK is exported from the package entry point beside lightingOf, whose doc tells callers to pass it', () => {
+  it('exports NO_SHADOW_WORK from the package entry beside lightingOf', () => {
+    // lightingOf's doc tells callers to pass NO_SHADOW_WORK, so the entry point has to export it.
     expect(entry.NO_SHADOW_WORK).toBe(NO_SHADOW_WORK);
     expect(entry.lightingOf).toBe(lightingOf);
   });

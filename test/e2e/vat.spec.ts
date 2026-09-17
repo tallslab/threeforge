@@ -35,7 +35,7 @@ function litSpread(shot: Buffer, empty: Buffer): { spread: number; covered: numb
   return { spread: covered === 0 ? 0 : max - min, covered };
 }
 
-test('vat: a two-part character whose parts sit at different offsets looks like its skinned original, under a placement that does not commute with those offsets', {
+test('vat: parts at different offsets match the skinned original under a non-commuting placement', {
   tag: '@corpus',
 }, async ({ forge }) => {
   test.setTimeout(120_000);

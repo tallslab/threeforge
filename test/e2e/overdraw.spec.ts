@@ -7,9 +7,7 @@ import { expect, test } from './fixtures.js';
  * than the harness background's red channel (0x20 in sRGB, 0.014 linear) that the count used to add.
  */
 
-test('measured overdraw: one opaque full-screen quad reads 1, two stacked transparent quads read 2', async ({
-  forge,
-}) => {
+test('overdraw: one opaque full-screen quad reads 1, two stacked transparent quads read 2', async ({ forge }) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -49,9 +47,7 @@ test('measured overdraw: one opaque full-screen quad reads 1, two stacked transp
   expect(r.sceneSubmissions).toBe(3);
 });
 
-test('the background never counts: a white colour, a white texture and a white background node still read 1 and 2', async ({
-  forge,
-}) => {
+test('the background never counts: white colour, texture and background node still read 1 and 2', async ({ forge }) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -89,9 +85,7 @@ test('the background never counts: a white colour, a white texture and a white b
   expect(r.restored).toBe(true);
 });
 
-test('black instance and batch colours count like any other: an instanced quad reads 1, a two-quad batch reads 2', async ({
-  forge,
-}) => {
+test('black instance and batch colours count: instanced quad reads 1, two-quad batch reads 2', async ({ forge }) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -158,9 +152,7 @@ test('map and alphaMap cutouts count only their kept texels: half-cut quads read
   expect(r.transparent).toBeCloseTo(0.5, 2);
 });
 
-test('a closed box counts its front faces once: an opaque box and a transparent box filling the view read 1 each', async ({
-  forge,
-}) => {
+test('a closed box counts its front faces once: opaque and transparent boxes read 1 each', async ({ forge }) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -178,9 +170,7 @@ test('a closed box counts its front faces once: an opaque box and a transparent 
   expect(r.transparent).toBeCloseTo(1, 2);
 });
 
-test('measuring while the app renders changes nothing: renders during the read-back see the app state, and the counts match a still measurement', async ({
-  forge,
-}) => {
+test('measuring while the app renders changes nothing: the counts match a still measurement', async ({ forge }) => {
   await forge.open('empty', { animate: '1' });
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -246,9 +236,7 @@ test('measuring while the app renders changes nothing: renders during the read-b
   expect(r.still.transparent).toBeCloseTo(2, 2);
 });
 
-test('occlusion proxies and batch colours leave the count alone: the compiled scene measures like the uncompiled one', async ({
-  forge,
-}) => {
+test('occlusion proxies and batch colours leave the count alone: compiled measures like naive', async ({ forge }) => {
   await forge.open('empty', { occlusion: '1' });
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -300,9 +288,7 @@ test('occlusion proxies and batch colours leave the count alone: the compiled sc
   expect(r.compiled.transparent).toBeCloseTo(r.naive.transparent, 2);
 });
 
-test('sprites count their billboards from a tilted view, and the compiled sprite batch counts the same: 16 sprites each an eighth of the view wide read 0.25', async ({
-  forge,
-}) => {
+test('16 tilted sprites an eighth of the view wide read 0.25, naive and compiled alike', async ({ forge }) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;
@@ -351,9 +337,7 @@ test('sprites count their billboards from a tilted view, and the compiled sprite
     expect(measured.opaque).toBeCloseTo(0, 2);
 });
 
-test('node alpha counts too: a maskNode cutout and an opacityNode + alphaTestNode cutout each read 0.5', async ({
-  forge,
-}) => {
+test('node alpha counts: maskNode and opacityNode + alphaTestNode cutouts each read 0.5', async ({ forge }) => {
   await forge.open('empty');
   const r = await forge.page.evaluate(async () => {
     const f = window.__forge;

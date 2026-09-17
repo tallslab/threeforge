@@ -63,7 +63,7 @@ const DOC_KEYS = [
 ];
 
 describe('buildDocument', () => {
-  it('prints byte-identically to the literal analyze and inspect used to build, keys in the same order', () => {
+  it('matches the literal analyze and inspect used to build, byte for byte', () => {
     const before = emptyFrame(env);
     const after = emptyFrame(env);
     after.totals.sceneSubmissions = 5;
@@ -181,7 +181,7 @@ describe('openPage', () => {
 });
 
 describe('compileAndRemeasure', () => {
-  it('compiles through the hook, logs the counts (and the bake line), renders three frames and measures again', async () => {
+  it('compiles through the hook, logs the counts, renders three frames and measures again', async () => {
     const report: CliCompileReport = {
       after: { batches: 2, instanced: 1, baked: 3, spriteBatches: 0, frozen: 0, meshes: 0 },
       before: { meshes: 6, materials: 2, drawCalls: 6 },

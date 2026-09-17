@@ -14,7 +14,7 @@ function fakeRenderer(ratio = 2) {
 }
 
 describe('ResolutionScaler', () => {
-  it('steps the scale down when the window median exceeds the target and back up with headroom, clamped', () => {
+  it('steps down when the median exceeds the target, up with headroom, clamped', () => {
     const r = fakeRenderer(2);
     const env: number[] = [];
     const scaler = new ResolutionScaler(r, {

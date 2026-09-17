@@ -41,7 +41,7 @@ function renderFromHook(object: Object3D, render: (renderer: FakeRenderer) => vo
 }
 
 describe('lighting section: shadow pass ids', () => {
-  it('keeps shadow:<name> for a unique shadow-casting light name and numbers lights that share one shadow:<name>#k, in scene order', () => {
+  it('keeps shadow:<name> unique and numbers shared names #k in scene order', () => {
     const sun = casting(new DirectionalLight(), 'sun');
     // Casts no shadow, so it does not make "sun" a duplicate.
     const moon = new SpotLight();
@@ -64,7 +64,7 @@ describe('lighting section: shadow pass ids', () => {
     expect(frame.totals.unattributed).toBe(0);
   });
 
-  it("keeps ids unique across the scenes of one frame: a nested scene's light named like a main-scene light gets the next number", () => {
+  it('keeps shadow ids unique across the scenes of one frame', () => {
     const sun = casting(new DirectionalLight(), 'sun');
     const farSun = casting(new DirectionalLight(), 'sun');
     const { renderer, ledger, scene, camera } = attachedLedger({ shadowLights: [sun, farSun] });
@@ -137,7 +137,7 @@ describe('lighting section: lights', () => {
     });
   });
 
-  it('without a lights node, a frame whose outermost render is an override scene reports only the main scene’s lights, not both scenes’', () => {
+  it('reports only the main scene’s lights under an outermost override, with no lights node', () => {
     const { renderer, ledger, scene, camera } = attachedLedger();
     const withLights = renderer.renderObject as (...args: unknown[]) => void;
     renderer.renderObject = function (this: FakeRenderer, ...args: unknown[]) {
@@ -158,7 +158,7 @@ describe('lighting section: lights', () => {
     expect(frame.lighting.lights).toEqual({ directional: 0, point: 1, spot: 0, hemisphere: 0, ambient: 0, other: 0 });
   });
 
-  it("does not read the output quad's lights node: a main pass that draws only the quad reports the scene's lights", () => {
+  it("reports the scene's lights when the main pass draws only the output quad", () => {
     const { renderer, ledger, scene, camera } = attachedLedger();
     scene.add(new DirectionalLight(), new AmbientLight());
     renderer.render(scene, camera);
@@ -167,7 +167,7 @@ describe('lighting section: lights', () => {
 });
 
 describe('lighting section: shadow texels', () => {
-  it('counts only the maps rendered this frame: a frozen map on the frames it refreshes, a disabled shadow map never', () => {
+  it('counts only maps rendered this frame: a frozen map when refreshed, a disabled one never', () => {
     const sun = casting(new DirectionalLight(), 'sun', 1024);
     const spot = casting(new SpotLight(), 'spot', 512);
     spot.shadow.autoUpdate = false;
@@ -187,7 +187,7 @@ describe('lighting section: shadow texels', () => {
     expect(ledger.frame().lighting).toMatchObject({ shadowLights: 2, shadowPasses: 0, shadowCasters: 0 });
   });
 
-  it("counts a point light's six faces, and a map rendered again for a second camera in the same frame once", () => {
+  it("counts a point light's six faces and a map re-rendered for a second camera once", () => {
     const lamp = casting(new PointLight(), 'lamp', 256);
     const sun = casting(new DirectionalLight(), 'sun', 1024);
     const { renderer, ledger, scene, camera } = attachedLedger({ shadowLights: [lamp, sun], record: true });
@@ -206,7 +206,7 @@ describe('lighting section: shadow texels', () => {
     });
   });
 
-  it('sizes a point light by its map width on every face: three renders each cube face at mapSize.width squared', () => {
+  it('sizes every face of a point light by mapSize.width squared', () => {
     // PointShadowNode allocates the cube target at `shadow.mapSize.width` and renders each face at that size
     // (node_modules/three/src/nodes/lighting/PointShadowNode.js:227 and :254): the height is never read.
     const lamp = casting(new PointLight(), 'lamp', 256);
@@ -219,7 +219,7 @@ describe('lighting section: shadow texels', () => {
 });
 
 describe('lighting section: shadow casters', () => {
-  it('counts casters per object: same-named casters apart, an object once across a point light and a sun, a batch once', () => {
+  it('counts casters per object, once across lights, same-named ones apart', () => {
     const lamp = casting(new PointLight(), 'lamp', 256);
     const sun = casting(new DirectionalLight(), 'sun');
     const { renderer, ledger, scene, camera } = attachedLedger({ shadowLights: [lamp, sun] });
@@ -242,7 +242,7 @@ describe('lighting section: shadow casters', () => {
 });
 
 describe('lighting section: overdraw count renders', () => {
-  it('a measurement from a shadow caster’s hook adds no pass, light, caster or texel to the frame around it', async () => {
+  it('adds nothing to the frame around an overdraw measurement from a caster’s hook', async () => {
     const sun = casting(new DirectionalLight(), 'sun', 1024);
     const { renderer, ledger, scene, camera } = attachedLedger({ shadowLights: [sun] });
     const crate = caster('crate');
@@ -269,7 +269,8 @@ describe('lighting section: overdraw count renders', () => {
 });
 
 describe('lighting section: VSM blur quads', () => {
-  it('files the blur quads after each non-point map into shadow:<id>:vsm as renderer-internal, outside scene submissions, shadow passes, casters and texels', () => {
+  it('files VSM blur quads into shadow:<id>:vsm as renderer-internal work', () => {
+    // One per non-point map, outside scene submissions, shadow passes, casters and texels.
     const sun = casting(new DirectionalLight(), 'sun', 1024);
     const lamp = casting(new PointLight(), 'lamp', 256);
     const { renderer, ledger, scene, camera } = attachedLedger({ shadowLights: [sun, lamp], vsmQuad: true });

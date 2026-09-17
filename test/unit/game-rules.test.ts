@@ -29,7 +29,7 @@ const box = new BoxGeometry();
 const solid = (color: number) => new MeshStandardMaterial({ color, roughness: 0.7, metalness: 0 });
 
 describe('game content rules', () => {
-  it('treats a mesh parented under a bone (a weapon in a hand) as dynamic even when tagged static', () => {
+  it('treats a mesh under a bone as dynamic even when tagged static', () => {
     const scene = new Scene();
     const root = new Bone();
     const hand = new Bone();
@@ -44,7 +44,7 @@ describe('game content rules', () => {
     });
   });
 
-  it('never batches a geometry whose attributes are marked for dynamic or stream updates (trails, ribbons)', () => {
+  it('never batches a geometry with dynamic or stream usage attributes', () => {
     const scene = new Scene();
     const geometry = new BufferGeometry();
     const position = new Float32BufferAttribute(new Float32Array(9), 3);
@@ -55,7 +55,7 @@ describe('game content rules', () => {
     expect(classify(scene)[0]).toMatchObject({ kind: 'excluded', rule: 'dynamic-geometry' });
   });
 
-  it('resolves animation clips per root so several characters with the same bone names all count as animated', () => {
+  it('resolves clips per root, so characters sharing bone names all count as animated', () => {
     const scene = new Scene();
     const makeFighter = (name: string) => {
       const fighter = new Group();
@@ -97,7 +97,7 @@ describe('game content rules', () => {
     expect(report.after.meshes).toBe(2);
   });
 
-  it('reports an untagged mesh the compiler classified dynamic (under a bone, animated) as dynamic, not untagged', () => {
+  it('reports an untagged mesh the compiler classified dynamic as dynamic', () => {
     const { renderer, ledger, scene, camera } = attachedLedger();
     const root = new Bone();
     const sword = new Mesh(box, solid(1));
@@ -128,7 +128,8 @@ describe('game content rules', () => {
     expect(reasonsIn(ledger)).toEqual({ sparks: 'points', health: 'sprite', beam: 'line' });
   });
 
-  it('lets a batch share the canonical material when every instance is white, so runtime uniform changes propagate', () => {
+  it('lets a batch share the canonical material when every instance is white', () => {
+    // Sharing it lets runtime uniform changes propagate to the batch.
     const scene = new Scene();
     const shared = new MeshStandardMaterial({ color: 0xffffff, emissive: 0x000000 });
     const a = tag.static(new Mesh(box, shared));

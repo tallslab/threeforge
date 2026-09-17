@@ -86,7 +86,7 @@ describe('groupSprites', () => {
     expect(spriteRule(invisible)).toBe('material-invisible');
   });
 
-  it('spriteRule names a node material with any node slot set (sprite-node-material) and a sprite drawing other than one instance (sprite-count)', () => {
+  it('spriteRule names a set node slot and a count other than one instance', () => {
     // three r186 NodeMaterial's slots, plus SpriteNodeMaterial's rotationNode and scaleNode.
     const slots = [
       'lightsNode',
@@ -130,7 +130,7 @@ describe('groupSprites', () => {
     expect(spriteRule(new Sprite(new SpriteMaterial())), 'count 1').toBeNull();
   });
 
-  it('spriteRule names ancestor-scoped rules only when a root is given: a render-ordered Group and an enabled ClippingGroup', () => {
+  it('spriteRule names ancestor rules only when given a root', () => {
     const scene = new Scene();
     const group = new Group();
     group.renderOrder = 4;
@@ -149,7 +149,7 @@ describe('groupSprites', () => {
     expect(spriteRule(clipped, scene)).toBeNull();
   });
 
-  it('spriteRule looks only at the nearest Group ancestor for group-render-order, and ignores a non-Group renderOrder', () => {
+  it('spriteRule reads group-render-order from the nearest Group ancestor only', () => {
     const scene = new Scene();
     const outer = new Group();
     outer.renderOrder = 5;
@@ -363,7 +363,7 @@ describe('fillSpriteInstances ordering and column lengths', () => {
     return { scene, list, camera };
   }
 
-  it('writes what a stable back-to-front comparator sort over the same Float32 depths would, ties and all', () => {
+  it('matches a stable back-to-front sort over the same Float32 depths, ties and all', () => {
     const { scene, list, camera } = tied();
     const e = new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).elements;
     // The depth the fill computes, rounded the way it stores it: two sprites whose depths round together must tie.
@@ -439,7 +439,7 @@ describe('fillSpriteInstances ordering and column lengths', () => {
 });
 
 describe('sprite grouping uses the exact colorKey', () => {
-  it('does not merge sprites whose colours are 0.3/255 apart, even though they share an 8-bit display hex', () => {
+  it('does not merge sprites 0.3/255 apart in colour that share a display hex', () => {
     const registry = new MaterialRegistry();
     const base = new Color().setRGB(0.5, 0.5, 0.5);
     const near = new Color().setRGB(0.5 + 0.3 / 255, 0.5, 0.5);

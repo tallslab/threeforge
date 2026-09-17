@@ -8,7 +8,7 @@ import { sceneWithCamera } from './helpers/fakeRenderer.js';
 import { attachedLedger } from './helpers/ledger.js';
 
 describe('exposeToAgents', () => {
-  it('publishes the hook on the target, renders through frameAsync, compiles once and disposes cleanly', async () => {
+  it('publishes the hook, renders through frameAsync, compiles once and disposes', async () => {
     const { renderer, ledger, scene, camera } = attachedLedger();
     const box = new BoxGeometry();
     const material = new MeshStandardMaterial();

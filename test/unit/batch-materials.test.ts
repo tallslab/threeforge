@@ -83,7 +83,7 @@ describe('built-in material checks', () => {
     expect([...exported].sort()).toEqual([...CLASSIC, ...NODE].sort());
   });
 
-  it('hasOwnFunctions is false for every fresh built-in material and true once code is assigned to an instance', () => {
+  it('hasOwnFunctions is false for fresh built-ins and true once an instance gets code', () => {
     for (const name of CLASSIC)
       expect(hasOwnFunctions(construct(THREE as unknown as Record<string, unknown>, name)), name).toBe(false);
     for (const name of NODE)
@@ -125,7 +125,7 @@ describe('tinted-group material clones keep the source material code', () => {
    */
   const functionPaths = ['batched', 'instanced'] as const;
 
-  it('a tinted group whose source carries an instance function is batched, not baked, under bake: true, and counted', () => {
+  it('batches and counts a tinted group with an instance function under bake: true', () => {
     const setupOutput = function (
       this: MeshStandardNodeMaterial,
       ...args: Parameters<MeshStandardNodeMaterial['setupOutput']>

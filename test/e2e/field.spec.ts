@@ -1,8 +1,6 @@
 import { expect, test } from './fixtures.js';
 
-test('20k-instance field: three instanced meshes, culling draws only what the camera sees, nothing unattributed', async ({
-  forge,
-}) => {
+test('the 20k-instance field draws only what the camera sees from three instanced meshes', async ({ forge }) => {
   await forge.open('field', { count: '20000' });
   const result = await forge.page.evaluate(() => {
     const f = window.__forge;
@@ -42,9 +40,7 @@ test('20k-instance field: three instanced meshes, culling draws only what the ca
   expect(result.after.unattributed).toBe(0);
 });
 
-test('LODs on the field cut rendered triangles by more than half while drawing the same instances', async ({
-  forge,
-}) => {
+test('LODs on the field cut rendered triangles by more than half with the same instances', async ({ forge }) => {
   await forge.open('field', { count: '20000', compile: '1' });
   const plain = await forge.page.evaluate(() => window.__forge.frame().totals);
   await forge.open('field', { count: '20000', compile: '1', lod: '1' });

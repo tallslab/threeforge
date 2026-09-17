@@ -108,7 +108,7 @@ function countIndexOf(arrays: Set<unknown>, run: () => void): number {
 }
 
 describe('DrawCallLedger material hashes', () => {
-  it('reads the registry at most once per unique material in a frame, however the materials interleave, and never calls describe()', () => {
+  it('reads the registry once per unique material per frame and never calls describe()', () => {
     const { renderer, registry, ledger, scene, camera } = attached();
     const materials = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00].map((color) =>
       registry.register(new MeshStandardMaterial({ color })),
@@ -194,7 +194,7 @@ describe('DrawCallLedger scene walks', () => {
     expect(ledger.frame().lighting).toMatchObject({ lights: { directional: 1 }, shadowLights: 1 });
   });
 
-  it('reads the lights three projected from the first scene submission, once per frame, without another walk', () => {
+  it('reads the projected lights from the first scene submission, once per frame', () => {
     const renderer = new FakeRenderer();
     renderer.setRenderTarget(new RenderTarget(4, 4));
     const { scene, camera } = sceneWithCamera();
@@ -220,7 +220,7 @@ describe('DrawCallLedger scene walks', () => {
     expect(ledger.frame().lighting).toMatchObject({ lights: { directional: 1, point: 0 }, shadowLights: 1 });
   });
 
-  it('never calls children.indexOf for display names, in frames or rescans, and names match displayName()', () => {
+  it('names submissions without children.indexOf, matching displayName()', () => {
     const { renderer, ledger, scene, camera } = attached();
     scene.add(new DirectionalLight());
     const zone = new Group();
@@ -270,7 +270,7 @@ describe('DrawCallLedger scene walks', () => {
     ]);
   });
 
-  it('keeps names current through renames, sibling reorders, reparenting, removal and mutations inside a frame', () => {
+  it('keeps names current through renames, reorders, reparenting and removal', () => {
     const { renderer, ledger, scene, camera } = attached();
     const material = new MeshBasicMaterial();
     const zone = new Group();
@@ -361,7 +361,7 @@ function shadowLight(name: string): DirectionalLight {
 }
 
 describe('DrawCallLedger shadow passes on the hot path', () => {
-  it('traverses a scene at most once in a frame whose shadow maps render as nested passes, and counts each caster once across them', () => {
+  it('walks the scene once and counts each caster once across nested shadow passes', () => {
     const lights = [shadowLight('sun'), shadowLight('lamp')];
     const { renderer, ledger, scene, camera } = attached({ shadowLights: lights });
     scene.add(...lights);
@@ -380,7 +380,7 @@ describe('DrawCallLedger shadow passes on the hot path', () => {
     expect(frame.totals.sceneSubmissions).toBe(40);
   });
 
-  it('reads the registry at most once per unique material in a frame whose shadow maps render as nested passes', () => {
+  it('reads the registry once per unique material across nested shadow passes', () => {
     const lights = [shadowLight('sun'), shadowLight('lamp')];
     const { renderer, registry, ledger, scene, camera } = attached({ shadowLights: lights });
     const materials = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00].map((color) =>
@@ -406,7 +406,7 @@ describe('DrawCallLedger shadow passes on the hot path', () => {
     expect(reads).toBeLessThanOrEqual(4);
   });
 
-  it('resolves a drawn material to its registry canonical at most once per unique material, across the passes of a frame', () => {
+  it('resolves each drawn material to its canonical once across the passes of a frame', () => {
     const lights = [shadowLight('sun'), shadowLight('lamp')];
     const { renderer, registry, ledger, scene, camera } = attached({ shadowLights: lights });
     const materials = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00].map((color) =>
@@ -476,7 +476,7 @@ const RECORD_WALK_SITES: Record<string, number> = {
 };
 
 describe('DrawCallLedger per-frame allocations', () => {
-  it('walks the per-frame submission records with no iterator protocol anywhere under src/ledger/', () => {
+  it('uses no iterator protocol anywhere under src/ledger/', () => {
     const files = (readdirSync('src/ledger', { recursive: true }) as string[])
       .filter((f) => f.endsWith('.ts'))
       .map((f) => `src/ledger/${f}`);
@@ -504,7 +504,7 @@ describe('DrawCallLedger per-frame allocations', () => {
 });
 
 describe('DrawCallLedger pooled records', () => {
-  it('items from frame({ items: true }) keep their values through later frames, and a read inside a frame sees the last completed one', () => {
+  it('keeps returned items stable across frames and reads the last completed one mid-frame', () => {
     const red = new MeshStandardMaterial({ color: 0xff0000 });
     const blue = new MeshStandardMaterial({ color: 0x0000ff, transparent: true });
     const { renderer, ledger, scene, camera } = attachedLedger();
@@ -666,7 +666,7 @@ const NESTED_EXPECTED: Record<'webgl2' | 'webgpu', NestedObservation> = {
 
 describe('DrawCallLedger reads draw state after renderObject returns', () => {
   for (const backend of ['webgl2', 'webgpu'] as const) {
-    it(`attributes a shadow pass that renders inside a receiver's draw, zeroing prefix slots and appending rows (${backend})`, () => {
+    it(`attributes a shadow pass rendered inside a receiver's draw (${backend})`, () => {
       const webgpu = backend === 'webgpu';
       const cs = webgpu ? WebGPUCoordinateSystem : WebGLCoordinateSystem;
       const scene = new Scene();

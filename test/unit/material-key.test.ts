@@ -255,7 +255,7 @@ describe('material keys for user-added own properties', () => {
     expect(registry.register(b)).toBe(a);
   });
 
-  it('merges materials whose own `extra` objects are different identities holding deep-equal plain data', () => {
+  it('merges materials whose own `extra` objects hold deep-equal plain data', () => {
     const registry = new MaterialRegistry();
     const a = Object.assign(new MeshStandardMaterial(), {
       extra: { uTint: [1, 0.5, 0], mode: 'warm', nested: { on: true } },
@@ -299,7 +299,7 @@ describe('material keys for user-added own properties', () => {
     expect(registry.register(b)).toBe(a);
   });
 
-  it('ignores EventDispatcher listeners: a material a renderer has drawn (a dispose listener) merges with an undrawn twin', () => {
+  it('ignores EventDispatcher listeners, so a drawn material merges with an undrawn twin', () => {
     const registry = new MaterialRegistry();
     const drawn = new MeshStandardMaterial();
     drawn.addEventListener('dispose', () => {});
@@ -464,7 +464,7 @@ describe('material keys for BigInt values', () => {
 });
 
 describe('computeMaterialKeys: a shared plain sub-object is walked once per key computation', () => {
-  it('keys a sub-object reached through several paths once, with the key an every-path walk produced', () => {
+  it('keys a sub-object reached through several paths once, with the every-path key', () => {
     const shared = { a: 1, b: 'two', c: [3, 4], d: { e: 5 } };
     const paths = [0, 1, 2, 3, 4, 5, 6, 7];
     const material = new MeshStandardMaterial();
@@ -482,7 +482,7 @@ describe('computeMaterialKeys: a shared plain sub-object is walked once per key 
     expect(computed.programKey).toContain(`wide={${paths.map((i) => `"p${i}":${one}`).join(',')}}`);
   });
 
-  it('never caches a sub-object that keyed a cycle: `^d` is the ancestor’s depth on the path it was reached by', () => {
+  it('never caches a sub-object that keyed a cycle', () => {
     const cyclic: Record<string, unknown> = { n: 1 };
     cyclic.self = cyclic;
     const material = new MeshStandardMaterial();

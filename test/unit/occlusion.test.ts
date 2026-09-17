@@ -174,7 +174,7 @@ describe('World occlusion', () => {
 });
 
 describe('World occlusion with queries as three runs them', () => {
-  it('keeps a batch visible while the camera is inside its box, and a query issued from inside never hides it later, whatever the lag', () => {
+  it('keeps a batch visible from inside its box, and a query issued there never hides it', () => {
     for (const lag of [2, 3, 5]) {
       const scene = twoChunkScene();
       new World(scene, { chunkSize: 50, occlusion: true }).compile();
@@ -207,7 +207,7 @@ describe('World occlusion with queries as three runs them', () => {
     }
   });
 
-  it('issues no query while the near plane can reach into the box: an eye within twice the near distance, a wide field of view, an orthographic near plane through the box', () => {
+  it('issues no query while the near plane can reach into the box', () => {
     const scene = twoChunkScene();
     new World(scene, { chunkSize: 50, occlusion: true }).compile();
     scene.updateMatrixWorld();
@@ -255,7 +255,7 @@ describe('World occlusion with queries as three runs them', () => {
     expect(left.visible).toBe(true);
   });
 
-  it('never changes target visibility from a nested pass (a reflection rendering the scene again)', () => {
+  it('never changes target visibility from a nested pass', () => {
     const scene = twoChunkScene();
     new World(scene, { chunkSize: 50, occlusion: true }).compile();
     scene.updateMatrixWorld();
@@ -296,7 +296,8 @@ describe('World occlusion with queries as three runs them', () => {
     expect(left.visible, 'hidden for the main camera').toBe(false);
   });
 
-  it('warmup issues no occlusion query: its scissored render would count no samples and hide visible targets in the renders after it (frame and async modes)', async () => {
+  it('issues no occlusion query during warmup, in frame and async modes', async () => {
+    // A scissored warmup render would count no samples and hide visible targets in the renders after it.
     const outcome: string[] = [];
     for (const mode of ['frame', 'async'] as const) {
       for (const lag of [2, 3]) {
@@ -332,7 +333,7 @@ describe('World occlusion with queries as three runs them', () => {
     );
   });
 
-  it('shows the targets and issues no query when the scene is rendered without its own hooks (under another root), and resumes once the scene is rendered itself', async () => {
+  it('shows targets and queries nothing under another root, resuming once rendered itself', async () => {
     const scene = twoChunkScene();
     new World(scene, { chunkSize: 50, occlusion: true }).compile();
     scene.updateMatrixWorld();
@@ -365,7 +366,8 @@ describe('World occlusion with queries as three runs them', () => {
     expect(left.visible, 'hidden again by its own renders').toBe(false);
   });
 
-  it('frame-mode warmup issues no query from a proxy parked by a depth-0 render in the same task: a yield between building the suspension list and the render would let the queued re-enable run first', async () => {
+  it('frame-mode warmup queries no proxy a depth-0 render parked in the same task', async () => {
+    // A yield between building the suspension list and the render would let the queued re-enable run first.
     const scene = twoChunkScene();
     const world = new World(scene, { chunkSize: 50, occlusion: true });
     world.compile();
@@ -433,7 +435,7 @@ describe('World occlusion with queries as three runs them', () => {
     }
   });
 
-  it('gives no proxy to a batch holding a batch-synced mover, so a mover that leaves the box stays visible, also when the scene moves', () => {
+  it('gives no proxy to a batch holding a batch-synced mover, so it stays visible', () => {
     const scene = twoChunkScene();
     const mover = tag.dynamic(new Mesh(box, solid(0x336699)));
     mover.name = 'mover';
@@ -467,7 +469,8 @@ describe('World occlusion with queries as three runs them', () => {
     expect(report.occlusion).toEqual({ proxies: 1, skippedSynced: 1 });
   });
 
-  it('keeps a visible target visible under a mirrored scene: three flips the front face with the mirror, so the FrontSide proxy still rasterises the faces toward the eye', () => {
+  it('keeps a visible target visible under a mirrored scene', () => {
+    // three flips the front face with the mirror, so the FrontSide proxy still rasterises the faces toward the eye.
     const scene = twoChunkScene();
     // Shifted so no batch straddles a world-space chunk cell boundary once mirrored.
     scene.position.x = -20;
@@ -505,7 +508,7 @@ describe('World occlusion with queries as three runs them', () => {
 });
 
 describe('World occlusion proxies after markDirty', () => {
-  it('resizes the proxy of a batch and of an instanced group to their new bounds when an instance moves to x = 500', () => {
+  it('resizes the proxies of a batch and an instanced group when an instance moves', () => {
     const scene = new Scene();
     const dodeca = new DodecahedronGeometry(0.5);
     const boxes = [0, 1, 2].map((i) => {

@@ -201,7 +201,7 @@ describe('schema-validate: every exported schema is self-contained', () => {
     expect(JSON.stringify(SNAPSHOT_SCHEMA)).not.toContain('$ref');
   });
 
-  it('ANALYZE_SCHEMA, INSPECT_SCHEMA and OPTIMIZE_SCHEMA embed $defs.FrameSnapshot instead of $ref-ing SNAPSHOT_SCHEMA.$id', () => {
+  it('document schemas embed $defs.FrameSnapshot, never a $ref to SNAPSHOT_SCHEMA', () => {
     for (const schema of [ANALYZE_SCHEMA, INSPECT_SCHEMA, OPTIMIZE_SCHEMA]) {
       expect(JSON.stringify(schema)).not.toContain(SNAPSHOT_SCHEMA.$id);
       expect((schema as { $defs?: { FrameSnapshot?: unknown } }).$defs?.FrameSnapshot).toBeDefined();
@@ -226,7 +226,7 @@ describe('schema-validate: every exported schema is self-contained', () => {
   });
 });
 
-describe('schema-validate: every exported schema compiles standalone in ajv and validates real documents', () => {
+describe('schema-validate: standalone ajv compilation and real documents', () => {
   it('SNAPSHOT_SCHEMA compiles alone and validates an empty frame', () => {
     const validate = compile(SNAPSHOT_SCHEMA);
     expect(validate(emptyFrame(env)), JSON.stringify(validate.errors)).toBe(true);
@@ -293,7 +293,7 @@ describe('schema-validate: every exported schema compiles standalone in ajv and 
     expect(validate(doc)).toBe(false);
   });
 
-  it('rejects a document whose frame snapshot carries the wrong schemaVersion, proving the embedded $defs are actually checked', () => {
+  it('rejects a wrong frame schemaVersion through the embedded $defs', () => {
     const validate = compile(ANALYZE_SCHEMA);
     const doc = analyzeFixture() as unknown as { before: { schemaVersion: number } };
     doc.before.schemaVersion = 2;
@@ -335,7 +335,7 @@ describe('schema-validate: real optimize documents', () => {
     }
   }
 
-  it('OPTIMIZE_SCHEMA validates a document whose input carries overwrite, as every MCP optimize_asset result does', async () => {
+  it('OPTIMIZE_SCHEMA validates a document whose input carries overwrite', async () => {
     const validate = compile(OPTIMIZE_SCHEMA);
     for (const overwrite of [false, true]) {
       const doc = await realOptimizeDocument(overwrite);

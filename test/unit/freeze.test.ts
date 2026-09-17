@@ -37,7 +37,7 @@ describe('freezableObjects', () => {
     expect(names(out)).toEqual(['props', 'loner']);
   });
 
-  it('does not freeze a container with a dynamic, animated, synced, light or sprite descendant, but still freezes its static leaves', () => {
+  it('freezes only the static leaves of a container with a non-static descendant', () => {
     const scene = new Scene();
     const withDynamic = new Group();
     withDynamic.name = 'withDynamic';
@@ -65,7 +65,7 @@ describe('freezableObjects', () => {
     expect(names(out).sort()).toEqual(['s1', 's2', 's3', 's4', 's5']);
   });
 
-  it('never freezes the scene, skinned meshes, untagged meshes, bones, or an animated ancestor chain', () => {
+  it('never freezes the scene, skinned or untagged meshes, bones or animated chains', () => {
     const scene = new Scene();
     const rig = new Group();
     rig.name = 'rig';
@@ -87,14 +87,15 @@ describe('freezableObjects', () => {
     expect(freezableObjects(empty, { hidden: new Set(), synced: new Set(), animated: new Set() })).toEqual([]);
   });
 
-  it('excludes hidden originals from the output (World freezes them itself) even when they are the only children', () => {
+  it('excludes hidden originals even when they are the only children', () => {
+    // World freezes the hidden originals itself.
     const scene = new Scene();
     const h = tag.static(mesh('h'));
     scene.add(h);
     expect(freezableObjects(scene, { hidden: new Set([h]), synced: new Set(), animated: new Set() })).toEqual([]);
   });
 
-  it('does not freeze an empty container, an anchor with no children, a light target, or a container whose only static descendant is an empty container', () => {
+  it('does not freeze an empty container, a childless anchor or a light target', () => {
     const scene = new Scene();
     const emptyGroup = new Group();
     emptyGroup.name = 'emptyGroup';

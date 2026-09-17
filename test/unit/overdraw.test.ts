@@ -144,7 +144,8 @@ function expectCountSettings(m: CountMaterial): void {
 const drawsOf = (renderer: ReturnType<typeof countRenderer>) => renderer.renders.flatMap((p) => p.draws);
 
 describe('measureOverdraw', () => {
-  it('renders opaque then transparent into a 1/8 half-float target, background-free, cleared to 0 with no MRT, and averages the red channel', async () => {
+  it('renders opaque then transparent into a bare 1/8 half-float target and averages red', async () => {
+    // The target is cleared to 0, has no MRT and draws no background.
     const { scene, camera } = sceneWithCamera();
     scene.background = new Color(0xffffff);
     const renderer = countRenderer([1.5, 0.75]);
@@ -197,7 +198,7 @@ describe('measureOverdraw', () => {
     expectAppState();
   });
 
-  it("clears the positionNode and displacementMap three's override copied when a draw throws before three puts them back", async () => {
+  it('clears the positionNode and displacementMap three copied when a draw throws', async () => {
     const { scene, camera } = sceneWithCamera();
     const renderer = countRenderer();
     const positionNode = float(1);
@@ -234,7 +235,7 @@ describe('measureOverdraw', () => {
     expect(result.opaque).toBeCloseTo(1.5, 6);
   });
 
-  it('counts with a node material whose output is a constant: one per fragment whatever the colour, additive, no depth, one pass, unlit', async () => {
+  it('counts one per fragment with an additive, depthless, unlit constant node material', async () => {
     const { scene, camera } = sceneWithCamera();
     const renderer = countRenderer();
     await measureOverdraw(renderer as never, scene, camera);
@@ -243,7 +244,7 @@ describe('measureOverdraw', () => {
     expectCountSettings(m);
   });
 
-  it("draws each object with the count material carrying its own material's map, opacity, alphaHash and side, and skips what never writes colour", async () => {
+  it("carries each object's map, opacity, alphaHash and side into its count draw", async () => {
     const { scene, camera } = sceneWithCamera();
     const renderer = countRenderer();
     const map = new DataTexture(new Uint8Array(4), 1, 1);
@@ -293,7 +294,7 @@ describe('measureOverdraw', () => {
     expect(drawsOf(renderer).map((d) => d.object)).toEqual([plain, stray]);
   });
 
-  it("carries a node material's opacityNode, alphaTestNode and maskNode into the count for that draw only", async () => {
+  it("carries a node material's opacity, alphaTest and mask nodes into its count draw only", async () => {
     const { scene, camera } = sceneWithCamera();
     const renderer = countRenderer();
     const [opacityNode, alphaTestNode, maskNode] = [float(0.5), float(0.25), float(1)];
@@ -316,7 +317,7 @@ describe('measureOverdraw', () => {
     expect([count.opacityNode, count.alphaTestNode, count.maskNode]).toEqual([null, null, null]);
   });
 
-  it('draws sprite materials with a sprite count material that billboards like its source, then puts the mesh count material back and drops what it copied', async () => {
+  it('counts sprites with a billboarding sprite material and puts the mesh one back', async () => {
     const { scene, camera } = sceneWithCamera();
     const renderer = countRenderer();
     const map = new DataTexture(new Uint8Array(4), 1, 1);
@@ -384,7 +385,7 @@ describe('measureOverdraw', () => {
     expect(disposed).toBe(true);
   });
 
-  it('a scene rendered inside a count render (a render-to-texture hook) keeps its own override and draws its sprites with their own materials', async () => {
+  it('leaves a scene a hook renders inside a count its own override and sprite materials', async () => {
     const { scene, camera } = sceneWithCamera();
     const renderer = new FakeRenderer({ record: true });
     // Renderer._renderScene installs the render-object function for nested renders too (Renderer.js ~1736), so the
@@ -464,7 +465,7 @@ describe('DrawCallLedger.measureOverdraw', () => {
     return { renderer, ledger, scene, camera, mesh };
   }
 
-  it('measured outside a render: no frame stays open and the next frame counts only its own draws', async () => {
+  it('leaves no frame open outside a render, and the next frame counts only its own draws', async () => {
     const { renderer, ledger, scene, camera } = setup();
     renderer.render(scene, camera);
     const plain = ledger.frame();
@@ -477,7 +478,7 @@ describe('DrawCallLedger.measureOverdraw', () => {
     expect(next.overdraw.measured).toBe(true);
   });
 
-  it('measured from inside a render hook: the frame around it still ends, files only its own draws, and the next frame is a frame', async () => {
+  it('ends the frame around a measurement from a render hook with only its own draws', async () => {
     const { renderer, ledger, scene, camera, mesh } = setup();
     let pending: Promise<unknown> | null = null;
     let started = false;

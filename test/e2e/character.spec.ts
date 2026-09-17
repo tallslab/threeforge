@@ -1,8 +1,6 @@
 import { expect, test } from './fixtures.js';
 
-test('assembleCharacter turns body + 4 gear parts (5 skinned draws) into one skinned draw with the same pixels', async ({
-  forge,
-}) => {
+test('assembleCharacter turns 5 skinned draws (body + 4 gear) into one with the same pixels', async ({ forge }) => {
   await forge.open('character');
   const naive = await forge.page.evaluate(() => window.__forge.frame().totals);
   const naiveReasons = await forge.page.evaluate(() => window.__forge.frame().byReason);
