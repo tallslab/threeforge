@@ -1,4 +1,4 @@
-# threeforge: rules for agents working in this repo
+# Contributing to threeforge
 
 threeforge is a scene compiler + draw-call diagnostics layer for three.js r186 (`three/webgpu`, WebGL2 fallback).
 It is not an engine. Three.js renders; we rewrite naive scenes into batched ones and explain every remaining draw call.

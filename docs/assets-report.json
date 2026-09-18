@@ -16,7 +16,7 @@
     "restored": 115,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -36,7 +36,7 @@
     "restored": 49,
     "skipped": "transmission:16 singleton:5",
     "reasons": "excluded:transmission:16 batched:8 unique-material:5",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -56,7 +56,7 @@
     "restored": 9,
     "skipped": "singleton:4",
     "reasons": "unique-material:4 batched:2",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -76,7 +76,7 @@
     "restored": 1,
     "skipped": "morph-targets:1",
     "reasons": "morph:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -96,7 +96,7 @@
     "restored": 1,
     "skipped": "morph-targets:1",
     "reasons": "morph:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -116,7 +116,7 @@
     "restored": 1,
     "skipped": "animated:1",
     "reasons": "dynamic:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -136,7 +136,7 @@
     "restored": 2,
     "skipped": "singleton:2",
     "reasons": "unique-material:2",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -156,7 +156,7 @@
     "restored": 28,
     "skipped": "transmission:21 singleton:2",
     "reasons": "excluded:transmission:26 unique-material:2",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -176,7 +176,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -196,7 +196,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -216,7 +216,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -236,7 +236,7 @@
     "restored": 2,
     "skipped": "singleton:1 animated:1",
     "reasons": "dynamic:1 unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -256,7 +256,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -276,7 +276,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -296,7 +296,7 @@
     "restored": 59,
     "skipped": "skinned-mesh:59",
     "reasons": "skinned:59",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -316,7 +316,7 @@
     "restored": 49,
     "skipped": "skinned-mesh:49",
     "reasons": "skinned:49",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -336,7 +336,7 @@
     "restored": 236,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -356,7 +356,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -376,7 +376,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -396,7 +396,7 @@
     "restored": 1,
     "skipped": "skinned-mesh:1",
     "reasons": "skinned:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -416,7 +416,7 @@
     "restored": 27,
     "skipped": "singleton:11",
     "reasons": "unique-material:11 batched:4",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -436,7 +436,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -456,7 +456,7 @@
     "restored": 9,
     "skipped": "singleton:5 animated:3",
     "reasons": "dynamic:4 unique-material:3 static-unbatched:2",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -476,7 +476,7 @@
     "restored": 6,
     "skipped": "singleton:3",
     "reasons": "unique-material:3 batched:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -496,7 +496,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -516,7 +516,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -536,7 +536,7 @@
     "restored": 9,
     "skipped": "animated:6 singleton:1",
     "reasons": "dynamic:6 batched:1 unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -556,7 +556,7 @@
     "restored": 2,
     "skipped": "singleton:1 transmission:1",
     "reasons": "excluded:transmission:1 unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -576,7 +576,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -596,7 +596,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -616,7 +616,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -636,7 +636,7 @@
     "restored": 6,
     "skipped": "singleton:6",
     "reasons": "unique-material:6",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -656,7 +656,7 @@
     "restored": 4,
     "skipped": "animated:3 morph-targets:1",
     "reasons": "dynamic:3 morph:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -676,7 +676,7 @@
     "restored": 51,
     "skipped": "singleton:2",
     "reasons": "batched:2 unique-material:2",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -696,7 +696,7 @@
     "restored": 1,
     "skipped": "morph-targets:1",
     "reasons": "morph:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -716,7 +716,7 @@
     "restored": 6,
     "skipped": "singleton:5 transmission:1",
     "reasons": "unique-material:5 excluded:transmission:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -736,7 +736,7 @@
     "restored": 1,
     "skipped": "skinned-mesh:1",
     "reasons": "skinned:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -756,7 +756,7 @@
     "restored": 95,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -776,7 +776,7 @@
     "restored": 3,
     "skipped": "singleton:3",
     "reasons": "unique-material:3",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -796,7 +796,7 @@
     "restored": 1,
     "skipped": "morph-targets:1",
     "reasons": "morph:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -816,7 +816,7 @@
     "restored": 10,
     "skipped": "animated:9 singleton:1",
     "reasons": "dynamic:9 unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -836,7 +836,7 @@
     "restored": 3,
     "skipped": "singleton:2 transmission:1",
     "reasons": "unique-material:2 excluded:transmission:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -856,7 +856,7 @@
     "restored": 4,
     "skipped": "singleton:2 transmission:1 animated:1",
     "reasons": "unique-material:2 dynamic:1 excluded:transmission:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -876,7 +876,7 @@
     "restored": 43,
     "skipped": "singleton:6 skinned-mesh:3",
     "reasons": "batched:7 unique-material:6 skinned:3",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -896,7 +896,7 @@
     "restored": 3,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -916,7 +916,7 @@
     "restored": 4,
     "skipped": "singleton:2 transmission:1",
     "reasons": "excluded:transmission:2 unique-material:2",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -936,7 +936,7 @@
     "restored": 71,
     "skipped": "animated:44 singleton:11 skinned-mesh:8",
     "reasons": "dynamic:44 skinned:8 unique-material:7 static-unbatched:4 batched:3",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -956,7 +956,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -976,7 +976,7 @@
     "restored": 6,
     "skipped": "",
     "reasons": "line:2 batched:1 points:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -996,7 +996,7 @@
     "restored": 5,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1016,7 +1016,7 @@
     "restored": 2,
     "skipped": "morph-targets:2",
     "reasons": "morph:2",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1036,7 +1036,7 @@
     "restored": 2,
     "skipped": "morph-targets:2",
     "reasons": "morph:2",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1056,7 +1056,7 @@
     "restored": 3,
     "skipped": "singleton:2 transmission:1",
     "reasons": "unique-material:2 excluded:transmission:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1076,7 +1076,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1096,7 +1096,7 @@
     "restored": 11,
     "skipped": "mirrored:4 singleton:3",
     "reasons": "excluded:mirrored:4 batched:2 unique-material:2 static-unbatched:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1116,7 +1116,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1136,7 +1136,7 @@
     "restored": 1,
     "skipped": "morph-targets:1",
     "reasons": "morph:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1156,7 +1156,7 @@
     "restored": 5,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1176,7 +1176,7 @@
     "restored": 6,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1196,7 +1196,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1216,7 +1216,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1236,7 +1236,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1256,7 +1256,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1276,7 +1276,7 @@
     "restored": 3,
     "skipped": "singleton:3",
     "reasons": "unique-material:3",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1296,7 +1296,7 @@
     "restored": 5,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1316,7 +1316,7 @@
     "restored": 5,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1336,7 +1336,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1356,7 +1356,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1376,7 +1376,7 @@
     "restored": 3,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1396,7 +1396,7 @@
     "restored": 6,
     "skipped": "",
     "reasons": "batched:2",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1416,7 +1416,7 @@
     "restored": 9,
     "skipped": "",
     "reasons": "batched:3",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1436,7 +1436,7 @@
     "restored": 2,
     "skipped": "singleton:2",
     "reasons": "unique-material:2",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1456,7 +1456,7 @@
     "restored": 25,
     "skipped": "singleton:9",
     "reasons": "unique-material:9 line:8 points:8",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1476,7 +1476,7 @@
     "restored": 113,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1496,7 +1496,7 @@
     "restored": 84,
     "skipped": "skinned-mesh:84",
     "reasons": "skinned:84",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1516,7 +1516,7 @@
     "restored": 1,
     "skipped": "skinned-mesh:1",
     "reasons": "skinned:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1536,7 +1536,7 @@
     "restored": 19,
     "skipped": "bone-parented:12 skinned-mesh:4 morph-targets:3",
     "reasons": "dynamic:12 skinned:4 morph:3",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1556,7 +1556,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1576,7 +1576,7 @@
     "restored": 2,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1596,7 +1596,7 @@
     "restored": 4,
     "skipped": "singleton:4",
     "reasons": "unique-material:4",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1616,7 +1616,7 @@
     "restored": 1,
     "skipped": "already-instanced:1",
     "reasons": "instanced:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1636,7 +1636,7 @@
     "restored": 1,
     "skipped": "morph-targets:1",
     "reasons": "morph:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1656,7 +1656,7 @@
     "restored": 1,
     "skipped": "skinned-mesh:1",
     "reasons": "skinned:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1676,7 +1676,7 @@
     "restored": 2,
     "skipped": "skinned-mesh:2",
     "reasons": "skinned:2",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1696,7 +1696,7 @@
     "restored": 4,
     "skipped": "singleton:4",
     "reasons": "unique-material:4",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1716,7 +1716,7 @@
     "restored": 103,
     "skipped": "singleton:4",
     "reasons": "batched:21 unique-material:4",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1736,7 +1736,7 @@
     "restored": 8,
     "skipped": "singleton:8",
     "reasons": "unique-material:8",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1756,7 +1756,7 @@
     "restored": 1,
     "skipped": "morph-targets:1",
     "reasons": "morph:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1776,7 +1776,7 @@
     "restored": 8,
     "skipped": "transmission:3",
     "reasons": "excluded:transmission:3 batched:2",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1796,7 +1796,7 @@
     "restored": 14,
     "skipped": "singleton:14",
     "reasons": "unique-material:14",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1816,7 +1816,7 @@
     "restored": 3,
     "skipped": "singleton:3",
     "reasons": "unique-material:3",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1836,7 +1836,7 @@
     "restored": 10,
     "skipped": "singleton:10",
     "reasons": "unique-material:10",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1856,7 +1856,7 @@
     "restored": 29,
     "skipped": "singleton:29",
     "reasons": "unique-material:29",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1876,7 +1876,7 @@
     "restored": 12,
     "skipped": "singleton:7",
     "reasons": "unique-material:7 batched:2",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1896,7 +1896,7 @@
     "restored": 3,
     "skipped": "singleton:2 transmission:1",
     "reasons": "unique-material:2 excluded:transmission:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1916,7 +1916,7 @@
     "restored": 34,
     "skipped": "transmission:12 singleton:1",
     "reasons": "excluded:transmission:24 batched:1 unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1936,7 +1936,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1956,7 +1956,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1976,7 +1976,7 @@
     "restored": 2,
     "skipped": "",
     "reasons": "batched:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -1996,7 +1996,7 @@
     "restored": 2,
     "skipped": "singleton:2",
     "reasons": "unique-material:2",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -2016,7 +2016,7 @@
     "restored": 167,
     "skipped": "animated:67 singleton:9",
     "reasons": "dynamic:67 unique-material:9 batched:7",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -2036,7 +2036,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -2056,7 +2056,7 @@
     "restored": 2,
     "skipped": "skinned-mesh:2",
     "reasons": "skinned:2",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   },
   {
@@ -2076,7 +2076,7 @@
     "restored": 1,
     "skipped": "singleton:1",
     "reasons": "unique-material:1",
-    "commit": "bdd4bd6b5a6e92607bbaee0036550780d6920915",
+    "commit": "727f6fb85e3a122f60ecc607a476b5584be16669",
     "run": "corpus-20260917"
   }
 ]

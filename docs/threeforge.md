@@ -275,7 +275,7 @@ frame's number, so nothing is cleared between frames, and the rescan reads each 
 allocated per frame and the rescan time at 2k, 10k and 20k submissions by default, on a flat, a nested and a shadow
 scene through a minimal renderer, bare and with a ledger attached (best ledger round minus best bare round). It is a
 report, not a gate: compare runs on one machine and quote the invocation with the number, since a single size given
-on its own prints a different figure. The default invocation on 2026-09-16 at commit `ec09216` (10-core Apple M1
+on its own prints a different figure. The default invocation on 2026-09-16 at commit `fad7539` (10-core Apple M1
 Max, node v22.23.1) measured 0.22, 0.30–0.32 and 0.40–0.41 µs per submission and 17–28 KB per frame at 2k, 10k and
 20k on the flat scene (rescan 0.5–5.6 ms), 15.5–25.7 KB on the nested scene and 19.1–29.5 KB on the shadow scene,
 against 0.83, 1.84 and 3.07 µs and 2.3, 11.4 and 23.1 MB per frame recorded on 0.8.0 before the hot-path work
@@ -1111,7 +1111,7 @@ tags), `assets.yml` (weekly corpus run), `pages.yml` (the device bench page) and
 `pnpm assets` then `pnpm assets:report` compiles every downloaded public glTF model with pixel parity on each backend
 (`docs/assets-report.md`, `docs/assets-report-webgpu.md`; `FORGE_ASSETS=Fox,Duck` limits the run). The report is
 regenerated deliberately from a clean tree (`docs/release.md`, step 3); the current one was generated from 0.9.0 code
-at commit `85973e3`, run `corpus-20260917`, and passes 104 of 104 models on each backend: 0 unattributed draws,
+at commit `2e30e07`, run `corpus-20260917`, and passes 104 of 104 models on each backend: 0 unattributed draws,
 decompile restoring the naive count, and under 0.5 % of the pixels of one view changed at a per-channel tolerance of
 24. Its `diff` column is that percentage rounded to two decimals, so the 0 every row reads means under 0.005 %, not
 zero changed pixels. On native WebGPU, texture-heavy rows (`polyhaven-CoffeeCart_01`, `Sponza`) can show a non-zero

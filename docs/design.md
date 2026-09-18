@@ -293,7 +293,7 @@ confirming the backend cost model the ledger uses.
 - Untagged meshes are never batched under the default policy; `policy: 'auto'` batches them.
 - Instanced meshes are re-compacted for every camera that renders them (a shadow pass costs a second upload).
 - `culling: 'linear'` only affects batches; instanced meshes always use BVH compaction (it is their only culling).
-- Phase 5 puts Wanderer on it: real assets will decide what the ledger flags next.
+- Real game scenes decide what the ledger flags next.
 
 ## Sub-project design notes
 
