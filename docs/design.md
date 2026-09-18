@@ -394,7 +394,9 @@ adds a two-second fill-rate probe (transparent fullscreen layers doubled until t
 informational only. `scripts/bench-app-assets.mjs` copies what the kit-backed scenes load
 (`scripts/bench-app-kits.mjs`) and the textures those GLBs keep outside themselves; `crowd` and `bossfight` throw
 on a file the page does not carry, and a run with an uncaptured GPU error (`renderer.onError`) fails instead of
-producing a result, so neither a thinner scene nor dropped GPU work is ever measured.
+producing a result, so neither a thinner scene nor dropped GPU work is ever measured. A script drives the page
+through its query (`auto=1` starts the run, `scenes=`, `measured=`, `probe=0`, `backend=`) and reads
+`window.__bench`: `done` is set when the run ends, on failure too, and a run passed when `error` is unset.
 
 Results are GitHub-native, with no server, no accounts and no secret beyond `GITHUB_TOKEN`: the page opens a
 prefilled issue when the encoded URL stays under 7,000 characters and otherwise shows the JSON to copy. The

@@ -6,7 +6,11 @@ import { deviceRows, liveRows } from './table.js';
 
 declare global {
   interface Window {
-    /** What the e2e reads: readiness, the chosen backend, progress text, the result and a done flag. */
+    /**
+     * What a script driving the page reads. `done` means the run ended, not that it passed: it is set on failure
+     * too, so that waiting for it never hangs. A run passed when `done` is true and `error` is unset; `result` is
+     * null otherwise.
+     */
     __bench: {
       ready: boolean;
       error?: string;
