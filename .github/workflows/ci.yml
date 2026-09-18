@@ -106,11 +106,10 @@ jobs:
           # goes green having rendered nothing. FORGE_REQUIRE_WEBGPU=1 turns that skip into a failure.
           # The leg is advisory: Dawn's SwiftShader adapter on these runners drops the device between test steps
           # (docs/design.md), so WebGPU is proven by a local run on a native adapter before a release
-          # (docs/release.md) and this job reports rather than blocks.
+          # (docs/release.md) and this leg warns instead of failing the check.
           - backend: webgpu
             requireWebgpu: '1'
             advisory: true
-    continue-on-error: ${{ matrix.advisory == true }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -138,7 +137,13 @@ jobs:
       #     WebGPU pixel parity is proven only by a local run on a native adapter (docs/release.md, step 2).
       # `--forbid-only` so a stray test.only cannot quietly shrink this selection further.
       - name: e2e without downloaded content
-        run: pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "@corpus|@bench" --forbid-only
+        run: |
+          run() { pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "@corpus|@bench" --forbid-only; }
+          if [ "${{ matrix.advisory }}" = "true" ]; then
+            run || echo "::warning::e2e ${{ matrix.backend }} failed on the SwiftShader adapter (advisory, see docs/design.md)"
+          else
+            run
+          fi
         env:
           FORGE_REQUIRE_WEBGPU: ${{ matrix.requireWebgpu }}
       - uses: actions/upload-artifact@v4
@@ -164,7 +169,6 @@ jobs:
           # Advisory for the same reason as the e2e leg: the SwiftShader adapter loses the device mid-run.
           - backend: webgpu
             advisory: true
-    continue-on-error: ${{ matrix.advisory == true }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -185,7 +189,13 @@ jobs:
         env:
           FORGE_KITS_ONLY: '1'
           FORGE_FETCH_STRICT: '1'
-      - run: node scripts/bench-run.mjs ${{ matrix.backend }}
+      - name: bench gate
+        run: |
+          if [ "${{ matrix.advisory }}" = "true" ]; then
+            node scripts/bench-run.mjs ${{ matrix.backend }} || echo "::warning::bench ${{ matrix.backend }} failed on the SwiftShader adapter (advisory, see docs/design.md)"
+          else
+            node scripts/bench-run.mjs ${{ matrix.backend }}
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
