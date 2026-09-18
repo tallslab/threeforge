@@ -55,7 +55,7 @@ records 224 / 226 changed pixels of 480,000 at its oblique view on webgl2 / webg
 **18** with `dynamics: 'batch-sync'`, whose one screenshot stays within 0.2 % of the naive render's pixels (Playwright's
 `maxDiffPixelRatio: 0.002` at its default colour threshold); the 20k-instance field scene goes from 3892 submissions to **3 instanced draws** with BVH culling. The public
 glTF corpus report ([webgl2](docs/assets-report.md), [webgpu](docs/assets-report-webgpu.md)), generated from 0.9.0
-code at commit `2e30e07` (run `corpus-20260917`), passes 104 of 104 models on each backend: every
+code at commit `fa62e52` (run `corpus-20260917`), passes 104 of 104 models on each backend: every
 model compiles with 0 unattributed draws, restores its naive count on decompile, and changes under 0.5 % of the
 pixels of its one view at a per-channel tolerance of 24. Every row's `diff` reads 0, a percentage rounded to two
 decimals: under 0.005 % changed, not zero. `pnpm budget` fails CI above 30.
