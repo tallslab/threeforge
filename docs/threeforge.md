@@ -857,8 +857,16 @@ z. A chunk is resident while the ground-plane distance from the camera to the ce
 (default `camera.far`) and unloaded past `radius + margin × chunkSize` (first update strict). Unload removes the
 objects and disposes the geometries and textures no resident chunk shares, including a BatchedMesh's matrix,
 indirect and colour textures (never `BatchedMesh.dispose()`, which nulls them); load re-adds them and three
-re-uploads. `assign`, `userData.forgeStream = false`, `stats()`, `onChange`, `dispose()` (every chunk resident again,
-then the chunks and the object index released, so a disposed Streamer holds none of the World's objects, `stats()`
+re-uploads. A geometry with an `InterleavedBufferAttribute` (`isInterleavedGeometry(geometry)`; GLTFLoader builds
+one for every bufferView with a byteStride) is not disposed: on WebGPU in r186 the defect above makes it fail
+validation once it is drawn again, and so does any resident geometry on the same `InterleavedBuffer` (GLTFLoader
+caches one per accessor range, so primitives that reuse an accessor share it). It reaches the Streamer as an
+uncompiled static or as an instanced group, which draws the source geometry; a BatchedMesh owns a plain copy and is
+freed in full. The cost is that those vertex and index buffers stay on the GPU while the chunk is away (textures
+still leave). Pass the geometry through `deinterleaveGeometry` (`three/addons/utils/BufferGeometryUtils.js`) at load
+to get them freed too. `retainedGeometries()` lists what stayed, and an attached ledger allows it instead of
+counting it under `memory.unreferenced`. `assign`, `userData.forgeStream = false`, `stats()`, `onChange`, `dispose()`
+(every chunk resident again, then the chunks and the object index released, so a disposed Streamer holds none of the World's objects, `stats()`
 reports none and a later `update()` does nothing). `ledger.attachStreamer(streamer)`.
 
 In the ledger: `memory.unreferenced`, `memory.chunks`, `memory.measured`, budget `geometryBytes` (256 / 96 / 48 MB),

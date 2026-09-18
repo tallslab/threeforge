@@ -31,7 +31,7 @@ import {
   ResolutionScaler,
   ShadowBudget,
   type ShadowBudgetReport,
-  type Streamer,
+  Streamer,
   type Tier,
   tag,
   tierInputFromNavigator,
@@ -60,6 +60,8 @@ export interface ForgeHarness {
   three: typeof THREE;
   /** The bake's direct API (no World), for in-page parity probes. */
   bakeGeometries: typeof bakeGeometries;
+  /** The Streamer class, for specs that stream content they build in the page. */
+  Streamer: typeof Streamer;
   /** The three/webgpu namespace (node materials, `TSL`), for in-page probes. */
   webgpu: typeof THREE_WEBGPU;
   ready: boolean;
@@ -342,6 +344,7 @@ try {
   window.__forge = {
     three: THREE,
     bakeGeometries,
+    Streamer,
     webgpu: THREE_WEBGPU,
     ready: true,
     backend,

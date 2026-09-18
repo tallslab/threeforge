@@ -67,6 +67,12 @@ const _bufferSize = new Vector2();
 const RESCAN_EVERY = 60;
 const FRAME_WINDOW = 60;
 
+/** What the ledger reads from a Streamer. `retainedGeometries` lists what it left on the GPU for chunks that are away. */
+interface AttachedStreamer {
+  stats(): { chunks: number; resident: number };
+  retainedGeometries?(): Iterable<unknown>;
+}
+
 /**
  * Attributes every render item to a reason. Patches `renderObject` and `render` on the renderer instance: every
  * render-object function three installs (including ShadowNode's) ends in `renderer.renderObject`, so this sees main,
@@ -121,7 +127,7 @@ export class DrawCallLedger {
   /** `framesSeen` at the last `rescan()`, or -1: the scene-graph statistics it wrote live in `last.js`. */
   private rescannedAt = -1;
   private scheduler: { skippedRecently(): number } | null = null;
-  private streamer: { stats(): { chunks: number; resident: number } } | null = null;
+  private streamer: AttachedStreamer | null = null;
   private memoryStats: MemorySnapshot = emptySections().memory;
   /** Live DFG_LUT textures three created on the attached renderer (see `wrapTextureInfo`). */
   private readonly internalTextures = new Set<object>();
@@ -254,7 +260,7 @@ export class DrawCallLedger {
       renderTargets,
       internalTextures: this.internalTextures.size,
       rendererTextures: this.pmremTextures,
-      internalGeometries: this.internalGeometries.live(),
+      internalGeometries: [...this.internalGeometries.live(), ...(this.streamer?.retainedGeometries?.() ?? [])],
       shadowMapType: this.renderer?.shadowMap?.type,
       ...(frameBuffers ? { frameBufferTargets: frameBuffers } : {}),
     });
@@ -292,7 +298,7 @@ export class DrawCallLedger {
   }
 
   /** A Streamer whose chunk residency the memory section reports; null detaches. */
-  attachStreamer(streamer: { stats(): { chunks: number; resident: number } } | null): void {
+  attachStreamer(streamer: AttachedStreamer | null): void {
     this.streamer = streamer;
   }
 

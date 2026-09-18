@@ -1,4 +1,11 @@
-import { type BufferGeometry, type Material, type Object3D, Sprite, type Texture } from 'three';
+import {
+  type BufferGeometry,
+  type InterleavedBufferAttribute,
+  type Material,
+  type Object3D,
+  Sprite,
+  type Texture,
+} from 'three';
 
 export interface ResourceSets {
   geometries: Set<BufferGeometry>;
@@ -21,6 +28,18 @@ let spriteGeometry: BufferGeometry | undefined;
 export function isSharedSpriteGeometry(geometry: BufferGeometry): boolean {
   spriteGeometry ??= new Sprite().geometry;
   return geometry === spriteGeometry;
+}
+
+/**
+ * Whether an attribute of `geometry` reads from an `InterleavedBuffer`; GLTFLoader builds one for every bufferView
+ * with a byteStride. On WebGPU in r186 such a geometry cannot be disposed and then drawn again, for the defect
+ * `isSharedSpriteGeometry` describes. glTF primitives that reuse an accessor share its buffer, so disposing one
+ * geometry also breaks the others on it.
+ */
+export function isInterleavedGeometry(geometry: BufferGeometry): boolean {
+  for (const attribute of Object.values(geometry.attributes))
+    if ((attribute as InterleavedBufferAttribute).isInterleavedBufferAttribute) return true;
+  return false;
 }
 
 /** Adds `value` when it is a texture: material properties, a scene's background and a mesh's internal maps all arrive untyped. */

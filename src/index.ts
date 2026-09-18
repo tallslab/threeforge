@@ -160,6 +160,7 @@ export {
 export {
   collectResources,
   emptyResourceSets,
+  isInterleavedGeometry,
   isSharedSpriteGeometry,
   type ResourceSets,
   unreferencedResources,

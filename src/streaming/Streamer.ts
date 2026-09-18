@@ -1,6 +1,6 @@
-import { type Camera, type Mesh, type Object3D, type Texture, Vector3 } from 'three';
+import { type BufferGeometry, type Camera, type Mesh, type Object3D, type Texture, Vector3 } from 'three';
 import type { World } from '../compiler/World.js';
-import { collectResources, emptyResourceSets, isSharedSpriteGeometry, type ResourceSets } from '../memory/resources.js';
+import { collectResources, emptyResourceSets, isInterleavedGeometry, type ResourceSets } from '../memory/resources.js';
 import { tag } from '../tags.js';
 
 export interface StreamerOptions {
@@ -45,9 +45,11 @@ const _position = new Vector3();
  * groups and baked meshes per cell) plus every static mesh that is a direct child of the scene and was not compiled
  * (terrain tiles, singletons), placed by the cell of its world position. A non-resident chunk's objects leave the
  * scene and their geometries and textures are disposed unless a resident chunk still references them; three
- * re-uploads them when the chunk comes back. Materials are never disposed (the registry owns them), and the
- * CPU copies stay in the JS heap: nothing is re-fetched. Cells are keyed by x and z (y is ignored: streaming is
- * horizontal), so compiled cells stacked vertically load and unload together.
+ * re-uploads them when the chunk comes back. Interleaved geometries (glTF bufferViews with a byteStride, and the one
+ * every Sprite shares) are the exception and stay uploaded: three r186 on WebGPU cannot upload one a second time, see
+ * `isInterleavedGeometry`. Materials are never disposed (the registry owns them), and the CPU copies stay in the JS
+ * heap: nothing is re-fetched. Cells are keyed by x and z (y is ignored: streaming is horizontal), so compiled cells
+ * stacked vertically load and unload together.
  */
 export class Streamer {
   private readonly world: World;
@@ -167,7 +169,7 @@ export class Streamer {
     const held = <T>(pick: (s: ResourceSets) => Set<T>, item: T): boolean =>
       resident.some((c) => pick(c.resources).has(item));
     for (const g of chunk.resources.geometries)
-      if (!held((s) => s.geometries, g) && !isSharedSpriteGeometry(g)) g.dispose();
+      if (!held((s) => s.geometries, g) && !isInterleavedGeometry(g)) g.dispose();
     for (const t of chunk.resources.textures) if (!held((s) => s.textures, t)) t.dispose();
     for (const p of chunk.placed) {
       // BatchedMesh.dispose() nulls these; disposing them directly frees the GPU copies and three re-uploads on the next render.
@@ -187,6 +189,14 @@ export class Streamer {
     let resident = 0;
     for (const c of this.chunks.values()) if (c.resident) resident++;
     return { chunks: this.chunks.size, resident, loads: this.loads, unloads: this.unloads };
+  }
+
+  /** Geometries of non-resident chunks that stayed on the GPU; an attached ledger allows them instead of reporting a leak. */
+  retainedGeometries(): BufferGeometry[] {
+    const kept = new Set<BufferGeometry>();
+    for (const chunk of this.chunks.values())
+      if (!chunk.resident) for (const g of chunk.resources.geometries) if (isInterleavedGeometry(g)) kept.add(g);
+    return [...kept];
   }
 
   onChange(listener: (event: StreamerEvent) => void): () => void {

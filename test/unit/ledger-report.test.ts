@@ -203,4 +203,20 @@ describe('DrawCallLedger snapshot, report and budget', () => {
     renderer.render(scene, camera);
     expect(ledger.frame().memory.chunks).toEqual({ total: 0, resident: 0 });
   });
+
+  it('allows the geometries a streamer keeps uploaded for chunks that are away', () => {
+    const { renderer, ledger, scene, camera } = attachedLedger();
+    // Two geometries on the GPU, none in the scene: the output quad three owns, and one a streamed-out chunk kept.
+    Object.assign(renderer.info.memory, { geometries: 2, textures: 0 });
+    renderer.render(scene, camera);
+    ledger.rescan();
+    expect(ledger.frame().memory.unreferenced.geometries).toBe(1);
+    const kept = new BufferGeometry();
+    ledger.attachStreamer({
+      stats: () => ({ chunks: 1, resident: 0 }),
+      retainedGeometries: () => [kept],
+    });
+    ledger.rescan();
+    expect(ledger.frame().memory.unreferenced.geometries).toBe(0);
+  });
 });

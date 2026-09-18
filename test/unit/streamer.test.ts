@@ -1,6 +1,9 @@
 import {
   BoxGeometry,
+  BufferGeometry,
   DataTexture,
+  InterleavedBuffer,
+  InterleavedBufferAttribute,
   Mesh,
   MeshStandardMaterial,
   type Object3D,
@@ -148,6 +151,40 @@ describe('Streamer and sprites', () => {
     expect(sprite.parent).toBeNull();
     expect(shared).not.toHaveBeenCalled();
     shared.mockRestore();
+  });
+});
+
+describe('Streamer and interleaved geometries', () => {
+  /** A triangle whose position and uv read from one InterleavedBuffer, as GLTFLoader builds a bufferView with a byteStride. */
+  function interleaved(): BufferGeometry {
+    const buffer = new InterleavedBuffer(new Float32Array([0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]), 5);
+    return new BufferGeometry()
+      .setAttribute('position', new InterleavedBufferAttribute(buffer, 3, 0))
+      .setAttribute('uv', new InterleavedBufferAttribute(buffer, 2, 3));
+  }
+
+  it('leaves an interleaved geometry on the GPU when its chunk unloads', () => {
+    const { scene, camera, world: w } = world();
+    const packed = tag.static(new Mesh(interleaved(), new MeshStandardMaterial()));
+    const plain = tag.static(new Mesh(new BoxGeometry(), new MeshStandardMaterial()));
+    for (const mesh of [packed, plain]) {
+      mesh.position.set(70, 0, 0);
+      scene.add(mesh);
+    }
+    const kept = vi.spyOn(packed.geometry, 'dispose');
+    const freed = vi.spyOn(plain.geometry, 'dispose');
+    const streamer = new Streamer({ world: w, camera, radius: 5, margin: 0 });
+    streamer.update();
+    expect(packed.parent).toBeNull();
+    expect(kept).not.toHaveBeenCalled();
+    expect(freed).toHaveBeenCalledTimes(1);
+    // Until the chunk is back the ledger has to allow what stayed uploaded, or it reads as a leak.
+    expect(streamer.retainedGeometries()).toEqual([packed.geometry]);
+    camera.position.x = 70;
+    camera.updateMatrixWorld();
+    streamer.update();
+    expect(packed.parent).toBe(scene);
+    expect(streamer.retainedGeometries()).toEqual([]);
   });
 });
 
