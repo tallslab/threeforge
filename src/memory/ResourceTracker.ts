@@ -14,6 +14,11 @@ export interface ResourceTrackerOptions {
     forget?(material: Material): void;
     dependentsOf?(material: Material): number;
   };
+  /**
+   * The scene the owners live in. A released interleaved geometry stays uploaded while a mesh in it that the tracker
+   * was never given reads the same `InterleavedBuffer` (see `disposeGeometries`).
+   */
+  scene?: Object3D;
 }
 
 export interface ReleaseReport {
@@ -73,7 +78,12 @@ export class ResourceTracker {
     const heldElsewhere = <T>(pick: (s: ResourceSets) => Set<T>, item: T): boolean =>
       others.some((s) => pick(s).has(item));
     const inUse = new Set(others.flatMap((s) => [...s.geometries]));
-    const geometries = disposeGeometries([...sets.geometries, ...this.left], inUse);
+    // Detached first: the owner's own meshes must not count as readers of the buffers it is giving up.
+    if ((owner as Object3D).isObject3D) (owner as Object3D).removeFromParent();
+    const scene = this.options.scene;
+    const geometries = disposeGeometries([...sets.geometries, ...this.left], inUse, () =>
+      scene ? collectResources(scene).geometries : [],
+    );
     this.left = new Set(geometries.left);
     report.geometries = geometries.disposed;
     for (const t of sets.textures) {
@@ -104,7 +114,6 @@ export class ResourceTracker {
         registry.forget(m);
       }
     }
-    if ((owner as Object3D).isObject3D) (owner as Object3D).removeFromParent();
     return report;
   }
 

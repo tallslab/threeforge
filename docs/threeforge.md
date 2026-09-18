@@ -854,13 +854,16 @@ the next upload reuses it and every submit fails with "used in submit while dest
 `Geometries.updateAttribute` skips every attribute after the first of a buffer it has seen before, so the draw fails
 with INVALID_OPERATION and nothing says so. Both key on object identity, so `disposeGeometry(geometry)` disposes and
 then replaces the interleaved attributes by new ones over a new `InterleavedBuffer` on the same array; geometries
-that shared a buffer share the new one. A reference taken to `geometry.attributes.position` before that is stale
-after it. Two geometries are left uploaded: the one three shares between every `Sprite`
+that shared a buffer share the new one. Objects taken from the geometry before that keep working: an old attribute
+reads the new buffer, and the old buffer's version and update ranges are the new one's, so `needsUpdate` on either
+still uploads. Two geometries are left uploaded: the one three shares between every `Sprite`
 (`isSharedSpriteGeometry(geometry)`, it belongs to no scene), and one that reads an `InterleavedBuffer` a geometry
 still in use reads too (GLTFLoader caches one per accessor, so primitives that reuse an accessor share it), since
 disposing it destroys the buffer under the one still drawn. Those go with a later release or unload, once nothing in
-use shares their buffer. A geometry that shares a buffer with one the tracker or the streamer does not know about is
-not protected.
+use shares their buffer. In use means more than what the caller manages: the Streamer counts every mesh in the scene
+the camera's layers can draw (a mover outside its chunks, not an original hidden on layer 31), and a
+`ResourceTracker` given `{ scene }` counts that scene's meshes. Both walk the scene only when a geometry being freed
+is interleaved. A tracker without a scene knows its own owners only.
 
 `Streamer` (`src/streaming/Streamer.ts`) manages the residency of `world.chunks()` (batches, instanced groups and
 baked meshes carry `userData.forgeChunk`) plus uncompiled static scene children placed by position, keyed by x and

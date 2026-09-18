@@ -171,7 +171,9 @@ export class Streamer {
     const held = <T>(pick: (s: ResourceSets) => Set<T>, item: T): boolean =>
       resident.some((c) => pick(c.resources).has(item));
     const inUse = new Set(resident.flatMap((c) => [...c.resources.geometries]));
-    this.left = new Set(disposeGeometries([...chunk.resources.geometries, ...this.left], inUse).left);
+    this.left = new Set(
+      disposeGeometries([...chunk.resources.geometries, ...this.left], inUse, () => this.drawnOutsideChunks()).left,
+    );
     for (const t of chunk.resources.textures) if (!held((s) => s.textures, t)) t.dispose();
     for (const p of chunk.placed) {
       // BatchedMesh.dispose() nulls these; disposing them directly frees the GPU copies and three re-uploads on the next render.
@@ -191,6 +193,16 @@ export class Streamer {
     let resident = 0;
     for (const c of this.chunks.values()) if (c.resident) resident++;
     return { chunks: this.chunks.size, resident, loads: this.loads, unloads: this.unloads };
+  }
+
+  /** Geometries of what the camera can draw in the scene, streamed or not: a mover may read a buffer a chunk reads. */
+  private drawnOutsideChunks(): BufferGeometry[] {
+    const drawn: BufferGeometry[] = [];
+    this.world.scene.traverse((o) => {
+      const geometry = (o as Mesh).geometry as BufferGeometry | undefined;
+      if (geometry && o.layers.test(this.camera.layers)) drawn.push(geometry);
+    });
+    return drawn;
   }
 
   /** Geometries of non-resident chunks that stayed on the GPU; an attached ledger allows them instead of reporting a leak. */

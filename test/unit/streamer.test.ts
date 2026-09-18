@@ -14,7 +14,7 @@ import {
   UnsignedByteType,
 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { World } from '../../src/compiler/World.js';
+import { FORGE_HIDDEN_LAYER, World } from '../../src/compiler/World.js';
 import { Streamer } from '../../src/streaming/Streamer.js';
 import { tag } from '../../src/tags.js';
 
@@ -174,6 +174,7 @@ describe('Streamer and interleaved geometries', () => {
     const packed = at(70, interleaved());
     scene.add(packed);
     const before = packed.geometry.getAttribute('position') as InterleavedBufferAttribute;
+    const bufferBefore = before.data;
     const disposed = vi.spyOn(packed.geometry, 'dispose');
     const streamer = new Streamer({ world: w, camera, radius: 5, margin: 0 });
     streamer.update();
@@ -183,8 +184,8 @@ describe('Streamer and interleaved geometries', () => {
     // three r186 cannot upload the same interleaved objects twice: new ones, over the same array.
     const after = packed.geometry.getAttribute('position') as InterleavedBufferAttribute;
     expect(after).not.toBe(before);
-    expect(after.data).not.toBe(before.data);
-    expect(after.data.array).toBe(before.data.array);
+    expect(after.data === bufferBefore).toBe(false);
+    expect(after.data.array).toBe(bufferBefore.array);
   });
 
   it('keeps a geometry uploaded while a resident chunk reads its buffer', () => {
@@ -211,6 +212,40 @@ describe('Streamer and interleaved geometries', () => {
     expect(streamer.retainedGeometries()).toEqual([]);
     const buffer = (g: BufferGeometry) => (g.getAttribute('position') as InterleavedBufferAttribute).data;
     expect(buffer(near.geometry), 'still one buffer between them').toBe(buffer(far.geometry));
+  });
+});
+
+describe('Streamer and buffers read from outside its chunks', () => {
+  const packed = (buffer: InterleavedBuffer): BufferGeometry =>
+    new BufferGeometry().setAttribute('position', new InterleavedBufferAttribute(buffer, 3, 0));
+
+  it('keeps a geometry uploaded while a mesh it does not stream draws from its buffer', () => {
+    const { scene, camera, world: w } = world();
+    const buffer = new InterleavedBuffer(new Float32Array(9), 3);
+    const far = tag.static(new Mesh(packed(buffer), new MeshStandardMaterial()));
+    far.position.set(70, 0, 0);
+    const mover = tag.dynamic(new Mesh(packed(buffer), new MeshStandardMaterial()));
+    scene.add(far, mover);
+    const disposed = vi.spyOn(far.geometry, 'dispose');
+    const streamer = new Streamer({ world: w, camera, radius: 5, margin: 0 });
+    streamer.update();
+    expect(far.parent).toBeNull();
+    expect(disposed).not.toHaveBeenCalled();
+    expect(streamer.retainedGeometries()).toEqual([far.geometry]);
+  });
+
+  it('frees it when the only other reader is an original hidden from the camera', () => {
+    const { scene, camera, world: w } = world();
+    const buffer = new InterleavedBuffer(new Float32Array(9), 3);
+    const far = tag.static(new Mesh(packed(buffer), new MeshStandardMaterial()));
+    far.position.set(70, 0, 0);
+    const hidden = tag.dynamic(new Mesh(packed(buffer), new MeshStandardMaterial()));
+    hidden.layers.set(FORGE_HIDDEN_LAYER);
+    scene.add(far, hidden);
+    const disposed = vi.spyOn(far.geometry, 'dispose');
+    new Streamer({ world: w, camera, radius: 5, margin: 0 }).update();
+    // Nothing draws a hidden original, so three holds no buffer for it to lose.
+    expect(disposed).toHaveBeenCalledTimes(1);
   });
 });
 

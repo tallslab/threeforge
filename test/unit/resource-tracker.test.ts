@@ -165,6 +165,34 @@ describe('interleaved geometries', () => {
     expect(geometry.getAttribute('normal')).toBe(plain);
   });
 
+  it('a reference taken before the disposal still drives uploads', () => {
+    const geometry = packed(triangle());
+    const stale = geometry.getAttribute('position') as InterleavedBufferAttribute;
+    const staleBuffer = stale.data;
+    disposeGeometry(geometry);
+    const live = bufferOf(geometry);
+    const version = live.version;
+    // three uploads when the live buffer's version moves; both old objects have to move it.
+    stale.needsUpdate = true;
+    expect(live.version).toBe(version + 1);
+    staleBuffer.needsUpdate = true;
+    expect(live.version).toBe(version + 2);
+    staleBuffer.addUpdateRange(0, 5);
+    expect(live.updateRanges).toEqual([{ start: 0, count: 5 }]);
+  });
+
+  it('release leaves a geometry whose buffer a mesh in the given scene still draws from', () => {
+    const buffer = triangle();
+    const scene = new Scene();
+    const untracked = new Mesh(packed(buffer), new MeshStandardMaterial());
+    const owner = new Group().add(new Mesh(packed(buffer), new MeshStandardMaterial()));
+    scene.add(untracked, owner);
+    const disposed = vi.spyOn((owner.children[0] as Mesh).geometry, 'dispose');
+    const tracker = new ResourceTracker({ scene }).track(owner);
+    expect(tracker.release(owner).geometries).toBe(0);
+    expect(disposed).not.toHaveBeenCalled();
+  });
+
   it('release frees a geometry once the owner sharing its buffer is released too', () => {
     const buffer = triangle();
     const a = new Group().add(new Mesh(packed(buffer), new MeshStandardMaterial()));

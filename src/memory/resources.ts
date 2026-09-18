@@ -46,7 +46,8 @@ function interleavedAttributes(geometry: BufferGeometry): [string, InterleavedBu
  * `Geometries.updateAttribute` skips every attribute after the first of a buffer it has seen before, so they get no
  * buffer back and the draw fails with INVALID_OPERATION, silently. Both key on object identity, so the interleaved
  * attributes are replaced by new ones over a new `InterleavedBuffer` on the same array; geometries that shared a
- * buffer share the new one. A reference taken to `geometry.attributes.x` before this call is stale after it.
+ * buffer share the new one. The old objects keep working for code that holds them: an old attribute reads the new
+ * buffer, and the old buffer's version and update ranges are the new one's, so `needsUpdate` on either uploads.
  */
 export function disposeGeometry(geometry: BufferGeometry): void {
   geometry.dispose();
@@ -59,8 +60,17 @@ export function disposeGeometry(geometry: BufferGeometry): void {
         ? new InstancedInterleavedBuffer(old.array, old.stride, instanced.meshPerAttribute)
         : new InterleavedBuffer(old.array, old.stride);
       buffer.setUsage(old.usage);
+      buffer.updateRanges = old.updateRanges;
+      const live = buffer;
+      Object.defineProperty(old, 'version', {
+        get: () => live.version,
+        set: (version: number) => {
+          live.version = version;
+        },
+      });
       renewedBuffers.set(old, buffer);
     }
+    attribute.data = buffer;
     const renewed = new InterleavedBufferAttribute(buffer, attribute.itemSize, attribute.offset, attribute.normalized);
     renewed.name = attribute.name;
     geometry.setAttribute(name, renewed);
@@ -72,19 +82,26 @@ export function disposeGeometry(geometry: BufferGeometry): void {
  * are not in use themselves: the geometry every Sprite shares, and a geometry reading an `InterleavedBuffer` that one
  * in use reads too (GLTFLoader caches one buffer per accessor, so primitives reusing an accessor share it), since
  * disposing it would destroy the buffer under the geometry still drawn. Pass those back in with a later call: they go
- * once nothing in use shares their buffer.
+ * once nothing in use shares their buffer. `drawnElsewhere` names geometries the caller does not manage but that are
+ * drawn all the same (a scene's other meshes); it is asked only when one of `geometries` is interleaved.
  */
 export function disposeGeometries(
   geometries: Iterable<BufferGeometry>,
   inUse: ReadonlySet<BufferGeometry>,
+  drawnElsewhere: () => Iterable<BufferGeometry> = () => [],
 ): { disposed: number; left: BufferGeometry[] } {
-  let buffersInUse: Set<InterleavedBuffer> | undefined;
-  const sharesBufferInUse = (geometry: BufferGeometry): boolean => {
-    const attributes = interleavedAttributes(geometry);
-    if (attributes.length === 0) return false;
-    buffersInUse ??= new Set([...inUse].flatMap((g) => interleavedAttributes(g).map(([, a]) => a.data)));
-    return attributes.some(([, a]) => buffersInUse!.has(a.data));
+  let readers: Map<InterleavedBuffer, Set<BufferGeometry>> | undefined;
+  const readersOf = (buffer: InterleavedBuffer): Set<BufferGeometry> => {
+    if (!readers) {
+      readers = new Map();
+      for (const g of [...inUse, ...drawnElsewhere()])
+        for (const [, a] of interleavedAttributes(g)) readers.set(a.data, (readers.get(a.data) ?? new Set()).add(g));
+    }
+    return readers.get(buffer) ?? new Set();
   };
+  // A reader other than the geometry itself: the same geometry drawn elsewhere is renewed along with this one.
+  const sharesBufferInUse = (geometry: BufferGeometry): boolean =>
+    interleavedAttributes(geometry).some(([, a]) => [...readersOf(a.data)].some((reader) => reader !== geometry));
   const left: BufferGeometry[] = [];
   let disposed = 0;
   for (const geometry of new Set(geometries)) {
