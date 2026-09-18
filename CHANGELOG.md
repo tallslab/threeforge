@@ -5,6 +5,8 @@
 - `World.compile()` no longer recomposes a frozen static whose `matrixAutoUpdate` was already off, and `markDirty` no longer recomposes any object that did not compose its own matrix before compile. A mesh placed through `matrix` used to jump to its `position`/`quaternion`/`scale` (the origin, usually) at compile and stay there after `decompile()`.
 - `originals: 'detach'` hides a batched original instead of detaching it when something under it is not leaving the graph too (a dynamic mesh, a synced original, an unbatched static, a light, a camera, an empty anchor). Those descendants used to leave the scene with their parent.
 - `window.__threeforge` offers `compile` or `decompile` by the World's state, so `threeforge inspect` on an app that compiled its own World measures it and reports `compile: null` instead of exiting 4 with "World is already compiled". New `world.isCompiled`.
+- `ResourceTracker.release()` and a `Streamer` unload leave the geometry three shares between every `Sprite`. On WebGPU in r186 disposing it made every sprite drawn afterwards fail validation ("used in submit while destroyed"). New `isSharedSpriteGeometry(geometry)` for code that frees a scene by hand.
+- The device bench page ships everything `bossfight` and `crowd` load, the textures their GLBs reference included, and resolves them under the page's own path. `bossfight` used to measure a partly built arena there (155 → 130 submissions instead of 2780 → 370). A missing kit file, or an uncaptured GPU error during a run, now fails the run.
 
 ## 0.9.0 (2026-09-16)
 

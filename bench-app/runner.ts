@@ -6,6 +6,7 @@ import {
   DrawCallLedger,
   detectTier,
   gpuName,
+  isSharedSpriteGeometry,
   MaterialRegistry,
   type Tier,
   tierInputFromNavigator,
@@ -76,7 +77,7 @@ export async function createHost(want: Backend | 'auto', mount: HTMLElement): Pr
 /** Frees every geometry, material and texture reachable from a finished scene, its environment included (phones have little GPU memory). */
 function disposeScene(root: Object3D): void {
   const { geometries, materials, textures } = collectResources(root);
-  for (const g of geometries) g.dispose();
+  for (const g of geometries) if (!isSharedSpriteGeometry(g)) g.dispose();
   for (const m of materials) m.dispose();
   for (const t of textures) t.dispose();
 }
@@ -179,19 +180,40 @@ async function runOne(
   }
 }
 
-/** Every requested scene in both variants, one at a time; the result is what the page submits. */
+/** three's uncaptured-error report (`Renderer.onError`, r186); the typings still declare a string. */
+type GpuErrorHandler = (info: { type: string; message: string }) => void;
+
+/**
+ * Every requested scene in both variants, one at a time; the result is what the page submits. An uncaptured GPU
+ * error (a validation error, out of memory) fails the run: the device dropped work, so the frames it timed and the
+ * counts it reports are not a measurement.
+ */
 export async function runBench(host: Host, options: RunOptions): Promise<DeviceResult> {
-  const fillRateGPix = options.probe ? await probeFillRate(host.renderer) : null;
+  const renderer = host.renderer as unknown as { onError: GpuErrorHandler };
+  const report = renderer.onError;
+  const gpuErrors: string[] = [];
+  renderer.onError = (info) => {
+    gpuErrors.push(`${info.type}: ${info.message}`);
+    report.call(renderer, info);
+  };
   const scenes = {} as DeviceResult['scenes'];
-  let n = 0;
-  for (const id of options.sceneIds) {
-    for (const variant of ['naive', 'optimized'] as const) {
-      n++;
-      options.onProgress(`scene ${n}/${options.sceneIds.length * 2} · ${id} ${variant} · loading`);
-      const metrics = await runOne(host, id, variant, options.measured, options.onProgress);
-      (scenes[id] ??= {} as DeviceResult['scenes'][SceneId])[variant] = metrics;
-      options.onScene(id, variant, metrics);
+  let fillRateGPix: number | null = null;
+  try {
+    fillRateGPix = options.probe ? await probeFillRate(host.renderer) : null;
+    let n = 0;
+    for (const id of options.sceneIds) {
+      for (const variant of ['naive', 'optimized'] as const) {
+        n++;
+        options.onProgress(`scene ${n}/${options.sceneIds.length * 2} · ${id} ${variant} · loading`);
+        const metrics = await runOne(host, id, variant, options.measured, options.onProgress);
+        if (gpuErrors.length)
+          throw new Error(`${gpuErrors.length} GPU errors by the end of ${id} ${variant}, first: ${gpuErrors[0]}`);
+        (scenes[id] ??= {} as DeviceResult['scenes'][SceneId])[variant] = metrics;
+        options.onScene(id, variant, metrics);
+      }
     }
+  } finally {
+    renderer.onError = report;
   }
   // Normalized before anything reads it: the id (below) is hashed from these same fields, and the schema's
   // printable-ASCII charset would otherwise reject a real driver string outright (e.g. `NVIDIA® GeForce RTX™

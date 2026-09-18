@@ -4,7 +4,7 @@ import { applyRoomEnvironment } from './environment.js';
 import type { BenchBuilder } from './index.js';
 
 /** The fight arena with 30 simultaneous particle effects, sprites, decals and shadowed spot and point lights. */
-export const bossfight: BenchBuilder = async ({ renderer, camera, params, loader: makeLoader, tier }) => {
+export const bossfight: BenchBuilder = async ({ renderer, camera, params, loader: makeLoader, tier, url }) => {
   const loader = await makeLoader();
   renderer.shadowMap.enabled = true;
   const arena = await buildArena({
@@ -14,6 +14,7 @@ export const bossfight: BenchBuilder = async ({ renderer, camera, params, loader
     vfx: true,
     shadows: true,
     effects: Number(params.get('effects') ?? '30'),
+    url,
   });
   disposeLoader(loader);
   applyRoomEnvironment(renderer, arena.scene, 0.15);

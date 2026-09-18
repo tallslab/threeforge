@@ -1,5 +1,5 @@
 import type { BufferGeometry, Material, Object3D, Texture } from 'three';
-import { collectResources, emptyResourceSets, type ResourceSets } from './resources.js';
+import { collectResources, emptyResourceSets, isSharedSpriteGeometry, type ResourceSets } from './resources.js';
 
 export interface ResourceTrackerOptions {
   /**
@@ -71,7 +71,7 @@ export class ResourceTracker {
     const heldElsewhere = <T>(pick: (s: ResourceSets) => Set<T>, item: T): boolean =>
       others.some((s) => pick(s).has(item));
     for (const g of sets.geometries) {
-      if (heldElsewhere((s) => s.geometries, g)) continue;
+      if (heldElsewhere((s) => s.geometries, g) || isSharedSpriteGeometry(g)) continue;
       g.dispose();
       report.geometries++;
     }

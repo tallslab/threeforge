@@ -1,4 +1,4 @@
-import type { BufferGeometry, Material, Object3D, Texture } from 'three';
+import { type BufferGeometry, type Material, type Object3D, Sprite, type Texture } from 'three';
 
 export interface ResourceSets {
   geometries: Set<BufferGeometry>;
@@ -8,6 +8,19 @@ export interface ResourceSets {
 
 export function emptyResourceSets(): ResourceSets {
   return { geometries: new Set(), materials: new Set(), textures: new Set() };
+}
+
+let spriteGeometry: BufferGeometry | undefined;
+
+/**
+ * Whether `geometry` is the one three shares between every `Sprite` (module-level in Sprite.js): it belongs to no
+ * scene, so freeing a scene's resources must leave it. On WebGPU in r186 disposing it breaks every sprite drawn
+ * afterwards: `WebGPUAttributeUtils.destroyAttribute` destroys an interleaved buffer but deletes its record under
+ * the attribute, not the `InterleavedBuffer` it is kept under, so the next upload reuses the destroyed buffer.
+ */
+export function isSharedSpriteGeometry(geometry: BufferGeometry): boolean {
+  spriteGeometry ??= new Sprite().geometry;
+  return geometry === spriteGeometry;
 }
 
 /** Adds `value` when it is a texture: material properties, a scene's background and a mesh's internal maps all arrive untyped. */

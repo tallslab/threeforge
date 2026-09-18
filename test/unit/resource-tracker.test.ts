@@ -9,6 +9,7 @@ import {
   RGBAFormat,
   Scene,
   SphereGeometry,
+  Sprite,
   type Texture,
   UnsignedByteType,
 } from 'three';
@@ -118,6 +119,17 @@ describe('unreferencedResources', () => {
       textures: 1,
     });
     expect(unreferencedResources({ geometries: 0, textures: 0 }, scene)).toEqual({ geometries: 0, textures: 0 });
+  });
+});
+
+describe('the geometry every Sprite shares', () => {
+  it('is never disposed by release: sprites elsewhere still draw it', () => {
+    const owner = new Group().add(new Sprite(), new Mesh(new BoxGeometry(), new MeshStandardMaterial()));
+    const shared = vi.spyOn(new Sprite().geometry, 'dispose');
+    const tracker = new ResourceTracker().track(owner);
+    expect(tracker.release(owner).geometries).toBe(1);
+    expect(shared).not.toHaveBeenCalled();
+    shared.mockRestore();
   });
 });
 

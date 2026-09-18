@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { KIT_ASSETS } from '../../scripts/bench-app-kits.mjs';
 
 /**
  * `scripts/bench-app-assets.mjs` fills the device bench page's public dir. Playwright runs it as the port-5180
@@ -31,23 +32,44 @@ function run(cwd: string, env: NodeJS.ProcessEnv = {}): { status: number; out: s
   return { status: r.status ?? 1, out: `${r.stdout}${r.stderr}` };
 }
 
-/** The kit layout the script expects, with placeholder bytes: it only copies these files, never parses them. */
-function withKits(dir: string): void {
-  const glbs = ['male-a', 'male-b', 'male-c', 'male-d', 'female-a', 'female-b', 'female-c', 'female-d'].map(
-    (n) => `kenney-mini-characters/Models/GLB format/character-${n}.glb`,
-  );
-  for (const rel of [...glbs, 'waternormals/waternormals.jpg']) {
-    mkdirSync(dirname(join(dir, 'test/assets/files', rel)), { recursive: true });
-    writeFileSync(join(dir, 'test/assets/files', rel), 'x');
-  }
-  writeFileSync(
-    join(dir, 'test/assets/files/kits-index.json'),
-    JSON.stringify([{ name: 'kenney-mini-characters', glbs, textures: [] }]),
-  );
+/** A GLB holding only its JSON chunk: the script reads which outside files a model points at, nothing else. */
+function glb(json: object): Buffer {
+  const text = JSON.stringify(json);
+  const chunk = Buffer.from(text.padEnd(Math.ceil(text.length / 4) * 4, ' '));
+  const header = Buffer.alloc(20);
+  header.write('glTF', 0);
+  header.writeUInt32LE(2, 4);
+  header.writeUInt32LE(20 + chunk.length, 8);
+  header.writeUInt32LE(chunk.length, 12);
+  header.write('JSON', 16);
+  return Buffer.concat([header, chunk]);
+}
+
+const files = (dir: string) => join(dir, 'test/assets/files');
+const glbPath = (kit: string, base: string) => `${kit}/Models/GLB format/${base}.glb`;
+const texturePath = (kit: string, base: string) => `${kit}/PNG/${base}.png`;
+
+/** Every kit the page needs, each model pointing at its kit's colour map, plus one model no scene asks for. */
+function withKits(dir: string, leaveOut?: string): void {
+  const write = (rel: string, data: string | Buffer): void => {
+    mkdirSync(dirname(join(files(dir), rel)), { recursive: true });
+    writeFileSync(join(files(dir), rel), data);
+  };
+  const index = Object.entries(KIT_ASSETS).map(([name, wanted]) => {
+    const glbs = [...(wanted.glbs ?? []), 'unused'].filter((b) => b !== leaveOut).map((b) => glbPath(name, b));
+    const textures = (wanted.textures ?? []).map((b) => texturePath(name, b));
+    for (const rel of glbs)
+      write(rel, glb({ images: [{ uri: 'Textures/colormap.png' }, { uri: 'data:image/png;base64,' }] }));
+    for (const rel of textures) write(rel, 'x');
+    if (glbs.length > 1) write(`${name}/Models/GLB format/Textures/colormap.png`, 'x');
+    return { name, glbs, textures };
+  });
+  write('waternormals/waternormals.jpg', 'x');
+  write('kits-index.json', JSON.stringify(index));
 }
 
 describe('bench-app-assets without the Kenney kits', () => {
-  it('exits 1 and names the fetch command, so a real build never ships a page with no characters', () => {
+  it('exits 1 and names the fetch command, so a real build never ships a page without its kits', () => {
     const dir = sandbox();
     const r = run(dir);
     expect(r.status).toBe(1);
@@ -66,21 +88,37 @@ describe('bench-app-assets without the Kenney kits', () => {
     expect(existsSync(join(dir, 'bench-app/public/_decoders/basis'))).toBe(true);
   });
 
-  it('copies the eight characters and the water map when the kits are there, flag or not', () => {
+  it('copies what the scenes load, the files those models point at and the water map, flag or not', () => {
     for (const env of [{}, { FORGE_BENCH_APP_OPTIONAL: '1' }]) {
       const dir = sandbox();
       withKits(dir);
       const r = run(dir, env);
       expect(r.out, r.out).not.toContain('FORGE_BENCH_APP_OPTIONAL=1)');
       expect(r.status).toBe(0);
-      const index = JSON.parse(readFileSync(join(dir, 'bench-app/public/kits-index.json'), 'utf8')) as Array<{
+      const out = join(dir, 'bench-app/public');
+      const index = JSON.parse(readFileSync(join(out, 'kits-index.json'), 'utf8')) as Array<{
+        name: string;
         glbs: string[];
+        textures: string[];
       }>;
-      expect(index[0]?.glbs).toHaveLength(8);
-      expect(existsSync(join(dir, 'bench-app/public/waternormals/waternormals.jpg'))).toBe(true);
-      expect(
-        existsSync(join(dir, 'bench-app/public/kenney-mini-characters/Models/GLB format/character-male-a.glb')),
-      ).toBe(true);
+      expect(index.map((kit) => kit.name)).toEqual(Object.keys(KIT_ASSETS));
+      for (const kit of index) {
+        const wanted = KIT_ASSETS[kit.name]!;
+        expect(kit.glbs).toEqual((wanted.glbs ?? []).map((b) => glbPath(kit.name, b)));
+        expect(kit.textures).toEqual((wanted.textures ?? []).map((b) => texturePath(kit.name, b)));
+        for (const rel of [...kit.glbs, ...kit.textures]) expect(existsSync(join(out, rel)), rel).toBe(true);
+      }
+      expect(existsSync(join(out, 'kenney-mini-arena/Models/GLB format/Textures/colormap.png'))).toBe(true);
+      expect(existsSync(join(out, glbPath('kenney-mini-arena', 'unused')))).toBe(false);
+      expect(existsSync(join(out, 'waternormals/waternormals.jpg'))).toBe(true);
     }
+  });
+
+  it('exits 1 naming a model a scene loads that the kit no longer has', () => {
+    const dir = sandbox();
+    withKits(dir, 'weapon-spear');
+    const r = run(dir);
+    expect(r.status).toBe(1);
+    expect(r.out).toContain('weapon-spear is not in the kenney-mini-arena kit');
   });
 });

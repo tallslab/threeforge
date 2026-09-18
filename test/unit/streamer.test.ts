@@ -7,6 +7,7 @@ import {
   PerspectiveCamera,
   RGBAFormat,
   Scene,
+  Sprite,
   UnsignedByteType,
 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
@@ -132,6 +133,21 @@ describe('Streamer', () => {
     expect(extra.parent).toBe(scene);
     expect(tiles[3]!.parent).toBe(scene);
     expect(w.chunks().get('3,0,0')![0]!.parent).toBe(scene);
+  });
+});
+
+describe('Streamer and sprites', () => {
+  it('keeps the geometry every Sprite shares when a chunk holding one unloads', () => {
+    const { scene, camera, world: w } = world();
+    const sprite = new Sprite();
+    scene.add(sprite);
+    const shared = vi.spyOn(sprite.geometry, 'dispose');
+    const streamer = new Streamer({ world: w, camera, radius: 5, margin: 0 });
+    streamer.assign(sprite, [3, 0, 0]);
+    streamer.update();
+    expect(sprite.parent).toBeNull();
+    expect(shared).not.toHaveBeenCalled();
+    shared.mockRestore();
   });
 });
 

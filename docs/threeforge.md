@@ -844,7 +844,12 @@ files from the installed three.
 `ResourceTracker` (`src/memory/ResourceTracker.ts`): `track(root | geometry | texture | material, owner?)`,
 `release(owner)` disposes what no other owner holds (never a material the registry knows) and detaches an Object3D
 owner, `dispose()`, `stats()`. `collectResources(root)` and `unreferencedResources(info, scene, allowance)` are the
-building blocks (`src/memory/resources.ts`).
+building blocks (`src/memory/resources.ts`). Neither `release()` nor a `Streamer` unload disposes the geometry three
+shares between every `Sprite` (`isSharedSpriteGeometry(geometry)`): it belongs to no scene, and on WebGPU in r186
+disposing it breaks every sprite drawn afterwards with "used in submit while destroyed"
+(`WebGPUAttributeUtils.destroyAttribute` destroys an interleaved buffer but deletes its record under the attribute,
+not the `InterleavedBuffer` it is kept under, so the next upload reuses the destroyed buffer). Code that frees a
+scene by hand should skip it the same way.
 
 `Streamer` (`src/streaming/Streamer.ts`) manages the residency of `world.chunks()` (batches, instanced groups and
 baked meshes carry `userData.forgeChunk`) plus uncompiled static scene children placed by position, keyed by x and

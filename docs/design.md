@@ -391,7 +391,10 @@ static page that runs the same eight scenes in both variants on the device's bes
 as a GitHub issue. One scene registry: the page imports `BENCH_SCENES` unchanged, and `test/app/benchMetrics.ts`
 (`WARM`, `MEASURED`, `metricsOf`, `METRIC_KEYS`) is shared with the CI runner so the two cannot drift. `env`
 adds a two-second fill-rate probe (transparent fullscreen layers doubled until the frame drops below vsync),
-informational only.
+informational only. `scripts/bench-app-assets.mjs` copies what the kit-backed scenes load
+(`scripts/bench-app-kits.mjs`) and the textures those GLBs keep outside themselves; `crowd` and `bossfight` throw
+on a file the page does not carry, and a run with an uncaptured GPU error (`renderer.onError`) fails instead of
+producing a result, so neither a thinner scene nor dropped GPU work is ever measured.
 
 Results are GitHub-native, with no server, no accounts and no secret beyond `GITHUB_TOKEN`: the page opens a
 prefilled issue when the encoded URL stays under 7,000 characters and otherwise shows the JSON to copy. The

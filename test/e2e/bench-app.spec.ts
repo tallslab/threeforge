@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { validateDeviceResult } from '../../scripts/bench-schema.mjs';
 import { SCENE_IDS } from '../app/benchMetrics.js';
 import { expect, test } from './fixtures.js';
@@ -43,4 +44,22 @@ test('bench page runs village and rpg, builds a valid result and offers the issu
   expect(result.scenes.rpg!.optimized.unattributed).toBe(0);
   expect(await page.locator('#json').textContent()).toContain('```json');
   expect(await page.locator('#liveBody tr').count()).toBe(8);
+});
+
+test('bench page runs lake after bossfight without a GPU error', async ({ page, backend }) => {
+  test.skip(!existsSync('bench-app/public/kenney-mini-arena'), 'the kits are not downloaded (pnpm assets:kits)');
+  test.setTimeout(300_000);
+  const failed: string[] = [];
+  page.on('response', (r) => {
+    if (r.status() >= 400 && !r.url().endsWith('/favicon.ico')) failed.push(`${r.status()} ${r.url()}`);
+  });
+  await page.goto(`http://localhost:5180/?auto=1&scenes=bossfight,lake&measured=5&probe=0&backend=${backend}`);
+  await page.waitForFunction('window.__bench && window.__bench.done === true', undefined, { timeout: 240_000 });
+  const state = (await page.evaluate('window.__bench')) as BenchState;
+  // Sprites draw one geometry three shares between scenes: disposed with bossfight, lake's sprites fail validation.
+  expect(state.error, state.error).toBeUndefined();
+  expect(failed).toEqual([]);
+  // The whole arena, not what is left of it when a kit file is missing from the page's assets.
+  expect(state.result!.scenes.bossfight!.naive.sceneSubmissions).toBeGreaterThan(2000);
+  expect(state.result!.scenes.lake!.naive.unattributed).toBe(0);
 });

@@ -157,7 +157,13 @@ export {
   type ResourceTrackerOptions,
   type TrackerStats,
 } from './memory/ResourceTracker.js';
-export { collectResources, emptyResourceSets, type ResourceSets, unreferencedResources } from './memory/resources.js';
+export {
+  collectResources,
+  emptyResourceSets,
+  isSharedSpriteGeometry,
+  type ResourceSets,
+  unreferencedResources,
+} from './memory/resources.js';
 export {
   ParticleBudget,
   type ParticleBudgetOptions,

@@ -53,6 +53,8 @@ export interface ArenaOptions {
   shadows?: boolean;
   /** Merge each fighter's skinned parts (body + head) into one skinned mesh with one atlas. */
   assemble?: boolean;
+  /** Where a path of the assets directory is served from (default: the site root, as the test harness serves it). */
+  url?: (path: string) => string;
 }
 
 export interface Arena {
@@ -83,40 +85,46 @@ export async function buildArena({
   effects = 6,
   shadows = true,
   assemble = false,
+  url = (path) => `/${path}`,
 }: ArenaOptions): Promise<Arena> {
   const rng = mulberry32(seed);
   const scene = new Scene();
   scene.name = 'arena';
   scene.background = new Color(0x0b0d14);
   const counts: Record<string, number> = {};
-  const lists = (
-    await Promise.all(
-      ['/kits-index.json'].map((u) =>
-        fetch(u)
-          .then((r) => (r.ok ? r.json() : []))
-          .catch(() => []),
-      ),
-    )
-  ).flat() as KitIndex[];
+  const lists = (await fetch(url('kits-index.json'))
+    .then((r) => (r.ok ? r.json() : []))
+    .catch(() => [])) as KitIndex[];
   const kit = (name: string) => lists.find((k) => k.name === name && !k.error);
+  // A missing asset throws: the scene built without it still renders, thinner, and would be measured as the arena.
+  const found = (kitName: string, base: string, path: string | undefined): string => {
+    if (!path) throw new Error(`${base} not found in the ${kitName} kit (run: FORGE_KITS_ONLY=1 pnpm assets:kits)`);
+    return path;
+  };
   const glb = (kitName: string, base: string) =>
-    kit(kitName)?.glbs?.find((g) => g.toLowerCase().endsWith(`/${base}.glb`));
+    found(
+      kitName,
+      base,
+      kit(kitName)?.glbs?.find((g) => g.toLowerCase().endsWith(`/${base}.glb`)),
+    );
   const tex = (kitName: string, base: string) =>
-    kit(kitName)?.textures?.find(
-      (t) => t.toLowerCase().endsWith(`/${base}.png`) || t.toLowerCase().endsWith(`/${base}.jpg`),
+    found(
+      kitName,
+      base,
+      kit(kitName)?.textures?.find(
+        (t) => t.toLowerCase().endsWith(`/${base}.png`) || t.toLowerCase().endsWith(`/${base}.jpg`),
+      ),
     );
   const cache = new Map<string, { scene: Group; animations: AnimationClip[] }>();
-  const load = async (path: string | undefined) => {
-    if (!path) return null;
+  const load = async (path: string) => {
     if (!cache.has(path)) {
-      const gltf = await loader.loadAsync('/' + path);
+      const gltf = await loader.loadAsync(url(path));
       cache.set(path, { scene: gltf.scene, animations: gltf.animations });
     }
     return cache.get(path)!;
   };
   const textureLoader = new TextureLoader();
-  const loadTexture = async (path: string | undefined): Promise<Texture | null> =>
-    path ? textureLoader.loadAsync('/' + path) : null;
+  const loadTexture = (path: string): Promise<Texture> => textureLoader.loadAsync(url(path));
   const tagAll = (root: Object3D, kind: 'static' | 'dynamic') =>
     root.traverse((o) => {
       if ((o as Mesh).isMesh) {
@@ -144,21 +152,16 @@ export async function buildArena({
   const wall = await load(glb('kenney-mini-arena', 'wall'));
   const corner = await load(glb('kenney-mini-arena', 'wall-corner'));
   const column = await load(glb('kenney-mini-arena', 'column'));
-  const decor = (
-    await Promise.all(
-      ['statue', 'tree', 'banner', 'weapon-rack', 'trophy', 'block'].map((n) => load(glb('kenney-mini-arena', n))),
-    )
-  ).filter((x): x is NonNullable<typeof x> => x !== null);
-  const dungeon = (
-    await Promise.all(
-      ['barrel', 'chest', 'table', 'pot', 'chair', 'rocks', 'stones'].map((n) => load(glb('kenney-mini-dungeon', n))),
-    )
-  ).filter((x): x is NonNullable<typeof x> => x !== null);
+  const decor = await Promise.all(
+    ['statue', 'tree', 'banner', 'weapon-rack', 'trophy', 'block'].map((n) => load(glb('kenney-mini-arena', n))),
+  );
+  const dungeon = await Promise.all(
+    ['barrel', 'chest', 'table', 'pot', 'chair', 'rocks', 'stones'].map((n) => load(glb('kenney-mini-dungeon', n))),
+  );
   let tiles = 0;
   for (let i = -half; i < half; i++) {
     for (let j = -half; j < half; j++) {
-      const proto = (i + j) % 5 === 0 && floorDetail ? floorDetail : floor;
-      if (!proto) continue;
+      const proto = (i + j) % 5 === 0 ? floorDetail : floor;
       placeStatic(proto.scene, i * S + S / 2, j * S + S / 2, 0, S);
       tiles++;
     }
@@ -171,24 +174,21 @@ export async function buildArena({
       [-half * S, i * S + S / 2, Math.PI / 2],
       [half * S, i * S + S / 2, -Math.PI / 2],
     ] as Array<[number, number, number]>) {
-      const proto = i % 4 === 0 && column ? column : wall;
-      if (!proto) continue;
+      const proto = i % 4 === 0 ? column : wall;
       placeStatic(proto.scene, x, z, rot, S);
       walls++;
     }
   }
-  if (corner)
-    for (const [x, z, r] of [
-      [-half * S, -half * S, 0],
-      [half * S, -half * S, -Math.PI / 2],
-      [half * S, half * S, Math.PI],
-      [-half * S, half * S, Math.PI / 2],
-    ] as Array<[number, number, number]>)
-      placeStatic(corner.scene, x, z, r, S);
+  for (const [x, z, r] of [
+    [-half * S, -half * S, 0],
+    [half * S, -half * S, -Math.PI / 2],
+    [half * S, half * S, Math.PI],
+    [-half * S, half * S, Math.PI / 2],
+  ] as Array<[number, number, number]>)
+    placeStatic(corner.scene, x, z, r, S);
   let props = 0;
   for (let i = 0; i < 40; i++) {
-    const proto = i % 2 ? decor[Math.floor(rng() * decor.length)] : dungeon[Math.floor(rng() * dungeon.length)];
-    if (!proto) continue;
+    const proto = (i % 2 ? decor[Math.floor(rng() * decor.length)] : dungeon[Math.floor(rng() * dungeon.length)])!;
     const r = 26 + rng() * 10;
     const a = rng() * Math.PI * 2;
     placeStatic(proto.scene, Math.cos(a) * r, Math.sin(a) * r, rng() * Math.PI * 2, S * (0.8 + rng() * 0.6));
@@ -222,20 +222,17 @@ export async function buildArena({
     'character-male-d',
     'character-female-d',
   ];
-  const weapons = (
-    await Promise.all(
-      [
-        glb('kenney-mini-arena', 'weapon-sword'),
-        glb('kenney-mini-arena', 'weapon-spear'),
-        glb('kenney-blaster-kit', 'blaster-a'),
-        glb('kenney-blaster-kit', 'blaster-f'),
-      ].map(load),
-    )
-  ).filter((x): x is NonNullable<typeof x> => x !== null);
+  const weapons = await Promise.all(
+    [
+      glb('kenney-mini-arena', 'weapon-sword'),
+      glb('kenney-mini-arena', 'weapon-spear'),
+      glb('kenney-blaster-kit', 'blaster-a'),
+      glb('kenney-blaster-kit', 'blaster-f'),
+    ].map(load),
+  );
   let fighterCount = 0;
   for (let i = 0; i < fighters; i++) {
     const proto = await load(glb('kenney-mini-characters', characterNames[i % characterNames.length]!));
-    if (!proto) continue;
     const SkeletonUtils = await import('three/addons/utils/SkeletonUtils.js');
     const fighter = SkeletonUtils.clone(proto.scene) as Group;
     fighter.name = `fighter-${i}`;
@@ -320,7 +317,6 @@ export async function buildArena({
   ];
   for (let i = 0; i < blocky; i++) {
     const proto = await load(glb('kenney-blocky-characters', blockyNames[i % blockyNames.length]!));
-    if (!proto) continue;
     const c = proto.scene.clone();
     c.name = `blocky-${i}`;
     const a = (i / blocky) * Math.PI * 2 + 0.2;
@@ -377,7 +373,7 @@ export async function buildArena({
     const head = new Mesh(
       new PlaneGeometry(2, 3),
       new MeshBasicMaterial({
-        map: torchTex ?? undefined,
+        map: torchTex,
         color: 0xffa040,
         transparent: true,
         blending: AdditiveBlending,
@@ -403,7 +399,7 @@ export async function buildArena({
     const makeParticles = (
       name: string,
       n: number,
-      texture: Texture | null,
+      texture: Texture,
       color: number,
       size: number,
       center: Vector3,
@@ -423,7 +419,7 @@ export async function buildArena({
       geometry.setAttribute('position', position);
       const material = new PointsMaterial({
         size,
-        map: texture ?? undefined,
+        map: texture,
         color,
         transparent: true,
         blending: AdditiveBlending,
@@ -482,7 +478,7 @@ export async function buildArena({
     scene.traverse((o) => {
       if (/^fighter-|^blocky-/.test(o.name) && o.parent === scene) {
         const bar = new Sprite(
-          new SpriteMaterial({ map: barTex ?? undefined, color: 0x40ff60, transparent: true, depthWrite: false }),
+          new SpriteMaterial({ map: barTex, color: 0x40ff60, transparent: true, depthWrite: false }),
         );
         bar.name = `health-${o.name}`;
         bar.position.set(0, 2.2, 0);
@@ -490,7 +486,7 @@ export async function buildArena({
         o.add(bar);
         const hit = new Sprite(
           new SpriteMaterial({
-            map: starTex ?? undefined,
+            map: starTex,
             color: 0xff4040,
             transparent: true,
             depthWrite: false,
@@ -533,7 +529,7 @@ export async function buildArena({
     // Floor decals: scorch marks projected onto the floor tiles (unique geometries, one shared material).
     const scorchTex = await loadTexture(tex('kenney-particle-pack', 'scorch_01'));
     const decalMaterial = new MeshStandardMaterial({
-      map: scorchTex ?? undefined,
+      map: scorchTex,
       transparent: true,
       depthWrite: false,
       polygonOffset: true,
@@ -565,24 +561,22 @@ export async function buildArena({
 
     // Flipbook explosion: a quad whose texture window and opacity change with time.
     const flipTex = await loadTexture(tex('kenney-particle-pack', 'fire_01'));
-    if (flipTex) {
-      flipTex.repeat.set(0.5, 0.5);
-      const mesh = new Mesh(
-        new PlaneGeometry(6, 6),
-        new MeshBasicMaterial({
-          map: flipTex,
-          transparent: true,
-          blending: AdditiveBlending,
-          depthWrite: false,
-          side: DoubleSide,
-        }),
-      );
-      mesh.name = 'explosion';
-      mesh.position.set(6, 3, -6);
-      tag.dynamic(mesh); // material uniforms animate: tagged dynamic
-      scene.add(mesh);
-      flip = { mesh, texture: flipTex };
-    }
+    flipTex.repeat.set(0.5, 0.5);
+    const mesh = new Mesh(
+      new PlaneGeometry(6, 6),
+      new MeshBasicMaterial({
+        map: flipTex,
+        transparent: true,
+        blending: AdditiveBlending,
+        depthWrite: false,
+        side: DoubleSide,
+      }),
+    );
+    mesh.name = 'explosion';
+    mesh.position.set(6, 3, -6);
+    tag.dynamic(mesh); // material uniforms animate: tagged dynamic
+    scene.add(mesh);
+    flip = { mesh, texture: flipTex };
   }
 
   const setTime = (t: number): void => {

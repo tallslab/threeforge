@@ -1,6 +1,6 @@
 import { type Camera, type Mesh, type Object3D, type Texture, Vector3 } from 'three';
 import type { World } from '../compiler/World.js';
-import { collectResources, emptyResourceSets, type ResourceSets } from '../memory/resources.js';
+import { collectResources, emptyResourceSets, isSharedSpriteGeometry, type ResourceSets } from '../memory/resources.js';
 import { tag } from '../tags.js';
 
 export interface StreamerOptions {
@@ -166,7 +166,8 @@ export class Streamer {
     const resident = [...this.chunks.values()].filter((c) => c.resident);
     const held = <T>(pick: (s: ResourceSets) => Set<T>, item: T): boolean =>
       resident.some((c) => pick(c.resources).has(item));
-    for (const g of chunk.resources.geometries) if (!held((s) => s.geometries, g)) g.dispose();
+    for (const g of chunk.resources.geometries)
+      if (!held((s) => s.geometries, g) && !isSharedSpriteGeometry(g)) g.dispose();
     for (const t of chunk.resources.textures) if (!held((s) => s.textures, t)) t.dispose();
     for (const p of chunk.placed) {
       // BatchedMesh.dispose() nulls these; disposing them directly frees the GPU copies and three re-uploads on the next render.
