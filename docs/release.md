@@ -51,8 +51,9 @@ the pull request or push adds; merge commits are not checked. Run it locally the
 
 A green pull-request run is not full coverage. The `@corpus` tag takes every test that needs downloaded content out
 of the `e2e` job: most of `cli.spec.ts` and `mcp.spec.ts`, all of `ParticleBudget`, and the `arena`, `assets`,
-`bench`, `biome`, `crowd`, `vat` and `warmup` specs. **The `e2e` job on `webgpu` checks no pixels at all**: a Linux
-runner's WebGPU adapter is SwiftShader, so `test/e2e/fixtures.ts` turns `pixelChecks` off there. WebGPU pixel parity
+`bench`, `biome`, `crowd`, `vat` and `warmup` specs. **The `e2e` and `bench` jobs on `webgpu` are advisory and check no pixels**: a Linux
+runner's WebGPU adapter is SwiftShader, which drops the device between test steps, so `test/e2e/fixtures.ts` turns
+`pixelChecks` off there and CI reports those legs without blocking on them. WebGPU pixel parity
 is proven only by a local run on a native adapter (steps 2 and 4 above).
 
 `.github/workflows/assets.yml` runs the full corpus on both backends weekly (Mondays 04:17 UTC) and on manual
