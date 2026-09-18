@@ -159,8 +159,9 @@ export {
 } from './memory/ResourceTracker.js';
 export {
   collectResources,
+  disposeGeometries,
+  disposeGeometry,
   emptyResourceSets,
-  isInterleavedGeometry,
   isSharedSpriteGeometry,
   type ResourceSets,
   unreferencedResources,

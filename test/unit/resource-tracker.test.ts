@@ -1,8 +1,11 @@
 import {
   BatchedMesh,
   BoxGeometry,
+  BufferGeometry,
   DataTexture,
   Group,
+  InterleavedBuffer,
+  InterleavedBufferAttribute,
   type Material,
   Mesh,
   MeshStandardMaterial,
@@ -15,7 +18,12 @@ import {
 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { ResourceTracker } from '../../src/memory/ResourceTracker.js';
-import { collectResources, emptyResourceSets, unreferencedResources } from '../../src/memory/resources.js';
+import {
+  collectResources,
+  disposeGeometry,
+  emptyResourceSets,
+  unreferencedResources,
+} from '../../src/memory/resources.js';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
 
 const tex = () => new DataTexture(new Uint8Array(16), 2, 2, RGBAFormat, UnsignedByteType);
@@ -130,6 +138,46 @@ describe('the geometry every Sprite shares', () => {
     expect(tracker.release(owner).geometries).toBe(1);
     expect(shared).not.toHaveBeenCalled();
     shared.mockRestore();
+  });
+});
+
+describe('interleaved geometries', () => {
+  const packed = (buffer: InterleavedBuffer): BufferGeometry =>
+    new BufferGeometry()
+      .setAttribute('position', new InterleavedBufferAttribute(buffer, 3, 0))
+      .setAttribute('uv', new InterleavedBufferAttribute(buffer, 2, 3, true));
+  const triangle = () => new InterleavedBuffer(new Float32Array(15), 5);
+  const bufferOf = (g: BufferGeometry) => (g.getAttribute('position') as InterleavedBufferAttribute).data;
+
+  it('disposeGeometry renews interleaved attributes and leaves plain ones alone', () => {
+    const geometry = packed(triangle());
+    const plain = new BoxGeometry().getAttribute('normal');
+    geometry.setAttribute('normal', plain);
+    const uv = geometry.getAttribute('uv') as InterleavedBufferAttribute;
+    const disposed = vi.spyOn(geometry, 'dispose');
+    disposeGeometry(geometry);
+    expect(disposed).toHaveBeenCalledTimes(1);
+    const renewed = geometry.getAttribute('uv') as InterleavedBufferAttribute;
+    expect(renewed).not.toBe(uv);
+    expect([renewed.itemSize, renewed.offset, renewed.normalized]).toEqual([2, 3, true]);
+    expect(renewed.data).toBe(bufferOf(geometry));
+    expect(renewed.data.array).toBe(uv.data.array);
+    expect(geometry.getAttribute('normal')).toBe(plain);
+  });
+
+  it('release frees a geometry once the owner sharing its buffer is released too', () => {
+    const buffer = triangle();
+    const a = new Group().add(new Mesh(packed(buffer), new MeshStandardMaterial()));
+    const b = new Group().add(new Mesh(packed(buffer), new MeshStandardMaterial()));
+    const geometryA = (a.children[0] as Mesh).geometry;
+    const disposedA = vi.spyOn(geometryA, 'dispose');
+    const tracker = new ResourceTracker().track(a).track(b);
+    // Disposing it now would destroy the buffer b still draws from.
+    expect(tracker.release(a).geometries).toBe(0);
+    expect(disposedA).not.toHaveBeenCalled();
+    expect(tracker.release(b).geometries).toBe(2);
+    expect(disposedA).toHaveBeenCalledTimes(1);
+    expect(bufferOf(geometryA)).toBe(bufferOf((b.children[0] as Mesh).geometry));
   });
 });
 

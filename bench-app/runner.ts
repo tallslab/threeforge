@@ -5,8 +5,8 @@ import {
   createLoader,
   DrawCallLedger,
   detectTier,
+  disposeGeometries,
   gpuName,
-  isSharedSpriteGeometry,
   MaterialRegistry,
   type Tier,
   tierInputFromNavigator,
@@ -77,7 +77,7 @@ export async function createHost(want: Backend | 'auto', mount: HTMLElement): Pr
 /** Frees every geometry, material and texture reachable from a finished scene, its environment included (phones have little GPU memory). */
 function disposeScene(root: Object3D): void {
   const { geometries, materials, textures } = collectResources(root);
-  for (const g of geometries) if (!isSharedSpriteGeometry(g)) g.dispose();
+  disposeGeometries(geometries, new Set());
   for (const m of materials) m.dispose();
   for (const t of textures) t.dispose();
 }

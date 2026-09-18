@@ -218,5 +218,9 @@ describe('DrawCallLedger snapshot, report and budget', () => {
     });
     ledger.rescan();
     expect(ledger.frame().memory.unreferenced.geometries).toBe(0);
+    // A chunk unloaded before its first frame was never uploaded: three holds nothing for it, so nothing is allowed.
+    Object.assign(renderer, { _geometries: { has: (o: { geometry: unknown }) => o.geometry !== kept } });
+    ledger.rescan();
+    expect(ledger.frame().memory.unreferenced.geometries).toBe(1);
   });
 });

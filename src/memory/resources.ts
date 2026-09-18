@@ -1,6 +1,8 @@
 import {
   type BufferGeometry,
-  type InterleavedBufferAttribute,
+  InstancedInterleavedBuffer,
+  InterleavedBuffer,
+  InterleavedBufferAttribute,
   type Material,
   type Object3D,
   Sprite,
@@ -21,25 +23,80 @@ let spriteGeometry: BufferGeometry | undefined;
 
 /**
  * Whether `geometry` is the one three shares between every `Sprite` (module-level in Sprite.js): it belongs to no
- * scene, so freeing a scene's resources must leave it. On WebGPU in r186 disposing it breaks every sprite drawn
- * afterwards: `WebGPUAttributeUtils.destroyAttribute` destroys an interleaved buffer but deletes its record under
- * the attribute, not the `InterleavedBuffer` it is kept under, so the next upload reuses the destroyed buffer.
+ * scene, and sprites the caller knows nothing about draw it, so freeing a scene's resources leaves it.
  */
 export function isSharedSpriteGeometry(geometry: BufferGeometry): boolean {
   spriteGeometry ??= new Sprite().geometry;
   return geometry === spriteGeometry;
 }
 
+const renewedBuffers = new WeakMap<InterleavedBuffer, InterleavedBuffer>();
+
+function interleavedAttributes(geometry: BufferGeometry): [string, InterleavedBufferAttribute][] {
+  return Object.entries(geometry.attributes).filter(
+    (entry): entry is [string, InterleavedBufferAttribute] =>
+      (entry[1] as InterleavedBufferAttribute).isInterleavedBufferAttribute === true,
+  );
+}
+
 /**
- * Whether an attribute of `geometry` reads from an `InterleavedBuffer`; GLTFLoader builds one for every bufferView
- * with a byteStride. On WebGPU in r186 such a geometry cannot be disposed and then drawn again, for the defect
- * `isSharedSpriteGeometry` describes. glTF primitives that reuse an accessor share its buffer, so disposing one
- * geometry also breaks the others on it.
+ * `geometry.dispose()` that leaves the geometry drawable. three r186 cannot draw an interleaved geometry again after
+ * a dispose: on WebGPU `WebGPUAttributeUtils.destroyAttribute` keeps the destroyed buffer's record under the
+ * `InterleavedBuffer` and the next upload reuses it ("used in submit while destroyed"); on WebGL2
+ * `Geometries.updateAttribute` skips every attribute after the first of a buffer it has seen before, so they get no
+ * buffer back and the draw fails with INVALID_OPERATION, silently. Both key on object identity, so the interleaved
+ * attributes are replaced by new ones over a new `InterleavedBuffer` on the same array; geometries that shared a
+ * buffer share the new one. A reference taken to `geometry.attributes.x` before this call is stale after it.
  */
-export function isInterleavedGeometry(geometry: BufferGeometry): boolean {
-  for (const attribute of Object.values(geometry.attributes))
-    if ((attribute as InterleavedBufferAttribute).isInterleavedBufferAttribute) return true;
-  return false;
+export function disposeGeometry(geometry: BufferGeometry): void {
+  geometry.dispose();
+  for (const [name, attribute] of interleavedAttributes(geometry)) {
+    const old = attribute.data;
+    let buffer = renewedBuffers.get(old);
+    if (!buffer) {
+      const instanced = old as InstancedInterleavedBuffer & { isInstancedInterleavedBuffer?: boolean };
+      buffer = instanced.isInstancedInterleavedBuffer
+        ? new InstancedInterleavedBuffer(old.array, old.stride, instanced.meshPerAttribute)
+        : new InterleavedBuffer(old.array, old.stride);
+      buffer.setUsage(old.usage);
+      renewedBuffers.set(old, buffer);
+    }
+    const renewed = new InterleavedBufferAttribute(buffer, attribute.itemSize, attribute.offset, attribute.normalized);
+    renewed.name = attribute.name;
+    geometry.setAttribute(name, renewed);
+  }
+}
+
+/**
+ * Disposes each of `geometries` that nothing `inUse` still needs. `left` are the ones it left uploaded although they
+ * are not in use themselves: the geometry every Sprite shares, and a geometry reading an `InterleavedBuffer` that one
+ * in use reads too (GLTFLoader caches one buffer per accessor, so primitives reusing an accessor share it), since
+ * disposing it would destroy the buffer under the geometry still drawn. Pass those back in with a later call: they go
+ * once nothing in use shares their buffer.
+ */
+export function disposeGeometries(
+  geometries: Iterable<BufferGeometry>,
+  inUse: ReadonlySet<BufferGeometry>,
+): { disposed: number; left: BufferGeometry[] } {
+  let buffersInUse: Set<InterleavedBuffer> | undefined;
+  const sharesBufferInUse = (geometry: BufferGeometry): boolean => {
+    const attributes = interleavedAttributes(geometry);
+    if (attributes.length === 0) return false;
+    buffersInUse ??= new Set([...inUse].flatMap((g) => interleavedAttributes(g).map(([, a]) => a.data)));
+    return attributes.some(([, a]) => buffersInUse!.has(a.data));
+  };
+  const left: BufferGeometry[] = [];
+  let disposed = 0;
+  for (const geometry of new Set(geometries)) {
+    if (inUse.has(geometry)) continue;
+    if (isSharedSpriteGeometry(geometry) || sharesBufferInUse(geometry)) {
+      left.push(geometry);
+      continue;
+    }
+    disposeGeometry(geometry);
+    disposed++;
+  }
+  return { disposed, left };
 }
 
 /** Adds `value` when it is a texture: material properties, a scene's background and a mesh's internal maps all arrive untyped. */

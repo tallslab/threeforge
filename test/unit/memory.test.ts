@@ -33,6 +33,7 @@ import { describe, expect, it } from 'vitest';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { estimateMemory, geometryBytes, textureBytes } from '../../src/ledger/memory.js';
 import { disposeOverdraw, measureOverdraw, overdrawTargetOf } from '../../src/ledger/overdraw.js';
+import { isUploadedGeometry } from '../../src/ledger/weakMembers.js';
 import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
 import { attachedLedger } from './helpers/ledger.js';
 
@@ -396,6 +397,26 @@ describe('three r186 renderer internals the memory section reads (canary)', () =
       estimateMemory(scene, { textures: 1 + 2, geometries: 2 }, [0, 0], { frameBufferTargets: [target] }).unreferenced
         .textures,
     ).toBe(0);
+  });
+});
+
+// Canary: pins `Renderer._geometries` and `Geometries.has` (three r186, Renderer.js ~328 and ~831, Geometries.js ~150),
+// which `isUploadedGeometry` reads. If it fails, the ledger allows every geometry a Streamer reports as retained.
+describe('three r186 geometry bookkeeping the ledger reads (canary)', () => {
+  it('pins Renderer._geometries and Geometries.has in three r186', async () => {
+    const backend = { getDomElement: () => ({ width: 300, height: 150, style: {} }) };
+    expect(new Renderer(backend as never), 'null until init() builds it').toHaveProperty('_geometries', null);
+    const { default: Geometries } = (await import('three/src/renderers/common/Geometries.js' as string)) as {
+      default: new (attributes: unknown, info: unknown) => { has(o: object): boolean; get(o: object): object };
+    };
+    const geometries = new Geometries({}, { memory: { geometries: 0 } });
+    const geometry = new BoxGeometry();
+    expect(geometries.has({ geometry })).toBe(false);
+    Object.assign(geometries.get(geometry), { initialized: true });
+    expect(geometries.has({ geometry }), 'has() reads only renderObject.geometry').toBe(true);
+    expect(isUploadedGeometry({ _geometries: geometries } as never, geometry)).toBe(true);
+    expect(isUploadedGeometry({ _geometries: geometries } as never, new BoxGeometry())).toBe(false);
+    expect(isUploadedGeometry({} as never, new BoxGeometry()), 'absent: taken for uploaded').toBe(true);
   });
 });
 

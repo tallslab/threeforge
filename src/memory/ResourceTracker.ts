@@ -1,5 +1,5 @@
 import type { BufferGeometry, Material, Object3D, Texture } from 'three';
-import { collectResources, emptyResourceSets, isSharedSpriteGeometry, type ResourceSets } from './resources.js';
+import { collectResources, disposeGeometries, emptyResourceSets, type ResourceSets } from './resources.js';
 
 export interface ResourceTrackerOptions {
   /**
@@ -35,6 +35,8 @@ export interface TrackerStats {
  */
 export class ResourceTracker {
   private readonly owners = new Map<object, ResourceSets>();
+  /** Released geometries `disposeGeometries` left uploaded; the next release tries them again. */
+  private left = new Set<BufferGeometry>();
   private readonly options: ResourceTrackerOptions;
 
   constructor(options: ResourceTrackerOptions = {}) {
@@ -70,11 +72,10 @@ export class ResourceTracker {
     const others = [...this.owners.values()];
     const heldElsewhere = <T>(pick: (s: ResourceSets) => Set<T>, item: T): boolean =>
       others.some((s) => pick(s).has(item));
-    for (const g of sets.geometries) {
-      if (heldElsewhere((s) => s.geometries, g) || isSharedSpriteGeometry(g)) continue;
-      g.dispose();
-      report.geometries++;
-    }
+    const inUse = new Set(others.flatMap((s) => [...s.geometries]));
+    const geometries = disposeGeometries([...sets.geometries, ...this.left], inUse);
+    this.left = new Set(geometries.left);
+    report.geometries = geometries.disposed;
     for (const t of sets.textures) {
       if (heldElsewhere((s) => s.textures, t)) continue;
       t.dispose();

@@ -81,3 +81,14 @@ export function frameBufferTargetsOf(renderer: LedgerRenderer | null): AllowedRe
   }
   return targets;
 }
+
+/**
+ * Whether three holds GPU buffers for `geometry`, from three r186's private `renderer._geometries` (`Geometries.has`
+ * takes a render object and reads only its `geometry`). True when the field is absent or has no `has`: a geometry
+ * wrongly taken for uploaded hides one leak, the other answer would report one that is not there. The canary in
+ * test/unit/memory.test.ts pins the shape.
+ */
+export function isUploadedGeometry(renderer: LedgerRenderer | null, geometry: unknown): boolean {
+  const geometries = (renderer as { _geometries?: { has?: unknown } } | null)?._geometries;
+  return typeof geometries?.has !== 'function' || geometries.has({ geometry }) === true;
+}

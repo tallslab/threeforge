@@ -155,36 +155,62 @@ describe('Streamer and sprites', () => {
 });
 
 describe('Streamer and interleaved geometries', () => {
-  /** A triangle whose position and uv read from one InterleavedBuffer, as GLTFLoader builds a bufferView with a byteStride. */
-  function interleaved(): BufferGeometry {
-    const buffer = new InterleavedBuffer(new Float32Array([0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]), 5);
+  /** A triangle whose position and uv read from `buffer`, as GLTFLoader builds a bufferView with a byteStride. */
+  function interleaved(
+    buffer = new InterleavedBuffer(new Float32Array([0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]), 5),
+  ): BufferGeometry {
     return new BufferGeometry()
       .setAttribute('position', new InterleavedBufferAttribute(buffer, 3, 0))
       .setAttribute('uv', new InterleavedBufferAttribute(buffer, 2, 3));
   }
+  const at = (x: number, geometry: BufferGeometry): Mesh => {
+    const mesh = tag.static(new Mesh(geometry, new MeshStandardMaterial()));
+    mesh.position.set(x, 0, 0);
+    return mesh;
+  };
 
-  it('leaves an interleaved geometry on the GPU when its chunk unloads', () => {
+  it('frees an interleaved geometry on unload and leaves it drawable', () => {
     const { scene, camera, world: w } = world();
-    const packed = tag.static(new Mesh(interleaved(), new MeshStandardMaterial()));
-    const plain = tag.static(new Mesh(new BoxGeometry(), new MeshStandardMaterial()));
-    for (const mesh of [packed, plain]) {
-      mesh.position.set(70, 0, 0);
-      scene.add(mesh);
-    }
-    const kept = vi.spyOn(packed.geometry, 'dispose');
-    const freed = vi.spyOn(plain.geometry, 'dispose');
+    const packed = at(70, interleaved());
+    scene.add(packed);
+    const before = packed.geometry.getAttribute('position') as InterleavedBufferAttribute;
+    const disposed = vi.spyOn(packed.geometry, 'dispose');
     const streamer = new Streamer({ world: w, camera, radius: 5, margin: 0 });
     streamer.update();
     expect(packed.parent).toBeNull();
-    expect(kept).not.toHaveBeenCalled();
-    expect(freed).toHaveBeenCalledTimes(1);
-    // Until the chunk is back the ledger has to allow what stayed uploaded, or it reads as a leak.
-    expect(streamer.retainedGeometries()).toEqual([packed.geometry]);
-    camera.position.x = 70;
+    expect(disposed).toHaveBeenCalledTimes(1);
+    expect(streamer.retainedGeometries()).toEqual([]);
+    // three r186 cannot upload the same interleaved objects twice: new ones, over the same array.
+    const after = packed.geometry.getAttribute('position') as InterleavedBufferAttribute;
+    expect(after).not.toBe(before);
+    expect(after.data).not.toBe(before.data);
+    expect(after.data.array).toBe(before.data.array);
+  });
+
+  it('keeps a geometry uploaded while a resident chunk reads its buffer', () => {
+    const { scene, camera, world: w } = world();
+    const near = at(2, interleaved());
+    const shared = (near.geometry.getAttribute('position') as InterleavedBufferAttribute).data;
+    const far = at(70, interleaved(shared));
+    scene.add(near, far);
+    const nearDisposed = vi.spyOn(near.geometry, 'dispose');
+    const farDisposed = vi.spyOn(far.geometry, 'dispose');
+    camera.position.x = 2;
+    camera.updateMatrixWorld();
+    const streamer = new Streamer({ world: w, camera, radius: 5, margin: 0 });
+    streamer.update();
+    // Disposing it would destroy the buffer the resident mesh still draws from.
+    expect(far.parent).toBeNull();
+    expect(farDisposed).not.toHaveBeenCalled();
+    expect(streamer.retainedGeometries()).toEqual([far.geometry]);
+    camera.position.x = 500;
     camera.updateMatrixWorld();
     streamer.update();
-    expect(packed.parent).toBe(scene);
+    expect(nearDisposed).toHaveBeenCalledTimes(1);
+    expect(farDisposed).toHaveBeenCalledTimes(1);
     expect(streamer.retainedGeometries()).toEqual([]);
+    const buffer = (g: BufferGeometry) => (g.getAttribute('position') as InterleavedBufferAttribute).data;
+    expect(buffer(near.geometry), 'still one buffer between them').toBe(buffer(far.geometry));
   });
 });
 

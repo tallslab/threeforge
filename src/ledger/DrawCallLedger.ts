@@ -50,7 +50,13 @@ import {
   type MemorySnapshot,
   type Tier,
 } from './snapshot.js';
-import { forgetInternalResources, frameBufferTargetsOf, noteGeometry, WeakMembers } from './weakMembers.js';
+import {
+  forgetInternalResources,
+  frameBufferTargetsOf,
+  isUploadedGeometry,
+  noteGeometry,
+  WeakMembers,
+} from './weakMembers.js';
 
 export type { LedgerRenderer } from './rendererPatch.js';
 
@@ -260,7 +266,7 @@ export class DrawCallLedger {
       renderTargets,
       internalTextures: this.internalTextures.size,
       rendererTextures: this.pmremTextures,
-      internalGeometries: [...this.internalGeometries.live(), ...(this.streamer?.retainedGeometries?.() ?? [])],
+      internalGeometries: [...this.internalGeometries.live(), ...this.retainedUploads()],
       shadowMapType: this.renderer?.shadowMap?.type,
       ...(frameBuffers ? { frameBufferTargets: frameBuffers } : {}),
     });
@@ -295,6 +301,12 @@ export class DrawCallLedger {
     if (!this.streamer) return this.memoryStats;
     const s = this.streamer.stats();
     return { ...this.memoryStats, chunks: { total: s.chunks, resident: s.resident } };
+  }
+
+  /** What the attached Streamer left on the GPU. A chunk unloaded before its first frame was never uploaded. */
+  private retainedUploads(): unknown[] {
+    const retained = [...(this.streamer?.retainedGeometries?.() ?? [])];
+    return retained.filter((geometry) => isUploadedGeometry(this.renderer, geometry));
   }
 
   /** A Streamer whose chunk residency the memory section reports; null detaches. */

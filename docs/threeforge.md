@@ -844,12 +844,23 @@ files from the installed three.
 `ResourceTracker` (`src/memory/ResourceTracker.ts`): `track(root | geometry | texture | material, owner?)`,
 `release(owner)` disposes what no other owner holds (never a material the registry knows) and detaches an Object3D
 owner, `dispose()`, `stats()`. `collectResources(root)` and `unreferencedResources(info, scene, allowance)` are the
-building blocks (`src/memory/resources.ts`). Neither `release()` nor a `Streamer` unload disposes the geometry three
-shares between every `Sprite` (`isSharedSpriteGeometry(geometry)`): it belongs to no scene, and on WebGPU in r186
-disposing it breaks every sprite drawn afterwards with "used in submit while destroyed"
-(`WebGPUAttributeUtils.destroyAttribute` destroys an interleaved buffer but deletes its record under the attribute,
-not the `InterleavedBuffer` it is kept under, so the next upload reuses the destroyed buffer). Code that frees a
-scene by hand should skip it the same way.
+building blocks (`src/memory/resources.ts`).
+
+`release()` and a `Streamer` unload dispose geometries through `disposeGeometries(geometries, inUse)`, which code
+that frees a scene by hand should use too. three r186 cannot draw an interleaved geometry again after `dispose()`
+(GLTFLoader builds one for every bufferView with a byteStride, and glTF-Transform writes that layout by default). On
+WebGPU `WebGPUAttributeUtils.destroyAttribute` keeps the destroyed buffer's record under the `InterleavedBuffer`, so
+the next upload reuses it and every submit fails with "used in submit while destroyed". On WebGL2
+`Geometries.updateAttribute` skips every attribute after the first of a buffer it has seen before, so the draw fails
+with INVALID_OPERATION and nothing says so. Both key on object identity, so `disposeGeometry(geometry)` disposes and
+then replaces the interleaved attributes by new ones over a new `InterleavedBuffer` on the same array; geometries
+that shared a buffer share the new one. A reference taken to `geometry.attributes.position` before that is stale
+after it. Two geometries are left uploaded: the one three shares between every `Sprite`
+(`isSharedSpriteGeometry(geometry)`, it belongs to no scene), and one that reads an `InterleavedBuffer` a geometry
+still in use reads too (GLTFLoader caches one per accessor, so primitives that reuse an accessor share it), since
+disposing it destroys the buffer under the one still drawn. Those go with a later release or unload, once nothing in
+use shares their buffer. A geometry that shares a buffer with one the tracker or the streamer does not know about is
+not protected.
 
 `Streamer` (`src/streaming/Streamer.ts`) manages the residency of `world.chunks()` (batches, instanced groups and
 baked meshes carry `userData.forgeChunk`) plus uncompiled static scene children placed by position, keyed by x and
@@ -857,17 +868,12 @@ z. A chunk is resident while the ground-plane distance from the camera to the ce
 (default `camera.far`) and unloaded past `radius + margin × chunkSize` (first update strict). Unload removes the
 objects and disposes the geometries and textures no resident chunk shares, including a BatchedMesh's matrix,
 indirect and colour textures (never `BatchedMesh.dispose()`, which nulls them); load re-adds them and three
-re-uploads. A geometry with an `InterleavedBufferAttribute` (`isInterleavedGeometry(geometry)`; GLTFLoader builds
-one for every bufferView with a byteStride) is not disposed: on WebGPU in r186 the defect above makes it fail
-validation once it is drawn again, and so does any resident geometry on the same `InterleavedBuffer` (GLTFLoader
-caches one per accessor range, so primitives that reuse an accessor share it). It reaches the Streamer as an
-uncompiled static or as an instanced group, which draws the source geometry; a BatchedMesh owns a plain copy and is
-freed in full. The cost is that those vertex and index buffers stay on the GPU while the chunk is away (textures
-still leave). Pass the geometry through `deinterleaveGeometry` (`three/addons/utils/BufferGeometryUtils.js`) at load
-to get them freed too. `retainedGeometries()` lists what stayed, and an attached ledger allows it instead of
-counting it under `memory.unreferenced`. `assign`, `userData.forgeStream = false`, `stats()`, `onChange`, `dispose()`
-(every chunk resident again, then the chunks and the object index released, so a disposed Streamer holds none of the World's objects, `stats()`
-reports none and a later `update()` does nothing). `ledger.attachStreamer(streamer)`.
+re-uploads. An interleaved geometry reaches the Streamer as an uncompiled static or as an instanced group, which
+draws the source geometry (a BatchedMesh owns a plain copy), and is freed like any other. `retainedGeometries()`
+lists what `disposeGeometries` left uploaded for chunks that are away, and an attached ledger allows those three
+holds buffers for instead of counting them under `memory.unreferenced`. `assign`, `userData.forgeStream = false`, `stats()`, `onChange`, `dispose()`
+(every chunk resident again, then the chunks and the object index released, so a disposed Streamer holds none of the
+World's objects, `stats()` reports none and a later `update()` does nothing). `ledger.attachStreamer(streamer)`.
 
 In the ledger: `memory.unreferenced`, `memory.chunks`, `memory.measured`, budget `geometryBytes` (256 / 96 / 48 MB),
 hints `geometry-bytes` and `unreferenced-resources` (eight or more). Authoring notes: `docs/memory.md`. In the bench,

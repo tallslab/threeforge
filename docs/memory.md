@@ -115,11 +115,10 @@ so with a fog that reaches the far plane nothing visible ever pops: `test/e2e/st
 start frame to under 0.5 % of pixels changed against the unstreamed one, at a per-channel tolerance of 24), and unloads past `radius + margin × chunkSize` (hysteresis, default one cell; the first update
 places strictly). Unloading removes the chunk's objects from the scene and disposes the geometries and textures
 no resident chunk shares (a BatchedMesh's matrix textures too, without `BatchedMesh.dispose()`, which would
-destroy them); materials stay, the registry owns them. Interleaved geometries, which is what GLTFLoader builds for
-a bufferView with a byteStride, are the exception: three r186 on WebGPU cannot upload one a second time, so their
-buffers stay on the GPU while the chunk is away. Run such a geometry through `deinterleaveGeometry`
-(`three/addons/utils/BufferGeometryUtils.js`) after loading if that memory matters. Loading adds the objects back
-and three re-uploads on the next render: expect one frame of upload work per chunk that comes back. The CPU copies stay in the JS heap; nothing
+destroy them); materials stay, the registry owns them. An interleaved geometry, which is what GLTFLoader builds for
+a bufferView with a byteStride, is freed too and comes back with new attribute objects over the same array, because
+three r186 cannot upload the old ones a second time (`disposeGeometry`); only one whose buffer a resident chunk
+still reads waits for that chunk to leave. Loading adds the objects back and three re-uploads on the next render: expect one frame of upload work per chunk that comes back. The CPU copies stay in the JS heap; nothing
 is re-fetched. `stats()` gives `{ chunks, resident, loads, unloads }`, `onChange` the events, `dispose()` makes
 everything resident again and then releases the chunks and the object index, so a disposed Streamer holds none of the
 World's objects, `stats()` reports `chunks: 0, resident: 0` and a later `update()` does nothing.
