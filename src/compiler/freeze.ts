@@ -23,7 +23,7 @@ type Kinded = Object3D & {
 };
 
 /** A node that only ever holds other nodes: Group, Object3D, LOD roots without their own draw. */
-function isContainer(o: Kinded): boolean {
+export function isContainer(o: Kinded): boolean {
   return !(o.isMesh || o.isLight || o.isCamera || o.isBone || o.isSprite || o.isPoints || o.isLine || o.isScene);
 }
 

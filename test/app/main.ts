@@ -245,6 +245,7 @@ try {
     ...(params.get('sprites') === 'keep' ? { sprites: 'keep' as const } : {}),
     ...(params.get('transparent') === 'keep' ? { transparent: 'keep' as const } : {}),
     ...(params.get('freeze') === '0' ? { freeze: false } : {}),
+    ...(params.get('originals') === 'detach' ? { originals: 'detach' as const } : {}),
     ...(built.worldOptions ?? {}),
   });
   const compile = (): CompileReport => {

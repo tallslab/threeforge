@@ -45,6 +45,27 @@ describe('exposeToAgents', () => {
     expect(target.__threeforge).toBeUndefined();
   });
 
+  it('follows a World the app compiles and decompiles itself', () => {
+    const { ledger, scene } = attachedLedger();
+    const box = new BoxGeometry();
+    const material = new MeshStandardMaterial();
+    for (let i = 0; i < 3; i++) scene.add(tag.static(new Mesh(box, material)));
+    const world = new World(scene, { ledger });
+    world.compile();
+    const target: { __threeforge?: AgentHook } = {};
+    exposeToAgents({ ledger, world, target });
+    const hook = target.__threeforge!;
+    expect(hook.compile).toBeUndefined();
+    expect(typeof hook.decompile).toBe('function');
+    world.decompile();
+    expect(typeof hook.compile).toBe('function');
+    expect(hook.decompile).toBeUndefined();
+    world.compile();
+    expect(hook.compile).toBeUndefined();
+    hook.decompile!();
+    expect(hook.compile!().after.batches).toBe(1);
+  });
+
   it('without renderer, scene and camera, frameAsync only waits and reads', async () => {
     const ledger = new DrawCallLedger();
     const target: { __threeforge?: AgentHook } = {};

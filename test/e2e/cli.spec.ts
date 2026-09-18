@@ -165,6 +165,25 @@ test('inspect drives a page that exposes window.__threeforge', async ({ forge })
   expect(doc.before.js.ledgerMs).toBeGreaterThanOrEqual(0);
 });
 
+test('inspect measures an app that compiled its own World, and compiles nothing', async ({ forge }) => {
+  test.setTimeout(600_000);
+  const r = run([
+    'inspect',
+    `http://localhost:5179/?scene=naive&compile=1&backend=${forge.backend}`,
+    '--backend',
+    forge.backend,
+    '--frames',
+    '3',
+    '--json',
+  ]);
+  expect(r.status, r.stderr).toBe(0);
+  expect(r.stderr).toContain('the hook has no compile()');
+  const doc = JSON.parse(r.stdout);
+  expect(doc.compile).toBeNull();
+  expect(doc.after).toBeNull();
+  expect(doc.before.totals.sceneSubmissions).toBeLessThan(60);
+});
+
 test('inspect reports a page without the hook as a page error (exit 4)', () => {
   const r = run(['inspect', 'http://localhost:5179/?scene=nope', '--timeout', '8000', '--json']);
   expect(r.status).toBe(4);

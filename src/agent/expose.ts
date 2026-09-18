@@ -16,9 +16,9 @@ export interface AgentHook {
   frame(): FrameSnapshot;
   /** Waits one animation frame (shadow maps update once per tick), renders if it can, returns the snapshot. Rejects when the render throws. */
   frameAsync(): Promise<FrameSnapshot>;
-  /** Present while a World was given and is not compiled: batch the scene. */
+  /** Present while a World was given and is not compiled, whoever compiled it: batch the scene. */
   compile?(): CompileReport;
-  /** Present after `compile()`: restore the original graph. */
+  /** Present while that World is compiled: restore the original graph. */
   decompile?(): void;
   /** Present when renderer, scene and camera were given: fragments per pixel, opaque and transparent. */
   measureOverdraw?(): Promise<{ opaque: number; transparent: number }>;
@@ -75,24 +75,28 @@ export function exposeToAgents(options: ExposeOptions): () => void {
     report: () => ledger.report(),
   };
   if (canRender) hook.measureOverdraw = () => ledger.measureOverdraw(scene!, camera!);
+  let stopFollowing = (): void => {};
   if (world) {
     const coordinateSystem = (renderer as { coordinateSystem?: number } | undefined)?.coordinateSystem;
-    const compile = (): CompileReport => {
-      const report = world.compile(
-        coordinateSystem !== undefined ? { coordinateSystem: coordinateSystem as never } : {},
-      );
+    const compile = (): CompileReport =>
+      world.compile(coordinateSystem !== undefined ? { coordinateSystem: coordinateSystem as never } : {});
+    const decompile = (): void => world.decompile();
+    // The World decides which of the two is offered, not this hook's own calls: the app may have compiled before
+    // exposing, or compile and decompile on its own later.
+    const follow = (): void => {
       delete hook.compile;
-      hook.decompile = () => {
-        world.decompile();
-        delete hook.decompile;
-        hook.compile = compile;
-      };
-      return report;
+      delete hook.decompile;
+      if (world.isCompiled) hook.decompile = decompile;
+      else hook.compile = compile;
     };
-    hook.compile = compile;
+    follow();
+    stopFollowing = world.onDirty((event) => {
+      if (event.kind === 'compile' || event.kind === 'decompile') follow();
+    });
   }
   target[AGENT_HOOK_KEY] = hook;
   return () => {
+    stopFollowing();
     if (target[AGENT_HOOK_KEY] === hook) delete target[AGENT_HOOK_KEY];
   };
 }

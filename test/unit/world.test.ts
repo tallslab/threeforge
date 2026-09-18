@@ -304,6 +304,55 @@ describe('World.decompile', () => {
     expect(statics[0]!.parent).toBe(group);
     expect(scene.children).toEqual(childrenBefore);
   });
+
+  it('leaves a hand-written matrix alone when freezing, and through markDirty', () => {
+    const { scene, statics } = mixedScene();
+    // Placed through `matrix` with auto-update off: position, quaternion and scale stay at identity.
+    const single = tag.static(
+      new Mesh(box, new MeshStandardMaterial({ color: 0x999999, roughness: 0.1, metalness: 0.9 })),
+    );
+    single.matrixAutoUpdate = false;
+    single.matrix.makeTranslation(5, 0, 0);
+    const batched = statics[0]!;
+    batched.matrixAutoUpdate = false;
+    batched.matrix.makeTranslation(0, 7, 0);
+    scene.add(single);
+    const world = new World(scene);
+    world.compile();
+    expect(world.frozenObjects).toContain(single);
+    expect(single.matrix.elements[12]).toBe(5);
+    expect(batched.matrix.elements[13]).toBe(7);
+    world.markDirty(scene);
+    expect(single.matrix.elements[12]).toBe(5);
+    expect(batched.matrix.elements[13]).toBe(7);
+    world.decompile();
+    expect(single.matrix.elements[12]).toBe(5);
+    expect(single.matrixAutoUpdate).toBe(false);
+    expect(batched.matrixAutoUpdate).toBe(false);
+  });
+
+  it('with originals: "detach", hides a batched parent that still has a live child', () => {
+    const { scene, statics, dynamic } = mixedScene();
+    const parent = statics[0]!;
+    parent.add(dynamic);
+    const world = new World(scene, { originals: 'detach' });
+    world.compile();
+    let reachable = false;
+    scene.traverse((o) => {
+      if (o === dynamic) reachable = true;
+    });
+    expect(reachable).toBe(true);
+    expect(parent.parent).toBe(scene);
+    expect(parent.layers.mask).toBe((1 << FORGE_HIDDEN_LAYER) >>> 0);
+    expect(statics[1]!.parent).toBeNull();
+    parent.position.x = 4;
+    world.markDirty(parent);
+    scene.updateMatrixWorld();
+    expect(dynamic.matrixWorld.elements[12]).toBe(4);
+    world.decompile();
+    expect(parent.layers.mask).toBe(1);
+    expect(dynamic.parent).toBe(parent);
+  });
 });
 
 describe('World.resolve', () => {

@@ -467,7 +467,8 @@ instances of such a sprite), `multi-material`, `sprite-center`, `layers`, `rende
 5. Attach BVH culling to every batch (`culling: 'bvh'`), with LOD ranges when `lod` is set.
 6. Install matrix sync for batch-synced dynamics and occlusion proxies when enabled.
 7. Hide the originals: moved to layer 31 with `matrixAutoUpdate = false` (`originals: 'hide'`), or removed from the
-   graph (`originals: 'detach'`); parent indices are recorded so `decompile()` restores the exact order. Then freeze
+   graph (`originals: 'detach'`; an original with anything else under it is hidden instead, see "Freezing");
+   parent indices are recorded so `decompile()` restores the exact order. Then freeze
    (`freeze: true`): unbatched static meshes and every ancestor whose whole subtree is static get
    `matrixAutoUpdate = false` too (`after.frozen`).
 8. Annotate everything left alone (excluded rule, `unique-material`, `dynamic`) and swap canonical materials onto
@@ -483,7 +484,7 @@ instances of such a sprite), `multi-material`, `sprite-center`, `layers`, `rende
 |---|---|---|
 | `registry`, `ledger` | new / none | share the registry with the ledger so reasons and programs agree |
 | `policy` | `'tagged'` | `'auto'` batches untagged plain meshes too |
-| `originals` | `'hide'` | `'detach'` removes originals from the graph (large scenes) |
+| `originals` | `'hide'` | `'detach'` removes originals from the graph (large scenes); one that still has a live descendant is hidden instead |
 | `culling` | `'bvh'` | `'linear'` keeps three's own per-instance culling |
 | `instanceThreshold` | 64 | repeats of one geometry in an opaque group that become an InstancedMesh |
 | `dynamics` | `'separate'` | `'batch-sync'` folds batchable dynamics into batches and syncs their matrices each frame |
@@ -727,7 +728,9 @@ cuts the walks.
 Freezing (`src/compiler/freeze.ts`, `freezableObjects`). At compile, unbatched static-tagged meshes and the topmost
 ancestors whose subtree is entirely static (hidden unsynced originals, static meshes, plain containers; nothing
 dynamic-tagged, animated, lit, skinned, bone or sprite inside) get `matrixAutoUpdate = false` after one last
-`updateMatrix()`. A container freezes only when it also holds at least one such static leaf: an empty container, an
+`updateMatrix()`. An object whose `matrixAutoUpdate` was already off is placed through its `matrix` by the app, so
+it is frozen without that last recompose and `markDirty` never recomposes it either: write the new `matrix` (or call
+`updateMatrix()` yourself), then `markDirty`. A container freezes only when it also holds at least one such static leaf: an empty container, an
 anchor `Object3D` with no children, and a light's `target` (added straight to the scene, as `DayNight` does for the
 sun) are never frozen, since nothing would ever move their matrix again. `decompile()` restores the flags. The
 village drops from 310 to 34 recomposed matrices per frame (bench baselines); its freeze e2e holds the compiled
@@ -740,7 +743,11 @@ sprite batches follow on their own) and returns the number of instances updated.
 each touched batch (`computeBoundingBox`, `computeBoundingSphere`) and instanced group (`refreshBounds`, every LOD
 level) once, so three's whole-object frustum test never culls an instance moved outside its old bounds while it is
 on screen, and fits their occlusion proxies to the new bounds. `world.onDirty(listener)` reports `markDirty`,
-`setVisible`, `compile` and `decompile` (a `RenderScheduler` subscribes to it). With `originals: 'detach'` a detached
+`setVisible`, `compile` and `decompile` (a `RenderScheduler` subscribes to it); `world.isCompiled` says which side of
+that pair the World is on. `originals: 'detach'` detaches an original only when everything under it leaves with it:
+other unsynced originals, and containers holding nothing else. A batched static that parents a dynamic mesh, a synced
+original, an unbatched static, a light, a camera or an empty anchor stays in the graph on layer 31, as under
+`'hide'`, because removing it would take that descendant out of the scene too. With `originals: 'detach'` a detached
 original has no parent, so `updateMatrixWorld` alone would give its own local matrix; `World` records each detached
 original's former parent at hide time (only slotted originals are ever detached), and `markDirty` composes its world
 matrix from that parent's current `matrixWorld` (read, not recomputed; `markDirty` on the parent or an ancestor
@@ -998,7 +1005,9 @@ calls.
 `exposeToAgents({ ledger, world, renderer, scene, camera })` publishes `window.__threeforge` with `version`,
 `schemaVersion` (3, the frame snapshot's), `frame()`, `frameAsync()` (waits one animation frame so shadow maps
 update, renders if it can), `compile()` and `decompile()`, `measureOverdraw()`, `measureMemory()`, `hints()` and
-`report()`, and returns a disposer. It lets any script on the page call `compile()`/`decompile()` and read the
+`report()`, and returns a disposer. Only one of `compile` and `decompile` is present at a time and it follows the
+World, not the hook's own calls: an app that compiled before exposing, or compiles later on its own, offers
+`decompile` only, and `threeforge inspect` then measures the scene as it is and reports `compile: null`. It lets any script on the page call `compile()`/`decompile()` and read the
 ledger, so call it as `if (import.meta.env.DEV) exposeToAgents(...)` (Vite) or behind your own flag, never
 unconditionally in a shipped build; bundlers other than Vite need their own dev check.
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `World.compile()` no longer recomposes a frozen static whose `matrixAutoUpdate` was already off, and `markDirty` no longer recomposes any object that did not compose its own matrix before compile. A mesh placed through `matrix` used to jump to its `position`/`quaternion`/`scale` (the origin, usually) at compile and stay there after `decompile()`.
+- `originals: 'detach'` hides a batched original instead of detaching it when something under it is not leaving the graph too (a dynamic mesh, a synced original, an unbatched static, a light, a camera, an empty anchor). Those descendants used to leave the scene with their parent.
+- `window.__threeforge` offers `compile` or `decompile` by the World's state, so `threeforge inspect` on an app that compiled its own World measures it and reports `compile: null` instead of exiting 4 with "World is already compiled". New `world.isCompiled`.
+
 ## 0.9.0 (2026-09-16)
 
 ### Upgrading from 0.8.0

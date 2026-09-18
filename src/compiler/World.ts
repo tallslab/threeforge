@@ -94,7 +94,8 @@ export class World {
   private readonly spriteThreshold: number;
   private readonly transparentMode: 'batch' | 'keep';
   private readonly freezeStatics: boolean;
-  private frozenList: Array<{ object: Object3D; matrixAutoUpdate: boolean }> = [];
+  /** What the freeze pass switched off, with each object's `matrixAutoUpdate` before it. */
+  private frozen = new Map<Object3D, boolean>();
   private dirtyListeners = new Set<(event: DirtyEvent) => void>();
   private spriteBatchList: SpriteBatch[] = [];
   private slots = new Map<Mesh, Slot>();
@@ -128,6 +129,11 @@ export class World {
     this.spriteThreshold = options.spriteThreshold ?? 4;
     this.transparentMode = options.transparent ?? 'batch';
     this.freezeStatics = options.freeze ?? true;
+  }
+
+  /** Whether the scene is batched right now: true from a `compile()` that returned until `decompile()`. */
+  get isCompiled(): boolean {
+    return this.compiled;
   }
 
   /** The camera of the outermost render in the current or last frame (tracked through the scene hooks once compiled). */
@@ -169,7 +175,7 @@ export class World {
 
   /** Objects `compile()` froze beyond the hidden originals (unbatched statics and all-static ancestors). */
   get frozenObjects(): readonly Object3D[] {
-    return this.frozenList.map((f) => f.object);
+    return [...this.frozen.keys()];
   }
 
   /** One mesh per batched sprite group (`forge:sprites:<programHash>:<n>`). */
@@ -331,8 +337,9 @@ export class World {
       const hiddenSet = new Set<Object3D>(hidden.map((h) => h.mesh));
       const syncedSet = new Set<Object3D>(hidden.filter((h) => h.synced).map((h) => h.mesh));
       for (const object of freezableObjects(this.scene, { hidden: hiddenSet, synced: syncedSet, animated })) {
-        object.updateMatrix();
-        this.frozenList.push({ object, matrixAutoUpdate: object.matrixAutoUpdate });
+        // Already off means the app writes `matrix` itself: recomposing would replace it with position/quaternion/scale.
+        if (object.matrixAutoUpdate) object.updateMatrix();
+        this.frozen.set(object, object.matrixAutoUpdate);
         object.matrixAutoUpdate = false;
       }
     }
@@ -365,7 +372,7 @@ export class World {
         instanced: this.instanced.length,
         baked: this.baked.length,
         spriteBatches: this.spriteBatchList.length,
-        frozen: this.frozenList.length,
+        frozen: this.frozen.size,
         meshes: classifications.length - result.slots.size,
       },
       bake: this.bakeOptions ? bakeSummary(this.baked, this.unbakeableEntries) : null,
@@ -394,7 +401,8 @@ export class World {
   }
 
   /**
-   * Move a frozen static (or a whole subtree) on demand: recomposes the matrices under `object` and pushes every
+   * Move a frozen static (or a whole subtree) on demand: recomposes the matrices under `object` (those that composed
+   * themselves before compile; one placed through `matrix` with `matrixAutoUpdate` off is read as written) and pushes every
    * batched original in the subtree into its batch in the scene's space (BatchedMesh matrix and BVH leaf, InstancedMesh
    * through its culling handle, baked groups by one rebake), then recomputes each touched batch's bounds and refits its
    * occlusion proxy. Returns the number of instances updated. With `originals: 'detach'` a detached original's world
@@ -430,7 +438,7 @@ export class World {
       updated++;
     };
 
-    this.originals.updateSubtree(object, visitSlot);
+    this.originals.updateSubtree(object, visitSlot, (o) => this.frozen.get(o));
 
     for (const group of rebakes) rebake(group);
     for (const batch of batches) {
@@ -527,8 +535,8 @@ export class World {
       this.materials.release(batch.material as Material);
     }
     this.spriteBatchList = [];
-    for (const f of this.frozenList.reverse()) f.object.matrixAutoUpdate = f.matrixAutoUpdate;
-    this.frozenList = [];
+    for (const [object, matrixAutoUpdate] of this.frozen) object.matrixAutoUpdate = matrixAutoUpdate;
+    this.frozen = new Map();
     this.materials.restoreSwaps();
     this.originals.restore();
     this.batches = [];
