@@ -95,16 +95,19 @@ jobs:
         # `authorized` is a literal "true"/"false" this script writes itself — never attacker text — so a plain
         # single-line $GITHUB_OUTPUT write is safe here; nothing below needs a heredoc or a random delimiter.
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: steps.perm.outputs.authorized == 'true'
         with:
           ref: main
         # No `pnpm install`: ingesting a result only needs `node` plus the already-checked-out scripts.
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.perm.outputs.authorized == 'true'
         with:
           node-version: 22
+          # pnpm is never installed in this job, and from v5 setup-node caches for the `packageManager` in
+          # package.json unless told not to.
+          package-manager-cache: false
 
       # Validates the issue body against the schema and, on success, writes the result file — but into a scratch
       # directory under $RUNNER_TEMP, not the checkout, so a validation run never touches tracked files. stdout

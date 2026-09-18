@@ -39,15 +39,15 @@ jobs:
       FORGE_RUN_ID: corpus-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.backend }}
       FORGE_REQUIRE_WEBGPU: ${{ matrix.requireWebgpu }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium chromium-headless-shell
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: test/assets/files
           key: corpus-${{ hashFiles('scripts/fetch-kits.mjs', 'scripts/fetch-assets.mjs', 'test/assets/manifest.json') }}
@@ -74,7 +74,7 @@ jobs:
       - name: What the run did to the tracked report (never committed)
         if: always()
         run: git status --porcelain -- docs bench || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: assets-report-${{ matrix.backend }}
@@ -85,7 +85,7 @@ jobs:
             docs/assets-report-webgpu.json
           retention-days: 30
           if-no-files-found: warn
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: corpus-${{ matrix.backend }}-artifacts

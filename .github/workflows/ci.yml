@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # the base..head range has to resolve; the default shallow merge-ref checkout has neither end
       # A push's range is `pushRange` in scripts/commit-rules.mjs, unit-tested there rather than written in shell:
@@ -53,9 +53,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -111,9 +111,9 @@ jobs:
             requireWebgpu: '1'
             advisory: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -146,7 +146,7 @@ jobs:
           fi
         env:
           FORGE_REQUIRE_WEBGPU: ${{ matrix.requireWebgpu }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: e2e-${{ matrix.backend }}-artifacts
@@ -170,15 +170,15 @@ jobs:
           - backend: webgpu
             advisory: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium chromium-headless-shell
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: test/assets/files
           key: kits-${{ hashFiles('scripts/fetch-kits.mjs', 'scripts/fetch-safe.mjs') }}
@@ -196,7 +196,7 @@ jobs:
           else
             node scripts/bench-run.mjs ${{ matrix.backend }}
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: bench-results-${{ matrix.backend }}
@@ -213,9 +213,9 @@ jobs:
       contents: read
       id-token: write # npm provenance
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm

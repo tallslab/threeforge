@@ -20,14 +20,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: test/assets/files
           key: kits-${{ hashFiles('scripts/fetch-kits.mjs', 'scripts/fetch-safe.mjs') }}
@@ -45,7 +45,7 @@ jobs:
       - run: pnpm build:bench-app
         env:
           VITE_FORGE_REPO: ${{ github.repository }}
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: dist/bench-app
   deploy:
@@ -63,4 +63,4 @@ jobs:
       # never read, and it needs the Pages API permission this file now keeps out of the build job. A repository
       # whose Pages source is not "GitHub Actions" fails here instead, with a message that says so.
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
