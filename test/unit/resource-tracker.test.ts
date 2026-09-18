@@ -181,6 +181,20 @@ describe('interleaved geometries', () => {
     expect(live.updateRanges).toEqual([{ start: 0, count: 5 }]);
   });
 
+  it('release finds the scene from an attached owner, without being given one', () => {
+    const buffer = triangle();
+    const scene = new Scene();
+    const untracked = new Mesh(packed(buffer), new MeshStandardMaterial());
+    const level = new Group();
+    const owner = new Group().add(new Mesh(packed(buffer), new MeshStandardMaterial()));
+    scene.add(untracked, level.add(owner));
+    const disposed = vi.spyOn((owner.children[0] as Mesh).geometry, 'dispose');
+    const tracker = new ResourceTracker().track(owner);
+    expect(tracker.release(owner).geometries).toBe(0);
+    expect(disposed).not.toHaveBeenCalled();
+    expect(owner.parent).toBeNull();
+  });
+
   it('release leaves a geometry whose buffer a mesh in the given scene still draws from', () => {
     const buffer = triangle();
     const scene = new Scene();

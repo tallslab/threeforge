@@ -17,8 +17,26 @@ export interface ForgePage {
   pixelChecks: boolean;
 }
 
-export const test = base.extend<ForgeOptions & { forge: ForgePage }>({
+/**
+ * What the browser and three print when a draw was rejected. Neither fails anything by itself: WebGL2 counts the
+ * submission and draws nothing (`WebGL: INVALID_OPERATION`), and a WebGPU validation error reaches only
+ * `renderer.onError`, which logs it. A spec that asserts counts alone stays green through both.
+ */
+const REJECTED_DRAW = /WebGL: INVALID_|Uncaptured WebGPU/;
+
+export const test = base.extend<ForgeOptions & { forge: ForgePage; rejectedDraws: undefined }>({
   backend: ['webgl2', { option: true }],
+  rejectedDraws: [
+    async ({ page }, use) => {
+      const rejected: string[] = [];
+      page.on('console', (message) => {
+        if (REJECTED_DRAW.test(message.text())) rejected.push(message.text().slice(0, 200));
+      });
+      await use(undefined);
+      expect(rejected, 'the browser rejected draws during this test').toEqual([]);
+    },
+    { auto: true },
+  ],
   forge: async ({ page, backend }, use) => {
     const webgpuAdapter = process.env.FORGE_WEBGPU ?? (process.platform === 'linux' ? 'swiftshader' : 'native');
     const pixelChecks = backend !== 'webgpu' || webgpuAdapter === 'native';

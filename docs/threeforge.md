@@ -862,8 +862,8 @@ still in use reads too (GLTFLoader caches one per accessor, so primitives that r
 disposing it destroys the buffer under the one still drawn. Those go with a later release or unload, once nothing in
 use shares their buffer. In use means more than what the caller manages: the Streamer counts every mesh in the scene
 the camera's layers can draw (a mover outside its chunks, not an original hidden on layer 31), and a
-`ResourceTracker` given `{ scene }` counts that scene's meshes. Both walk the scene only when a geometry being freed
-is interleaved. A tracker without a scene knows its own owners only.
+`ResourceTracker` counts the meshes under the released owner's root, or under its `scene` option for an owner that
+is not an object or is detached already. Both walk the scene only when a geometry being freed is interleaved.
 
 `Streamer` (`src/streaming/Streamer.ts`) manages the residency of `world.chunks()` (batches, instanced groups and
 baked meshes carry `userData.forgeChunk`) plus uncompiled static scene children placed by position, keyed by x and

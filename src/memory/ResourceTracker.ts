@@ -16,7 +16,8 @@ export interface ResourceTrackerOptions {
   };
   /**
    * The scene the owners live in. A released interleaved geometry stays uploaded while a mesh in it that the tracker
-   * was never given reads the same `InterleavedBuffer` (see `disposeGeometries`).
+   * was never given reads the same `InterleavedBuffer` (see `disposeGeometries`). An Object3D owner still attached
+   * when it is released finds its own root, so this is for owners that are not objects, or are detached already.
    */
   scene?: Object3D;
 }
@@ -32,6 +33,13 @@ export interface TrackerStats {
   geometries: number;
   materials: number;
   textures: number;
+}
+
+/** The top of the graph `object` hangs in, or undefined when it hangs in none. */
+function rootOf(object: Object3D): Object3D | undefined {
+  let root = object.parent ?? undefined;
+  while (root?.parent) root = root.parent;
+  return root;
 }
 
 /**
@@ -60,6 +68,17 @@ export class ResourceTracker {
   }
 
   /**
+   * Detaches an Object3D owner and returns the scene whose other meshes may read its buffers. Detached before that
+   * scene is read: the owner's own meshes must not count as readers of the buffers it gives up.
+   */
+  private detach(owner: object): Object3D | undefined {
+    const object = (owner as Object3D).isObject3D ? (owner as Object3D) : undefined;
+    const scene = this.options.scene ?? (object && rootOf(object));
+    object?.removeFromParent();
+    return scene;
+  }
+
+  /**
    * Disposes the owner's resources no other owner references; an Object3D owner is detached from its parent.
    *
    * A material the registry knows is still never disposed (it is shared with the rest of the scene), but one no
@@ -78,9 +97,7 @@ export class ResourceTracker {
     const heldElsewhere = <T>(pick: (s: ResourceSets) => Set<T>, item: T): boolean =>
       others.some((s) => pick(s).has(item));
     const inUse = new Set(others.flatMap((s) => [...s.geometries]));
-    // Detached first: the owner's own meshes must not count as readers of the buffers it is giving up.
-    if ((owner as Object3D).isObject3D) (owner as Object3D).removeFromParent();
-    const scene = this.options.scene;
+    const scene = this.detach(owner);
     const geometries = disposeGeometries([...sets.geometries, ...this.left], inUse, () =>
       scene ? collectResources(scene).geometries : [],
     );
