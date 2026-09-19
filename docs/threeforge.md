@@ -210,7 +210,10 @@ mipmaps) and what three allocates where that function does not: a compressed tex
 compressed cube's six faces too; three counts 1 byte), the size is the one `Textures.getSize` allocates (a cube's
 first face, a video's frame), and explicit mipmaps are the levels three uploads. Geometries are attribute plus index
 bytes. Render targets are the shadow maps three has built for casting lights, the two RG half-float blur targets
-each built non-point map holds under `VSMShadowMap`, and the renderer's half-float frame-buffer target.
+each built non-point map holds under `VSMShadowMap`, the renderer's half-float frame-buffer target, and every held
+target: one a render drew into (a mirror, a reflection), one whose texture a draw samples, the overdraw count target
+and three's reflector placeholder, each with its colour attachments by format and its depth at 4 bytes a texel.
+Allowing a target says it is no leak; it never takes its bytes out of the total.
 `memory.measured` is three's own `renderer.info.memory` at the time of the estimate (`textures` count and
 `texturesSize`, `geometries` count and `attributesSize + indexAttributesSize`, `renderTargets` count, `bytes` as
 `total`), everything three allocated with a compressed texture as 1 byte, or null without these counters.
@@ -224,9 +227,18 @@ a non-point VSM map's two blur targets, the overdraw count target once `measureO
 `DFG_LUT` (counted through `renderer.info.createTexture` and `destroyTexture`, since `DFGLUT.js` keeps it in an
 unexported module variable and matching three's own name is preferred to `DFGLUT.shaderNode.jsFunc`), PMREMNode's
 own `PMREMGenerator` planes and `isPMREMTexture` targets, the background sphere, one morph texture per morphed
-geometry, and the textures of a render target a render drew into, by identity until its `dispose`. Reachable
-includes BatchedMesh and skeleton textures and `material.userData.forgeTextures`. It is recounted with the graph
-statistics. The allowance and its bounded blind spots (resources created before `ledger.attach()`, a target drawn
+geometry, the textures of a render target a render drew into, by identity until its `dispose`, and the colour
+texture of three's reflector placeholder (`ReflectorNode.js` keeps one module-level `_defaultRT`, resized by every
+reflector, that no render draws into and three never frees) once a draw has sampled a reflector. Reachable includes
+BatchedMesh and skeleton textures, `material.userData.forgeTextures`, and the textures of the texture nodes a
+material or a node-material mesh holds (a slot's `texture(map)`, `WaterMesh.waterNormals`). What an `Fn` creates
+does not exist until its shader is built, so the ledger also reads what the draws bind: for one frame after each
+rescan it wraps `backend.draw` and takes the sampled textures from `renderObject.getBindings()` (three r186
+internals, guarded and pinned by canary tests in `test/unit/memory.test.ts`). A sampled texture counts once with one
+the scene shows; one that belongs to a render target stands for that target; three's `DFG_LUT` and PMREM textures
+are matched by identity so none is allowed twice. Bindings say what is sampled, not what is allocated: they add to
+the scene scan, they are no inventory. `measureMemory()` between frames uses the last collection. It is recounted
+with the graph statistics. The allowance and its bounded blind spots (resources created before `ledger.attach()`, a target drawn
 once and abandoned without `dispose()`, transmission's and XR's viewport textures, the `DFG_LUT` name, a map not yet
 rendered, the VSM allowance right after a `shadowMap.type` change, tiled shadows) are in `docs/memory.md`. Two more:
 detach two ledgers on one renderer in reverse attach order, since the second `attach()` wraps the first's wrappers
@@ -860,7 +872,15 @@ still uploads. Two geometries are left uploaded: the one three shares between ev
 (`isSharedSpriteGeometry(geometry)`, it belongs to no scene), and one that reads an `InterleavedBuffer` a geometry
 still in use reads too (GLTFLoader caches one per accessor, so primitives that reuse an accessor share it), since
 disposing it destroys the buffer under the one still drawn. Those go with a later release or unload, once nothing in
-use shares their buffer. In use means more than what the caller manages: the Streamer counts every mesh in the scene
+use shares their buffer. Reaching a resource is not owning it, and the same holds for textures: `release()` leaves a
+texture another owner or the rest of the scene still uses, and neither `release()` nor an unload ever disposes a
+render target's texture (`isRenderTargetTexture(texture)`): the target is disposed, by what owns it. For a reflector
+that owner is three's `ReflectorBaseNode`, which is built inside the shader, leaves only its `target` object in the
+graph, and is not reached by `material.dispose()`, so its per-camera targets outlive the mesh. An attached ledger
+files each reflector it sees drawn under that `target` (`noteTargetOwner(anchor, owner)`), `collectResources` returns
+them as `targetOwners`, and `release()` calls `dispose()` on one no other owner and nothing left in the scene still
+holds. Without a ledger that has drawn the water, nothing finds the reflector and its targets stay. In use means more
+than what the caller manages: the Streamer counts every mesh in the scene
 the camera's layers can draw (a mover outside its chunks, not an original hidden on layer 31), and a
 `ResourceTracker` counts the meshes under the released owner's root, or under its `scene` option for an owner that
 is not an object or is detached already. Both walk the scene only when a geometry being freed is interleaved.

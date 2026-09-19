@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Textures a node samples are found. `collectResources` reads the texture nodes a material or a node-material mesh holds (a slot's `texture(map)`, `WaterMesh.waterNormals`), and the ledger reads what the draws bind for one frame after each rescan, which is how a texture created inside an `Fn` shows at all. The lake's 1024 x 1024 water normals used to read as unreferenced, were missing from `memory.textures.bytes` (1 KB reported where three measured 13 MB), and `ResourceTracker.release()` left them on the GPU.
+- `ResourceTracker.release()` disposes a reflector's render targets. three builds the reflector inside the shader and `material.dispose()` never reaches it, so every water made and removed left its colour and depth targets behind. An attached ledger notes the reflectors it sees drawn (`noteTargetOwner`), `collectResources` returns them as `targetOwners`, and `release()` disposes one nothing else holds. The device bench page frees them between scenes the same way.
+- Reaching a resource is not owning it: `release()` leaves a texture the rest of the scene still uses, and neither `release()` nor a `Streamer` unload disposes a render target's texture (new `isRenderTargetTexture`); the target's owner disposes the target.
+- `memory.renderTargets` counts every held target with its colour and depth bytes (a mirror, a reflection, the overdraw count target, three's reflector placeholder), not only shadow maps and the frame buffer. `memory.unreferenced` allows that placeholder, and matches three's `DFG_LUT` by identity so a draw that samples it cannot allow it twice.
 - The device bench page starts every run from a clean state. A rerun from the button used to keep `done: true` and the previous result while the new run was still loading, a failed rerun kept showing the earlier result and its live numbers, and a successful retry kept the earlier error, so a script waiting on `window.__bench.done` could accept a run that was never measured.
 
 ## 0.9.1 (2026-09-18)

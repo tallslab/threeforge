@@ -1,4 +1,5 @@
 import { type Camera, type Light, type Material, type Object3D, REVISION, type Scene, Vector2 } from 'three';
+import { noteTargetOwner } from '../memory/resources.js';
 import { type MaterialHashes, MaterialRegistry } from '../registry/MaterialRegistry.js';
 import { type Budgets, budgetsFor } from './budgets.js';
 import { type BackendInfo, type DrawGroup, expectedGpuDraws, writeInstanceCounts } from './expectedDraws.js';
@@ -37,6 +38,13 @@ import {
   wrapTextureInfo,
 } from './rendererPatch.js';
 import { formatCostRows, formatHints } from './report.js';
+import {
+  collectSamples,
+  type DrawnSamples,
+  emptySamples,
+  reflectorPlaceholder,
+  sampledUnder,
+} from './sampledTextures.js';
 import { readLights, scanScene, walkLights } from './sceneScan.js';
 import { lightInfoOf } from './sections.js';
 import {
@@ -132,6 +140,14 @@ export class DrawCallLedger {
   private lastScene: Object3D | null = null;
   /** `framesSeen` at the last `rescan()`, or -1: the scene-graph statistics it wrote live in `last.js`. */
   private rescannedAt = -1;
+  /** Set by `rescan()`: the next frame collects what its draws sample (`collectSamples`); only that frame pays. */
+  private collectNext = false;
+  private stopCollecting: (() => void) | null = null;
+  private collecting: DrawnSamples = emptySamples();
+  /** What the last collection frame's draws sampled. */
+  private samples: DrawnSamples = emptySamples();
+  /** Whether a draw on this renderer has sampled a reflector since `attach()`. */
+  private reflectorSeen = false;
   private scheduler: { skippedRecently(): number } | null = null;
   private streamer: AttachedStreamer | null = null;
   private memoryStats: MemorySnapshot = emptySections().memory;
@@ -215,6 +231,10 @@ export class DrawCallLedger {
     unpatchRenderer(this.renderer, this.originals);
     unwrapTextureInfo(this.textureInfo, this.internalTextures, this.pmremTextures);
     this.textureInfo = null;
+    this.stopCollecting?.();
+    this.stopCollecting = null;
+    this.samples = emptySamples();
+    this.reflectorSeen = false;
     forgetInternalResources(this.internalGeometries, this.drawnTargets, this.onResourceDispose);
     disposeOverdraw(this.renderer);
     this.renderer = null;
@@ -241,35 +261,9 @@ export class DrawCallLedger {
     const scan = scanScene(scene, this.names, this.renderer?.shadowMap?.enabled !== false);
     this.hintContext = scan.hints;
     this.rescannedAt = this.framesSeen;
-    const memory = this.renderer?.info.memory;
-    const info = {
-      textures: memory?.textures ?? 0,
-      geometries: memory?.geometries ?? 0,
-      texturesSize: memory?.texturesSize,
-      attributesSize: memory?.attributesSize,
-      indexAttributesSize: memory?.indexAttributesSize,
-      renderTargets: memory?.renderTargets,
-      total: memory?.total,
-    };
-    // The overdraw count target is the renderer's own, held while nothing in the scene reaches it.
-    // A target a render drew into and nobody disposed is held by a pass or by three (post-processing, CubeMapNode's cube
-    // of an equirect background, a mirror). One drawn once and then abandoned undisposed is not told apart: it is allowed
-    // too, a missed hint rather than a false one.
-    const renderTargets: Array<AllowedRenderTarget | null> = [
-      this.renderer ? overdrawTargetOf(this.renderer) : null,
-      ...this.drawnTargets.live(),
-    ];
-    // three r186 keeps its frame-buffer targets in `_frameBufferTargets` (Renderer.js ~1561-1601) and draws none when a
-    // RenderPipeline renders the output itself; without the map the estimate allows the usual colour and depth.
-    const frameBuffers = frameBufferTargetsOf(this.renderer);
-    this.memoryStats = estimateMemory(scene, info, this.environment.viewport, {
-      renderTargets,
-      internalTextures: this.internalTextures.size,
-      rendererTextures: this.pmremTextures,
-      internalGeometries: [...this.internalGeometries.live(), ...this.retainedUploads()],
-      shadowMapType: this.renderer?.shadowMap?.type,
-      ...(frameBuffers ? { frameBufferTargets: frameBuffers } : {}),
-    });
+    // The next frame's draws say what they sample; its end recounts the memory with that.
+    this.collectNext = true;
+    this.memoryStats = this.estimate(scene);
     this.last = {
       ...this.last,
       js: {
@@ -289,6 +283,55 @@ export class DrawCallLedger {
         unsupportedObjects: this.unsupportedObjects,
       }),
     };
+  }
+
+  /** The estimate of `scene`: three's counts, what the ledger noted, and what the last collected draws sampled. */
+  private estimate(scene: Object3D): MemorySnapshot {
+    const memory = this.renderer?.info.memory;
+    const info = {
+      textures: memory?.textures ?? 0,
+      geometries: memory?.geometries ?? 0,
+      texturesSize: memory?.texturesSize,
+      attributesSize: memory?.attributesSize,
+      indexAttributesSize: memory?.indexAttributesSize,
+      renderTargets: memory?.renderTargets,
+      total: memory?.total,
+    };
+    // The overdraw count target is the renderer's own, held while nothing in the scene reaches it.
+    // A target a render drew into and nobody disposed is held by a pass or by three (post-processing, CubeMapNode's cube
+    // of an equirect background, a mirror). One drawn once and then abandoned undisposed is not told apart: it is allowed
+    // too, a missed hint rather than a false one.
+    // three's reflector placeholder is uploaded once any reflector is built, no render draws into it, and three never
+    // frees it: it stays held after the last reflector is gone.
+    const renderTargets: Array<AllowedRenderTarget | null> = [
+      this.renderer ? overdrawTargetOf(this.renderer) : null,
+      ...this.drawnTargets.live(),
+      this.reflectorSeen ? reflectorPlaceholder() : null,
+    ];
+    // three r186 keeps its frame-buffer targets in `_frameBufferTargets` (Renderer.js ~1561-1601) and draws none when a
+    // RenderPipeline renders the output itself; without the map the estimate allows the usual colour and depth.
+    const frameBuffers = frameBufferTargetsOf(this.renderer);
+    return estimateMemory(scene, info, this.environment.viewport, {
+      renderTargets,
+      // By identity, both: a draw samples three's DFG_LUT, and counted here and again as sampled it would allow a leak.
+      rendererTextures: [...this.internalTextures, ...this.pmremTextures],
+      internalGeometries: [...this.internalGeometries.live(), ...this.retainedUploads()],
+      shadowMapType: this.renderer?.shadowMap?.type,
+      sampledTextures: sampledUnder(this.samples, scene),
+      ...(frameBuffers ? { frameBufferTargets: frameBuffers } : {}),
+    });
+  }
+
+  /**
+   * Ends a collection frame: what its draws sampled replaces the last collection, and each reflector seen is filed
+   * under its `target` object, where releasing the subtree that holds it finds it (`noteTargetOwner`).
+   */
+  private adoptSamples(): void {
+    this.stopCollecting?.();
+    this.stopCollecting = null;
+    this.samples = this.collecting;
+    for (const reflector of this.samples.reflectors) noteTargetOwner(reflector.target, reflector);
+    if (this.samples.reflectors.size > 0) this.reflectorSeen = true;
   }
 
   /** A RenderScheduler whose skipped ticks the js section reports; null detaches. */
@@ -415,6 +458,11 @@ export class DrawCallLedger {
       const info = this.renderer.info.render;
       this.current = newFrameState(buffer, info.drawCalls, info.triangles, this.now());
       this.frameStamp++;
+      if (this.collectNext) {
+        this.collectNext = false;
+        this.collecting = emptySamples();
+        this.stopCollecting = collectSamples(this.renderer, this.collecting);
+      }
       // Material marks reset lazily against the uses' own frame stamp; the frame's indices start again at 0.
       this.uses.beginFrame();
       this.frameStarts.push(this.current.startedAt);
@@ -499,7 +547,10 @@ export class DrawCallLedger {
     this.clearHashes();
     this.framesSeen++;
     this.lastScene = state.mainScene;
+    const collected = this.stopCollecting !== null;
+    if (collected) this.adoptSamples();
     if (this.rescannedAt < 0 || this.framesSeen - this.rescannedAt >= RESCAN_EVERY) this.rescan();
+    else if (collected && state.mainScene) this.memoryStats = this.estimate(state.mainScene);
     const intervals: number[] = [];
     for (let i = 1; i < this.frameStarts.length; i++) intervals.push(this.frameStarts[i]! - this.frameStarts[i - 1]!);
     intervals.sort((a, b) => a - b);

@@ -9,14 +9,41 @@ import {
   type Texture,
 } from 'three';
 
+/** Something that owns render targets and frees them itself: three's `ReflectorBaseNode` and its per-camera targets. */
+export interface TargetOwner {
+  dispose(): void;
+}
+
 export interface ResourceSets {
   geometries: Set<BufferGeometry>;
   materials: Set<Material>;
   textures: Set<Texture>;
+  /** Owners of render targets noted under the subtree (`noteTargetOwner`); releasing the subtree disposes them. */
+  targetOwners: Set<TargetOwner>;
 }
 
 export function emptyResourceSets(): ResourceSets {
-  return { geometries: new Set(), materials: new Set(), textures: new Set() };
+  return { geometries: new Set(), materials: new Set(), textures: new Set(), targetOwners: new Set() };
+}
+
+const targetOwners = new WeakMap<Object3D, TargetOwner>();
+
+/**
+ * Files `owner` under `anchor`, an object of the scene graph, so that `collectResources` finds it from there. three
+ * builds a reflector inside the shader and leaves only its `target` object in the graph: nothing a scene holds points
+ * at the node, and `material.dispose()` never reaches its `dispose()`, so its targets outlive the mesh. An attached
+ * ledger notes the reflectors it sees drawn.
+ */
+export function noteTargetOwner(anchor: Object3D, owner: TargetOwner): void {
+  targetOwners.set(anchor, owner);
+}
+
+/**
+ * Whether `texture` belongs to a render target. Such a texture is accounted for but never disposed alone: the target
+ * is disposed, by whoever owns it.
+ */
+export function isRenderTargetTexture(texture: Texture): boolean {
+  return texture.isRenderTargetTexture === true || texture.renderTarget != null;
 }
 
 let spriteGeometry: BufferGeometry | undefined;
@@ -121,27 +148,60 @@ function addTexture(value: unknown, into: Set<Texture>): void {
   if ((value as Texture | null)?.isTexture) into.add(value as Texture);
 }
 
-function texturesOf(material: Material, into: Set<Texture>): void {
-  for (const value of Object.values(material)) addTexture(value, into);
+/** A TSL node as far as the scan reads it. */
+interface NodeLike {
+  isNode?: boolean;
+  isTextureNode?: boolean;
+  value?: unknown;
+  getChildren?(): Iterable<NodeLike>;
+}
+
+/**
+ * Textures held by the texture nodes under `node`. What an `Fn` creates does not exist until the shader is built, so
+ * this finds what is held as a node beforehand (a slot's `texture(map)`, WaterMesh's `waterNormals`); the ledger adds
+ * what the draws bind.
+ */
+function nodeTextures(node: NodeLike, into: Set<Texture>, seen: Set<NodeLike>): void {
+  const pending = [node];
+  for (let next = pending.pop(); next; next = pending.pop()) {
+    if (seen.has(next)) continue;
+    seen.add(next);
+    if (next.isTextureNode) addTexture(next.value, into);
+    for (const child of next.getChildren?.() ?? []) pending.push(child);
+  }
+}
+
+/** Texture properties of `holder`, and the textures of the nodes it holds. */
+function heldTextures(holder: object, into: Set<Texture>, seen: Set<NodeLike>): void {
+  for (const value of Object.values(holder)) {
+    addTexture(value, into);
+    if ((value as NodeLike | null)?.isNode) nodeTextures(value as NodeLike, into, seen);
+  }
+}
+
+function texturesOf(material: Material, into: Set<Texture>, seen: Set<NodeLike>): void {
+  heldTextures(material, into, seen);
   // Node materials sample textures through TSL nodes the properties do not show; modules list them here (AnimatedInstances does).
   const extra = material.userData.forgeTextures as unknown;
   if (Array.isArray(extra)) for (const t of extra) addTexture(t, into);
 }
 
 /**
- * Every geometry, material and texture reachable from `root`: material properties, node textures listed in
- * `material.userData.forgeTextures`, a BatchedMesh's matrix/indirect/colour textures, a skeleton's bone texture, and
- * for a Scene its background and environment.
+ * Every geometry, material and texture reachable from `root`: material properties and the texture nodes a material
+ * or a node-material mesh holds, node textures listed in `material.userData.forgeTextures`, a BatchedMesh's
+ * matrix/indirect/colour textures, a skeleton's bone texture, and for a Scene its background and environment; and the
+ * render-target owners noted under it. Reaching a texture is not owning it: see `isRenderTargetTexture`.
  */
 export function collectResources(root: Object3D, into: ResourceSets = emptyResourceSets()): ResourceSets {
   // A material shared by thousands of meshes has its properties read once per call. Only materials seen in this call
   // are skipped: one already in `into` is read again (`ResourceTracker.track(material)` files it without its textures).
   const seen = new Set<Material>();
+  const seenNodes = new Set<NodeLike>();
   const addMaterial = (material: Material): void => {
     if (seen.has(material)) return;
     seen.add(material);
     into.materials.add(material);
-    texturesOf(material, into.textures);
+    texturesOf(material, into.textures, seenNodes);
   };
   root.traverse((o) => {
     const mesh = o as Object3D & {
@@ -163,7 +223,12 @@ export function collectResources(root: Object3D, into: ResourceSets = emptyResou
       for (const m of material) addMaterial(m);
     } else if (material) {
       addMaterial(material);
+      // A mesh built around a node material keeps nodes of its own (WaterMesh's `waterNormals`). Only such a mesh is
+      // read: every other object of a large scene would be enumerated for nothing.
+      if ((material as { isNodeMaterial?: boolean }).isNodeMaterial) heldTextures(o, into.textures, seenNodes);
     }
+    const owner = targetOwners.get(o);
+    if (owner) into.targetOwners.add(owner);
   });
   const scene = root as Object3D & { isScene?: boolean; background?: unknown; environment?: unknown };
   if (scene.isScene) for (const value of [scene.background, scene.environment]) addTexture(value, into.textures);

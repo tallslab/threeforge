@@ -456,3 +456,106 @@ test("memory: three's own PMREM, background, morph and post-processing resources
   expect(r.clean.hints).not.toContain('unreferenced-resources');
   expect(r.leaked).toEqual({ geometries: 1, textures: 1 });
 });
+
+/*
+ * The lake's water samples a 1024 x 1024 normal map through a texture node, and three's reflector sizes one
+ * module-level placeholder target to the reflection's resolution (ReflectorNode.js `_defaultRT`) that no render draws
+ * into. Both are uploaded for as long as the water is drawn; neither is a leak.
+ */
+test('memory: the lake reports its water normals, and nothing unreferenced', { tag: '@corpus' }, async ({ forge }) => {
+  await forge.open('lake', { variant: 'naive' });
+  const memory = await forge.page.evaluate(async () => {
+    const f = window.__forge;
+    for (let i = 0; i < 6; i++) await f.frameAsync();
+    f.ledger.rescan();
+    return (await f.frameAsync()).memory;
+  });
+  expect(memory.unreferenced).toEqual({ geometries: 0, textures: 0 });
+  // RGBA8 at 1024 x 1024, before mip levels: the largest texture in the scene cannot be missing from the bytes.
+  expect(memory.textures.bytes).toBeGreaterThanOrEqual(1024 * 1024 * 4);
+});
+
+test('memory: a texture only an Fn creates counts once its shader has drawn', async ({ forge }) => {
+  await forge.open('empty');
+  const r = await forge.page.evaluate(async () => {
+    const f = window.__forge;
+    const T = f.three;
+    const { Fn, texture } = f.webgpu.TSL;
+    const settle = async () => {
+      for (let i = 0; i < 3; i++) await f.frameAsync();
+      f.ledger.rescan();
+      return (await f.frameAsync()).memory;
+    };
+    const before = await settle();
+    const data = (size: number) => {
+      const map = new T.DataTexture(new Uint8Array(size * size * 4).fill(180), size, size);
+      map.needsUpdate = true;
+      return map;
+    };
+    // Nothing holds the first map before the shader is built: the Fn creates its texture node while it builds.
+    const inFn = new f.webgpu.MeshStandardNodeMaterial();
+    const hidden = data(64);
+    inFn.colorNode = Fn(() => texture(hidden))();
+    // The second is held by a slot, so the scene shows it and the draw binds it: it must count once.
+    const inSlot = new f.webgpu.MeshStandardNodeMaterial();
+    inSlot.colorNode = texture(data(32));
+    [inFn, inSlot].forEach((material, i) => {
+      const mesh = new T.Mesh(new T.BoxGeometry(2, 2, 2), f.registry.register(material));
+      mesh.position.x = i * 4 - 2;
+      mesh.userData.forge = 'dynamic';
+      f.scene.add(mesh);
+    });
+    f.scene.add(new T.AmbientLight(0xffffff, 1));
+    const after = await settle();
+    // One texture drawn and then dropped without dispose(): what is allowed above must not swallow it.
+    const dropped = new T.Mesh(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial({ map: data(8) }));
+    f.scene.add(dropped);
+    await settle();
+    dropped.removeFromParent();
+    dropped.geometry.dispose();
+    const leaked = await settle();
+    return {
+      unreferenced: after.unreferenced,
+      added: after.textures.bytes - before.textures.bytes,
+      leaked: leaked.unreferenced,
+    };
+  });
+  expect(r.unreferenced).toEqual({ geometries: 0, textures: 0 });
+  // The two maps, and the 16 x 16 DFG_LUT three creates for standard node materials, which these draws sample too.
+  expect(r.added).toBe(64 * 64 * 4 + 32 * 32 * 4 + 16 * 16 * 4);
+  expect(r.leaked).toEqual({ geometries: 0, textures: 1 });
+});
+
+test('memory: water made and released three times leaves nothing behind', { tag: '@corpus' }, async ({ forge }) => {
+  await forge.open('lake', { variant: 'naive' });
+  const r = await forge.page.evaluate(async () => {
+    const f = window.__forge;
+    const T = f.three;
+    // One frame after a rescan is what tells the ledger which reflector the water draws with.
+    const settle = async () => {
+      for (let i = 0; i < 3; i++) await f.frameAsync();
+      f.ledger.rescan();
+      const frame = await f.frameAsync();
+      return { textures: f.renderer.info.memory.textures, unreferenced: frame.memory.unreferenced };
+    };
+    let water = f.scene.getObjectByName('water') as InstanceType<typeof T.Mesh>;
+    const Water = water.constructor as new (geometry: unknown, options: object) => typeof water;
+    const made = [await settle()];
+    const released = [];
+    for (let cycle = 0; cycle < 3; cycle++) {
+      new f.ResourceTracker().track(water).release(water);
+      released.push(await settle());
+      const normals = new T.DataTexture(new Uint8Array(16 * 16 * 4).fill(128), 16, 16);
+      normals.needsUpdate = true;
+      water = new Water(new T.PlaneGeometry(300, 300), { waterNormals: normals });
+      water.rotation.x = -Math.PI / 2;
+      f.scene.add(water);
+      made.push(await settle());
+    }
+    return { made, released };
+  });
+  // Its normal map and its reflector's colour and depth go; three's one placeholder target stays, and is no leak.
+  for (const state of r.released)
+    expect(state).toEqual({ textures: r.made[0]!.textures - 3, unreferenced: { geometries: 0, textures: 0 } });
+  for (const state of r.made) expect(state).toEqual(r.made[0]);
+});

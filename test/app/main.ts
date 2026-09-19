@@ -29,6 +29,7 @@ import {
   prepareLods,
   RenderScheduler,
   ResolutionScaler,
+  ResourceTracker,
   ShadowBudget,
   type ShadowBudgetReport,
   Streamer,
@@ -62,6 +63,8 @@ export interface ForgeHarness {
   bakeGeometries: typeof bakeGeometries;
   /** The Streamer class, for specs that stream content they build in the page. */
   Streamer: typeof Streamer;
+  /** The ResourceTracker class, for specs that release what they build in the page. */
+  ResourceTracker: typeof ResourceTracker;
   /** The three/webgpu namespace (node materials, `TSL`), for in-page probes. */
   webgpu: typeof THREE_WEBGPU;
   ready: boolean;
@@ -345,6 +348,7 @@ try {
     three: THREE,
     bakeGeometries,
     Streamer,
+    ResourceTracker,
     webgpu: THREE_WEBGPU,
     ready: true,
     backend,

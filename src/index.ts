@@ -162,8 +162,11 @@ export {
   disposeGeometries,
   disposeGeometry,
   emptyResourceSets,
+  isRenderTargetTexture,
   isSharedSpriteGeometry,
+  noteTargetOwner,
   type ResourceSets,
+  type TargetOwner,
   unreferencedResources,
 } from './memory/resources.js';
 export {

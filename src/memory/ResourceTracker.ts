@@ -1,5 +1,11 @@
 import type { BufferGeometry, Material, Object3D, Texture } from 'three';
-import { collectResources, disposeGeometries, emptyResourceSets, type ResourceSets } from './resources.js';
+import {
+  collectResources,
+  disposeGeometries,
+  emptyResourceSets,
+  isRenderTargetTexture,
+  type ResourceSets,
+} from './resources.js';
 
 export interface ResourceTrackerOptions {
   /**
@@ -67,6 +73,35 @@ export class ResourceTracker {
     return this;
   }
 
+  /** Disposes the materials no other owner holds, forgets the registry's, and returns how many it disposed. */
+  private releaseMaterials(materials: Iterable<Material>, heldElsewhere: (material: Material) => boolean): number {
+    let disposed = 0;
+    const registry = this.options.registry;
+    const forgettable: Material[] = [];
+    for (const m of materials) {
+      const held = heldElsewhere(m);
+      if (registry?.canonicalOf(m) !== undefined) {
+        if (!held) forgettable.push(m);
+        continue;
+      }
+      if (held) continue;
+      m.dispose();
+      disposed++;
+    }
+    if (registry?.forget) {
+      // Merged duplicates first, so `dependentsOf` below sees only the dependents this release does not also drop.
+      for (const m of forgettable) if (registry.canonicalOf(m) !== m) registry.forget(m);
+      for (const m of forgettable) {
+        const canonical = registry.canonicalOf(m);
+        if (canonical === undefined) continue; // already forgotten above
+        // Without `dependentsOf` there is no way to show nothing still merges into this canonical, so it is kept.
+        if (canonical === m && (registry.dependentsOf === undefined || registry.dependentsOf(m) > 0)) continue;
+        registry.forget(m);
+      }
+    }
+    return disposed;
+  }
+
   /**
    * Detaches an Object3D owner and returns the scene whose other meshes may read its buffers. Detached before that
    * scene is read: the owner's own meshes must not count as readers of the buffers it gives up.
@@ -98,39 +133,19 @@ export class ResourceTracker {
       others.some((s) => pick(s).has(item));
     const inUse = new Set(others.flatMap((s) => [...s.geometries]));
     const scene = this.detach(owner);
-    const geometries = disposeGeometries([...sets.geometries, ...this.left], inUse, () =>
-      scene ? collectResources(scene).geometries : [],
-    );
+    // What the rest of the scene still reaches, the tracker's owners or not: reaching a resource is not owning it.
+    const elsewhere = scene ? collectResources(scene) : undefined;
+    const geometries = disposeGeometries([...sets.geometries, ...this.left], inUse, () => elsewhere?.geometries ?? []);
     this.left = new Set(geometries.left);
     report.geometries = geometries.disposed;
     for (const t of sets.textures) {
-      if (heldElsewhere((s) => s.textures, t)) continue;
+      if (heldElsewhere((s) => s.textures, t) || elsewhere?.textures.has(t) || isRenderTargetTexture(t)) continue;
       t.dispose();
       report.textures++;
     }
-    const registry = this.options.registry;
-    const forgettable: Material[] = [];
-    for (const m of sets.materials) {
-      const held = heldElsewhere((s) => s.materials, m);
-      if (registry?.canonicalOf(m) !== undefined) {
-        if (!held) forgettable.push(m);
-        continue;
-      }
-      if (held) continue;
-      m.dispose();
-      report.materials++;
-    }
-    if (registry?.forget) {
-      // Merged duplicates first, so `dependentsOf` below sees only the dependents this release does not also drop.
-      for (const m of forgettable) if (registry.canonicalOf(m) !== m) registry.forget(m);
-      for (const m of forgettable) {
-        const canonical = registry.canonicalOf(m);
-        if (canonical === undefined) continue; // already forgotten above
-        // Without `dependentsOf` there is no way to show nothing still merges into this canonical, so it is kept.
-        if (canonical === m && (registry.dependentsOf === undefined || registry.dependentsOf(m) > 0)) continue;
-        registry.forget(m);
-      }
-    }
+    for (const targets of sets.targetOwners)
+      if (!heldElsewhere((s) => s.targetOwners, targets) && !elsewhere?.targetOwners.has(targets)) targets.dispose();
+    report.materials = this.releaseMaterials(sets.materials, (m) => heldElsewhere((o) => o.materials, m));
     return report;
   }
 

@@ -1,6 +1,12 @@
 import { type BufferGeometry, type Camera, type Mesh, type Object3D, type Texture, Vector3 } from 'three';
 import type { World } from '../compiler/World.js';
-import { collectResources, disposeGeometries, emptyResourceSets, type ResourceSets } from '../memory/resources.js';
+import {
+  collectResources,
+  disposeGeometries,
+  emptyResourceSets,
+  isRenderTargetTexture,
+  type ResourceSets,
+} from '../memory/resources.js';
 import { tag } from '../tags.js';
 
 export interface StreamerOptions {
@@ -174,7 +180,7 @@ export class Streamer {
     this.left = new Set(
       disposeGeometries([...chunk.resources.geometries, ...this.left], inUse, () => this.drawnOutsideChunks()).left,
     );
-    for (const t of chunk.resources.textures) if (!held((s) => s.textures, t)) t.dispose();
+    for (const t of chunk.resources.textures) if (!held((s) => s.textures, t) && !isRenderTargetTexture(t)) t.dispose();
     for (const p of chunk.placed) {
       // BatchedMesh.dispose() nulls these; disposing them directly frees the GPU copies and three re-uploads on the next render.
       const batch = p.object as Object3D & {

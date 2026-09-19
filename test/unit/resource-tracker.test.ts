@@ -9,6 +9,7 @@ import {
   type Material,
   Mesh,
   MeshStandardMaterial,
+  RenderTarget,
   RGBAFormat,
   Scene,
   SphereGeometry,
@@ -16,12 +17,15 @@ import {
   type Texture,
   UnsignedByteType,
 } from 'three';
+import { texture } from 'three/tsl';
+import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { describe, expect, it, vi } from 'vitest';
 import { ResourceTracker } from '../../src/memory/ResourceTracker.js';
 import {
   collectResources,
   disposeGeometry,
   emptyResourceSets,
+  noteTargetOwner,
   unreferencedResources,
 } from '../../src/memory/resources.js';
 import { MaterialRegistry } from '../../src/registry/MaterialRegistry.js';
@@ -220,6 +224,84 @@ describe('interleaved geometries', () => {
     expect(tracker.release(b).geometries).toBe(2);
     expect(disposedA).toHaveBeenCalledTimes(1);
     expect(bufferOf(geometryA)).toBe(bufferOf((b.children[0] as Mesh).geometry));
+  });
+});
+
+describe('textures sampled through a node', () => {
+  it('collects a texture a material slot samples through a node', () => {
+    // No material property holds it: the slot holds a node, and the node holds the texture.
+    const map = tex();
+    const material = new MeshStandardNodeMaterial();
+    material.colorNode = texture(map).mul(2);
+    const r = collectResources(new Mesh(new BoxGeometry(), material));
+    expect([...r.textures]).toEqual([map]);
+  });
+
+  it('release frees a texture a mesh keeps in a texture node', () => {
+    // WaterMesh keeps its normal map this way, on the mesh, and samples it inside an Fn built with the shader.
+    const map = tex();
+    const water = Object.assign(new Mesh(new BoxGeometry(), new MeshStandardNodeMaterial()), {
+      waterNormals: texture(map),
+    });
+    const disposed = vi.spyOn(map, 'dispose');
+    const tracker = new ResourceTracker().track(water);
+    expect(tracker.release(water).textures).toBe(1);
+    expect(disposed).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('reaching a resource is not owning it', () => {
+  const sampling = (map: Texture) => {
+    const material = new MeshStandardNodeMaterial();
+    material.colorNode = texture(map);
+    return new Group().add(new Mesh(new BoxGeometry(), material));
+  };
+
+  it('keeps a node-sampled texture until its last owner is released', () => {
+    const map = tex();
+    const [a, b] = [sampling(map), sampling(map)];
+    const disposed = vi.spyOn(map, 'dispose');
+    const tracker = new ResourceTracker().track(a).track(b);
+    expect(tracker.release(a).textures).toBe(0);
+    expect(disposed).not.toHaveBeenCalled();
+    expect(tracker.release(b).textures).toBe(1);
+    expect(disposed).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a texture a mesh the tracker was never given still uses', () => {
+    const map = tex();
+    const scene = new Scene();
+    const owner = sampling(map);
+    scene.add(owner, new Mesh(new BoxGeometry(), new MeshStandardMaterial({ map })));
+    const disposed = vi.spyOn(map, 'dispose');
+    expect(new ResourceTracker().track(owner).release(owner).textures).toBe(0);
+    expect(disposed).not.toHaveBeenCalled();
+  });
+
+  it('accounts for a render target texture and never disposes it', () => {
+    // The target is disposed, by what owns it.
+    const target = new RenderTarget(8, 8);
+    const owner = sampling(target.texture);
+    (owner.children[0] as Mesh).add(new Mesh(new BoxGeometry(), new MeshStandardMaterial({ map: target.texture })));
+    expect(collectResources(owner).textures.has(target.texture)).toBe(true);
+    const disposed = vi.spyOn(target.texture, 'dispose');
+    expect(new ResourceTracker().track(owner).release(owner).textures).toBe(0);
+    expect(disposed).not.toHaveBeenCalled();
+  });
+
+  it('disposes a noted target owner once its last holder is released', () => {
+    // three leaves only the reflector's `target` object in the graph; the ledger notes the node that owns the targets.
+    const reflector = { dispose: vi.fn() };
+    const anchor = new Group();
+    const water = new Group().add(anchor);
+    const level = new Group().add(water);
+    noteTargetOwner(anchor, reflector);
+    expect([...collectResources(level).targetOwners]).toEqual([reflector]);
+    const tracker = new ResourceTracker().track(level).track(water);
+    tracker.release(water);
+    expect(reflector.dispose).not.toHaveBeenCalled();
+    tracker.release(level);
+    expect(reflector.dispose).toHaveBeenCalledTimes(1);
   });
 });
 

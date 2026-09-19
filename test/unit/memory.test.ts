@@ -15,6 +15,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  type Object3D,
   PointLight,
   RedFormat,
   RedIntegerFormat,
@@ -22,6 +23,7 @@ import {
   RGBAFormat,
   RGFormat,
   Scene,
+  type Texture,
   UnsignedByteType,
   UnsignedInt248Type,
   UnsignedIntType,
@@ -29,10 +31,12 @@ import {
   VSMShadowMap,
 } from 'three';
 import Renderer from 'three/src/renderers/common/Renderer.js';
+import { reflector, texture } from 'three/tsl';
 import { describe, expect, it } from 'vitest';
 import { DrawCallLedger } from '../../src/ledger/DrawCallLedger.js';
 import { estimateMemory, geometryBytes, textureBytes } from '../../src/ledger/memory.js';
 import { disposeOverdraw, measureOverdraw, overdrawTargetOf } from '../../src/ledger/overdraw.js';
+import { addSamples, emptySamples, reflectorPlaceholder, sampledUnder } from '../../src/ledger/sampledTextures.js';
 import { isUploadedGeometry } from '../../src/ledger/weakMembers.js';
 import { FakeRenderer, sceneWithCamera } from './helpers/fakeRenderer.js';
 import { attachedLedger } from './helpers/ledger.js';
@@ -46,13 +50,13 @@ function allocateShadowMap(light: Light, size: number): RenderTarget {
 }
 
 /** A scene reaching one 4 x 4 texture and one geometry, drawn twice. */
-function sceneWithMap(): { scene: Scene; geometry: BoxGeometry } {
+function sceneWithMap(): { scene: Scene; geometry: BoxGeometry; map: DataTexture } {
   const scene = new Scene();
   const map = new DataTexture(new Uint8Array(4 * 4 * 4), 4, 4, RGBAFormat, UnsignedByteType);
   const material = new MeshStandardMaterial({ map });
   const geometry = new BoxGeometry();
   scene.add(new Mesh(geometry, material), new Mesh(geometry, material));
-  return { scene, geometry };
+  return { scene, geometry, map };
 }
 
 describe('memory estimate', () => {
@@ -417,6 +421,140 @@ describe('three r186 geometry bookkeeping the ledger reads (canary)', () => {
     expect(isUploadedGeometry({ _geometries: geometries } as never, geometry)).toBe(true);
     expect(isUploadedGeometry({ _geometries: geometries } as never, new BoxGeometry())).toBe(false);
     expect(isUploadedGeometry({} as never, new BoxGeometry()), 'absent: taken for uploaded').toBe(true);
+  });
+});
+
+// Canary: pins what `src/ledger/sampledTextures.ts` reads of three r186. If it fails, the ledger stops learning what
+// the draws sample (a texture created inside an Fn reads as unreferenced again) and stops noting reflectors.
+describe('three r186 draw bindings and reflector the ledger reads (canary)', () => {
+  const load = async (path: string) => (await import(`three/src/${path}` as string)) as Record<string, unknown>;
+
+  it('pins Backend.draw, getBindings and NodeSampledTexture', async () => {
+    const Backend = (await load('renderers/common/Backend.js')).default as { prototype: object };
+    const RenderObject = (await load('renderers/common/RenderObject.js')).default as { prototype: object };
+    expect(typeof (Backend.prototype as { draw?: unknown }).draw).toBe('function');
+    expect(typeof (RenderObject.prototype as { getBindings?: unknown }).getBindings).toBe('function');
+    const { NodeSampledTexture } = (await load('renderers/common/nodes/NodeSampledTexture.js')) as {
+      NodeSampledTexture: new (name: string, node: unknown, group: unknown) => Record<string, unknown>;
+    };
+    const map = new DataTexture(new Uint8Array(4), 1, 1);
+    const node = texture(map);
+    const binding = new NodeSampledTexture('map', node, null);
+    expect(binding.isSampledTexture).toBe(true);
+    expect(binding.textureNode).toBe(node);
+    const samples = emptySamples();
+    const drawn = new Mesh();
+    addSamples({ object: drawn, getBindings: () => [{ bindings: [{ isSampler: true }, binding] }] }, samples);
+    expect([...samples.textures]).toEqual([[drawn, new Set([map])]]);
+  });
+
+  it('pins the reflector node, its base node and its placeholder target', () => {
+    // The base node carries what the ledger reads: the per-camera targets, the `target` object and `dispose()`.
+    const node = reflector() as unknown as { value: Texture; reflector: Record<string, unknown> };
+    expect(node.reflector.renderTargets).toBeInstanceOf(Map);
+    expect((node.reflector.target as Object3D).isObject3D).toBe(true);
+    expect(typeof node.reflector.dispose).toBe('function');
+    // Every reflector starts out on one module-level target's texture (ReflectorNode.js `_defaultRT`).
+    expect(node.value.renderTarget).toBe((reflector() as unknown as { value: Texture }).value.renderTarget);
+    const samples = emptySamples();
+    const bound = [{ bindings: [{ isSampledTexture: true, texture: node.value, textureNode: node }] }];
+    addSamples({ object: new Mesh(), getBindings: () => bound }, samples);
+    expect([...samples.reflectors]).toEqual([node.reflector]);
+    expect(reflectorPlaceholder()).toMatchObject({ textures: [node.value], depthBuffer: false });
+  });
+
+  it("reads nothing from a draw of another shape, nor from three's own full-screen quads", () => {
+    const samples = emptySamples();
+    const map = new DataTexture(new Uint8Array(4), 1, 1);
+    const bound = [{ bindings: [{ isSampledTexture: true, texture: map }] }];
+    const object = new Mesh();
+    for (const draw of [null, {}, { getBindings: () => bound }, { object, getBindings: () => 'no' }])
+      addSamples(draw, samples);
+    addSamples({ object, getBindings: () => [{ bindings: 3 }] }, samples);
+    addSamples({ object: Object.assign(new Mesh(), { isQuadMesh: true }), getBindings: () => bound }, samples);
+    expect(samples.textures.size).toBe(0);
+  });
+
+  it('a sampler that left the scene no longer speaks for what it sampled', () => {
+    const scene = new Scene();
+    const [shared, own] = [new DataTexture(new Uint8Array(4), 1, 1), new DataTexture(new Uint8Array(4), 1, 1)];
+    const [kept, dropped] = [new Mesh(), new Mesh()];
+    scene.add(new Mesh().add(kept), dropped);
+    const samples = emptySamples();
+    const binds = (...textures: DataTexture[]) => [
+      { bindings: textures.map((t) => ({ isSampledTexture: true, texture: t })) },
+    ];
+    addSamples({ object: kept, getBindings: () => binds(shared) }, samples);
+    addSamples({ object: dropped, getBindings: () => binds(shared, own) }, samples);
+    expect(sampledUnder(samples, scene)).toEqual(new Set([shared, own]));
+    // Removed without dispose(): its own texture is a leak now, and must not read as sampled until the next collection.
+    dropped.removeFromParent();
+    expect(sampledUnder(samples, scene)).toEqual(new Set([shared]));
+  });
+});
+
+describe('what the draws sample, in the estimate', () => {
+  const info = (textures: number) => ({ textures, geometries: 1 });
+  const FRAME_BUFFER = 2;
+
+  it("counts a sampled texture as the scene's, once, with its bytes", () => {
+    const { scene, map } = sceneWithMap();
+    const inFn = new DataTexture(new Uint8Array(64), 4, 4);
+    const before = estimateMemory(scene, info(FRAME_BUFFER + 2), [0, 0]);
+    expect(before.unreferenced.textures).toBe(1);
+    // The map is found both ways: it must not count twice.
+    const after = estimateMemory(scene, info(FRAME_BUFFER + 2), [0, 0], { sampledTextures: [inFn, map] });
+    expect(after.unreferenced.textures).toBe(0);
+    expect(after.textures.bytes - before.textures.bytes).toBe(textureBytes(inFn));
+  });
+
+  it('lets a sampled target texture stand for its target, counted once', () => {
+    const { scene } = sceneWithMap();
+    const mirror = new RenderTarget(8, 4);
+    const held = FRAME_BUFFER + 1 + 2; // the map, the mirror's colour and the depth three creates for it
+    const drawn = estimateMemory(scene, info(held), [0, 0], { renderTargets: [mirror] });
+    const both = estimateMemory(scene, info(held), [0, 0], {
+      renderTargets: [mirror],
+      sampledTextures: [mirror.texture],
+    });
+    expect(drawn.unreferenced.textures).toBe(0);
+    expect(both).toEqual(drawn);
+    expect(drawn.renderTargets).toEqual({ count: 1, bytes: 8 * 4 * 4 + 8 * 4 * 4 });
+  });
+
+  it('counts a held target colour the scene already shows once, under textures', () => {
+    // A PMREM environment: the scene reaches the target's colour texture, and a draw samples it too.
+    const { scene } = sceneWithMap();
+    const environment = new RenderTarget(8, 4);
+    scene.environment = environment.texture;
+    const r = estimateMemory(scene, info(FRAME_BUFFER + 1 + 2), [0, 0], { sampledTextures: [environment.texture] });
+    expect(r.unreferenced.textures).toBe(0);
+    expect(r.textures.bytes).toBe(4 * 4 * 4 + 8 * 4 * 4);
+    expect(r.renderTargets, 'its depth alone').toEqual({ count: 1, bytes: 8 * 4 * 4 });
+  });
+
+  it('does not allow a shadow map again when a receiver samples it', () => {
+    const { scene } = sceneWithMap();
+    const light = new DirectionalLight();
+    light.castShadow = true;
+    const map = new RenderTarget(16, 16);
+    map.depthTexture = new DepthTexture(16, 16);
+    (light.shadow as { map: unknown }).map = map;
+    scene.add(light);
+    const held = FRAME_BUFFER + 1 + 2;
+    const plain = estimateMemory(scene, info(held + 1), [0, 0]);
+    const sampled = estimateMemory(scene, info(held + 1), [0, 0], { sampledTextures: [map.depthTexture] });
+    expect(plain.unreferenced.textures, 'one texture nothing accounts for').toBe(1);
+    expect(sampled).toEqual(plain);
+  });
+
+  it("allows three's reflector placeholder without losing its bytes", () => {
+    const { scene } = sceneWithMap();
+    const placeholder = reflectorPlaceholder()!;
+    const r = estimateMemory(scene, info(FRAME_BUFFER + 1 + 1), [0, 0], { renderTargets: [placeholder] });
+    expect(r.unreferenced.textures).toBe(0);
+    // Colour only: nothing renders into it, so three never creates its depth.
+    expect(r.renderTargets).toEqual({ count: 1, bytes: placeholder.width * placeholder.height * 4 });
   });
 });
 

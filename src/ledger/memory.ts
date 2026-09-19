@@ -161,6 +161,21 @@ export interface AllowedRenderTarget {
   depthTexture?: unknown;
   depthBuffer?: boolean;
   stencilBuffer?: boolean;
+  width?: number;
+  height?: number;
+}
+
+/**
+ * What a held target allocates beyond the scene's textures: each colour attachment by its own format unless the scene
+ * shows it (a PMREM environment's bytes are the scene's already), and a depth attachment at 4 bytes a texel.
+ */
+function targetBytes(target: AllowedRenderTarget, reachable: ReadonlySet<unknown>): number {
+  let bytes = 0;
+  for (const colour of target.textures ?? [])
+    if ((colour as Texture | null)?.isTexture && !reachable.has(colour)) bytes += textureBytes(colour as Texture);
+  if (target.depthTexture || target.depthBuffer || target.stencilBuffer)
+    bytes += (target.width ?? 0) * (target.height ?? 0) * 4;
+  return bytes;
 }
 
 /**
@@ -264,6 +279,27 @@ export interface MemoryEstimateOptions {
    * with it, none when three drew into none (a RenderPipeline that renders the output itself).
    */
   frameBufferTargets?: Iterable<AllowedRenderTarget>;
+  /**
+   * Textures the scene's draws bind (the ledger reads them from the draws of one frame after each rescan). They show
+   * what only exists once a shader is built, a texture created inside an `Fn`. One the scene also reaches counts once;
+   * one that belongs to a render target stands for that target. They are what is sampled, not everything allocated.
+   */
+  sampledTextures?: Iterable<Texture>;
+}
+
+/**
+ * The targets held for the scene: those the caller names, and those whose texture a draw samples. A sampled texture
+ * that belongs to no target is added to `textures`, as if a property held it; one the scene shows is there already.
+ */
+function heldTargets(options: MemoryEstimateOptions, textures: Set<Texture>): Set<AllowedRenderTarget> {
+  const held = new Set<AllowedRenderTarget>();
+  for (const target of options.renderTargets ?? []) if (target) held.add(target);
+  for (const sampled of options.sampledTextures ?? []) {
+    const target = (sampled as { renderTarget?: AllowedRenderTarget | null }).renderTarget;
+    if (target) held.add(target);
+    else if (!sampled.isRenderTargetTexture) textures.add(sampled);
+  }
+  return held;
 }
 
 /** three's own counts and byte sizes, null when `info` does not carry them. */
@@ -306,6 +342,8 @@ export function estimateMemory(
   // map three never built (shadow maps disabled, never lit) holds none, and counts as no render target either. A map
   // built but not rendered yet is allowed textures three creates on its first render, so the count reads low until then.
   let allowedTextures = (options.frameBufferTargets ? 0 : FRAME_BUFFER_TEXTURES) + (options.internalTextures ?? 0);
+  // Targets already counted, bytes and textures both: a shadow map a receiver samples is not a second target.
+  const counted = new Set<unknown>(options.frameBufferTargets ?? []);
   scene.traverse((o) => {
     const light = o as Object3D & {
       isLight?: boolean;
@@ -315,6 +353,7 @@ export function estimateMemory(
     };
     const map = light.isLight && light.castShadow ? light.shadow?.map : null;
     if (!map || !light.shadow) return;
+    counted.add(map);
     rtCount++;
     // A point light's target is a cube three allocates from the map's width alone, six faces at width x width
     // (PointShadowNode.js:227, :254), so its bytes are the texels `lighting.shadowTexels` counts for it, times 4.
@@ -328,6 +367,7 @@ export function estimateMemory(
     if (map._vsmShadowMapVertical || map._vsmShadowMapHorizontal) {
       for (const blur of [map._vsmShadowMapVertical, map._vsmShadowMapHorizontal])
         if (blur) {
+          counted.add(blur);
           allowedTextures += renderTargetTextures(blur);
           blurTargets++;
         }
@@ -344,8 +384,14 @@ export function estimateMemory(
   const allowed = new Set<unknown>();
   for (const target of options.frameBufferTargets ?? [])
     allowedTextures += heldTargetTextures(target, textures, allowed);
-  for (const target of options.renderTargets ?? [])
-    if (target) allowedTextures += heldTargetTextures(target, textures, allowed);
+  // Allowing a target says it is no leak; its bytes are counted all the same.
+  for (const target of heldTargets(options, textures)) {
+    if (counted.has(target)) continue;
+    counted.add(target);
+    allowedTextures += heldTargetTextures(target, textures, allowed);
+    rtCount++;
+    rtBytes += targetBytes(target, textures);
+  }
   for (const texture of options.rendererTextures ?? [])
     if (!textures.has(texture as Texture) && !allowed.has(texture)) {
       allowed.add(texture);
