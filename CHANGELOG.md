@@ -1,6 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.9.2 (2026-09-19)
+
+### Upgrading from 0.9.1
+
+Kinds as in 0.9.0: `API` (an export changed shape), `default` (what happens when you change nothing) and `reported` (a value the ledger reports differently for an unchanged scene).
+
+| Kind | Change | If you do nothing | What to do |
+|---|---|---|---|
+| API | `ResourceSets` gains `targetOwners`. | A `ResourceSets` written out by hand no longer type-checks. | Build it with `emptyResourceSets()`. |
+| default | `ResourceTracker.release()` and a `Streamer` unload no longer dispose a render target's texture they reach through a material, and `release()` leaves a texture the rest of the scene still uses. | A target whose texture you put on a material stays allocated after its owner is released. | Dispose the render target yourself; it was always its owner's to dispose. |
+| reported | `memory.textures.bytes` includes textures sampled through nodes and three's `DFG_LUT` where a draw samples it; `memory.renderTargets` counts every held target with its colour and depth. | Both read higher for an unchanged scene (the lake: 1 KB to 5.6 MB of textures), so a stored figure reads as a regression and the `textureBytes` hint can start to fire. It is memory the scene always held. | Record the figures again. |
+
+### All changes
 
 - Textures a node samples are found. `collectResources` reads the texture nodes a material or a node-material mesh holds (a slot's `texture(map)`, `WaterMesh.waterNormals`), and the ledger reads what the draws bind for one frame after each rescan, which is how a texture created inside an `Fn` shows at all. The lake's 1024 x 1024 water normals used to read as unreferenced, were missing from `memory.textures.bytes` (1 KB reported where three measured 13 MB), and `ResourceTracker.release()` left them on the GPU.
 - `ResourceTracker.release()` disposes a reflector's render targets. three builds the reflector inside the shader and `material.dispose()` never reaches it, so every water made and removed left its colour and depth targets behind. An attached ledger notes the reflectors it sees drawn (`noteTargetOwner`), `collectResources` returns them as `targetOwners`, and `release()` disposes one nothing else holds. The device bench page frees them between scenes the same way.
