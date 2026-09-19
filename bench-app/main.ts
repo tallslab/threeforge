@@ -9,7 +9,8 @@ declare global {
     /**
      * What a script driving the page reads. `done` means the run ended, not that it passed: it is set on failure
      * too, so that waiting for it never hangs. A run passed when `done` is true and `error` is unset; `result` is
-     * null otherwise.
+     * null otherwise. Every run resets `done`, `error`, `result` and `env` as it starts, so none of them ever
+     * describes the run before.
      */
     __bench: {
       ready: boolean;
@@ -37,6 +38,12 @@ const setProgress = (text: string): void => {
 async function start(host: Host): Promise<void> {
   $('run').setAttribute('disabled', '');
   $('submit').hidden = true;
+  // Every run starts clean: a script waiting for `done` must not be handed the run before, nor a retry its error.
+  Object.assign(window.__bench, { done: false, result: null });
+  delete window.__bench.error;
+  delete window.__bench.env;
+  for (const id of SCENE_IDS) delete live[id];
+  $('liveBody').innerHTML = liveRows(live);
   const ids = params
     .get('scenes')
     ?.split(',')

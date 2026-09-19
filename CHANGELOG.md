@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The device bench page starts every run from a clean state. A rerun from the button used to keep `done: true` and the previous result while the new run was still loading, a failed rerun kept showing the earlier result and its live numbers, and a successful retry kept the earlier error, so a script waiting on `window.__bench.done` could accept a run that was never measured.
+
 ## 0.9.1 (2026-09-18)
 
 - `World.compile()` no longer recomposes a frozen static whose `matrixAutoUpdate` was already off, and `markDirty` no longer recomposes any object that did not compose its own matrix before compile. A mesh placed through `matrix` used to jump to its `position`/`quaternion`/`scale` (the origin, usually) at compile and stay there after `decompile()`.
