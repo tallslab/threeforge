@@ -1,6 +1,19 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { expect, test } from './fixtures.js';
+import { expect, type ForgePage, test } from './fixtures.js';
 import { pixelDiff } from './pixels.js';
+
+/** Writes both pictures and their diff, then advances the fight and measures how much of the picture moved. */
+async function compare(forge: ForgePage, before: Buffer, after: Buffer): Promise<{ diff: number; motion: number }> {
+  mkdirSync('test-results/arena', { recursive: true });
+  writeFileSync(`test-results/arena/before-${forge.backend}.png`, before);
+  writeFileSync(`test-results/arena/after-${forge.backend}.png`, after);
+  const diff = pixelDiff(before, after, { diffPath: `test-results/arena/diff-${forge.backend}.png` });
+  await forge.page.evaluate(async () => {
+    window.__forge.setTime(1.6);
+    await window.__forge.frameAsync();
+  });
+  return { diff, motion: pixelDiff(after, await forge.page.screenshot({ type: 'png' })) };
+}
 
 test('the fight arena compiles with the same pixels and every draw explained', {
   tag: '@corpus',
@@ -20,7 +33,7 @@ test('the fight arena compiles with the same pixels and every draw explained', {
     };
   });
   console.log(naive.report);
-  const before = await forge.page.screenshot({ type: 'png' });
+  const before = forge.pixelChecks ? await forge.page.screenshot({ type: 'png' }) : null;
   const compiled = await forge.page.evaluate(async () => {
     const f = window.__forge;
     const report = f.compile();
@@ -40,11 +53,8 @@ test('the fight arena compiles with the same pixels and every draw explained', {
     };
   });
   console.log(compiled.report);
-  const after = await forge.page.screenshot({ type: 'png' });
-  mkdirSync('test-results/arena', { recursive: true });
-  writeFileSync(`test-results/arena/before-${forge.backend}.png`, before);
-  writeFileSync(`test-results/arena/after-${forge.backend}.png`, after);
-  const diff = pixelDiff(before, after, { diffPath: `test-results/arena/diff-${forge.backend}.png` });
+  // Where a capture drops the device, the counts below are all this test can hold.
+  const pixels = before ? await compare(forge, before, await forge.page.screenshot({ type: 'png' })) : null;
   console.log(
     JSON.stringify({
       counts: naive.counts,
@@ -54,17 +64,9 @@ test('the fight arena compiles with the same pixels and every draw explained', {
       synced: compiled.synced,
       skipped: compiled.skipped,
       passes: compiled.passes.map((p) => `${p.id}=${p.submissions}`),
-      diffPct: (diff * 100).toFixed(2),
+      diffPct: pixels && (pixels.diff * 100).toFixed(2),
     }),
   );
-
-  // Animation must still drive the scene after compile: advance time and expect pixels to change.
-  await forge.page.evaluate(async () => {
-    window.__forge.setTime(1.6);
-    await window.__forge.frameAsync();
-  });
-  const later = await forge.page.screenshot({ type: 'png' });
-  const motion = pixelDiff(after, later);
 
   expect(naive.totals.unattributed).toBe(0);
   expect(compiled.totals.unattributed).toBe(0);
@@ -80,8 +82,10 @@ test('the fight arena compiles with the same pixels and every draw explained', {
   // Weapons hang off hand bones: dynamic, and with batch-sync they ride in batches (counted in `synced`).
   expect(compiled.synced).toBeGreaterThanOrEqual(naive.counts.fighters! + naive.counts.blocky! * 6);
   expect(compiled.skipped).toEqual(expect.arrayContaining([expect.arrayContaining(['dynamic-geometry'])]));
-  expect(diff).toBeLessThan(0.01);
-  expect(motion).toBeGreaterThan(0.005);
+  if (!pixels) return;
+  expect(pixels.diff).toBeLessThan(0.01);
+  // Animation must still drive the scene after compile.
+  expect(pixels.motion).toBeGreaterThan(0.005);
 });
 
 test('bloom nests the main pass under fullscreen quads, all attributed', {
