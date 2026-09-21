@@ -297,6 +297,20 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
           .describe(
             'With textures ktx2: auto (ETC1S for colour, UASTC for normal and packed data maps; default), etc1s or uastc',
           ),
+        ktx2Qlevel: z
+          .number()
+          .optional()
+          .describe(
+            'With textures ktx2: ETC1S quality, an integer from 1 to 255 (default 128; higher is better and larger)',
+          ),
+        ktx2UastcQuality: z
+          .number()
+          .optional()
+          .describe('With textures ktx2: UASTC encoding effort, an integer from 0 to 4 (default 2; higher is slower)'),
+        ktx2Zstd: z
+          .number()
+          .optional()
+          .describe('With textures ktx2: Zstandard level over UASTC, an integer from 0 to 22 (default 18; 0 is none)'),
         textureSize: z.number().optional().describe('Longest texture side in pixels'),
         verify: z
           .boolean()
@@ -336,6 +350,9 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
           textureSize: typeof args.textureSize === 'number' ? args.textureSize : null,
           textureQuality: 85,
           ...(typeof args.ktx2Codec === 'string' ? { ktx2Codec: args.ktx2Codec as OptimizeInput['ktx2Codec'] } : {}),
+          ...(typeof args.ktx2Qlevel === 'number' ? { ktx2Qlevel: args.ktx2Qlevel } : {}),
+          ...(typeof args.ktx2UastcQuality === 'number' ? { ktx2UastcQuality: args.ktx2UastcQuality } : {}),
+          ...(typeof args.ktx2Zstd === 'number' ? { ktx2Zstd: args.ktx2Zstd } : {}),
           verify: args.verify !== false,
           parity: typeof args.parity === 'number' ? args.parity : DEFAULT_PARITY,
           views: Number(args.views ?? 2),

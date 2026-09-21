@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { DATA_NOTE, ERROR_NOTE } from '../../src/cli/mcp.js';
-import { expect, test } from './fixtures.js';
+import { expect, skipWithoutKtx, test } from './fixtures.js';
 
 /** The built CLI, driven over stdio by the SDK's own client (as an agent would): `node dist/cli/index.js mcp`. */
 const bin = 'dist/cli/index.js';
@@ -22,14 +22,19 @@ const fox = (): string => {
   return `test/assets/files/${index.find((a) => a.name === 'Fox')!.entry}`;
 };
 
-async function connect(): Promise<{
+/** `env` adds to the few variables the SDK hands a server (PATH, HOME): `FORGE_KTX` is how it finds the encoder. */
+async function connect(env: Record<string, string> = {}): Promise<{
   client: import('@modelcontextprotocol/sdk/client/index.js').Client;
   close(): Promise<void>;
 }> {
   const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
   const { StdioClientTransport } = await import('@modelcontextprotocol/sdk/client/stdio.js');
   const client = new Client({ name: 'threeforge-test', version: '0' });
-  const transport = new StdioClientTransport({ command: 'node', args: [bin, 'mcp'] });
+  const transport = new StdioClientTransport({
+    command: 'node',
+    args: [bin, 'mcp'],
+    env,
+  });
   await client.connect(transport);
   return { client, close: () => client.close() };
 }
@@ -420,6 +425,92 @@ test('analyze_asset refuses an off-origin buffer URI: isError with code 2', asyn
     expect(body.error).toContain('buffers[0].uri');
     expect(body.error).toContain('http://127.0.0.1:1/x.bin');
     expect((result.content as Array<{ text: string }>)[1]?.text).toBe(ERROR_NOTE);
+  } finally {
+    await close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * KTX2 through `optimize_asset`, on the PNG planes of `test/fixtures/ktx2` copied to a directory of their own. The
+ * tool takes what `threeforge optimize` and its schema take: the codec and the three quality settings.
+ */
+const planes = (dir: string): string => {
+  writeFileSync(join(dir, 'planes.glb'), readFileSync('test/fixtures/ktx2/planes-png.glb'));
+  return join(dir, 'planes.glb');
+};
+
+test('optimize_asset takes the four KTX2 settings and refuses one given without textures ktx2', async () => {
+  test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
+  await ready();
+  const dir = mkdtempSync(join(tmpdir(), 'forge-mcp-ktx2-'));
+  const { client, close } = await connect();
+  try {
+    const tool = (await client.listTools()).tools.find((t) => t.name === 'optimize_asset')!;
+    const properties = Object.keys((tool.inputSchema as { properties: Record<string, unknown> }).properties);
+    expect(properties).toEqual(expect.arrayContaining(['ktx2Codec', 'ktx2Qlevel', 'ktx2UastcQuality', 'ktx2Zstd']));
+    for (const setting of [{ ktx2Codec: 'uastc' }, { ktx2Qlevel: 64 }, { ktx2UastcQuality: 3 }, { ktx2Zstd: 5 }]) {
+      const result = await client.callTool({
+        name: 'optimize_asset',
+        arguments: { file: planes(dir), out: join(dir, 'out.glb'), verify: false, ...setting },
+      });
+      expect(result.isError, JSON.stringify(setting)).toBe(true);
+      const body = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
+      expect(body.code).toBe(2);
+      expect(body.error).toContain('ktx2');
+      expect(existsSync(join(dir, 'out.glb'))).toBe(false);
+    }
+  } finally {
+    await close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('optimize_asset textures ktx2 without the encoder fails naming it, and writes no file', async () => {
+  test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
+  await ready();
+  const dir = mkdtempSync(join(tmpdir(), 'forge-mcp-ktx2-'));
+  const { client, close } = await connect({ FORGE_KTX: join(dir, 'no-such-ktx') });
+  try {
+    const result = await client.callTool({
+      name: 'optimize_asset',
+      arguments: { file: planes(dir), out: join(dir, 'out.glb'), verify: false, textures: 'ktx2' },
+    });
+    expect(result.isError).toBe(true);
+    const body = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
+    expect(body.code).toBe(3);
+    expect(body.error).toContain('KTX-Software');
+    expect(existsSync(join(dir, 'out.glb'))).toBe(false);
+  } finally {
+    await close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('optimize_asset textures ktx2 encodes every map with the codec it was given', async () => {
+  test.skip(process.env.FORGE_SKIP_MCP === '1', 'FORGE_SKIP_MCP');
+  skipWithoutKtx();
+  await ready();
+  const dir = mkdtempSync(join(tmpdir(), 'forge-mcp-ktx2-'));
+  const { client, close } = await connect(process.env.FORGE_KTX ? { FORGE_KTX: process.env.FORGE_KTX } : {});
+  try {
+    const result = await client.callTool({
+      name: 'optimize_asset',
+      arguments: {
+        file: planes(dir),
+        out: join(dir, 'out.glb'),
+        verify: false,
+        textures: 'ktx2',
+        ktx2Codec: 'etc1s',
+        ktx2Qlevel: 64,
+      },
+    });
+    expect(result.isError, JSON.stringify(result.content)).toBeFalsy();
+    const doc = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
+    expect(doc.input).toMatchObject({ textures: 'ktx2', ktx2Codec: 'etc1s', ktx2Qlevel: 64 });
+    const step = (doc.steps as Array<{ name: string; note?: string }>).find((s) => s.name === 'textures')!;
+    expect(step.note).toContain('4 encoded as KTX2 (4 ETC1S, 0 UASTC)');
+    expect(doc.requires.map((r: { extension: string }) => r.extension)).toContain('KHR_texture_basisu');
   } finally {
     await close();
     rmSync(dir, { recursive: true, force: true });
