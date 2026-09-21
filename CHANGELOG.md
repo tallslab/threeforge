@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 (2026-09-21)
 
 ### Upgrading from 0.9.2
+
+Kinds as in 0.9.0: `API` (an export changed shape), `default` (what happens when you change nothing) and `reported` (a value the ledger reports differently for an unchanged scene).
 
 | Kind | Change | If you do nothing | What to do |
 |---|---|---|---|
