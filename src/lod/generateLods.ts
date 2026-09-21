@@ -92,7 +92,9 @@ export async function generateLods(geometry: BufferGeometry, options: LodOptions
 
 /** Builds a geometry from a simplified index buffer, dropping vertices no longer referenced. */
 function compact(source: BufferGeometry, simplified: Uint32Array): BufferGeometry {
-  const [remap, uniqueCount] = MeshoptSimplifier.compactMesh(simplified);
+  // compactMesh rewrites the indices it is given, and the next level still simplifies `simplified` against the source.
+  const index = simplified.slice();
+  const [remap, uniqueCount] = MeshoptSimplifier.compactMesh(index);
   const geometry = new BufferGeometry();
   for (const name of Object.keys(source.attributes)) {
     const attribute = source.attributes[name] as BufferAttribute;
@@ -107,8 +109,6 @@ function compact(source: BufferGeometry, simplified: Uint32Array): BufferGeometr
     }
     geometry.setAttribute(name, new BufferAttribute(array, itemSize, attribute.normalized));
   }
-  const index = new Uint32Array(simplified.length);
-  for (let i = 0; i < simplified.length; i++) index[i] = remap[simplified[i]!]!;
   geometry.setIndex(new BufferAttribute(uniqueCount > 65535 ? index : Uint16Array.from(index), 1));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();

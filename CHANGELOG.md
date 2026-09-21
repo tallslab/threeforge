@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `generateLods` and `prepareLods` build levels that draw. meshoptimizer's `compactMesh` rewrites the index array it is given, and the level's indices were remapped a second time afterwards, so every level read vertices through wrong indices (up to 65535 in a level of a few hundred vertices) and drew as shards from its switch distance on; the next level was then simplified from those compacted indices against the source's positions. Levels are compacted from a copy. The ledger and the benches count triangles, which is why they never showed it; the counts of later levels move a little now that they are simplified from intact indices (the optimized forest bench scene draws 105 053 triangles, 99 350 before).
+
 ## 0.9.2 (2026-09-19)
 
 ### Upgrading from 0.9.1

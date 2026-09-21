@@ -1,4 +1,5 @@
 import {
+  BufferAttribute,
   type BufferGeometry,
   DodecahedronGeometry,
   Mesh,
@@ -6,10 +7,26 @@ import {
   Scene,
   SphereGeometry,
   TorusKnotGeometry,
+  Vector3,
 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { disposeLods, generateLods, lodsOf, prepareLods } from '../../src/lod/generateLods.js';
 import { tag } from '../../src/tags.js';
+
+/** Surface area through the index: NaN when an index reads past the vertices. */
+function area(g: BufferGeometry): number {
+  const position = g.getAttribute('position');
+  const index = g.getIndex()!;
+  const [a, b, c] = [new Vector3(), new Vector3(), new Vector3()];
+  let sum = 0;
+  for (let i = 0; i < index.count; i += 3) {
+    a.fromBufferAttribute(position, index.getX(i));
+    b.fromBufferAttribute(position, index.getX(i + 1));
+    c.fromBufferAttribute(position, index.getX(i + 2));
+    sum += b.sub(a).cross(c.sub(a)).length() / 2;
+  }
+  return sum;
+}
 
 describe('generateLods', () => {
   it('produces one level per ratio with about that share of the triangles', async () => {
@@ -44,6 +61,57 @@ describe('generateLods', () => {
       expect(lod.index!.count).toBeLessThanOrEqual(previous);
       previous = lod.index!.count;
     }
+  });
+
+  it.each([
+    ['an indexed sphere', () => new SphereGeometry(1.3, 32, 24)],
+    ['a non-indexed dodecahedron', () => new DodecahedronGeometry(1, 3)],
+    ['a torus knot', () => new TorusKnotGeometry(1, 0.3, 64, 12)],
+  ])("builds every level of %s from its own vertices, all of them the source's", async (_, build) => {
+    const base = build();
+    const source = new Set<string>();
+    const position = base.getAttribute('position');
+    for (let v = 0; v < position.count; v++) source.add(`${position.getX(v)},${position.getY(v)},${position.getZ(v)}`);
+    for (const lod of await generateLods(base, { ratios: [0.5, 0.2] })) {
+      const vertices = lod.getAttribute('position');
+      const used = new Set<number>(lod.getIndex()!.array);
+      // Compaction leaves exactly the vertices the triangles use: every index is one, and every one is indexed.
+      expect([...used].sort((a, b) => a - b)).toEqual(Array.from({ length: vertices.count }, (_, v) => v));
+      // Simplification moves nothing, so a level's vertex that is not a source vertex was read through a wrong index.
+      for (let v = 0; v < vertices.count; v++)
+        expect(source.has(`${vertices.getX(v)},${vertices.getY(v)},${vertices.getZ(v)}`), `vertex ${v}`).toBe(true);
+      expect(Number.isFinite(area(lod))).toBe(true);
+      expect(Number.isFinite(lod.boundingSphere!.radius)).toBe(true);
+      expect(lod.boundingBox!.isEmpty()).toBe(false);
+    }
+  });
+
+  it('simplifies each level from intact indices, so later levels still wrap the source', async () => {
+    const base = new SphereGeometry(1.3, 32, 24);
+    const lods = await generateLods(base, { ratios: [0.5, 0.2, 0.1] });
+    // A sphere is convex and its levels keep source vertices, so a level can only lose a little area to flatter
+    // facets. Indices compacted for one level and then simplified again against the source lose most of it.
+    expect(lods.map((lod) => area(lod) / area(base))).toEqual([
+      expect.closeTo(0.99, 1),
+      expect.closeTo(0.97, 1),
+      expect.closeTo(0.94, 1),
+    ]);
+  });
+
+  it.each([
+    ['16-bit', Uint16Array],
+    ['32-bit', Uint32Array],
+  ])('leaves a %s indexed source geometry as it was', async (_, IndexArray) => {
+    const base = new SphereGeometry(1.3, 32, 24);
+    base.setIndex(new BufferAttribute(IndexArray.from(base.getIndex()!.array), 1));
+    const before = {
+      index: Array.from(base.getIndex()!.array),
+      position: Array.from(base.getAttribute('position').array),
+    };
+    await generateLods(base, { ratios: [0.5, 0.2] });
+    expect(Array.from(base.getIndex()!.array)).toEqual(before.index);
+    expect(Array.from(base.getAttribute('position').array)).toEqual(before.position);
+    expect(lodsOf(base)).toEqual([]);
   });
 });
 
