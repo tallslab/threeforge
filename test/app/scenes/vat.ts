@@ -16,9 +16,10 @@ import type { BenchBuilder } from './index.js';
 
 /**
  * One skinned Kenney character (left, driven by a mixer) next to its AnimatedInstances twin (right): the two must
- * match at `vatClip` and `vatTime`. `vatPartOffset=x,y,z` moves every skinned part after the first off the character
- * root (the Kenney parts all sit at the root): bound in attached mode the original draws the same wherever its parts
- * sit, so the twin has to draw each part at its own offset to match it.
+ * match at `vatClip` and `vatTime` (`setTime` moves both clocks; `vatFps` is the bake rate, 30 by default).
+ * `vatPartOffset=x,y,z` moves every skinned part after the first off the character root (the Kenney parts all sit at
+ * the root): bound in attached mode the original draws the same wherever its parts sit, so the twin has to draw each
+ * part at its own offset to match it.
  */
 export const vatScene: BenchBuilder = async ({ camera, params, loader: makeLoader }) => {
   const loader = await makeLoader();
@@ -46,7 +47,7 @@ export const vatScene: BenchBuilder = async ({ camera, params, loader: makeLoade
   const mixer = new AnimationMixer(original);
   const clip = gltf.animations.find((c) => c.name === clipName) ?? gltf.animations[0]!;
   mixer.clipAction(clip).play();
-  const animation = bakeAnimationTexture(gltf.scene, gltf.animations, { fps: 30 });
+  const animation = bakeAnimationTexture(gltf.scene, gltf.animations, { fps: Number(params.get('vatFps') ?? '30') });
   const vat = new AnimatedInstances({ animation, count: 1 });
   vat.setMatrixAt(0, new Matrix4().makeTranslation(1, 0, 0));
   vat.setClipAt(0, clip.name);
@@ -57,8 +58,10 @@ export const vatScene: BenchBuilder = async ({ camera, params, loader: makeLoade
   camera.position.set(0, 1.4, 4.5);
   camera.lookAt(0, 0.9, 0);
   camera.updateMatrixWorld();
-  const t = Number(params.get('vatTime') ?? '0');
-  mixer.setTime(t);
-  vat.setTime(t);
-  return { scene, counts: {}, vat };
+  const setTime = (t: number): void => {
+    mixer.setTime(t);
+    vat.setTime(t);
+  };
+  setTime(Number(params.get('vatTime') ?? '0'));
+  return { scene, counts: {}, vat, setTime };
 };

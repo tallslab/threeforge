@@ -23,6 +23,7 @@ import {
   exposeToAgents,
   type FrameSnapshot,
   gpuName,
+  lodsOf,
   MaterialRegistry,
   ParticleBudget,
   type ParticleBudgetReport,
@@ -61,6 +62,9 @@ export interface ForgeHarness {
   three: typeof THREE;
   /** The bake's direct API (no World), for in-page parity probes. */
   bakeGeometries: typeof bakeGeometries;
+  /** LOD generation and lookup, for specs that build their own content under `?lod=1`. */
+  prepareLods: typeof prepareLods;
+  lodsOf: typeof lodsOf;
   /** The Streamer class, for specs that stream content they build in the page. */
   Streamer: typeof Streamer;
   /** The ResourceTracker class, for specs that release what they build in the page. */
@@ -347,6 +351,8 @@ try {
   window.__forge = {
     three: THREE,
     bakeGeometries,
+    prepareLods,
+    lodsOf,
     Streamer,
     ResourceTracker,
     webgpu: THREE_WEBGPU,

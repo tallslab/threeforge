@@ -44,6 +44,19 @@ describe('ResolutionScaler', () => {
     expect(scaler.scale).toBe(1);
   });
 
+  it('settles under a fill-bound load instead of hunting between two scales', () => {
+    const scaler = new ResolutionScaler(fakeRenderer(1), { target: 16.6, window: 5, step: 0.05 });
+    // Frame time follows the pixel count, the load a resolution step acts on: 30 ms at full scale. One 0.05 step
+    // changes it by 19 % at most (0.5 to 0.55), less than the dead band between the two triggers (0.7 to 1.05).
+    const decisions: number[] = [];
+    for (let window = 0; window < 40; window++) {
+      for (let i = 0; i < 5; i++) scaler.update(30 * scaler.scale ** 2);
+      decisions.push(scaler.scale);
+    }
+    expect(decisions.slice(0, 5)).toEqual([0.95, 0.9, 0.85, 0.8, 0.75]);
+    expect(new Set(decisions.slice(5))).toEqual(new Set([0.75]));
+  });
+
   it('takes the target from the tier budget, sets a scale directly and restores on dispose', () => {
     const r = fakeRenderer(1);
     const scaler = new ResolutionScaler(r, { tier: 'phone-low' });

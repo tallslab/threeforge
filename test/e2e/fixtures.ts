@@ -10,6 +10,8 @@ export interface ForgePage {
   page: Page;
   backend: BackendName;
   open(scene: string, query?: Record<string, string>): Promise<void>;
+  /** Every page this test opened, in order: a reference pass is a load of its own. */
+  opened: string[];
   /**
    * Whether screenshot assertions are safe here. Capturing the SwiftShader WebGPU canvas in headless Chromium
    * drops the WebGPU instance ("Device Lost"), after which the renderer draws nothing; the native adapter is fine.
@@ -40,8 +42,10 @@ export const test = base.extend<ForgeOptions & { forge: ForgePage; rejectedDraws
   forge: async ({ page, backend }, use) => {
     const webgpuAdapter = process.env.FORGE_WEBGPU ?? (process.platform === 'linux' ? 'swiftshader' : 'native');
     const pixelChecks = backend !== 'webgpu' || webgpuAdapter === 'native';
+    const opened: string[] = [];
     const open = async (scene: string, query: Record<string, string> = {}) => {
       const q = new URLSearchParams({ scene, backend, ...query });
+      opened.push(`/?${q.toString()}`);
       await page.goto(`/?${q.toString()}`);
       await page.waitForFunction(
         () => window.__forge?.ready === true || typeof window.__forge?.error === 'string',
@@ -72,7 +76,7 @@ export const test = base.extend<ForgeOptions & { forge: ForgePage; rejectedDraws
         description: `off for ${backend} on the ${webgpuAdapter} adapter: capturing that canvas drops the WebGPU device, so screenshot assertions are skipped`,
       });
     }
-    await use({ page, backend, open, pixelChecks });
+    await use({ page, backend, open, opened, pixelChecks });
   },
 });
 
