@@ -558,11 +558,12 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
 
     // `--parity` is the ORIGINAL-versus-OPTIMIZED threshold: `--parity 0` asks whether the optimized asset is exactly
     // the original, and for the Buggy it is (0 changed pixels in every view, both backends; CONTRIBUTING.md rule 7). Whether
-    // COMPILING a file moves a pixel is a different question: batching this asset moves 1 px on webgl2 and 2 px of
-    // 921,600 on webgpu, identically on the ORIGINAL file, so it is a property of the asset. It is reported in
+    // COMPILING a file moves a pixel is a different question: batching this asset moves 1 or 2 px of 921,600, on the
+    // ORIGINAL file as well. The two counts need not match: a Linux x86 SwiftShader run measured [1, 1] for the
+    // original and [1, 2] for the optimized file, where macOS measured them equal. It is reported in
     // `verify.optimized.parity` (threshold 0.5 %, never tightened by `--parity`); `analyze --parity 0` asks it directly.
     // Carrying the stricter `--parity` into those inner checks once shipped, made this run exit 1 and was reverted:
-    // the two expectations below go red together if it returns.
+    // the threshold and verdict expectations below go red if it returns.
     const compileDrift = (side: 'original' | 'optimized'): number[] =>
       (doc.verify[side].parity.views as Array<{ changedPixels: number }>).map((v) => v.changedPixels);
     expect(doc.verify.original.parity.threshold, '--parity must not reach the inner compile checks').toBe(0.5);
@@ -571,12 +572,11 @@ test('optimize collapses the Buggy to one material and still compiles to one sub
       type: 'parity',
       description: `[${forge.backend}] Buggy compile drift: original ${JSON.stringify(compileDrift('original'))}, optimized ${JSON.stringify(compileDrift('optimized'))}`,
     });
-    // The drift is real, symmetric between the two files, and small enough that only a zero threshold would see it.
+    // The drift is real, and small enough that only a zero threshold would see it.
     expect(
       Math.max(...compileDrift('optimized')),
       'the premise of this test: compiling the Buggy moves pixels',
     ).toBeGreaterThan(0);
-    expect(compileDrift('optimized')).toEqual(compileDrift('original'));
     for (const changed of [...compileDrift('original'), ...compileDrift('optimized')])
       expect(changed).toBeLessThanOrEqual(4);
     // Reported, not judged into the verdict: the run still passes, and the drift is readable in the document.

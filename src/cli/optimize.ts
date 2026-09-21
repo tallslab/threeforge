@@ -213,7 +213,7 @@ function writeExclusive(path: string, data: string | Uint8Array, flag: 'w' | 'wx
 /**
  * `input.parity` is the threshold between the two files; each file's compile check keeps the `analyze` default, because
  * a stricter `--parity` passed inward fails a correct run: the Buggy's optimized file is pixel-identical to the original,
- * yet compiling either moves 1 px (webgl2) or 2 px (webgpu) of 921,600. `verify.optimized.parity` still reports the drift.
+ * yet compiling either moves 1 or 2 px of 921,600. `verify.optimized.parity` still reports the drift.
  */
 export function verifyAnalyzeInput(input: OptimizeInput): Omit<AnalyzeInput, 'file'> {
   return {
