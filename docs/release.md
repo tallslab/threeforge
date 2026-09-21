@@ -46,11 +46,14 @@ the pull request or push adds; merge commits are not checked. Run it locally the
 - `commit-rules`: the `Budget:` line check above.
 - `unit`: `pnpm typecheck`, `pnpm test`, `pnpm build`, plus an informational ledger-overhead figure in the run
   summary (not a gate, compared to nothing).
-- `e2e`: both backends, `--grep-invert "@corpus|@bench|@temporal"`, and no downloaded content at all. Its
-  `test-results` are uploaded whenever the run left any, the advisory `webgpu` leg included. The `webgl2` leg installs
-  KTX-Software 4.4.2 (one pinned release, its package checked against the published SHA-256 before installation) and
-  sets `FORGE_REQUIRE_KTX=1`, so the test that runs `optimize --textures ktx2`, loads the result and measures its GPU
-  bytes cannot skip there; without the variable, and locally without the encoder, it skips.
+- `e2e`: both backends, `--grep-invert "@corpus|@bench|@temporal"`, and no downloaded content at all. Its `test-results`
+  are uploaded whenever the run left any, the advisory `webgpu` leg included. That leg runs through
+  `scripts/advisory-report.mjs` exactly as the corpus run below does, so its failed tests are a warning while the
+  `@adapter` check, an error of the run, an abnormal exit and a missing report fail the job; the JSON report is uploaded
+  as `e2e-webgpu-report`. The `webgl2` leg installs KTX-Software 4.4.2 (one pinned release, its package checked against
+  the published SHA-256 before installation) and sets `FORGE_REQUIRE_KTX=1`, so the test that runs `optimize --textures
+  ktx2`, loads the result and measures its GPU bytes cannot skip there; without the variable, and locally without the
+  encoder, it skips.
 - `temporal`: the six stepped-sequence tests (`test/e2e/temporal-*.spec.ts`), with the Kenney kits, because the two
   animation ones are also `@corpus`. `webgl2` gates. On `webgpu` every one of them skips (SwiftShader, no pixel
   checks), and the job's summary says so: that leg validates no WebGPU pixel. A failing sequence writes its first and
@@ -59,9 +62,14 @@ the pull request or push adds; merge commits are not checked. Run it locally the
   of its own under `FORGE_TEMPORAL_OUT`. The job uploads that directory and a ran/skipped/excluded report
   (`scripts/temporal-report.mjs`, also in the run summary) whatever the outcome. Locally the directory defaults to the
   system temp directory and the failing test's error names it.
-- `bench`: both backends, the gate in `scripts/bench-run.mjs`. The only pull-request job that downloads
-  anything (the Kenney kits and the water map, with `FORGE_FETCH_STRICT=1` so a failed download fails by name).
-  Deterministic cost metrics are gated; timing is recorded only, since the runner is SwiftShader, not a GPU.
+- `bench`: both backends, the gate in `scripts/bench-run.mjs`. The only pull-request job that downloads anything (the
+  Kenney kits and the water map, with `FORGE_FETCH_STRICT=1` so a failed download fails by name). Deterministic cost
+  metrics are gated; timing is recorded only, since the runner is SwiftShader, not a GPU. Its advisory `webgpu` leg runs
+  the scenes with the `@adapter` check through `scripts/advisory-report.mjs` and then the gate: a scene that fails is a
+  warning, and so are the two outcomes the gate itself decides under `--advisory` (worse than the baseline, no scene
+  measured). No adapter, an error of the run, an abnormal exit, a missing report and a gate that crashes on results it
+  cannot read all fail the job; the shell reads no exit code, because a crash exits 1 as a regression does. On the first
+  runs all 16 scenes failed there at the overdraw readback, so that leg has not measured anything yet.
 
 A green pull-request run is not full coverage. The `@corpus` tag takes every test that needs downloaded content out
 of the `e2e` job: most of `cli.spec.ts` and `mcp.spec.ts`, all of `ParticleBudget`, and the `arena`, `assets`,
@@ -86,10 +94,16 @@ failed tests become a warning with the real counts, the run summary lists each o
 (`scripts/advisory-report.mjs`), and `test-results` is uploaded either way. On the first run of this workflow that leg
 failed 43 tests: 32 with the adapter's lost-device errors (`mapAsync` on a vanished instance, `createBuffer` refused),
 one because `arena.spec.ts` captured the canvas where captures are off (since guarded), and 10 assertions nobody has
-traced to the adapter. Advisory is a statement about this runner, not about those 10: they are open until someone traces
-them. The guarded specs skip their captures on this adapter, while `biome.spec.ts`, `assets.spec.ts` and the CLI's own
-comparisons still capture there; a pass on this runner does not establish native WebGPU pixel correctness. That stays
-the native run of steps 2 and 4, required before every release.
+traced to the adapter. All 10 pass on a native adapter (Apple Metal-3) and all 10 fail on macOS's software adapter with
+the device lost, where `adapter-control.spec.ts`, a bare canvas with no three.js and no threeforge on the page, loses
+its device within three frames; whether the Linux runner's adapter does the same has not been measured, and the control
+would not by itself establish the cause of any one failure there. Two things now measure it on every advisory run: the
+fixture records on each test whether its page still had its device and whether it went before threeforge compiled
+anything, and the control records what a bare canvas does on that adapter. The report prints both beside each failed
+test, so a failure with its device intact stands out as ours to explain. Advisory is a statement about the runner, never
+an explanation of a failure. The guarded specs skip their captures on this adapter, while `biome.spec.ts`,
+`assets.spec.ts` and the CLI's own comparisons still capture there; a pass on this runner does not establish native
+WebGPU pixel correctness. That stays the native run of steps 2 and 4, required before every release.
 
 `FORGE_FETCH_STRICT=1` makes `pnpm assets` and `pnpm assets:kits` exit 1 after listing every failed download; unset
 (the local default) the failure is recorded in the index and the script exits 0. `FORGE_BENCH_APP_OPTIONAL=1` lets

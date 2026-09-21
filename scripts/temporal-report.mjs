@@ -22,12 +22,14 @@ export function testsOf(document) {
 
 const keyOf = (test) => `${test.file}:${test.line} ${test.title} [${test.projectName}]`;
 
+/** The descriptions of a test's annotations of one type. */
+export const described = (test, type) => test.annotations.filter((a) => a.type === type).map((a) => a.description);
+
 function detailsOf(test) {
-  const described = (type) => test.annotations.filter((a) => a.type === type).map((a) => a.description);
   return [
-    ...described('skip'),
-    ...described('pixel-checks').map((d) => `pixel checks ${d}`),
-    ...described('temporal-artifacts').map((d) => `frames: ${d}`),
+    ...described(test, 'skip'),
+    ...described(test, 'pixel-checks').map((d) => `pixel checks ${d}`),
+    ...described(test, 'temporal-artifacts').map((d) => `frames: ${d}`),
   ];
 }
 

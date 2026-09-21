@@ -9,6 +9,8 @@ export interface TemporalRow {
 export function testsOf(
   report: unknown,
 ): Array<{ title: string; file: string; line: number; tags: string[]; projectName: string; status: string }>;
+/** The descriptions of a test's annotations of one type. */
+export function described(test: { annotations: Array<{ type: string; description?: string }> }, type: string): string[];
 /** Both arguments are Playwright JSON reports: the `--list` one and the run's. */
 export function summarize(listed: unknown, report: unknown): TemporalRow[];
 export function markdown(rows: TemporalRow[]): string;

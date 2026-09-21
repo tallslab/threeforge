@@ -143,8 +143,8 @@ jobs:
           KTX_SHA256: ca635ed489d8bf54fac8d7687056c651193de0740830a7738cc034adc63e3027
       # COVERAGE, stated so a green run is not read as more than it is. Measured with
       # `pnpm exec playwright test --list --project=webgl2
-      # [--grep-invert "@corpus|@bench|@temporal"]`: the suite is 299 tests in 42 files PER PROJECT (598 across the
-      # two); this selection runs 127 per project (254 across both) in 30 files.
+      # [--grep-invert "@corpus|@bench|@temporal"]`: the suite is 300 tests in 43 files PER PROJECT (600 across the
+      # two); this selection runs 128 per project (256 across both) in 31 files.
       # Dropped here: 152 @corpus tests per project, covered only by the weekly full-corpus `assets.yml` (two of them
       # are temporal and also run in the `temporal` job below), the 16 @bench ones (the `bench` job) and the 4 other
       # @temporal ones (the `temporal` job). Concretely, a green run here does NOT cover
@@ -156,17 +156,21 @@ jobs:
       #     off; 36 test.skip(!forge.pixelChecks) declarations skip whole tests and the rest skip their screenshots.
       #     WebGPU pixel parity is proven only by a local run on a native adapter (docs/release.md, step 2).
       # `--forbid-only` so a stray test.only cannot quietly shrink this selection further.
+      # The advisory leg goes through scripts/advisory-report.mjs, which runs the tests and judges their report after
+      # every run: failed tests become a warning with real counts, while the @adapter check (smoke.spec.ts) not
+      # passing, an error of the run itself, an abnormal exit and a missing report still fail the job.
       - name: e2e without downloaded content
         run: |
-          run() { pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "@corpus|@bench|@temporal" --forbid-only; }
+          tests=(pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "@corpus|@bench|@temporal" --forbid-only --reporter=list,json)
           if [ "${{ matrix.advisory }}" = "true" ]; then
-            run || echo "::warning::e2e ${{ matrix.backend }} failed on the SwiftShader adapter (advisory, see docs/design.md)"
+            node scripts/advisory-report.mjs "$PLAYWRIGHT_JSON_OUTPUT_NAME" "e2e ${{ matrix.backend }} on the SwiftShader adapter" adapter -- "${tests[@]}"
           else
-            run
+            "${tests[@]}"
           fi
         env:
           FORGE_REQUIRE_WEBGPU: ${{ matrix.requireWebgpu }}
           FORGE_REQUIRE_KTX: ${{ matrix.requireKtx }}
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/e2e-report/run.json
       # always(), not failure(): the advisory leg turns a failed run into a warning, so its step succeeds and a
       # failure() upload would never see what it left behind. A green run leaves nothing to upload.
       - uses: actions/upload-artifact@v6
@@ -174,6 +178,13 @@ jobs:
         with:
           name: e2e-${{ matrix.backend }}-artifacts
           path: test-results
+          retention-days: 7
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: e2e-${{ matrix.backend }}-report
+          path: ${{ runner.temp }}/e2e-report
           retention-days: 7
           if-no-files-found: ignore
 
@@ -246,7 +257,9 @@ jobs:
       matrix:
         include:
           - backend: webgl2
-          # Advisory for the same reason as the e2e leg: the SwiftShader adapter loses the device mid-run.
+          # Advisory for the same reason as the e2e leg: the SwiftShader adapter loses the device mid-run. On the
+          # first runs every one of the 16 scenes failed there at the overdraw readback, so this leg has measured
+          # nothing yet; its report says how many scenes it measured instead of calling that a regression.
           - backend: webgpu
             advisory: true
     steps:
@@ -269,19 +282,43 @@ jobs:
         env:
           FORGE_KITS_ONLY: '1'
           FORGE_FETCH_STRICT: '1'
+      # The advisory leg runs the scenes through scripts/advisory-report.mjs together with the @adapter check, which
+      # the bench selection does not contain: no adapter, an error of the run, an abnormal exit or a missing report
+      # fail the job, failed scenes do not. The gate then compares whatever was measured; with --advisory it turns
+      # the two outcomes it decides (worse than the baseline, no scene measured) into warnings itself. The shell reads
+      # no exit code: a gate that crashes on results it cannot parse exits 1 just as a regression does.
       - name: bench gate
         run: |
           if [ "${{ matrix.advisory }}" = "true" ]; then
-            node scripts/bench-run.mjs ${{ matrix.backend }} || echo "::warning::bench ${{ matrix.backend }} failed on the SwiftShader adapter (advisory, see docs/design.md)"
+            rm -f bench/results/local.${{ matrix.backend }}.json
+            scenes=(pnpm exec playwright test test/e2e/bench.spec.ts test/e2e/smoke.spec.ts --project=${{ matrix.backend }} --reporter=list,json)
+            node scripts/advisory-report.mjs "$PLAYWRIGHT_JSON_OUTPUT_NAME" "bench ${{ matrix.backend }} on the SwiftShader adapter" adapter -- "${scenes[@]}"
+            node scripts/bench-gate.mjs ${{ matrix.backend }} --advisory
           else
             node scripts/bench-run.mjs ${{ matrix.backend }}
           fi
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/bench-report/run.json
       - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: bench-results-${{ matrix.backend }}
           path: bench/results
           retention-days: 14
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: bench-${{ matrix.backend }}-report
+          path: ${{ runner.temp }}/bench-report
+          retention-days: 7
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: bench-${{ matrix.backend }}-artifacts
+          path: test-results
+          retention-days: 7
           if-no-files-found: ignore
 
   publish:

@@ -1,5 +1,7 @@
 // Compares a bench results file with its committed baseline and fails on regressions.
-// Usage: node scripts/bench-gate.mjs [webgl2|webgpu]   (FORGE_GPU=native also gates timing metrics)
+// Usage: node scripts/bench-gate.mjs [webgl2|webgpu] [--advisory]   (FORGE_GPU=native also gates timing metrics)
+// Exits 1 on a regression and 2 without a results file. `--advisory` turns those two outcomes, and only those, into a
+// workflow warning and exit 0: a caller cannot do that from the exit code, because a crash of this script exits 1 too.
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { baselinePath, readBaseline, resultPath } from './bench-common.mjs';
@@ -103,11 +105,16 @@ export function table(result) {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const backend = process.argv[2] ?? 'webgl2';
+  const advisory = process.argv.includes('--advisory');
+  const decided = (status, warning) => {
+    if (advisory) console.log(`::warning::bench ${backend}: ${warning} (advisory, see docs/design.md)`);
+    process.exit(advisory ? 0 : status);
+  };
   if (!existsSync(resultPath(backend))) {
     console.error(
       `no results at ${resultPath(backend)}; run: pnpm exec playwright test test/e2e/bench.spec.ts --project=${backend}`,
     );
-    process.exit(2);
+    decided(2, 'no scene was measured, so nothing was compared');
   }
   const result = JSON.parse(readFileSync(resultPath(backend), 'utf8'));
   console.log(`bench ${backend} · ${result.env?.gpu ?? '?'} · tier ${result.env?.tier ?? '?'}`);
@@ -121,7 +128,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const { failures } = compare(baseline, result, { gateTiming, tolerance: 0.1 });
   if (failures.length) {
     console.error(`REGRESSION (${failures.length}):\n  ${failures.join('\n  ')}`);
-    process.exit(1);
+    decided(1, `worse than the baseline (${failures.length} gated values)`);
   }
   console.log(
     `bench gate ${backend}: PASS${gateTiming ? ' (timing gated)' : ' (timing recorded, not gated: set FORGE_GPU=native on a real GPU)'}`,

@@ -10,14 +10,17 @@
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { testsOf } from './temporal-report.mjs';
+import { described, testsOf } from './temporal-report.mjs';
 
 const nameOf = (test) => `${test.file}:${test.line} ${test.title}`;
 
 export function totals(report, tag) {
   const tests = testsOf(report);
   const count = (status) => tests.filter((test) => test.status === status).length;
-  const failures = tests.filter((test) => test.status === 'unexpected').map(nameOf);
+  // test/e2e/fixtures.ts records whether the page still had its device: a failure with a device is ours to explain.
+  const failures = tests
+    .filter((test) => test.status === 'unexpected')
+    .map((test) => `${nameOf(test)} [device ${described(test, 'device').join('; ') || 'state not recorded'}]`);
   return {
     passed: count('expected'),
     failed: failures.length,
@@ -25,6 +28,7 @@ export function totals(report, tag) {
     skipped: count('skipped'),
     failures,
     errors: report.errors.map((error) => error.message.split('\n')[0]),
+    control: tests.flatMap((test) => described(test, 'adapter-control')),
     required: {
       tag,
       tests: tests.filter((test) => test.tags.includes(tag)).map((t) => ({ name: nameOf(t), status: t.status })),
@@ -60,6 +64,7 @@ export function markdown(leg, t, blocking) {
     '',
     `${countsOf(t)}.`,
     'This adapter is software, not a native WebGPU adapter: a release still needs the native run in docs/release.md.',
+    ...t.control.map((measured) => `Control: ${measured} (test/e2e/adapter-control.spec.ts).`),
     '',
     ...t.failures.map((failure) => `- ${failure}`),
   ];

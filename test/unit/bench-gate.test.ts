@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
 import { BACKENDS, backendsFromArgv, baselinePath, readBaseline, resultPath } from '../../scripts/bench-common.mjs';
 import { compare, DETERMINISTIC, TIMING } from '../../scripts/bench-gate.mjs';
 
@@ -168,5 +172,58 @@ describe('bench-common', () => {
 
   it('returns null for a backend without a committed baseline', () => {
     expect(readBaseline('no-such-backend')).toBeNull();
+  });
+});
+
+/**
+ * The gate as a process, the way ci.yml's advisory bench leg calls it. `--advisory` turns the two outcomes the gate
+ * decides (worse than the baseline, nothing measured) into a warning and exit 0. Anything it did not decide, such as
+ * a results file it cannot read, must still end non-zero: a crash exits 1 as a regression does, so no caller can
+ * tell them apart by the code.
+ */
+describe('bench gate --advisory', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'forge-gate-'));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, 'bench/baselines'), { recursive: true });
+  mkdirSync(join(dir, 'bench/results'), { recursive: true });
+  writeFileSync(join(dir, 'bench/baselines/webgpu.json'), JSON.stringify(file()));
+  const results = join(dir, 'bench/results/local.webgpu.json');
+  const gate = (...flags: string[]) =>
+    spawnSync(process.execPath, [resolve('scripts/bench-gate.mjs'), 'webgpu', ...flags], {
+      cwd: dir,
+      encoding: 'utf8',
+    });
+
+  it('warns and exits 0 on a regression, which without the flag exits 1', () => {
+    writeFileSync(results, JSON.stringify(file({}, { triangles: 5000 })));
+    expect(gate().status).toBe(1);
+    const advisory = gate('--advisory');
+    expect(advisory.stdout).toContain('::warning::bench webgpu: worse than the baseline');
+    expect(advisory.status).toBe(0);
+  });
+
+  it('warns and exits 0 when no scene was measured, which without the flag exits 2', () => {
+    rmSync(results, { force: true });
+    expect(gate().status).toBe(2);
+    const advisory = gate('--advisory');
+    expect(advisory.stdout).toContain('::warning::bench webgpu: no scene was measured');
+    expect(advisory.status).toBe(0);
+  });
+
+  it('passes quietly when the results hold the baseline', () => {
+    writeFileSync(results, JSON.stringify(file()));
+    const advisory = gate('--advisory');
+    expect(advisory.stdout).not.toContain('::warning::');
+    expect(advisory.status).toBe(0);
+  });
+
+  it.each([
+    ['results that are not JSON', '{ "scenes": '],
+    ['results whose scenes lack their metrics', JSON.stringify({ scenes: { village: { naive: {}, optimized: {} } } })],
+  ])('still fails on %s, without calling it a regression', (_, text) => {
+    writeFileSync(results, text);
+    const advisory = gate('--advisory');
+    expect(advisory.stdout).not.toContain('::warning::');
+    expect(advisory.status).not.toBe(0);
   });
 });

@@ -3,8 +3,10 @@ export interface AdvisoryTotals {
   failed: number;
   flaky: number;
   skipped: number;
-  /** `file:line title` of every failed test. */
+  /** `file:line title [device ...]` of every failed test: whether its page still had its WebGPU device. */
   failures: string[];
+  /** What the bare-canvas control measured on this adapter. */
+  control: string[];
   /** First line of every error of the run itself, outside any test. */
   errors: string[];
   /** The tests carrying the tag that must pass whatever else failed. */

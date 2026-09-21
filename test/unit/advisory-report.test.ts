@@ -5,12 +5,14 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { blockers, markdown, totals } from '../../scripts/advisory-report.mjs';
 
-const spec = (title: string, status: string, line = 5, tags: string[] = []) => ({
+type Annotation = { type: string; description: string };
+
+const spec = (title: string, status: string, line = 5, tags: string[] = [], annotations: Annotation[] = []) => ({
   title,
   file: 'memory.spec.ts',
   line,
   tags,
-  tests: [{ projectName: 'webgpu', status, annotations: [], results: [{ status }] }],
+  tests: [{ projectName: 'webgpu', status, annotations, results: [{ status }] }],
 });
 const rendered = (status = 'expected') => spec('an empty scene renders', status, 3, ['adapter']);
 const document = (specs: unknown[], errors: Array<{ message: string }> = []) => ({
@@ -32,11 +34,11 @@ describe('advisory report', () => {
       failed: 2,
       flaky: 1,
       skipped: 1,
-      failures: ['memory.spec.ts:40 b', 'memory.spec.ts:80 e'],
+      failures: ['memory.spec.ts:40 b [device state not recorded]', 'memory.spec.ts:80 e [device state not recorded]'],
     });
   });
 
-  it('lets failed tests through when the adapter check rendered and the run had no error of its own', () => {
+  it('lets failed tests through when the adapter check rendered and nothing else erred', () => {
     const t = totals(document([rendered(), spec('b', 'unexpected', 40)]), 'adapter');
     expect(blockers(t)).toEqual([]);
     expect(blockers(totals(document([rendered('flaky')]), 'adapter'))).toEqual([]);
@@ -70,9 +72,29 @@ describe('advisory report', () => {
     const text = markdown('corpus webgpu', t, blockers(t));
     expect(text).toContain('### corpus webgpu (advisory)');
     expect(text).toContain('1 failed, 0 flaky, 0 skipped, 1 passed');
-    expect(text).toContain('- memory.spec.ts:40 b');
+    expect(text).toContain('- memory.spec.ts:40 b [device state not recorded]');
     expect(text).toContain('Blocking, not advisory:');
     expect(text).toContain('- no test tagged @adapter ran');
+  });
+
+  it('puts the state of the device beside each failed test, and says so when none was recorded', () => {
+    const lost = [{ type: 'device', description: 'lost (Instance dropped), before threeforge compiled anything' }];
+    const t = totals(
+      document([rendered(), spec('b', 'unexpected', 40, [], lost), spec('e', 'unexpected', 80)]),
+      'adapter',
+    );
+    expect(t.failures).toEqual([
+      'memory.spec.ts:40 b [device lost (Instance dropped), before threeforge compiled anything]',
+      'memory.spec.ts:80 e [device state not recorded]',
+    ]);
+  });
+
+  it('prints what the bare-canvas control measured on this adapter', () => {
+    const control = [
+      { type: 'adapter-control', description: 'a bare canvas lost its device after 31 ms and 3 frames' },
+    ];
+    const t = totals(document([rendered(), spec('control', 'expected', 16, [], control)]), 'adapter');
+    expect(markdown('corpus webgpu', t, [])).toContain('Control: a bare canvas lost its device after 31 ms');
   });
 
   it('says that an advisory leg proves nothing about native WebGPU', () => {
@@ -137,13 +159,39 @@ describe('advisory report around a test command', () => {
   });
 });
 
-describe('the corpus workflow', () => {
-  it('hands its advisory leg to the script, which judges the report after every run', () => {
-    const lines = readFileSync('.github/workflows/assets.yml', 'utf8')
+describe('the workflows with an advisory leg', () => {
+  const stepsOf = (file: string) =>
+    readFileSync(file, 'utf8')
       .split('\n')
-      .filter((line) => line.includes('advisory-report.mjs') && !line.trim().startsWith('#'));
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatch(/ adapter -- "\$\{tests\[@\]\}"$/);
-    expect(lines[0]).not.toContain('||');
+      .filter((line) => !line.trim().startsWith('#'));
+
+  it.each([
+    ['.github/workflows/assets.yml', 1],
+    ['.github/workflows/ci.yml', 2],
+  ])('%s hands each advisory leg to the script, which judges the report after every run', (file, legs) => {
+    const lines = stepsOf(file).filter((line) => line.includes('advisory-report.mjs'));
+    expect(lines).toHaveLength(legs);
+    for (const line of lines) {
+      expect(line).toMatch(/ adapter -- "\$\{(tests|scenes)\[@\]\}"$/);
+      expect(line).not.toContain('||');
+    }
   });
+
+  it('ci.yml leaves the advisory bench verdict to the gate and reads no exit code in the shell', () => {
+    const lines = stepsOf('.github/workflows/ci.yml');
+    const gate = lines.filter((line) => line.includes('bench-gate.mjs')).map((line) => line.trim());
+    expect(gate).toHaveLength(1);
+    expect(gate[0]).toMatch(/^node scripts\/bench-gate\.mjs \S+ \S+ \S+ --advisory$/);
+    expect(lines.filter((line) => /\$\?|\bcase\b/.test(line))).toEqual([]);
+  });
+
+  it.each(['.github/workflows/assets.yml', '.github/workflows/ci.yml'])(
+    '%s never lets `||` swallow the exit of a test run',
+    (file) => {
+      const swallowed = stepsOf(file).filter(
+        (line) => /playwright test|bench-(run|gate)\.mjs|\brun \|\|/.test(line) && line.includes('||'),
+      );
+      expect(swallowed).toEqual([]);
+    },
+  );
 });
