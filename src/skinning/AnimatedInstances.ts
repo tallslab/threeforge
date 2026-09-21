@@ -22,12 +22,13 @@ import {
   normalGeometry,
   normalLocal,
   positionGeometry,
+  select,
   texture,
   uniform,
   vec4,
 } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
-import type { AnimationTexture } from './bakeAnimationTexture.js';
+import type { AnimationClipRange, AnimationTexture } from './bakeAnimationTexture.js';
 
 export interface AnimatedInstancesOptions {
   animation: AnimationTexture;
@@ -69,6 +70,16 @@ const COPIED = [
 
 const _matrix = new Matrix4();
 
+/**
+ * Where a clip's row counter wraps: its duration in rows, which is where a looping mixer wraps. The clip's stored rows
+ * (`frames`) run past it to the clamped end pose, by two rows when `duration × fps` rounds just above a whole number,
+ * and a counter wrapped at their count holds that pose and falls behind on every loop. A clip without duration has
+ * one row and holds it.
+ */
+function loopRows(range: AnimationClipRange | undefined, fps: number): number {
+  return range && range.duration > 0 ? range.duration * fps : 1;
+}
+
 /** three's TSL typings are loose (nodes come back as `Node<string>` without swizzles): the builder chains on `any`. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any;
@@ -84,7 +95,11 @@ export class AnimatedInstances {
   readonly animation: AnimationTexture;
   readonly count: number;
   readonly meshes: Mesh[];
-  /** Per-instance `[clipStart, clipFrames, timeOffset, speed]`. */
+  /**
+   * Per-instance `[clipStart, loopRows, timeOffset, speed]`: the clip's first texture row, the length its row counter
+   * wraps at (`duration × fps`, rarely a whole number; 1 for a clip without duration), seconds added to the shared
+   * time, and the playback rate. The clip's stored row count stays in `animation.clips[i].frames`.
+   */
   readonly clipAttribute: InstancedBufferAttribute;
   /**
    * Per-instance character matrices, 16 floats each, shared by every part (each part adds its own offset), as one
@@ -117,7 +132,7 @@ export class AnimatedInstances {
     this.matrixBuffer.setUsage(DynamicDrawUsage);
     for (let i = 0; i < count; i++) {
       _matrix.identity().toArray(this.matrixBuffer.array as Float32Array, i * 16);
-      this.clipAttribute.setXYZW(i, animation.clips[0]?.start ?? 0, animation.clips[0]?.frames ?? 1, 0, 1);
+      this.clipAttribute.setXYZW(i, animation.clips[0]?.start ?? 0, loopRows(animation.clips[0], animation.fps), 0, 1);
     }
     const timeNode: N = uniform(0);
     this.timeUniform = timeNode as { value: number };
@@ -157,8 +172,14 @@ export class AnimatedInstances {
       const offset: N = uniform(part.matrix);
       const skinIndex: N = attribute('skinIndex', 'uvec4');
       const skinWeight: N = attribute('skinWeight', 'vec4');
-      // Frame of this instance: the clip's start row plus the wrapped frame counter.
-      const frame: N = floor(mod(time.mul(clip.w).add(clip.z).mul(fps), clip.y));
+      // Row of this instance: the clip's start row plus the row counter, wrapped at the clip's duration. `mod` is
+      // `x - y × floor(x / y)` in float32, and just below a multiple of y the quotient can round up to the whole
+      // number, which leaves the remainder a hair below zero and the row the one before the clip's first. Correctly
+      // rounded float32 does that only for a y that does not multiply exactly (8.33 rows); neither shading language
+      // requires correctly rounded division, and through WebGPU on an Apple M1 it was measured for whole y (22, 12)
+      // too. The quotient is never off by more than one, so one period back is the clip's last row.
+      const position: N = mod(time.mul(clip.w).add(clip.z).mul(fps), clip.y);
+      const frame: N = floor(select(position.lessThan(0), position.add(clip.y), position));
       const row: N = int(clip.x.add(frame));
       const boneOffset: N = int(part.boneOffset);
       const bone = (index: N): N => {
@@ -225,7 +246,8 @@ export class AnimatedInstances {
       throw new Error(
         `AnimatedInstances: unknown clip ${JSON.stringify(clip)}; known: ${clips.map((c) => c.name).join(', ')}`,
       );
-    this.clipAttribute.setXYZW(i, range.start, range.frames, options.offset ?? 0, options.speed ?? 1);
+    const loop = loopRows(range, this.animation.fps);
+    this.clipAttribute.setXYZW(i, range.start, loop, options.offset ?? 0, options.speed ?? 1);
     this.clipAttribute.needsUpdate = true;
   }
 

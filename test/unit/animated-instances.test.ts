@@ -1,10 +1,12 @@
 import {
+  AnimationClip,
   AnimationMixer,
   type InstancedBufferAttribute,
   type InstancedBufferGeometry,
   InstancedInterleavedBuffer,
   Matrix4,
   Quaternion,
+  QuaternionKeyframeTrack,
   Scene,
   Vector3,
   Vector4,
@@ -78,9 +80,10 @@ describe('AnimatedInstances', () => {
     expect(instances.matrixBuffer.meshPerAttribute).toBe(1);
     instances.setClipAt(2, 'spin', { offset: 0.5, speed: 2 });
     const clip = instances.clipAttribute as InstancedBufferAttribute;
-    expect([clip.getX(2), clip.getY(2), clip.getZ(2), clip.getW(2)]).toEqual([0, 11, 0.5, 2]);
+    // `spin` lasts 1 s: 11 baked rows at 10 fps, and a loop of 10.
+    expect([clip.getX(2), clip.getY(2), clip.getZ(2), clip.getW(2)]).toEqual([0, 10, 0.5, 2]);
     instances.setClipAt(0, 0);
-    expect([clip.getX(0), clip.getY(0), clip.getZ(0), clip.getW(0)]).toEqual([0, 11, 0, 1]);
+    expect([clip.getX(0), clip.getY(0), clip.getZ(0), clip.getW(0)]).toEqual([0, 10, 0, 1]);
     expect(() => instances.setClipAt(0, 'nope')).toThrow(/nope/);
     expect(() => instances.setClipAt(0, 7)).toThrow(/7/);
     instances.setTime(1.25);
@@ -161,5 +164,99 @@ describe('AnimatedInstances', () => {
     instances.dispose();
     expect(dispose).toHaveBeenCalled();
     expect(scene.children).not.toContain(instances.meshes[0]);
+  });
+});
+
+describe('AnimatedInstances playback loop', () => {
+  const FPS = 10;
+
+  /** A clip turning the rig's bone `b`, lasting `duration` seconds. */
+  function turn(name: string, duration: number): AnimationClip {
+    const q = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), 1);
+    const times = duration === 0 ? [0] : [0, duration];
+    const values = duration === 0 ? [q.x, q.y, q.z, q.w] : [0, 0, 0, 1, q.x, q.y, q.z, q.w];
+    return new AnimationClip(name, duration, [new QuaternionKeyframeTrack('b.quaternion', times, values)]);
+  }
+
+  /** `whole` ends on a baked row, `uneven` half a row past one, `pose` has no duration at all. */
+  function crowd(names = ['whole', 'uneven', 'pose']) {
+    const durations: Record<string, number> = { whole: 1, uneven: 0.95, pose: 0 };
+    const clips = names.map((name) => turn(name, durations[name]!));
+    const { root } = buildRig();
+    const animation = bakeAnimationTexture(root, clips, { fps: FPS });
+    return { root, clips, animation, instances: new AnimatedInstances({ animation, count: 2 }) };
+  }
+
+  const entry = (instances: AnimatedInstances, i: number): number[] => {
+    const clip = instances.clipAttribute;
+    return [clip.getX(i), clip.getY(i), clip.getZ(i), clip.getW(i)];
+  };
+
+  /** The row the position node reads: `clipStart + floor(mod((time × speed + offset) × fps, loopRows))`. */
+  function rowAt(instances: AnimatedInstances, i: number, seconds: number): number {
+    const clip = instances.clipAttribute;
+    const x = (seconds * clip.getW(i) + clip.getZ(i)) * FPS;
+    return clip.getX(i) + Math.floor(x - clip.getY(i) * Math.floor(x / clip.getY(i)));
+  }
+
+  it('wraps at the clip duration in rows and leaves the baked rows as they were', () => {
+    const { animation, instances } = crowd();
+    expect(animation.clips.map((c) => [c.name, c.start, c.frames])).toEqual([
+      ['whole', 0, 11],
+      ['uneven', 11, 11],
+      ['pose', 22, 1],
+    ]);
+    expect(animation.texture.image.height).toBe(23);
+    // Every instance starts on the first clip.
+    expect(entry(instances, 0)).toEqual([0, 10, 0, 1]);
+    expect(entry(instances, 1)).toEqual([0, 10, 0, 1]);
+    instances.setClipAt(1, 'uneven', { offset: 0.25, speed: 1.5 });
+    expect(entry(instances, 1)).toEqual([11, 9.5, 0.25, 1.5]);
+    expect(entry(instances, 0)).toEqual([0, 10, 0, 1]);
+  });
+
+  it('holds the single row of a clip without duration, as the default clip too', () => {
+    const { instances } = crowd();
+    instances.setClipAt(0, 'pose', { offset: 0.4, speed: 3 });
+    expect(entry(instances, 0)).toEqual([22, 1, expect.closeTo(0.4, 6), 3]);
+    for (const seconds of [0, 0.05, 1, 7.3, 1e4]) expect(rowAt(instances, 0, seconds)).toBe(22);
+    const alone = crowd(['pose']).instances;
+    expect(entry(alone, 0)).toEqual([0, 1, 0, 1]);
+    expect(rowAt(alone, 0, 12.34)).toBe(0);
+  });
+
+  it.each([
+    ['whole', {}],
+    ['uneven', {}],
+    ['uneven', { offset: 0.25, speed: 1.5 }],
+    ['whole', { offset: 0.7, speed: 0.6 }],
+  ])('reads the row a looping mixer is in through five loops of %s with %o', (name, options) => {
+    const { root, clips, animation, instances } = crowd();
+    instances.setClipAt(0, name, options);
+    const range = animation.clips.find((c) => c.name === name)!;
+    const mixer = new AnimationMixer(root);
+    const action = mixer.clipAction(clips.find((c) => c.name === name)!).play();
+    const { offset = 0, speed = 1 } = options as { offset?: number; speed?: number };
+    for (let seconds = 0.013; seconds < (5 * range.duration) / speed; seconds += 0.037) {
+      mixer.setTime(seconds * speed + offset);
+      const row = rowAt(instances, 0, seconds);
+      expect(row, `${seconds.toFixed(3)} s`).toBe(range.start + Math.floor(action.time * FPS));
+      expect(row).toBeLessThan(range.start + range.frames);
+    }
+  });
+
+  it('follows the clip an instance is switched to, and its own clock settings', () => {
+    const { instances } = crowd();
+    // At 2.33 s `whole` is 0.33 s into its third loop and `uneven` 0.43 s into its third; at 1.5 × with a 0.25 s
+    // offset `uneven` is 0.895 s into its fourth.
+    expect(rowAt(instances, 0, 2.33)).toBe(3);
+    instances.setClipAt(0, 'uneven');
+    expect(rowAt(instances, 0, 2.33)).toBe(11 + 4);
+    instances.setClipAt(0, 'uneven', { offset: 0.25, speed: 1.5 });
+    expect(rowAt(instances, 0, 2.33)).toBe(11 + 8);
+    instances.setClipAt(0, 'whole');
+    expect(entry(instances, 0)).toEqual([0, 10, 0, 1]);
+    expect(rowAt(instances, 0, 2.33)).toBe(3);
+    expect(instances.clipAttribute.version).toBe(3);
   });
 });

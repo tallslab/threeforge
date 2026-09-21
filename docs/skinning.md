@@ -38,17 +38,20 @@ crowd.setClipAt(i, 'walk', { offset: i * 0.13, speed: 1 });
 crowd.setTime(seconds);                              // one clock for every instance, each frame
 ```
 
-One `Mesh` per part of the prototype over an `InstancedBufferGeometry` that shares the part's vertex buffers, with
-a `MeshStandardNodeMaterial` (colour, maps and flags copied from the part's material, or from `material`). Its
-vertex stage fetches the four bone matrices of the instance's current frame from the texture and applies three's
-skinning formula, then the part's offset from the character root and the instance matrix; the fragment stage is
-three's standard lighting. Per instance: `[clipStart, clipFrames, timeOffset, speed]` and the character's matrix, in
-one interleaved instanced buffer the parts share (`getMatrixAt` returns that matrix). Per part: its offset,
+One `Mesh` per part of the prototype over an `InstancedBufferGeometry` that shares the part's vertex buffers, with a
+`MeshStandardNodeMaterial` (colour, maps and flags copied from the part's material, or from `material`). Its vertex
+stage fetches the four bone matrices of the instance's current frame from the texture and applies three's skinning
+formula, then the part's offset from the character root and the instance matrix; the fragment stage is three's
+standard lighting. Per instance: `[clipStart, loopRows, timeOffset, speed]` and the character's matrix, in one
+interleaved instanced buffer the parts share (`getMatrixAt` returns that matrix). `loopRows` is the clip's `duration ×
+fps`: the row counter wraps where a looping mixer wraps, not at the clip's stored `frames`, which run one or two rows
+past it, and a clip without duration holds its one row. A timestamp a float32 step below a loop boundary reads the
+clip's last row: the remainder float32 can leave just below zero there is moved one period up. Per part: its offset,
 `animation.parts[k].matrix`, as a `mat4` uniform of that part's material, read every frame, so a prototype whose parts
-sit at different offsets from its root draws each part at the character matrix × its own matrix. The meshes are
-named `forge:vat:<part>` and carry `userData.forge = { kind: 'vat', instances }`, which the ledger reports as
-reason `vat-instanced` with `skinning.vatInstances` and `vatVertices`. Do not tag them: a tag would overwrite
-that marker. Skinned parts sharing a skeleton or not both work (each part reads its own bone range).
+sit at different offsets from its root draws each part at the character matrix × its own matrix. The meshes are named
+`forge:vat:<part>` and carry `userData.forge = { kind: 'vat', instances }`, which the ledger reports as reason
+`vat-instanced` with `skinning.vatInstances` and `vatVertices`. Do not tag them: a tag would overwrite that marker.
+Skinned parts sharing a skeleton or not both work (each part reads its own bone range).
 
 What it does not do: per-instance clip blending (one clip per instance, switch with `setClipAt`), root motion,
 and frustum culling per instance (`frustumCulled = false`; use it for crowds that stay mostly on screen or split

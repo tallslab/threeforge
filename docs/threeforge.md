@@ -834,17 +834,20 @@ boneOffset }`. The prototype's transform and pose are restored.
 `AnimatedInstances({ animation, count, material? })` (`src/skinning/AnimatedInstances.ts`) builds one `Mesh` per part
 over an `InstancedBufferGeometry` sharing the part's buffers, with a `MeshStandardNodeMaterial` whose TSL
 `positionNode` fetches the instance's four bone matrices for its current row (`clipStart + floor(mod((time × speed +
-offset) × fps, frames))`), applies `bindMatrixInverse × Σ bone × weight × bindMatrix`, then the part's offset
-(`parts[i].matrix`, a `mat4` uniform of that part's material, read every frame) and the instance matrix, and assigns
-`normalLocal`. The instance matrices live in one `InstancedInterleavedBuffer` the parts share (four separate
-attributes would exceed WebGPU's eight vertex buffers; a plain `InterleavedBuffer` is read per vertex, because both
-backends take the per-instance step from `isInstancedInterleavedBuffer`). `setMatrixAt` and `getMatrixAt`,
-`setClipAt(i, clip, { offset, speed })`, `setTime(seconds)`, `addTo`, `dispose`. Meshes are `forge:vat:<part>` with
-`userData.forge = { kind: 'vat', instances }` (untagged: a tag overwrites the marker). In the ledger: reason
-`vat-instanced`, `skinning.vatInstances` and `vatVertices`, budget `bones`, hints `bones-over-budget` and
-`skinned-crowd` (50 skinned draws). Authoring notes: `docs/skinning.md`. The optimized crowd bench bakes each of its
-eight prototypes and replaces its 25 characters with one `AnimatedInstances`: 401 → 17 submissions, 271 k skinned
-vertices → 0.
+offset) × fps, loopRows))`, where `loopRows` is the clip's `duration × fps`, so the row counter wraps where a looping
+mixer wraps and not at the clip's stored `frames`, which run one or two rows past it; a clip without duration holds
+its one row; a remainder that float32 leaves just below zero at a loop boundary is moved one period up, so the row is
+the clip's last and never the one before its first), applies `bindMatrixInverse × Σ bone × weight × bindMatrix`, then
+the part's offset (`parts[i].matrix`, a `mat4` uniform of that part's material, read every frame) and the instance
+matrix, and assigns `normalLocal`. The instance matrices live in one `InstancedInterleavedBuffer` the parts share
+(four separate attributes would exceed WebGPU's eight vertex buffers; a plain `InterleavedBuffer` is read per vertex,
+because both backends take the per-instance step from `isInstancedInterleavedBuffer`). `setMatrixAt` and
+`getMatrixAt`, `setClipAt(i, clip, { offset, speed })`, `setTime(seconds)`, `addTo`, `dispose`. `clipAttribute` holds
+`[clipStart, loopRows, timeOffset, speed]` per instance. Meshes are `forge:vat:<part>` with `userData.forge = { kind:
+'vat', instances }` (untagged: a tag overwrites the marker). In the ledger: reason `vat-instanced`,
+`skinning.vatInstances` and `vatVertices`, budget `bones`, hints `bones-over-budget` and `skinned-crowd` (50 skinned
+draws). Authoring notes: `docs/skinning.md`. The optimized crowd bench bakes each of its eight prototypes and replaces
+its 25 characters with one `AnimatedInstances`: 401 → 17 submissions, 271 k skinned vertices → 0.
 
 ### Memory and load: `createLoader`, `ResourceTracker`, `Streamer`
 

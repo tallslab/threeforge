@@ -2,7 +2,18 @@
 
 ## Unreleased
 
+### Upgrading from 0.9.2
+
+| Kind | Change | If you do nothing | What to do |
+|---|---|---|---|
+| API | `AnimatedInstances.clipAttribute` holds `[clipStart, loopRows, timeOffset, speed]`; its second value was the clip's stored row count. | Code that reads or writes the attribute itself gets the loop length, `duration × fps`. | Read the row count from `animation.clips[i].frames`, and assign clips with `setClipAt`. |
+| default | Animated instances loop at the clip's duration. | A crowd keeps time with mixers playing the same clips. | Nothing. |
+
+### All changes
+
 - `generateLods` and `prepareLods` build levels that draw. meshoptimizer's `compactMesh` rewrites the index array it is given, and the level's indices were remapped a second time afterwards, so every level read vertices through wrong indices (up to 65535 in a level of a few hundred vertices) and drew as shards from its switch distance on; the next level was then simplified from those compacted indices against the source's positions. Levels are compacted from a copy. The ledger and the benches count triangles, which is why they never showed it; the counts of later levels move a little now that they are simplified from intact indices (the optimized forest bench scene draws 105 053 triangles, 99 350 before).
+- Animated instances loop where the clip does. The row counter wrapped at the clip's stored rows, `ceil(duration × fps) + 1`, which run past the duration to the clamped end pose: one row for a clip that ends on a baked row, two when its duration rounds just above one (`0.6666667 s × 30`). Each loop held the end pose for those rows and fell that far behind a mixer playing the same clip, 44 % of a character's pixels after one loop of the Kenney `walk`. The counter wraps at `duration × fps`, a clip without duration holds its one row, and the baked texture is unchanged.
+- An animated instance no longer reads the row before its clip's first at a loop boundary. The row counter is `x - y × floor(x / y)` in float32; just below a multiple of `y` the quotient can round up to the whole number, the remainder comes out a hair below zero and the row is `clipStart - 1`: the previous clip's end pose for one frame, or for the texture's first clip a row that does not exist (the character was not drawn on SwiftShader and drew as scattered triangles through WebGPU on an Apple M1). Correctly rounded float32, which SwiftShader matched on every one of 24 000 clocks per case, does this only for a loop length that does not multiply exactly, which the duration-based loop above makes possible (`die` baked at 25 fps, 8.33 rows, at 1.6666667461395264 s). Through WebGPU on an Apple M1 (Chromium, Metal) it was also measured for whole loop lengths, so 0.9.2 shows it there with ordinary clips: `die` at 30 fps, speed 1, no offset, at 1.9999998807907104 s draws the end pose of `drive`, and about 7 % of the clocks within four float32 steps of a boundary do the same. A negative remainder is moved one period up, which is exact because the quotient is never off by more than one; no timestamp in 384 000 probed across both backends and both shader stages went the other way.
 
 ## 0.9.2 (2026-09-19)
 

@@ -412,7 +412,7 @@ Three skins every `SkinnedMesh` from its own bone texture each frame, so `compil
 `bakeAnimationTexture(prototype, clips, { fps: 30 })` plays each clip through a mixer with the prototype at the
 origin and copies `skeleton.boneMatrices` (the exact data three uploads) into one row of a float `DataTexture`
 per frame. `AnimatedInstances` then draws any number of characters as one `InstancedMesh` per part; the
-material's `positionNode` picks the row from a per-instance `(start, frames, offset, speed)` attribute and the
+material's `positionNode` picks the row from a per-instance `(start, loopRows, offset, speed)` attribute and the
 `time` uniform and applies three's own skinning formula with the part's bind matrices. Because
 `NodeMaterial.setupPosition` applies the instance matrix before a custom `positionNode` is assigned, the node
 multiplies the instance matrix itself and writes the skinned normal to `normalLocal` in place.
