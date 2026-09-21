@@ -101,7 +101,9 @@ test('a failed rerun drops the result before it, and a retry drops the error', a
   test.skip(!existsSync('bench-app/public/kenney-mini-characters'), 'the kits are not downloaded (pnpm assets:kits)');
   test.setTimeout(400_000);
   await openIdle(page, 'crowd', backend);
-  expect((await runToEnd(page)).result).not.toBeNull();
+  const first = await runToEnd(page);
+  expect(first.error, first.error).toBeUndefined();
+  expect(first.result).not.toBeNull();
   await page.route('**/kits-index.json', (route) => route.abort());
   const failed = await runToEnd(page);
   expect(failed.error).toContain('kenney-mini-characters kit not found');

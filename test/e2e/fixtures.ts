@@ -77,10 +77,38 @@ export const test = base.extend<ForgeOptions & { forge: ForgePage; rejectedDraws
       });
     }
     await use({ page, backend, open, opened, pixelChecks });
+    // A failure on an adapter that drops its device explains nothing until it is known whether the device was still
+    // there, and whether it went before threeforge had compiled anything. Recorded on every test, because a later
+    // fixture can still fail this one, and with `deviceLost`'s short wait: a loss under way has rejected draws before
+    // `device.lost` settles. CLI and bench pages have no `__forge`.
+    if (!pixelChecks && !page.isClosed()) {
+      const loss = await page.evaluate(async () => {
+        const f = window.__forge;
+        return f?.deviceLost ? { lost: await f.deviceLost(), timing: f.deviceLostTiming() } : null;
+      });
+      if (loss)
+        note('device', loss.lost === null ? 'not lost' : `lost (${loss.lost}), ${deviceLostOrder(loss.timing)}`);
+    }
   },
 });
 
 export { expect };
+
+/** When a device loss was recorded against threeforge's first compile, in words. */
+export function deviceLostOrder(timing: {
+  lostAt: number | null;
+  lostAtIsUpperBound: boolean;
+  compileStartedAt: number | null;
+}): string {
+  const { lostAt, lostAtIsUpperBound, compileStartedAt } = timing;
+  const noticed = lostAtIsUpperBound ? ' (noticed then; it may have happened earlier)' : '';
+  if (lostAt === null) return 'at an unrecorded time';
+  if (compileStartedAt === null)
+    return `before threeforge compiled anything (no compile() yet): an environment limit${noticed}`;
+  const ms = Math.round(lostAt - compileStartedAt);
+  if (ms < 0) return `${-ms} ms before threeforge's first compile() started: an environment limit${noticed}`;
+  return `${ms} ms after threeforge's first compile() started: check whether threeforge caused it${noticed}`;
+}
 
 /** Records a measurement on the test (visible in the JSON and HTML reports) instead of printing it. */
 export function note(type: string, description: string): void {

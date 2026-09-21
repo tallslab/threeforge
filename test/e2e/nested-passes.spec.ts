@@ -8,7 +8,7 @@
  * the missing-caster spies still run; only the captures and the pixel comparison are skipped.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { expect, type ForgePage, test } from './fixtures.js';
+import { deviceLostOrder, expect, type ForgePage, test } from './fixtures.js';
 import { pixelDiff, settle } from './pixels.js';
 
 const OUT = 'test-results/nested-passes';
@@ -35,22 +35,6 @@ async function skipIfDeviceLost(forge: ForgePage): Promise<void> {
     lost !== null,
     `the ${forge.backend} adapter dropped the device (${lost}), ${deviceLostOrder(timing)}; the count assertions from here on cannot run`,
   );
-}
-
-/** When a device loss was recorded against threeforge's first compile, in words for a skip reason. */
-function deviceLostOrder(timing: {
-  lostAt: number | null;
-  lostAtIsUpperBound: boolean;
-  compileStartedAt: number | null;
-}): string {
-  const { lostAt, lostAtIsUpperBound, compileStartedAt } = timing;
-  const noticed = lostAtIsUpperBound ? ' (noticed then; it may have happened earlier)' : '';
-  if (lostAt === null) return 'at an unrecorded time';
-  if (compileStartedAt === null)
-    return `before threeforge compiled anything (no compile() yet): an environment limit${noticed}`;
-  const ms = Math.round(lostAt - compileStartedAt);
-  if (ms < 0) return `${-ms} ms before threeforge's first compile() started: an environment limit${noticed}`;
-  return `${ms} ms after threeforge's first compile() started: check whether threeforge caused it${noticed}`;
 }
 
 /** Keeps the measured numbers with the test result instead of printing them. */

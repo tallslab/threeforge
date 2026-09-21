@@ -81,6 +81,8 @@ test('analyze --parity 0 judges compile parity on the raw changed-pixel count', 
     '0',
     '--json',
   ]);
+  // A run that measured exits 0 or 1; anything else printed no document, and its stderr says why.
+  expect([0, 1], r.stderr).toContain(r.status);
   const doc = JSON.parse(r.stdout);
   expect(doc.input.parity).toBe(0);
   const views = doc.parity.views as Array<{ view: string; diffPct: number; changedPixels: number }>;
@@ -128,7 +130,7 @@ test('analyze exits 1 over budget, 2 on a missing file, and skips compile with -
   test.setTimeout(600_000);
   // The Fox compiles to exactly one submission, so a budget of 0 is the smallest failing budget.
   const over = run(['analyze', sample(), '--backend', forge.backend, '--frames', '3', '--budget', '0', '--json']);
-  expect(over.status).toBe(1);
+  expect(over.status, over.stderr).toBe(1);
   expect(JSON.parse(over.stdout).verdict.budget.pass).toBe(false);
   const missing = run(['analyze', 'nope.glb', '--json']);
   expect(missing.status).toBe(2);

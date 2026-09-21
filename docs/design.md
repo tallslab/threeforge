@@ -281,7 +281,10 @@ WebGPU only exists in secure contexts, so adapter checks must run on the served 
 `naive-webgpu.png`. On Linux it falls back to Dawn's SwiftShader adapter in the headless shell
 (`--use-webgpu-adapter=swiftshader --enable-unsafe-swiftshader`); that adapter renders correctly but drops the
 WebGPU instance when a page idles between test steps ("Device Lost", after which `render()` draws nothing) and
-during screenshots, so multi-step specs and pixel checks are skipped there. Measured on the real WebGPU backend:
+during screenshots, so multi-step specs and pixel checks are skipped there. Idling is not the whole story: on macOS
+the same adapter keeps a device through seconds of idling and buffer readbacks as long as no canvas presents, and
+loses it within three frames once one does, with no three.js on the page (`test/e2e/adapter-control.spec.ts`, which
+records the same measurement on every run; the Linux runner's has not been read yet). Measured on the real WebGPU backend:
 the naive scene compiles to 28 submissions with 504 GPU draws (one per batched instance) and 0 unattributed,
 confirming the backend cost model the ledger uses.
 
