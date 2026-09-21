@@ -392,7 +392,7 @@ const optimizeInput = optionalInput(
     simplify: nullable(number),
     simplifyError: number,
     compress: { enum: ['none', 'meshopt'] },
-    textures: nullable({ enum: ['none', 'webp', 'avif'] }),
+    textures: nullable({ enum: ['none', 'webp', 'avif', 'ktx2'] }),
     textureSize: nullable(integer),
     textureQuality: number,
     verify: boolean,
@@ -411,6 +411,10 @@ const optimizeInput = optionalInput(
       type: 'boolean',
       description: 'Allow the output to replace existing files (absent from CLI documents, where the CLI replaces).',
     },
+    ktx2Codec: { enum: ['auto', 'etc1s', 'uastc'], description: "With textures 'ktx2' only, and only when given." },
+    ktx2Qlevel: { type: 'integer', minimum: 1, maximum: 255 },
+    ktx2UastcQuality: { type: 'integer', minimum: 0, maximum: 4 },
+    ktx2Zstd: { type: 'integer', minimum: 0, maximum: 22 },
   },
 );
 const optimizeProperties: Record<string, Schema> = {

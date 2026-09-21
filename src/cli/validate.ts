@@ -5,6 +5,7 @@ import type {
   Backend,
   BakeChoice,
   InspectInput,
+  Ktx2Codec,
   OptimizeInput,
   TextureFormat,
   TierChoice,
@@ -20,7 +21,8 @@ const TIERS: readonly TierChoice[] = ['auto', 'desktop', 'phone-mid', 'phone-low
 const SCHEMAS: readonly SchemaChoice[] = ['snapshot', 'analyze', 'inspect', 'optimize', 'all'];
 const BAKES: readonly BakeChoice[] = ['off', 'on', 'buried'];
 const COMPRESS: readonly OptimizeInput['compress'][] = ['none', 'meshopt'];
-const TEXTURES: readonly (TextureFormat | 'none')[] = ['webp', 'avif', 'none'];
+const TEXTURES: readonly (TextureFormat | 'none')[] = ['webp', 'avif', 'ktx2', 'none'];
+const KTX2_CODECS: readonly Ktx2Codec[] = ['auto', 'etc1s', 'uastc'];
 
 /** Allowed values of every enumerated input field, shared by the CLI parser and the MCP server's schemas. */
 export const CHOICES = {
@@ -30,6 +32,7 @@ export const CHOICES = {
   preset: PRESETS,
   compress: COMPRESS,
   textures: TEXTURES,
+  ktx2Codec: KTX2_CODECS,
   schema: SCHEMAS,
 } as const;
 
@@ -50,7 +53,10 @@ export type RangeField =
   | 'simplify'
   | 'simplifyError'
   | 'textureSize'
-  | 'textureQuality';
+  | 'textureQuality'
+  | 'ktx2Qlevel'
+  | 'ktx2UastcQuality'
+  | 'ktx2Zstd';
 
 /**
  * The default `--parity` of `analyze` and `optimize` (and of the MCP `analyze_asset` and `optimize_asset`): the percent
@@ -74,6 +80,9 @@ export const RANGES: Readonly<Record<RangeField, NumberRange>> = {
   simplifyError: { min: 0, max: 1, integer: false },
   textureSize: { min: 1, max: 16_384, integer: true },
   textureQuality: { min: 1, max: 100, integer: true },
+  ktx2Qlevel: { min: 1, max: 255, integer: true },
+  ktx2UastcQuality: { min: 0, max: 4, integer: true },
+  ktx2Zstd: { min: 0, max: 22, integer: true },
 };
 
 export const show = (value: unknown): string =>
@@ -91,6 +100,23 @@ export function describeRange(range: NumberRange): string {
 interface ValidateOptions {
   /** Name fields in messages as input keys (`frames`, the default, for MCP and programmatic callers) or as CLI flags (`--frames`). */
   readonly names?: 'fields' | 'flags';
+}
+
+/** The KTX2 settings: each optional, and refused without `textures: 'ktx2'`, where it could only do nothing. */
+function validateKtx2(
+  record: Record<string, unknown>,
+  flags: boolean,
+  label: (field: string) => string,
+  oneOf: (field: string, allowed: readonly unknown[]) => void,
+  inRange: (field: RangeField) => void,
+): void {
+  for (const field of ['ktx2Codec', 'ktx2Qlevel', 'ktx2UastcQuality', 'ktx2Zstd'] as const) {
+    if (record[field] === undefined) continue;
+    if (record.textures !== 'ktx2')
+      throw new UsageError(`${label(field)} needs ${flags ? '--textures ktx2' : "textures: 'ktx2'"}`);
+    if (field === 'ktx2Codec') oneOf(field, KTX2_CODECS);
+    else inRange(field);
+  }
 }
 
 export function validateInput(command: 'analyze', input: AnalyzeInput, options?: ValidateOptions): AnalyzeInput;
@@ -176,6 +202,7 @@ export function validateInput(
     if (record.textures !== null) oneOf('textures', TEXTURES);
     inRange('textureSize', true);
     inRange('textureQuality');
+    validateKtx2(record, flags, label, oneOf, inRange);
     bool('verify');
     inRange('parity');
     inRange('views');

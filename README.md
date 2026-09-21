@@ -45,7 +45,9 @@ exit codes an agent can branch on.
 `threeforge optimize scene.glb` rewrites the file with [glTF-Transform](https://gltf-transform.dev) and writes
 `scene.forge.glb`. The `safe` preset (default: dedup, palette, prune) is measured at 0 changed pixels on the Fox and
 the Buggy on both backends; `balanced` adds weld, resample, quantize and WebP textures, `aggressive` adds simplify and
-smaller textures, and any step can be added or removed by flag. The command then renders the original and the result,
+smaller textures, and any step can be added or removed by flag. WebP and AVIF shrink the download; `--textures ktx2`
+(opt-in, needs [KTX-Software](https://github.com/KhronosGroup/KTX-Software/releases)) is the one that shrinks texture
+memory on the GPU, four 1024 px maps from 22.4 MB to 4.9 MB. The command then renders the original and the result,
 compares pixels view by view, compiles both, and reports every step, every decoder the output needs and a verdict.
 Every flag, the JSON document and the exit codes: [AGENTS.md](AGENTS.md).
 

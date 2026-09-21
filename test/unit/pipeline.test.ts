@@ -74,6 +74,34 @@ describe('planSteps', () => {
     });
   });
 
+  it('encodes KTX2 only when asked, with its own codec and quality settings', () => {
+    const texturesOf = (input: typeof base) => planSteps(input).find((s) => s.name === 'textures')?.options;
+    expect(texturesOf({ ...base, textures: 'ktx2' })).toEqual({
+      format: 'ktx2',
+      size: null,
+      quality: 85,
+      ktx2: { codec: 'auto', qlevel: 128, uastcQuality: 2, zstd: 18 },
+    });
+    expect(
+      texturesOf({
+        ...base,
+        preset: 'aggressive',
+        textures: 'ktx2',
+        ktx2Codec: 'uastc',
+        ktx2Qlevel: 200,
+        ktx2UastcQuality: 4,
+        ktx2Zstd: 0,
+      }),
+    ).toEqual({
+      format: 'ktx2',
+      size: 1024,
+      quality: 85,
+      ktx2: { codec: 'uastc', qlevel: 200, uastcQuality: 4, zstd: 0 },
+    });
+    // No preset reaches for it: a preset's texture step stays WebP, and `safe` has no texture step at all.
+    for (const preset of PRESETS) expect(JSON.stringify(planSteps({ ...base, preset }))).not.toContain('ktx2');
+  });
+
   it('applies --no-<step> and --<step> overrides with their implied steps', () => {
     // join implies flatten; meshopt replaces quantize; textures: none.
     expect(names({ steps: { palette: false, resample: false } })).toEqual(['dedup', 'prune']);

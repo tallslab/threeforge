@@ -85,7 +85,7 @@ export function summarizeOptimize(doc: OptimizeDocument): string {
   ];
   for (const step of doc.steps)
     lines.push(
-      `  ${step.name}: ${step.applied ? describeChange(step.before, step.after) : (step.note ?? 'skipped')} (${step.ms} ms)`,
+      `  ${step.name}: ${step.applied ? [describeChange(step.before, step.after), step.note].filter(Boolean).join('; ') : (step.note ?? 'skipped')} (${step.ms} ms)`,
     );
   if (doc.requires.length)
     lines.push(`requires: ${doc.requires.map((r) => `${r.extension} → ${r.code ?? r.needs}`).join(' · ')}`);

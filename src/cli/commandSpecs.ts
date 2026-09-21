@@ -227,10 +227,10 @@ export const COMMAND_SPECS: Readonly<Record<CommandName, CommandSpec>> = {
         name: 'textures',
         kind: 'optional-value',
         negatable: true,
-        value: 'webp|avif|none',
+        value: 'webp|avif|ktx2|none',
         choices: CHOICES.textures,
         description:
-          'Add the texture step with this format (needs `sharp`; bare: `webp`); `none` or `--no-textures` removes it from a preset.',
+          "Add the texture step with this format (bare: `webp`); `none` or `--no-textures` removes it from a preset. `webp` and `avif` (need `sharp`) make the file smaller and decode to the same RGBA8 on the GPU, so with them only `--texture-size` lowers texture memory. `ktx2` (needs KTX-Software's `ktx` on PATH or in `FORGE_KTX`; never part of a preset) writes Basis textures that a device transcodes to a GPU block format, a quarter or an eighth of RGBA8, and a device with no block format cannot show them at all (`createLoader` rejects the model; keep a PNG, JPEG or WebP variant for such devices); it is lossy, requires `KHR_texture_basisu`, and the app needs a `KTX2Loader` (see `requires`).",
       },
       {
         name: 'texture-size',
@@ -245,7 +245,37 @@ export const COMMAND_SPECS: Readonly<Record<CommandName, CommandSpec>> = {
         kind: 'value',
         value: 'Q',
         numeric: true,
-        description: 'Texture encoder quality (an integer from 1 to 100, default 85).',
+        description: 'WebP or AVIF encoder quality (an integer from 1 to 100, default 85); KTX2 ignores it.',
+      },
+      {
+        name: 'ktx2-codec',
+        kind: 'value',
+        value: 'auto|etc1s|uastc',
+        choices: CHOICES.ktx2Codec,
+        description:
+          'With `--textures ktx2`: `etc1s` (small files, visibly lossy), `uastc` (near the source, larger files), or `auto` (default): ETC1S for sRGB colour, UASTC for normal maps and packed occlusion/roughness/metallic, where ETC1S blocks show.',
+      },
+      {
+        name: 'ktx2-qlevel',
+        kind: 'value',
+        value: 'N',
+        numeric: true,
+        description: 'ETC1S quality (an integer from 1 to 255, default 128; higher is better and larger).',
+      },
+      {
+        name: 'ktx2-uastc-quality',
+        kind: 'value',
+        value: 'N',
+        numeric: true,
+        description: 'UASTC encoding effort (an integer from 0 to 4, default 2; higher is better and slower).',
+      },
+      {
+        name: 'ktx2-zstd',
+        kind: 'value',
+        value: 'N',
+        numeric: true,
+        description:
+          'Zstandard level over UASTC (an integer from 0 to 22, default 18; 0 leaves it uncompressed). ETC1S takes none.',
       },
       {
         name: 'verify',

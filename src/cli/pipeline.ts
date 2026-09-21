@@ -1,3 +1,4 @@
+import type { Ktx2Options } from './ktx2.js';
 import type { OptimizeInput, Preset, StepName, TextureFormat } from './types.js';
 
 /** Pipeline order: glTF-Transform's own `optimize` order; meshopt quantizes itself so it replaces quantize. */
@@ -19,7 +20,7 @@ export const PRESETS: readonly Preset[] = ['safe', 'balanced', 'aggressive'];
 
 export type StepOptions =
   | { ratio: number; error: number }
-  | { format: TextureFormat; size: number | null; quality: number }
+  | { format: TextureFormat; size: number | null; quality: number; ktx2?: Omit<Ktx2Options, 'size'> }
   | { level: 'medium' | 'high' }
   | { min: number }
   | { tolerance: number }
@@ -74,7 +75,21 @@ export function planSteps(input: OptimizeInput): Step[] {
       case 'simplify':
         return { ratio, error: input.simplifyError };
       case 'textures':
-        return { format, size, quality: input.textureQuality };
+        return {
+          format,
+          size,
+          quality: input.textureQuality,
+          ...(format === 'ktx2'
+            ? {
+                ktx2: {
+                  codec: input.ktx2Codec ?? 'auto',
+                  qlevel: input.ktx2Qlevel ?? 128,
+                  uastcQuality: input.ktx2UastcQuality ?? 2,
+                  zstd: input.ktx2Zstd ?? 18,
+                },
+              }
+            : {}),
+        };
       case 'meshopt':
         return { level: 'medium' };
       case 'instance':

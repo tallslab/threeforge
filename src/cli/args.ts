@@ -2,7 +2,16 @@ import { COMMAND_SPECS, COMMANDS, type CommandName, type CommandSpec, type FlagS
 import { UsageError } from './errors.js';
 import { STEP_NAMES } from './pipeline.js';
 import { closest, NUMBER, type Scanned, scan } from './scan.js';
-import type { AnalyzeInput, Backend, BakeChoice, InspectInput, OptimizeInput, StepName, TierChoice } from './types.js';
+import type {
+  AnalyzeInput,
+  Backend,
+  BakeChoice,
+  InspectInput,
+  Ktx2Codec,
+  OptimizeInput,
+  StepName,
+  TierChoice,
+} from './types.js';
 import { usageLine } from './usage.js';
 import {
   CHOICES,
@@ -73,6 +82,19 @@ function choiceFlag<T extends string>(spec: CommandSpec, values: Scanned['values
   const flag = flagSpec(spec, name);
   if (!flag.choices!.includes(raw)) throw badValue(flag, raw);
   return raw as T;
+}
+
+/** The KTX2 settings that were given, and only those: an unset one stays out of the input and of the document. */
+function ktx2Input(
+  spec: CommandSpec,
+  values: Scanned['values'],
+): Pick<OptimizeInput, 'ktx2Codec' | 'ktx2Qlevel' | 'ktx2UastcQuality' | 'ktx2Zstd'> {
+  const input: ReturnType<typeof ktx2Input> = {};
+  if (values.has('ktx2-codec')) input.ktx2Codec = choiceFlag<Ktx2Codec>(spec, values, 'ktx2-codec', 'auto');
+  if (values.has('ktx2-qlevel')) input.ktx2Qlevel = numberFlag(spec, values, 'ktx2-qlevel', 0);
+  if (values.has('ktx2-uastc-quality')) input.ktx2UastcQuality = numberFlag(spec, values, 'ktx2-uastc-quality', 0);
+  if (values.has('ktx2-zstd')) input.ktx2Zstd = numberFlag(spec, values, 'ktx2-zstd', 0);
+  return input;
 }
 
 function runInput(spec: CommandSpec, values: Scanned['values']): Omit<InspectInput, 'url'> {
@@ -168,6 +190,7 @@ export function parseArgs(argv: string[]): Command {
               : null,
         textureSize: values.has('texture-size') ? numberFlag(spec, values, 'texture-size', 0) : null,
         textureQuality: numberFlag(spec, values, 'texture-quality', 85),
+        ...ktx2Input(spec, values),
         verify: values.get('verify') !== false,
         parity: numberFlag(spec, values, 'parity', DEFAULT_PARITY),
         views: numberFlag(spec, values, 'views', 2),

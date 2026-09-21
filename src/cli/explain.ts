@@ -173,8 +173,8 @@ export const REMEDIES: Record<string, Remedy> = Object.fromEntries([
     'memory',
     'warn',
     'Estimated texture memory exceeds the tier budget.',
-    'Compress textures to KTX2 (toktx or gltf-transform), cap sizes per tier, share atlases, and drop mipmaps only for UI textures.',
-    'createLoader() (KTX2Loader wired), threeforge optimize --textures webp, gltf-transform',
+    'Resident bytes follow the dimensions and the GPU format, not the file: cap sizes per tier, ship KTX2, which transcodes to a block format on the device (read `texture.format` on what loaded; a device with no block format cannot show KTX2 at all and `createLoader` rejects it there, so keep another variant for those), share atlases, and drop mipmaps only for UI textures. WebP and AVIF shrink the download and decode to the same RGBA8.',
+    'threeforge optimize --texture-size, threeforge optimize --textures ktx2 (needs KTX-Software), createLoader() (KTX2Loader wired)',
   ),
   remedy(
     'geometry-bytes',

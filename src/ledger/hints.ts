@@ -206,7 +206,7 @@ export function hintsFor(f: FrameSnapshot, b: Budgets, ctx: HintContext = {}): H
       'memory',
       'warn',
       'texture-bytes',
-      `${mb(f.memory.textures.bytes)} of textures, budget ${mb(b.textureBytes)}: compress to KTX2 or shrink`,
+      `${mb(f.memory.textures.bytes)} of textures, budget ${mb(b.textureBytes)}: use smaller textures or a GPU block format (KTX2); WebP and AVIF shrink the download, not this`,
     );
   if (f.memory.geometries.bytes > b.geometryBytes)
     push(

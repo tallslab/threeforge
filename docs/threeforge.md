@@ -1124,7 +1124,27 @@ that separation, since `--preset safe` is pixel-identical between its two files 
 either file moves 1 px on webgl2 and 2 px of 921,600 on webgpu, and tightening the compile checks with `--parity 0`
 was tried and reverted because it answered "no" to the question `--parity` asks. Deltas are never judged: a palette
 texture can grow a file that then draws in one call. Limits: no atlasing across materials that differ by textures,
-no KTX2 encoding (needs `toktx`), no `MSFT_lod` chains, no Draco output.
+no `MSFT_lod` chains, no Draco output.
+
+KTX2 (`--textures ktx2`, `src/cli/ktx2.ts`) is opt-in and in no preset. It shells out to KTX-Software's `ktx`
+(`FORGE_KTX` or PATH; a missing encoder is an environment error, exit 3, and nothing is encoded in its place), one `ktx
+create` and one `ktx validate --gltf-basisu` per PNG or JPEG texture, in a temporary directory that is always removed; a
+texture in another format is left alone and named in the step's `note`. `ktxCreateArgs` decides per texture from how
+materials read it (`getTextureColorSpace`, `getTextureChannelMask`): sRGB colour is written `*_SRGB` with transfer
+`srgb` and primaries `bt709`, data maps `*_UNORM` with `linear` and `none`, both assigned and never converted
+(`--fail-on-color-conversions`), because an untagged 8-bit image is assumed sRGB and a data map would be linearised on
+its way to a UNORM format; alpha only where a material reads it (an unread alpha channel doubles the GPU cost in BC3 and
+ETC2); `--generate-mipmap` always; never `--normal-mode`, which rewrites normals to two channels for a shader that
+rebuilds Z, where three samples XYZ. Sizes are resampled (never padded, which would shift UVs) to whole 4 x 4 blocks
+within `--texture-size`, since WebGPU refuses a block-compressed base level that is not a multiple of the block.
+`--ktx2-codec auto` (default) is ETC1S for colour and UASTC for data; `--ktx2-qlevel` 1-255 (128),
+`--ktx2-uastc-quality` 0-4 (2), `--ktx2-zstd` 0-22 over UASTC (18, 0 for none); any of them without `--textures ktx2` is
+a usage error. An encoder refusal is a usage error naming the texture, an output that is not the KTX2 asked for an
+environment error, and either leaves the document as read. The output requires `KHR_texture_basisu`; `requires` carries
+the KTX2Loader setup. `Counts.textureBytes` is encoded bytes, that is, transfer size: the GPU figure is
+`verify.*.before.memory.textures`. Measured on four 1024 px maps (both backends, ETC2 and ASTC 4x4 on the device): file
+194 KB → 788 KB, GPU 22.4 MB → 4.9 MB, worst view 0.039 % of pixels changed. On the Fox: file +10 KB, GPU -4.66 MB,
+0.034 %.
 
 ## 11. Benchmark suite and regression gate
 

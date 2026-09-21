@@ -276,6 +276,22 @@ describe('schema-validate: standalone ajv compilation and real documents', () =>
     expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
   });
 
+  it('OPTIMIZE_SCHEMA takes the KTX2 settings as optional input and holds them to their ranges', () => {
+    const validate = compile(OPTIMIZE_SCHEMA);
+    const withInput = (extra: Record<string, unknown>) => {
+      const doc = optimizeFixture();
+      Object.assign(doc.input, { textures: 'ktx2', ...extra });
+      return validate(doc);
+    };
+    expect(withInput({})).toBe(true);
+    expect(withInput({ ktx2Codec: 'uastc', ktx2Qlevel: 255, ktx2UastcQuality: 4, ktx2Zstd: 0 })).toBe(true);
+    expect(withInput({ ktx2Codec: 'astc' })).toBe(false);
+    expect(withInput({ ktx2Qlevel: 0 })).toBe(false);
+    expect(withInput({ ktx2UastcQuality: 5 })).toBe(false);
+    expect(withInput({ ktx2Zstd: 23 })).toBe(false);
+    expect(withInput({ ktx2Rdo: 1 })).toBe(false);
+  });
+
   it('ANALYZE_SCHEMA requires the true skippedCount and groupCount beside a compile report', () => {
     const validate = compile(ANALYZE_SCHEMA);
     const doc = analyzeFixture() as unknown as { compile: Record<string, unknown> | null };

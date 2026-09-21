@@ -112,7 +112,12 @@ export type StepName =
   | 'quantize'
   | 'meshopt';
 export type Preset = 'safe' | 'balanced' | 'aggressive';
-export type TextureFormat = 'webp' | 'avif';
+/**
+ * `webp` and `avif` make the file smaller and decode to RGBA8 on the GPU. `ktx2` (Basis in a KTX2 container, written
+ * by KTX-Software's `ktx`) is transcoded on the device to a block format, which is what lowers resident bytes.
+ */
+export type TextureFormat = 'webp' | 'avif' | 'ktx2';
+export type Ktx2Codec = 'auto' | 'etc1s' | 'uastc';
 
 export interface OptimizeInput {
   file: string;
@@ -129,7 +134,18 @@ export interface OptimizeInput {
   textures: TextureFormat | 'none' | null;
   /** Longest texture side in pixels; null = the preset decides (no resize outside presets). */
   textureSize: number | null;
+  /** Quality of the WebP or AVIF encoder; KTX2 has its own settings below. */
   textureQuality: number;
+  /**
+   * KTX2 settings, present only when given and only valid with `textures: 'ktx2'`. `auto` (the default) encodes sRGB
+   * colour as ETC1S and data maps (normal, occlusion/roughness/metallic) as UASTC; `ktx2Qlevel` is ETC1S quality 1 to
+   * 255 (default 128), `ktx2UastcQuality` UASTC effort 0 to 4 (default 2), `ktx2Zstd` the Zstandard level over UASTC, 0
+   * to 22 (default 18, 0 for none).
+   */
+  ktx2Codec?: Ktx2Codec;
+  ktx2Qlevel?: number;
+  ktx2UastcQuality?: number;
+  ktx2Zstd?: number;
   verify: boolean;
   /** Pixel parity threshold in percent between the original and the optimized render. */
   parity: number;
@@ -175,7 +191,7 @@ export interface StepReport {
   name: StepName;
   applied: boolean;
   ms: number;
-  /** Why a step was skipped, or what it needs. */
+  /** Why a step was skipped or what it needs; for an applied KTX2 step, what was encoded and what was left. */
   note: string | null;
   before: Counts;
   after: Counts;

@@ -1,6 +1,10 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Document } from '@gltf-transform/core';
 import pngjs from 'pngjs';
 import { describe, expect, it } from 'vitest';
+import { EnvironmentError } from '../../src/cli/errors.js';
 import type { Step } from '../../src/cli/pipeline.js';
 import { applySteps, countsOf, createIO, loadDeps, requirementsOf, statsOf } from '../../src/cli/transform.js';
 
@@ -139,6 +143,60 @@ describe('applySteps', () => {
     );
     expect(skipped!.applied).toBe(false);
     expect(skipped!.note).toContain('sharp');
+  });
+});
+
+describe('the KTX2 texture step', () => {
+  const ktx2 = step('textures', {
+    format: 'ktx2',
+    size: null,
+    quality: 85,
+    ktx2: { codec: 'auto', qlevel: 128, uastcQuality: 2, zstd: 18 },
+  });
+  const textured = () => {
+    const doc = quads(1);
+    const png = new pngjs.PNG({ width: 64, height: 64 });
+    png.data.fill(200);
+    const texture = doc
+      .createTexture('t')
+      .setImage(new Uint8Array(pngjs.PNG.sync.write(png)))
+      .setMimeType('image/png');
+    doc.getRoot().listMaterials()[0]!.setBaseColorTexture(texture);
+    return doc;
+  };
+
+  it('without the encoder is an environment error naming where to get one', async () => {
+    const before = process.env.FORGE_KTX;
+    process.env.FORGE_KTX = join(tmpdir(), 'no-such-ktx');
+    try {
+      await expect(loadDeps([ktx2], true)).rejects.toThrow(EnvironmentError);
+      await expect(loadDeps([ktx2], true)).rejects.toThrow(/no-such-ktx.*KTX-Software.*FORGE_KTX/s);
+    } finally {
+      if (before === undefined) delete process.env.FORGE_KTX;
+      else process.env.FORGE_KTX = before;
+    }
+    // The same when a caller hands the step dependencies that have no encoder: nothing is encoded in its place.
+    const doc = textured();
+    const deps = { ...(await loadDeps([], false)), ktx: null };
+    await expect(applySteps(doc, [ktx2], deps, log)).rejects.toThrow(EnvironmentError);
+    expect(doc.getRoot().listTextures()[0]!.getMimeType()).toBe('image/png');
+  });
+
+  it('needs no sharp, encodes through the runner and reports what it did', async () => {
+    const doc = textured();
+    const fixture = readFileSync('test/fixtures/ktx2/colour-etc1s.ktx2');
+    const deps = {
+      ...(await loadDeps([], false)),
+      sharp: null,
+      ktx: async (argv: string[]) => {
+        if (argv[0] === 'create') writeFileSync(argv.at(-1)!, fixture);
+      },
+    };
+    const [report] = await applySteps(doc, [ktx2], deps, log);
+    expect(report).toMatchObject({ applied: true, note: '1 encoded as KTX2 (1 ETC1S, 0 UASTC)' });
+    expect(doc.getRoot().listTextures()[0]!.getMimeType()).toBe('image/ktx2');
+    expect(statsOf(doc, 0).extensions).toContain('KHR_texture_basisu');
+    expect(requirementsOf(statsOf(doc, 0).extensions)[0]).toMatchObject({ needs: 'KTX2Loader' });
   });
 });
 

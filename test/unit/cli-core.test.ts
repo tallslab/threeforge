@@ -565,6 +565,25 @@ describe('parseArgs optimize', () => {
         textureQuality: 70,
       },
     });
+    const ktx2 = parseArgs([
+      'optimize',
+      'a.glb',
+      '--textures',
+      'ktx2',
+      '--ktx2-codec',
+      'uastc',
+      '--ktx2-qlevel',
+      '200',
+      '--ktx2-uastc-quality',
+      '4',
+      '--ktx2-zstd',
+      '0',
+    ]);
+    expect(ktx2).toMatchObject({
+      input: { textures: 'ktx2', ktx2Codec: 'uastc', ktx2Qlevel: 200, ktx2UastcQuality: 4, ktx2Zstd: 0 },
+    });
+    // Unset KTX2 settings stay out of the input, so a document does not list settings that played no part.
+    expect(JSON.stringify(parseArgs(['optimize', 'a.glb', '--textures', 'ktx2']))).not.toMatch(/ktx2[A-Z]/);
     expect(parseArgs(['optimize', 'a.glb', '--simplify', '--textures'])).toMatchObject({
       input: { simplify: 0.5, textures: 'webp' },
     });
@@ -584,6 +603,20 @@ describe('parseArgs optimize', () => {
     expect(() => parseArgs(['optimize', 'a.glb', '--simplify', '0'])).toThrow(/simplify/);
     expect(() => parseArgs(['optimize', 'a.glb', '--compress', 'draco'])).toThrow(/compress/);
     expect(() => parseArgs(['optimize', 'a.glb', '--textures', 'jpg'])).toThrow(/textures/);
+    expect(() => parseArgs(['optimize', 'a.glb', '--textures', 'ktx2', '--ktx2-codec', 'astc'])).toThrow(/ktx2-codec/);
+    expect(() => parseArgs(['optimize', 'a.glb', '--textures', 'ktx2', '--ktx2-qlevel', '0'])).toThrow(/ktx2-qlevel/);
+    expect(() => parseArgs(['optimize', 'a.glb', '--textures', 'ktx2', '--ktx2-qlevel', '256'])).toThrow(/ktx2-qlevel/);
+    expect(() => parseArgs(['optimize', 'a.glb', '--textures', 'ktx2', '--ktx2-uastc-quality', '5'])).toThrow(
+      /ktx2-uastc-quality/,
+    );
+    expect(() => parseArgs(['optimize', 'a.glb', '--textures', 'ktx2', '--ktx2-zstd', '23'])).toThrow(/ktx2-zstd/);
+    // A KTX2 setting that would silently do nothing is a usage error.
+    expect(() => parseArgs(['optimize', 'a.glb', '--ktx2-codec', 'etc1s'])).toThrow(
+      /--ktx2-codec needs --textures ktx2/,
+    );
+    expect(() => parseArgs(['optimize', 'a.glb', '--textures', 'webp', '--ktx2-zstd', '9'])).toThrow(
+      /--ktx2-zstd needs --textures ktx2/,
+    );
     expect(() => parseArgs(['optimize', 'a.glb', '--out'])).toThrow(/out/);
     expect(parseArgs(['schema', 'optimize'])).toEqual({ name: 'schema', which: 'optimize', json: false });
   });

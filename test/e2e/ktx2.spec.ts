@@ -5,11 +5,12 @@
  * `.ktx2` is a container: what a texture costs on the GPU is decided by the format the device transcodes it to, which
  * the tests read off the loaded texture and never take from the file name.
  */
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import type { Page } from '@playwright/test';
+import { drawImages, planesGlb } from '../../scripts/ktx2-fixtures.mjs';
 import { expect, type ForgePage, note, test } from './fixtures.js';
 import { differingPixels } from './pixels.js';
 
@@ -353,4 +354,112 @@ test('ktx2: a model without KTX2 loads where no decoders were deployed at all', 
   expect(await loadThrough(forge.page, ['planes-png.glb'], false, '/_absent/')).toEqual(['loaded with 2 colour maps']);
   // Decoders are looked for when something needs them, and a PNG model needs none.
   expect(asked).toEqual([]);
+});
+
+/**
+ * The whole way round, on a model large enough for memory to matter (four 1024 px maps): source GLB, `threeforge
+ * optimize --textures ktx2`, which verifies its output in the packaged harness with the packaged decoders, then the
+ * output loaded here through `createLoader`, rendered, measured by the ledger and released. Needs KTX-Software's `ktx`
+ * (`FORGE_KTX` or PATH): without it the test is skipped, and `FORGE_REQUIRE_KTX=1` turns that skip into a failure.
+ */
+test('ktx2: optimize --textures ktx2 lowers the resident bytes of a 1024 px model', async ({ forge }) => {
+  test.setTimeout(300_000);
+  test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+  const encoder = spawnSync(process.env.FORGE_KTX ?? 'ktx', ['--version'], { encoding: 'utf8' });
+  if (encoder.status !== 0 && process.env.FORGE_REQUIRE_KTX === '1')
+    throw new Error('FORGE_REQUIRE_KTX=1, and ktx does not run');
+  test.skip(encoder.status !== 0, 'KTX-Software (ktx) is not installed');
+
+  const dir = mkdtempSync(join(tmpdir(), 'forge-ktx2-optimize-'));
+  try {
+    const png = drawImages(1024);
+    const asPng = (bytes: Uint8Array) => ({ bytes, mimeType: 'image/png' });
+    const images = {
+      colour: asPng(png.colour),
+      alpha: asPng(png.alpha),
+      normal: asPng(png.normal),
+      orm: asPng(png.orm),
+    };
+    writeFileSync(join(dir, 'source.glb'), await planesGlb(images));
+    const run = spawnSync(
+      'node',
+      [
+        'dist/cli/index.js',
+        'optimize',
+        join(dir, 'source.glb'),
+        '--out',
+        join(dir, 'optimized.glb'),
+        '--textures',
+        'ktx2',
+        '--backend',
+        forge.backend,
+        '--frames',
+        '3',
+        '--json',
+      ],
+      { encoding: 'utf8', timeout: 240_000 },
+    );
+    expect(run.status, run.stderr).toBe(0);
+    const doc = JSON.parse(run.stdout);
+    const step = doc.steps.find((s: { name: string }) => s.name === 'textures');
+    // `auto`: the two colour maps as ETC1S, the normal and the packed data map as UASTC. Nothing left as PNG.
+    expect(step).toMatchObject({ applied: true, note: '4 encoded as KTX2 (2 ETC1S, 2 UASTC)' });
+    expect(doc.stats.after.extensions).toEqual(['KHR_texture_basisu']);
+    expect(doc.requires).toEqual([expect.objectContaining({ extension: 'KHR_texture_basisu', needs: 'KTX2Loader' })]);
+    expect(doc.verdict.pass, JSON.stringify(doc.verdict)).toBe(true);
+    const worst = Math.max(...doc.verify.parity.views.map((v: { diffPct: number }) => v.diffPct));
+    console.log(
+      `ktx2 optimize [${forge.backend}]: worst view ${worst}% changed, file ${doc.stats.before.bytes} -> ${doc.stats.after.bytes} B, memory ${doc.verify.delta.memoryBytes} B`,
+    );
+    // Lossy, so it changes pixels and is held to a measured bound, never to zero: 0.039 % of the frame in the worst
+    // view on both backends, bounded at about four times that.
+    expect(worst).toBeGreaterThan(0);
+    expect(worst).toBeLessThan(0.15);
+
+    const measured: Record<string, Awaited<ReturnType<typeof load>>> = {};
+    for (const file of ['source.glb', 'optimized.glb'] as const) {
+      await forge.open('empty');
+      await serve(forge.page, dir);
+      measured[file] = await load(forge, file);
+    }
+    const [source, optimized] = [measured['source.glb']!, measured['optimized.glb']!];
+    const formats = SLOTS.map((slot) => optimized.textures[slot].format);
+    const expected = formats.reduce((sum, format) => sum + gpuBytes(format, 1024), 0);
+    const uncompressed = SLOTS.length * Math.round(1024 * 1024 * 4 * 1.333);
+    // The evidence is what the ledger counts on the GPU, against the block math of the formats actually chosen. The
+    // file size is printed beside it and proves nothing either way.
+    expect(optimized.memory.bytes - source.memory.bytes, 'ledger bytes against the source').toBe(
+      expected - uncompressed,
+    );
+    const measuredByCommand =
+      doc.verify.optimized.before.memory.textures.bytes - doc.verify.original.before.memory.textures.bytes;
+    expect(measuredByCommand, 'the same saving, as the command measured it in its own harness').toBe(
+      expected - uncompressed,
+    );
+    console.log(
+      `ktx2 optimize [${forge.backend}]: GPU ${uncompressed} -> ${expected} B in ${[...new Set(formats)].join(', ')}`,
+    );
+    if (formats.includes('RGBAFormat')) {
+      test
+        .info()
+        .annotations.push({ type: 'ktx2', description: 'this device has no block format: no GPU saving to claim' });
+    } else {
+      expect(expected, 'block formats cost a quarter of RGBA8 or less').toBeLessThanOrEqual(uncompressed / 4);
+      for (const slot of SLOTS) expect(optimized.textures[slot].size).toEqual([1024, 1024]);
+    }
+
+    const released = await forge.page.evaluate(async () => {
+      const f = window.__forge;
+      const planes = f.scene.children.find((o) => o.getObjectByName('lit'))!;
+      const before = f.renderer.info.memory.textures;
+      const tracker = new f.ResourceTracker();
+      tracker.track(planes);
+      const report = tracker.release(planes);
+      await f.frameAsync();
+      return { textures: report.textures, left: before - f.renderer.info.memory.textures };
+    });
+    expect(released).toEqual({ textures: 4, left: 4 });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

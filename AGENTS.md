@@ -12,8 +12,9 @@ npm i -D threeforge playwright && npx playwright install chromium
 ```
 
 Playwright is only needed for `analyze`, `inspect`, `optimize` (its verification) and `mcp`; the library itself has no
-such dependency. `optimize` works out of the box (glTF-Transform is a dependency); texture compression needs
-`npm i -D sharp` and a Draco-compressed input needs `npm i -D draco3dgltf`.
+such dependency. `optimize` works out of the box (glTF-Transform is a dependency); WebP and AVIF textures need
+`npm i -D sharp`, KTX2 textures need KTX-Software's `ktx` (https://github.com/KhronosGroup/KTX-Software/releases) on
+PATH or in `FORGE_KTX`, and a Draco-compressed input needs `npm i -D draco3dgltf`.
 
 ## Commands
 
@@ -21,7 +22,7 @@ such dependency. `optimize` works out of the box (glTF-Transform is a dependency
 |---|---|
 | `npx threeforge analyze <file.glb\|.gltf> [--backend webgl2\|webgpu] [--tier auto\|desktop\|phone-mid\|phone-low] [--budget N] [--frames N] [--no-compile] [--timeout ms] [--headed] [--bake] [--bake-buried] [--views N] [--parity pct] [--json]` | Renders the asset headlessly, measures every cost category, compiles (batches, or bakes with `--bake`) it, measures again, checks pixel parity from the default framing plus `--views` orbit views, returns hints and a verdict. |
 | `npx threeforge inspect <url> [--backend webgl2\|webgpu] [--budget N] [--frames N] [--no-compile] [--timeout ms] [--headed] [--json]` | Drives your running app (dev server) through `window.__threeforge`, compiling through the hook unless `--no-compile`; same document without asset facts and parity. The app measures itself at the tier its ledger detects, so there is no `tier` flag here. |
-| `npx threeforge optimize <file.glb\|.gltf> [--out out.glb] [--preset safe\|balanced\|aggressive] [--no-<step>\|--<step>] [--simplify [ratio]] [--simplify-error e] [--compress none\|meshopt] [--textures [webp\|avif\|none]] [--texture-size N] [--texture-quality Q] [--no-verify] [--parity pct] [--views N] [--budget N] [--backend webgl2\|webgpu] [--tier auto\|desktop\|phone-mid\|phone-low] [--frames N] [--no-compile] [--timeout ms] [--headed] [--json]` | Rewrites the asset with glTF-Transform and writes `<name>.forge.glb`. `safe` (default) is dedup, palette, prune, measured at 0 changed pixels (no channel moving by more than 24 of 255) on the Fox and the Buggy; `palette` adds a UV attribute to every primitive whose flat materials it merges, so it can make a file bigger. `balanced` adds weld, resample, quantize and WebP textures (2048 px); `aggressive` adds simplify to 50 % and 1024 px textures. Renders the original and the result, compares pixels, compiles both, and lists what the file needs at load time (`requires`). |
+| `npx threeforge optimize <file.glb\|.gltf> [--out out.glb] [--preset safe\|balanced\|aggressive] [--no-<step>\|--<step>] [--simplify [ratio]] [--simplify-error e] [--compress none\|meshopt] [--textures [webp\|avif\|ktx2\|none]] [--texture-size N] [--texture-quality Q] [--ktx2-codec auto\|etc1s\|uastc] [--ktx2-qlevel N] [--ktx2-uastc-quality N] [--ktx2-zstd N] [--no-verify] [--parity pct] [--views N] [--budget N] [--backend webgl2\|webgpu] [--tier auto\|desktop\|phone-mid\|phone-low] [--frames N] [--no-compile] [--timeout ms] [--headed] [--json]` | Rewrites the asset with glTF-Transform and writes `<name>.forge.glb`. `safe` (default) is dedup, palette, prune, measured at 0 changed pixels (no channel moving by more than 24 of 255) on the Fox and the Buggy; `palette` adds a UV attribute to every primitive whose flat materials it merges, so it can make a file bigger. `balanced` adds weld, resample, quantize and WebP textures (2048 px); `aggressive` adds simplify to 50 % and 1024 px textures. Renders the original and the result, compares pixels, compiles both, and lists what the file needs at load time (`requires`). |
 | `npx threeforge explain [<hint-code>] [--all] [--json]` | What a hint means, what to change, which API (a hint code or `--all`, not both). |
 | `npx threeforge schema [snapshot\|analyze\|inspect\|optimize\|all] [--json]` | JSON Schemas (draft 2020-12) of everything the commands print. |
 | `npx threeforge mcp` | Stdio MCP server with tools `analyze_asset`, `inspect_app`, `optimize_asset`, `explain_hint` (needs `npm i -D @modelcontextprotocol/sdk zod`). |
@@ -70,9 +71,13 @@ nothing on stdout.
 | `--simplify [ratio]`, `--no-simplify` | optimize | Add the simplify step with this ratio of vertices to keep, in (0, 1] (bare: 0.5); `--no-simplify` removes it from a preset. |
 | `--simplify-error e` | optimize | Simplify error limit as a fraction of the mesh radius, from 0 to 1 (default 0.001). |
 | `--compress none\|meshopt` | optimize | `meshopt` adds `EXT_meshopt_compression` (the app needs `loader.setMeshoptDecoder`); default `none`. |
-| `--textures [webp\|avif\|none]`, `--no-textures` | optimize | Add the texture step with this format (needs `sharp`; bare: `webp`); `none` or `--no-textures` removes it from a preset. |
+| `--textures [webp\|avif\|ktx2\|none]`, `--no-textures` | optimize | Add the texture step with this format (bare: `webp`); `none` or `--no-textures` removes it from a preset. `webp` and `avif` (need `sharp`) make the file smaller and decode to the same RGBA8 on the GPU, so with them only `--texture-size` lowers texture memory. `ktx2` (needs KTX-Software's `ktx` on PATH or in `FORGE_KTX`; never part of a preset) writes Basis textures that a device transcodes to a GPU block format, a quarter or an eighth of RGBA8, and a device with no block format cannot show them at all (`createLoader` rejects the model; keep a PNG, JPEG or WebP variant for such devices); it is lossy, requires `KHR_texture_basisu`, and the app needs a `KTX2Loader` (see `requires`). |
 | `--texture-size N` | optimize | Longest texture side in pixels (an integer from 1 to 16384; default: the preset's size, no resize outside presets). |
-| `--texture-quality Q` | optimize | Texture encoder quality (an integer from 1 to 100, default 85). |
+| `--texture-quality Q` | optimize | WebP or AVIF encoder quality (an integer from 1 to 100, default 85); KTX2 ignores it. |
+| `--ktx2-codec auto\|etc1s\|uastc` | optimize | With `--textures ktx2`: `etc1s` (small files, visibly lossy), `uastc` (near the source, larger files), or `auto` (default): ETC1S for sRGB colour, UASTC for normal maps and packed occlusion/roughness/metallic, where ETC1S blocks show. |
+| `--ktx2-qlevel N` | optimize | ETC1S quality (an integer from 1 to 255, default 128; higher is better and larger). |
+| `--ktx2-uastc-quality N` | optimize | UASTC encoding effort (an integer from 0 to 4, default 2; higher is better and slower). |
+| `--ktx2-zstd N` | optimize | Zstandard level over UASTC (an integer from 0 to 22, default 18; 0 leaves it uncompressed). ETC1S takes none. |
 | `--verify`, `--no-verify` | optimize | Render the original and the optimized file and compare pixels. On by default; `--no-verify` runs without a browser (and cannot take `--budget`). |
 | `--parity pct` | optimize | Allowed percent of changed pixels between the original and the optimized file, each rendered before compiling, from 0 to 100 (default 0.5). A threshold of 0 means zero: it is judged on the raw changed-pixel count of every view, not the rounded percent. It governs the original-versus-optimized comparison only; each file's own compile check runs at 0.5 whatever this is, and is reported in `verify.optimized.parity` (which fails the verdict) and `verify.original.parity` (reported only). Read those, or run `analyze --parity 0`, when compile exactness is the question. |
 | `--views N` | optimize | Extra orbit views for the comparison (an integer from 0 to 64, default 2). |
@@ -158,7 +163,7 @@ those three tools carries a second block too, because an error can quote the ass
 | `transmission` | overdraw | info | Keep transmission for a few hero objects, set forceSinglePass when the object is not double sided, and fake distant glass with opacity. |
 | `transparent-batch-order` | overdraw | info | Construct World with transparent: 'keep' to leave transparent statics as individual meshes when exact draw order against other transparent objects matters (e.g. overlapping glass close to the camera); opaque statics still batch normally. |
 | `batch-local-space` | drawCalls | warn | Where the change shows, tag the meshes that must shade in their own local space with tag.dynamic() so World leaves them individual draws (under the default dynamics: 'separate'; 'batch-sync' batches dynamics too). For object-space normal maps, a tangent-space map (normalMapType: TangentSpaceNormalMap) batches unchanged. Leave the rest batched where the difference does not matter: batching stays the default. |
-| `texture-bytes` | memory | warn | Compress textures to KTX2 (toktx or gltf-transform), cap sizes per tier, share atlases, and drop mipmaps only for UI textures. |
+| `texture-bytes` | memory | warn | Resident bytes follow the dimensions and the GPU format, not the file: cap sizes per tier, ship KTX2, which transcodes to a block format on the device (read `texture.format` on what loaded; a device with no block format cannot show KTX2 at all and `createLoader` rejects it there, so keep another variant for those), share atlases, and drop mipmaps only for UI textures. WebP and AVIF shrink the download and decode to the same RGBA8. |
 | `geometry-bytes` | memory | warn | Compress with threeforge optimize --compress meshopt (or Draco), generate LODs (prepareLods), compile with chunkSize and stream chunks with a Streamer. |
 | `unreferenced-resources` | memory | warn | Track loaded subtrees with a ResourceTracker and release() them when removed; dispose textures and geometries you replace; let a Streamer unload chunks. |
 | `js-objects` | js | warn | Compile with World so statics batch, pass originals: "detach" so hidden originals leave the graph, flatten empty groups, and keep helper objects out of the rendered scene. |
@@ -197,7 +202,22 @@ which is reported but never judged. If parity fails, go back to
 URI that is absolute, has a scheme other than `data:`, or leads outside the input's directory (symlinks included)
 exits `2` before anything is read, as does an `--out` that is the input file or does not end in `.glb`/`.gltf`, and
 a `.gltf` output whose resources would overwrite the input's own (write it to another directory, or as `.glb`).
-Not covered: atlasing textured materials, KTX2 encoding.
+
+Textures: `--textures webp|avif` shrinks the download and nothing else, because the GPU holds the same RGBA8; with
+them only `--texture-size` lowers `memory.textures.bytes`. `--textures ktx2` is what lowers it at unchanged size:
+Basis textures in KTX2 that the device transcodes to a block format (a quarter of RGBA8 for ASTC 4x4, BC7 and ETC2 with
+alpha, an eighth for ETC2 and BC1). A device with no block format cannot show KTX2 at all: three r186 cannot draw the
+RGBA8 its KTX2Loader falls back to, so `createLoader` rejects a model with KTX2 textures there, naming the reason; keep
+a PNG, JPEG or WebP variant for such devices. Four 1024 px maps measured
+22.4 MB → 4.9 MB on the GPU while the file grew 194 KB → 788 KB. It is opt-in and in no preset, lossy (compare
+`verify.parity`), and the file then requires `KHR_texture_basisu`: the app needs a KTX2Loader with the Basis
+transcoder served (`requires` has the code, `threeforge decoders <dir>` copies the files). `--ktx2-codec auto` (the
+default) encodes sRGB colour as ETC1S and normal maps and packed occlusion/roughness/metallic as UASTC; `etc1s` or
+`uastc` forces one, with `--ktx2-qlevel` (1-255), `--ktx2-uastc-quality` (0-4) and `--ktx2-zstd` (0-22). Colour is
+written as sRGB and data as linear without conversion, alpha is kept only where a material reads it, mipmaps are baked,
+sizes are resampled to whole 4 x 4 blocks, and normal maps stay three-channel. PNG and JPEG are encoded; a texture in
+another format is left as it is and named in the step's `note`. Without `ktx` the command exits `3`; nothing else
+is encoded in its place. Not covered: atlasing textured materials.
 
 ## Budgets per device tier
 

@@ -288,7 +288,15 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
         textures: z
           .string()
           .optional()
-          .describe('Texture format: webp, avif or none (needs sharp); overrides the preset'),
+          .describe(
+            "Texture format, overriding the preset: webp or avif (need sharp; smaller file, same RGBA8 on the GPU), ktx2 (needs KTX-Software's ktx on the server's PATH or in FORGE_KTX; Basis textures a device transcodes to a GPU block format, and a device with none cannot show them at all; lossy; the app needs a KTX2Loader, see requires), or none",
+          ),
+        ktx2Codec: z
+          .string()
+          .optional()
+          .describe(
+            'With textures ktx2: auto (ETC1S for colour, UASTC for normal and packed data maps; default), etc1s or uastc',
+          ),
         textureSize: z.number().optional().describe('Longest texture side in pixels'),
         verify: z
           .boolean()
@@ -327,6 +335,7 @@ export async function serveMcp(deps: McpDeps = {}): Promise<void> {
           textures: (args.textures as OptimizeInput['textures']) ?? null,
           textureSize: typeof args.textureSize === 'number' ? args.textureSize : null,
           textureQuality: 85,
+          ...(typeof args.ktx2Codec === 'string' ? { ktx2Codec: args.ktx2Codec as OptimizeInput['ktx2Codec'] } : {}),
           verify: args.verify !== false,
           parity: typeof args.parity === 'number' ? args.parity : DEFAULT_PARITY,
           views: Number(args.views ?? 2),

@@ -7,8 +7,23 @@ resident. Three modules act on it: `createLoader`, `ResourceTracker`, `Streamer`
 ## What a resource costs
 
 A texture costs `width × height × bytes per texel` (channels from its format, bytes per channel from its type: an
-R8 texture is a quarter of RGBA8), ×1.333 with generated mipmaps, ×6 for a cube, × the layers of a 3D or array texture; a compressed (KTX2) texture
-costs the sum of its mip levels, typically a quarter to an eighth of the uncompressed size. A geometry costs its
+R8 texture is a quarter of RGBA8), ×1.333 with generated mipmaps, ×6 for a cube, × the layers of a 3D or array
+texture. A texture in a GPU block format costs the sum of its mip levels: a quarter of RGBA8 for ASTC 4x4, BC7, BC3
+and ETC2 with alpha (16 bytes a 4 x 4 block), an eighth for ETC2 and BC1 (8 bytes).
+
+The file format is not the GPU format. WebP, AVIF, JPEG and PNG all decode to the same RGBA8, so re-encoding one as
+another makes the download smaller and leaves resident bytes where they were; at unchanged dimensions only a GPU block
+format lowers them, and smaller dimensions lower them whatever the encoding. `.ktx2` is a container: a Basis payload
+(ETC1S or UASTC) is transcoded on the device to the best block format it has (three r186 ranks ETC2, ETC1, BC7, BC3/BC1
+for ETC1S and ASTC, BC7, ETC2 for UASTC). A device with none of them is not a slower path but an unsupported one:
+KTX2Loader falls back to RGBA8 at full cost inside a `CompressedTexture`, three r186 can upload that on neither backend,
+and the maps would draw black. `createLoader` therefore rejects a model with KTX2 textures on such a device, with an
+error that says so, and loads models without them as usual: keep a PNG, JPEG or WebP variant for those. WebGPU adapters
+have BC, or ETC2 and ASTC, so in practice this is a WebGL2 device with no compressed-texture extension. Read
+`texture.format` on what was loaded, or the ledger's bytes, before counting on a saving. Measured on the 64 x 64
+fixtures of `test/fixtures/ktx2` (four maps, WebGL2 on SwiftShader and WebGPU on Apple Metal alike): PNG 6.6 KB to
+download and 87.4 KB resident, ETC1S 8.7 KB and 13.7 KB (ETC2), UASTC 12.5 KB and 22.0 KB (ASTC 4x4). A geometry costs
+its
 attribute and index buffers. three r186 keeps a GPU copy of every geometry and texture it has rendered until
 `dispose()` is called, and `renderer.info.memory` counts them with byte sizes of its own
 (a compressed texture counts 1 byte), which the ledger reports as `memory.measured` beside its estimates
@@ -31,8 +46,12 @@ npx threeforge decoders public/_decoders
 copies three's Draco decoder and Basis transcoder (from the installed three) into `public/_decoders/{draco,basis}`;
 `decoders` can also be `{ draco, basis }` paths, and `draco`, `ktx2`, `meshopt` can be switched off. KTX2 formats
 are detected on the renderer after `renderer.init()`, so KTX2 textures transcode to what the device supports
-(ASTC on phones, BC on desktops). `threeforge optimize --textures webp` and `--compress meshopt` produce content
-this loader reads.
+(which one is three's ranking above). `threeforge optimize --textures webp` and `--compress meshopt` produce content
+this loader reads. The decoders are fetched when a file needs them, so an app that loads no KTX2 or Draco content needs
+none. A model with KTX2 textures whose transcoder is incomplete (`basis_transcoder.js` or `basis_transcoder.wasm`
+answered with a 404, or with a dev server's page) fails with an error naming that file and `threeforge decoders`, where
+three alone would deliver the model without its maps or never settle; other models keep loading through the same
+loader.
 
 ## ResourceTracker and the leak check
 
@@ -128,7 +147,7 @@ World's objects, `stats()` reports `chunks: 0, resident: 0` and a later `update(
 
 | number | means | act with |
 |---|---|---|
-| `textures.bytes` above budget (`texture-bytes`) | too many uncompressed texels resident | KTX2 through `createLoader`, `threeforge optimize --textures`, stream chunks |
+| `textures.bytes` above budget (`texture-bytes`) | too many texels resident for their GPU format | smaller textures (`threeforge optimize --texture-size`), KTX2 that transcodes to a block format through `createLoader`, stream chunks; not WebP or AVIF, which only shrink the download |
 | `geometries.bytes` above budget (`geometry-bytes`) | too much geometry resident | `threeforge optimize --compress meshopt`, LODs, stream chunks |
 | `unreferenced` ≥ 8 (`unreferenced-resources`) | removed without `dispose()` | `ResourceTracker.release`, a `Streamer` |
 | `chunks.resident` close to `chunks.total` | the radius covers the world | a smaller `far` with fog, smaller chunks |

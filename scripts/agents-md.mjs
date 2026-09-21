@@ -70,8 +70,9 @@ npm i -D threeforge playwright && npx playwright install chromium
 \`\`\`
 
 Playwright is only needed for \`analyze\`, \`inspect\`, \`optimize\` (its verification) and \`mcp\`; the library itself has no
-such dependency. \`optimize\` works out of the box (glTF-Transform is a dependency); texture compression needs
-\`npm i -D sharp\` and a Draco-compressed input needs \`npm i -D draco3dgltf\`.
+such dependency. \`optimize\` works out of the box (glTF-Transform is a dependency); WebP and AVIF textures need
+\`npm i -D sharp\`, KTX2 textures need KTX-Software's \`ktx\` (https://github.com/KhronosGroup/KTX-Software/releases) on
+PATH or in \`FORGE_KTX\`, and a Draco-compressed input needs \`npm i -D draco3dgltf\`.
 
 ## Commands
 
@@ -192,7 +193,22 @@ which is reported but never judged. If parity fails, go back to
 URI that is absolute, has a scheme other than \`data:\`, or leads outside the input's directory (symlinks included)
 exits \`2\` before anything is read, as does an \`--out\` that is the input file or does not end in \`.glb\`/\`.gltf\`, and
 a \`.gltf\` output whose resources would overwrite the input's own (write it to another directory, or as \`.glb\`).
-Not covered: atlasing textured materials, KTX2 encoding.
+
+Textures: \`--textures webp|avif\` shrinks the download and nothing else, because the GPU holds the same RGBA8; with
+them only \`--texture-size\` lowers \`memory.textures.bytes\`. \`--textures ktx2\` is what lowers it at unchanged size:
+Basis textures in KTX2 that the device transcodes to a block format (a quarter of RGBA8 for ASTC 4x4, BC7 and ETC2 with
+alpha, an eighth for ETC2 and BC1). A device with no block format cannot show KTX2 at all: three r186 cannot draw the
+RGBA8 its KTX2Loader falls back to, so \`createLoader\` rejects a model with KTX2 textures there, naming the reason; keep
+a PNG, JPEG or WebP variant for such devices. Four 1024 px maps measured
+22.4 MB → 4.9 MB on the GPU while the file grew 194 KB → 788 KB. It is opt-in and in no preset, lossy (compare
+\`verify.parity\`), and the file then requires \`KHR_texture_basisu\`: the app needs a KTX2Loader with the Basis
+transcoder served (\`requires\` has the code, \`threeforge decoders <dir>\` copies the files). \`--ktx2-codec auto\` (the
+default) encodes sRGB colour as ETC1S and normal maps and packed occlusion/roughness/metallic as UASTC; \`etc1s\` or
+\`uastc\` forces one, with \`--ktx2-qlevel\` (1-255), \`--ktx2-uastc-quality\` (0-4) and \`--ktx2-zstd\` (0-22). Colour is
+written as sRGB and data as linear without conversion, alpha is kept only where a material reads it, mipmaps are baked,
+sizes are resampled to whole 4 x 4 blocks, and normal maps stay three-channel. PNG and JPEG are encoded; a texture in
+another format is left as it is and named in the step's \`note\`. Without \`ktx\` the command exits \`3\`; nothing else
+is encoded in its place. Not covered: atlasing textured materials.
 
 ## Budgets per device tier
 
