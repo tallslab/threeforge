@@ -24,6 +24,20 @@ of that file until 0.9.0 and is kept here unchanged so that a three upgrade can 
   one frame late; `KTX2Loader` needs `detectSupport(renderer)` after `await renderer.init()` (`detectSupportAsync` is
   deprecated since r181); `RenderObject.getDrawParameters()` returns null for
   a zero-instance InstancedMesh (no draw, no count); `ShaderMaterial` does not render on `WebGPURenderer`.
+- `KTX2Loader`'s last resort cannot be drawn. When the device reports no block format it transcodes to RGBA32 and
+  still returns a `CompressedTexture` with `format: RGBAFormat`; WebGL2 refuses its upload (`compressedTexSubImage2D:
+  invalid format`) and the WebGPU path has no block size for it (`WebGPUTextureUtils._getBlockData`, a TypeError on
+  `width`). So `isCompressedTexture` does not mean compressed on the GPU, and the fallback is not a rendering path:
+  `createLoader` rejects a model with KTX2 textures on a device with no block format (measured on the UASTC fixture
+  before that: `RGBAFormat`, seven levels, 21 844 B a 64 px map, what a PNG costs). WebGPU adapters have BC, or ETC2
+  and ASTC, so it takes a WebGL2 device with no compressed-texture extension to get there. Look again when three is
+  upgraded: if the fallback uploads, the refusal can go.
+- A missing Basis transcoder file never reaches the app through three, whichever of `basis_transcoder.js` and
+  `basis_transcoder.wasm` it is: on a 404 `GLTFLoader.loadTextureImage` catches and returns null, so `loadAsync`
+  resolves with the maps missing, and where unknown paths get an HTML page (Vite's default) the transcoder worker never
+  starts and the load never settles (`WorkerPool` has no error listener). `createLoader` asks for both files by HEAD
+  at the first KTX2 texture and fails the models that have KTX2 textures, and only those. `DRACOLoader` is open to the
+  same and is not covered.
 - Half-float render targets read back as raw 16-bit halves on both backends, and WebGPU returns rows padded to 256
   bytes: the overdraw target uses 32-texel row multiples and decodes halves.
 - three's experimental `SceneOptimizer` batches everything including skinned meshes and disposes shared geometry; it

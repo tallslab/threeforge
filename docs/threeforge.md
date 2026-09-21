@@ -854,7 +854,13 @@ its 25 characters with one `AnimatedInstances`: 401 → 17 submissions, 271 k sk
 `createLoader(renderer, { decoders, draco, ktx2, meshopt })` (`src/load/createLoader.ts`) returns a `GLTFLoader` with
 Draco, KTX2 (`detectSupport` after `renderer.init()`) and meshopt wired; the addons import lazily.
 `disposeLoader(loader)` ends the worker pools. `threeforge decoders <dir>` (`src/cli/decoders.ts`) copies the decoder
-files from the installed three.
+files from the installed three. KTX2 that cannot work fails the model that needed it and no other: at the first KTX2
+texture the loader checks that the device has a GPU block format and asks for `basis_transcoder.js` and
+`basis_transcoder.wasm` by HEAD, and a model with `KHR_texture_basisu` textures is rejected with an error naming the
+missing file (a 404, a 410, or an HTML page in its place) or the reason. Without this three r186 delivers the model
+with its maps missing, never settles, or, on a device with no block format, falls back to an RGBA8 it can upload on
+neither backend (`docs/three-r186-notes.md`): such a device is unsupported for KTX2, so keep another variant for it.
+A model without KTX2 textures never triggers the check and loads through the same loader whatever it found.
 
 `ResourceTracker` (`src/memory/ResourceTracker.ts`): `track(root | geometry | texture | material, owner?)`,
 `release(owner)` disposes what no other owner holds (never a material the registry knows) and detaches an Object3D

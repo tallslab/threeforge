@@ -20,6 +20,7 @@ import {
   createLoader,
   DrawCallLedger,
   detectTier,
+  disposeLoader,
   exposeToAgents,
   type FrameSnapshot,
   gpuName,
@@ -62,6 +63,9 @@ export interface ForgeHarness {
   three: typeof THREE;
   /** The bake's direct API (no World), for in-page parity probes. */
   bakeGeometries: typeof bakeGeometries;
+  /** The loader factory an app calls, for specs that load content they serve themselves. */
+  createLoader: typeof createLoader;
+  disposeLoader: typeof disposeLoader;
   /** LOD generation and lookup, for specs that build their own content under `?lod=1`. */
   prepareLods: typeof prepareLods;
   lodsOf: typeof lodsOf;
@@ -351,6 +355,8 @@ try {
   window.__forge = {
     three: THREE,
     bakeGeometries,
+    createLoader,
+    disposeLoader,
     prepareLods,
     lodsOf,
     Streamer,

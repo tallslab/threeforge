@@ -22,6 +22,66 @@ export function decoderPaths(decoders: CreateLoaderOptions['decoders']): { draco
   return { draco: explicit.draco ?? `${root}draco/`, basis: explicit.basis ?? `${root}basis/` };
 }
 
+const TRANSCODER_FILES = ['basis_transcoder.js', 'basis_transcoder.wasm'];
+
+/** A definite no for a served file: gone, or an HTML page where a script or a binary should be. */
+async function definitelyMissing(url: string): Promise<string | null> {
+  // A request that could not be made, or any other status, says nothing about the file.
+  const response = await fetch(url, { method: 'HEAD' }).catch(() => null);
+  if (!response) return null;
+  if (response.status === 404 || response.status === 410) return `HTTP ${response.status}`;
+  return response.headers.get('content-type')?.startsWith('text/html') ? 'an HTML page' : null;
+}
+
+/**
+ * Makes KTX2 that cannot work fail the model that needed it, and only that model. three r186 lets none of it reach the
+ * app (`docs/three-r186-notes.md`): a transcoder file answered 404 gives a model with its maps missing, one answered
+ * with a page never settles, and a device with no block format gets an RGBA8 fallback that neither backend can
+ * upload. The first KTX2 texture looks into it once: the device's formats, then both transcoder files by HEAD. From
+ * then on every KTX2 texture fails with that error, and so does every model that has KTX2 textures; a model without
+ * them loads as before, and an app that loads no KTX2 never asks and needs no decoders.
+ */
+function failKtx2ThatCannotWork(loader: GLTFLoader, ktx2: KTX2Loader, basis: string): void {
+  let unusable: Error | undefined;
+  let looked: Promise<void> | undefined;
+  const look = async (): Promise<void> => {
+    if (!Object.values(ktx2.workerConfig).some(Boolean)) {
+      unusable = new Error(
+        'createLoader: this device exposes no GPU block format (ASTC, BC, ETC2), and three cannot draw the RGBA8 that ' +
+          'KTX2Loader falls back to. KTX2 textures cannot be shown here: load a PNG, JPEG or WebP variant of the model on such a device.',
+      );
+      return;
+    }
+    const urls = TRANSCODER_FILES.map((file) => `${basis}${file}`);
+    const answers = await Promise.all(urls.map(definitelyMissing));
+    const at = answers.findIndex((answer) => answer !== null);
+    if (at < 0) return;
+    unusable = new Error(
+      `createLoader: no Basis transcoder at ${urls[at]} (${answers[at]}). Copy the decoders next to the app with ` +
+        '`threeforge decoders <dir>` and pass the path they are served at as `decoders`.',
+    );
+  };
+  const load = ktx2.load.bind(ktx2);
+  ktx2.load = (file, onLoad, onProgress, onError) => {
+    looked ??= look();
+    void looked.then(() => (unusable ? onError?.(unusable) : load(file, onLoad, onProgress, onError)));
+  };
+  const parse = loader.parse.bind(loader);
+  loader.parse = (data, path, onLoad, onError) =>
+    parse(
+      data,
+      path,
+      (gltf) => {
+        const textures: Array<{ extensions?: Record<string, unknown> }> = gltf.parser.json.textures ?? [];
+        if (!unusable || !textures.some((texture) => texture.extensions?.KHR_texture_basisu)) onLoad(gltf);
+        // three types this callback's argument as ErrorEvent; what it passes, here and in its own code, is an Error.
+        else if (onError) onError(unusable as unknown as ErrorEvent);
+        else throw unusable;
+      },
+      onError,
+    );
+}
+
 /**
  * A GLTFLoader with Draco, KTX2 (compressed-texture formats detected on the renderer) and meshopt wired in one
  * call. The three addons load lazily, so an app that never loads glTF pays nothing. `threeforge decoders <dir>`
@@ -42,6 +102,7 @@ export async function createLoader(renderer: LoaderRenderer, options: CreateLoad
     if (renderer.isWebGPURenderer && renderer.init) await renderer.init();
     ktx2.detectSupport(renderer);
     loader.setKTX2Loader(ktx2);
+    failKtx2ThatCannotWork(loader, ktx2, paths.basis);
   }
   if (options.meshopt !== false) {
     const { MeshoptDecoder } = await import('meshoptimizer/decoder');
