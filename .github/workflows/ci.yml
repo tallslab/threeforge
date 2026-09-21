@@ -101,7 +101,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # requireKtx: this leg installs KTX-Software below and may not skip the test that encodes KTX2.
           - backend: webgl2
+            requireKtx: '1'
           # A SwiftShader runner that reports no WebGPU adapter makes the fixture skip every webgpu test, and the job
           # goes green having rendered nothing. FORGE_REQUIRE_WEBGPU=1 turns that skip into a failure.
           # The leg is advisory: Dawn's SwiftShader adapter on these runners drops the device between test steps
@@ -122,23 +124,41 @@ jobs:
       # (FORGE_WEBGPU unset ⇒ swiftshader) takes.
       - run: pnpm exec playwright install --with-deps chromium chromium-headless-shell
       - run: pnpm build # cli.spec.ts and mcp.spec.ts drive the built CLI in dist/
-      # COVERAGE, stated so a green run is not read as more than it is. Measured at 0.9.0 with
-      # `pnpm exec playwright test --list
-      # [--grep-invert "@corpus|@bench"]`: the suite is 266 tests in 37 files PER PROJECT (532 across the two); this
-      # selection runs 102 per project (204 across both) in 29 files.
-      # Dropped here and covered only by the weekly full-corpus `assets.yml`: 148 @corpus tests per project and the
-      # 16 @bench ones. Concretely, a green run here does NOT cover
-      #   - 15 of cli.spec.ts's 20 tests and 10 of mcp.spec.ts's 13 (the CLI/MCP agent surface on real models),
+      # `threeforge optimize --textures ktx2` shells out to KTX-Software's `ktx`. The test that encodes a model, loads it
+      # and measures its GPU bytes (test/e2e/ktx2.spec.ts) skips without the encoder, which would let a regression through
+      # unseen, so the gating leg installs one release, checked against its published SHA-256 before it is installed,
+      # and FORGE_REQUIRE_KTX=1 turns a missing encoder into a failure. The webgpu leg skips that test anyway (no pixel
+      # checks on SwiftShader), and encoding on a native WebGPU adapter is proven locally (docs/release.md, step 2).
+      - name: KTX-Software 4.4.2, pinned and checksum-verified
+        if: matrix.requireKtx == '1'
+        run: |
+          set -eu
+          deb="$RUNNER_TEMP/ktx-software.deb"
+          curl -fsSL -o "$deb" "https://github.com/KhronosGroup/KTX-Software/releases/download/v${KTX_VERSION}/KTX-Software-${KTX_VERSION}-Linux-x86_64.deb"
+          echo "${KTX_SHA256}  $deb" | sha256sum --check --strict
+          sudo apt-get install -y "$deb"
+          ktx --version
+        env:
+          KTX_VERSION: 4.4.2
+          KTX_SHA256: ca635ed489d8bf54fac8d7687056c651193de0740830a7738cc034adc63e3027
+      # COVERAGE, stated so a green run is not read as more than it is. Measured with
+      # `pnpm exec playwright test --list --project=webgl2
+      # [--grep-invert "@corpus|@bench|@temporal"]`: the suite is 299 tests in 42 files PER PROJECT (598 across the
+      # two); this selection runs 127 per project (254 across both) in 30 files.
+      # Dropped here: 152 @corpus tests per project, covered only by the weekly full-corpus `assets.yml` (two of them
+      # are temporal and also run in the `temporal` job below), the 16 @bench ones (the `bench` job) and the 4 other
+      # @temporal ones (the `temporal` job). Concretely, a green run here does NOT cover
+      #   - 15 of cli.spec.ts's 22 tests and 10 of mcp.spec.ts's 14 (the CLI/MCP agent surface on real models),
       #   - ParticleBudget at all (particles.spec.ts contributes zero tests here; it opens `bossfight`, which reaches
       #     the Kenney kits through buildArena), and only the naive half of shadow-budget.spec.ts,
       #   - arena, assets, bench, biome, crowd, vat and warmup, which contribute zero tests here,
       #   - ANY WebGPU pixel: on the webgpu leg the adapter is SwiftShader, so test/e2e/fixtures.ts turns pixelChecks
-      #     off; 23 test.skip(!forge.pixelChecks) declarations skip whole tests and the rest skip their screenshots.
+      #     off; 36 test.skip(!forge.pixelChecks) declarations skip whole tests and the rest skip their screenshots.
       #     WebGPU pixel parity is proven only by a local run on a native adapter (docs/release.md, step 2).
       # `--forbid-only` so a stray test.only cannot quietly shrink this selection further.
       - name: e2e without downloaded content
         run: |
-          run() { pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "@corpus|@bench" --forbid-only; }
+          run() { pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "@corpus|@bench|@temporal" --forbid-only; }
           if [ "${{ matrix.advisory }}" = "true" ]; then
             run || echo "::warning::e2e ${{ matrix.backend }} failed on the SwiftShader adapter (advisory, see docs/design.md)"
           else
@@ -146,12 +166,72 @@ jobs:
           fi
         env:
           FORGE_REQUIRE_WEBGPU: ${{ matrix.requireWebgpu }}
+          FORGE_REQUIRE_KTX: ${{ matrix.requireKtx }}
+      # always(), not failure(): the advisory leg turns a failed run into a warning, so its step succeeds and a
+      # failure() upload would never see what it left behind. A green run leaves nothing to upload.
       - uses: actions/upload-artifact@v6
-        if: failure()
+        if: always()
         with:
           name: e2e-${{ matrix.backend }}-artifacts
           path: test-results
           retention-days: 7
+          if-no-files-found: ignore
+
+  # The temporal specs (test/e2e/temporal-*.spec.ts, tagged @temporal) have a job of their own: two of the six are
+  # also @corpus (the animation twin is a Kenney mini character) and the `e2e` job downloads nothing.
+  # webgl2 gates. The webgpu leg runs on these runners' SwiftShader adapter, where a screenshot drops the device, so
+  # every temporal test skips there and the report below says so in words: that leg checks NO WebGPU pixel. Native
+  # WebGPU is proven only by a local run (docs/release.md, step 2).
+  # A failing sequence writes its first and its worst failing frame, their neighbours and sequence.json (every step
+  # in order, camera, buffer sizes, adapter, the command to run it again) under FORGE_TEMPORAL_OUT. That directory and
+  # the ran/skipped/excluded report are uploaded whatever the outcome. `runner.temp` exists only at step level.
+  temporal:
+    name: temporal ${{ matrix.backend }}
+    runs-on: ubuntu-latest
+    needs: unit
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [webgl2, webgpu]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium chromium-headless-shell
+      - uses: actions/cache@v5
+        with:
+          path: test/assets/files
+          key: kits-${{ hashFiles('scripts/fetch-kits.mjs', 'scripts/fetch-safe.mjs') }}
+      - run: pnpm assets:kits
+        env:
+          FORGE_KITS_ONLY: '1'
+          FORGE_FETCH_STRICT: '1'
+      - name: temporal specs
+        run: |
+          mkdir -p "$FORGE_TEMPORAL_OUT"
+          pnpm exec playwright test --project=${{ matrix.backend }} --grep "@temporal" --forbid-only --reporter=list,json
+        env:
+          FORGE_TEMPORAL_OUT: ${{ runner.temp }}/threeforge-temporal
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/threeforge-temporal/run.json
+      - name: which temporal tests ran, skipped or were excluded
+        if: always()
+        run: |
+          pnpm exec playwright test --list --reporter=json --project=${{ matrix.backend }} test/e2e/temporal- > "$OUT/list.json"
+          node scripts/temporal-report.mjs "$OUT/list.json" "$OUT/run.json" "$OUT/report.md"
+        env:
+          OUT: ${{ runner.temp }}/threeforge-temporal
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: temporal-${{ matrix.backend }}
+          path: ${{ runner.temp }}/threeforge-temporal
+          retention-days: 14
+          if-no-files-found: ignore
 
   # The benchmark gate (CONTRIBUTING.md rule 8). Separate from `e2e` because it is the only PR job that downloads
   # anything: the bench scenes reach the Kenney kits through bossfight/crowd and the water map through lake.
@@ -207,7 +287,7 @@ jobs:
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    needs: [unit, e2e, bench]
+    needs: [unit, e2e, temporal, bench]
     timeout-minutes: 20
     permissions:
       contents: read

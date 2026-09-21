@@ -68,8 +68,29 @@ jobs:
       # as it does in a local non-strict run — `corpusPlan` (test/e2e/assets-report.ts, unit-tested) still generates its test,
       # which fails naming the fetch error, and keeps it in the Markdown gate's `expected`. Soft assertions by
       # themselves covered only the first case: an errored entry used to produce no test at all.
+      # The temporal specs run here too (this is the only place the webgpu leg must have an adapter), so their failure
+      # frames get the same home as in ci.yml's `temporal` job. `runner.temp` exists only at step level.
       - name: Full corpus on ${{ matrix.backend }}
-        run: pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "@bench" --forbid-only
+        run: |
+          mkdir -p "$FORGE_TEMPORAL_OUT"
+          pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "@bench" --forbid-only --reporter=list,json
+        env:
+          FORGE_TEMPORAL_OUT: ${{ runner.temp }}/threeforge-temporal
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/threeforge-temporal/run.json
+      - name: which temporal tests ran, skipped or were excluded
+        if: always()
+        run: |
+          pnpm exec playwright test --list --reporter=json --project=${{ matrix.backend }} test/e2e/temporal- > "$OUT/list.json"
+          node scripts/temporal-report.mjs "$OUT/list.json" "$OUT/run.json" "$OUT/report.md"
+        env:
+          OUT: ${{ runner.temp }}/threeforge-temporal
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: temporal-${{ matrix.backend }}
+          path: ${{ runner.temp }}/threeforge-temporal
+          retention-days: 14
+          if-no-files-found: ignore
       # always(): the report is most useful precisely when the run went red.
       - name: What the run did to the tracked report (never committed)
         if: always()

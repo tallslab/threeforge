@@ -1183,8 +1183,9 @@ procedure, what CI covers and does not, and the device-page settings are in [doc
 against a fake renderer that mirrors the backends' draw counting; anything touching the renderer also has a
 Playwright spec on both backends. The `webgpu` e2e leg in CI runs on SwiftShader and checks no pixels
 (`test/e2e/fixtures.ts` turns `pixelChecks` off), so WebGPU pixel parity is proven only by a local run on a native
-adapter. The four workflows are `ci.yml` (commit rules, unit, e2e per backend, bench per backend, publish on `v*`
-tags), `assets.yml` (weekly corpus run), `pages.yml` (the device bench page) and `bench-results.yml`.
+adapter. The four workflows are `ci.yml` (commit rules, unit, e2e per backend, the temporal sequences per backend
+with their failure frames uploaded, bench per backend, publish on `v*` tags), `assets.yml` (weekly corpus run),
+`pages.yml` (the device bench page) and `bench-results.yml`.
 
 ### Corpus report
 

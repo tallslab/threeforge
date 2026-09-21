@@ -15,7 +15,9 @@ the pull request or push adds; merge commits are not checked. Run it locally the
    with `pnpm build:lib && node scripts/agents-md.mjs`, update `CHANGELOG.md`.
 2. `pnpm typecheck && pnpm test && pnpm build && pnpm e2e --grep-invert "assets\.spec\.ts" && pnpm bench` on a
    machine with a GPU (a native WebGPU adapter: this is the only run that checks WebGPU pixels in the e2e specs),
-   with the kits and the corpus downloaded. `assets.spec.ts` is left out on purpose: it rewrites the tracked
+   with the kits and the corpus downloaded, and with KTX-Software installed and `FORGE_REQUIRE_KTX=1` set: CI encodes
+   KTX2 on its `webgl2` leg only, so this is the run that proves encoding and the measured GPU saving on a native
+   WebGPU adapter. `assets.spec.ts` is left out on purpose: it rewrites the tracked
    `docs/assets-report*` files, and run here, with step 1's edits uncommitted, it would stamp every row with the
    previous commit and `-dirty`.
 3. If `pnpm bench` fails its gate and the movement is intended, promote the new numbers with `pnpm bench:baseline`
@@ -44,7 +46,19 @@ the pull request or push adds; merge commits are not checked. Run it locally the
 - `commit-rules`: the `Budget:` line check above.
 - `unit`: `pnpm typecheck`, `pnpm test`, `pnpm build`, plus an informational ledger-overhead figure in the run
   summary (not a gate, compared to nothing).
-- `e2e`: both backends, `--grep-invert "@corpus|@bench"`, and no downloaded content at all.
+- `e2e`: both backends, `--grep-invert "@corpus|@bench|@temporal"`, and no downloaded content at all. Its
+  `test-results` are uploaded whenever the run left any, the advisory `webgpu` leg included. The `webgl2` leg installs
+  KTX-Software 4.4.2 (one pinned release, its package checked against the published SHA-256 before installation) and
+  sets `FORGE_REQUIRE_KTX=1`, so the test that runs `optimize --textures ktx2`, loads the result and measures its GPU
+  bytes cannot skip there; without the variable, and locally without the encoder, it skips.
+- `temporal`: the six stepped-sequence tests (`test/e2e/temporal-*.spec.ts`), with the Kenney kits, because the two
+  animation ones are also `@corpus`. `webgl2` gates. On `webgpu` every one of them skips (SwiftShader, no pixel
+  checks), and the job's summary says so: that leg validates no WebGPU pixel. A failing sequence writes its first and
+  its worst failing frame, each with reference, diff and neighbours, plus `sequence.json` (every step in order with
+  its inputs, camera, buffer sizes and adapter, the pages opened, and the command to run it again) into a directory
+  of its own under `FORGE_TEMPORAL_OUT`. The job uploads that directory and a ran/skipped/excluded report
+  (`scripts/temporal-report.mjs`, also in the run summary) whatever the outcome. Locally the directory defaults to the
+  system temp directory and the failing test's error names it.
 - `bench`: both backends, the gate in `scripts/bench-run.mjs`. The only pull-request job that downloads
   anything (the Kenney kits and the water map, with `FORGE_FETCH_STRICT=1` so a failed download fails by name).
   Deterministic cost metrics are gated; timing is recorded only, since the runner is SwiftShader, not a GPU.
@@ -58,7 +72,8 @@ is proven only by a local run on a native adapter (steps 2 and 4 above).
 
 `.github/workflows/assets.yml` runs the full corpus on both backends weekly (Mondays 04:17 UTC) and on manual
 dispatch. It fails when any asset misbehaves or failed to download, uploads `docs/assets-report*` as a build
-artifact and never commits: the tracked report files are updated by hand, from that artifact or by step 4.
+artifact and never commits: the tracked report files are updated by hand, from that artifact or by step 4. It runs
+the temporal tests as well and uploads their failure frames and report the same way as the `temporal` job.
 
 `FORGE_FETCH_STRICT=1` makes `pnpm assets` and `pnpm assets:kits` exit 1 after listing every failed download; unset
 (the local default) the failure is recorded in the index and the script exits 0. `FORGE_BENCH_APP_OPTIONAL=1` lets
