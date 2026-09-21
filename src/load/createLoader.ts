@@ -1,3 +1,5 @@
+import type { BufferGeometry } from 'three';
+import type { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import type { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 
@@ -33,6 +35,18 @@ async function definitelyMissing(url: string): Promise<string | null> {
   return response.headers.get('content-type')?.startsWith('text/html') ? 'an HTML page' : null;
 }
 
+/** The error for the first of `files` under `base` that is definitely not served, or nothing. `what` names them. */
+async function missingDecoder(what: string, base: string, files: string[]): Promise<Error | undefined> {
+  const urls = files.map((file) => `${base}${file}`);
+  const answers = await Promise.all(urls.map(definitelyMissing));
+  const at = answers.findIndex((answer) => answer !== null);
+  if (at < 0) return undefined;
+  return new Error(
+    `createLoader: no ${what} at ${urls[at]} (${answers[at]}). Copy the decoders next to the app with ` +
+      '`threeforge decoders <dir>` and pass the path they are served at as `decoders`.',
+  );
+}
+
 /**
  * Makes KTX2 that cannot work fail the model that needed it, and only that model. three r186 lets none of it reach the
  * app (`docs/three-r186-notes.md`): a transcoder file answered 404 gives a model with its maps missing, one answered
@@ -52,14 +66,7 @@ function failKtx2ThatCannotWork(loader: GLTFLoader, ktx2: KTX2Loader, basis: str
       );
       return;
     }
-    const urls = TRANSCODER_FILES.map((file) => `${basis}${file}`);
-    const answers = await Promise.all(urls.map(definitelyMissing));
-    const at = answers.findIndex((answer) => answer !== null);
-    if (at < 0) return;
-    unusable = new Error(
-      `createLoader: no Basis transcoder at ${urls[at]} (${answers[at]}). Copy the decoders next to the app with ` +
-        '`threeforge decoders <dir>` and pass the path they are served at as `decoders`.',
-    );
+    unusable = await missingDecoder('Basis transcoder', basis, TRANSCODER_FILES);
   };
   const load = ktx2.load.bind(ktx2);
   ktx2.load = (file, onLoad, onProgress, onError) => {
@@ -82,6 +89,38 @@ function failKtx2ThatCannotWork(loader: GLTFLoader, ktx2: KTX2Loader, basis: str
     );
 }
 
+/** DRACOLoader with the method GLTFLoader decodes through, which three's typings leave out. */
+export type DracoDecoder = DRACOLoader & {
+  decodeDracoFile(
+    buffer: ArrayBuffer,
+    onLoad: (geometry: BufferGeometry) => void,
+    attributeIDs?: Record<string, unknown>,
+    attributeTypes?: Record<string, unknown>,
+    vertexColorSpace?: string,
+    onError?: (error: unknown) => void,
+  ): Promise<void>;
+};
+
+/**
+ * Makes a Draco decoder that is not served fail the model that needed it. three r186 rejects a 404 with the URL and
+ * no way out, and never settles when the file is answered with a page (a dev server's fallback): its worker has no
+ * error listener. The first Draco data to decode asks for the files by HEAD, once; a model without
+ * Draco never asks, and its load is its own, so no other model is touched.
+ */
+function failDracoThatIsMissing(draco: DracoDecoder, path: string): void {
+  // What DRACOLoader fetches: the WebAssembly pair, or the JavaScript decoder where there is no WebAssembly.
+  const files =
+    typeof WebAssembly === 'object' ? ['draco_wasm_wrapper.js', 'draco_decoder.wasm'] : ['draco_decoder.js'];
+  let looked: Promise<Error | undefined> | undefined;
+  const decode = draco.decodeDracoFile.bind(draco);
+  draco.decodeDracoFile = (buffer, onLoad, ids, types, colorSpace, onError) => {
+    looked ??= missingDecoder('Draco decoder', path, files);
+    return looked.then((missing) =>
+      missing ? onError?.(missing) : decode(buffer, onLoad, ids, types, colorSpace, onError),
+    );
+  };
+}
+
 /**
  * A GLTFLoader with Draco, KTX2 (compressed-texture formats detected on the renderer) and meshopt wired in one
  * call. The three addons load lazily, so an app that never loads glTF pays nothing. `threeforge decoders <dir>`
@@ -93,7 +132,9 @@ export async function createLoader(renderer: LoaderRenderer, options: CreateLoad
   const loader = new GLTFLoader();
   if (options.draco !== false) {
     const { DRACOLoader } = await import('three/addons/loaders/DRACOLoader.js');
-    loader.setDRACOLoader(new DRACOLoader().setDecoderPath(paths.draco));
+    const draco = new DRACOLoader().setDecoderPath(paths.draco) as DracoDecoder;
+    failDracoThatIsMissing(draco, paths.draco);
+    loader.setDRACOLoader(draco);
   }
   if (options.ktx2 !== false) {
     const { KTX2Loader } = await import('three/addons/loaders/KTX2Loader.js');

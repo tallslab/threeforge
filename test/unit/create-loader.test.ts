@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createLoader, decoderPaths, disposeLoader } from '../../src/load/createLoader.js';
+import { createLoader, type DracoDecoder, decoderPaths, disposeLoader } from '../../src/load/createLoader.js';
 
 const renderer = { isWebGPURenderer: true, init: async () => undefined, hasFeature: () => false } as never;
+
+/** Answers HEAD by file name: `[status, content type]`, a decoder file's own types by default. */
+const host = (answers: Record<string, [number, string]>) =>
+  vi.fn(async (url: string) => {
+    const file = url.split('/').pop()!;
+    const [status, type] = answers[file] ?? [200, file.endsWith('.js') ? 'text/javascript' : 'application/wasm'];
+    return { status, headers: new Headers({ 'content-type': type }) } as Response;
+  });
 
 describe('createLoader', () => {
   it('resolves decoder paths from a base or explicit paths', () => {
@@ -37,13 +45,6 @@ describe('createLoader', () => {
       init: async () => undefined,
       hasFeature: (name: string) => name === 'texture-compression-bc',
     } as never;
-    /** Answers HEAD by file name: `[status, content type]`, the transcoder's own types by default. */
-    const host = (answers: Record<string, [number, string]>) =>
-      vi.fn(async (url: string) => {
-        const file = url.split('/').pop()!;
-        const [status, type] = answers[file] ?? [200, file.endsWith('.js') ? 'text/javascript' : 'application/wasm'];
-        return { status, headers: new Headers({ 'content-type': type }) } as Response;
-      });
     /** Loads a KTX2 file through the wired loader and resolves with the error it was given. */
     const loadKtx2 = async (device = withBc): Promise<Error> => {
       const loader = await createLoader(device, { decoders: '/dec/' });
@@ -99,6 +100,58 @@ describe('createLoader', () => {
       const error = await loadKtx2(renderer);
       expect(error.message).toMatch(/no GPU block format.*RGBA8/s);
       expect(fetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a Draco decoder that is not there', () => {
+    afterEach(() => vi.unstubAllGlobals());
+    /** Decodes Draco data through the wired loader and resolves with the error it was given. */
+    const decode = async (): Promise<Error> => {
+      const loader = await createLoader(renderer, { decoders: '/dec/' });
+      return new Promise((resolve) => {
+        void (loader.dracoLoader as DracoDecoder).decodeDracoFile(
+          new ArrayBuffer(8),
+          () => {},
+          undefined,
+          undefined,
+          undefined,
+          resolve as never,
+        );
+      });
+    };
+
+    it('is not looked for until a model has Draco data to decode', async () => {
+      const fetch = host({ 'draco_decoder.wasm': [404, 'text/plain'] });
+      vi.stubGlobal('fetch', fetch);
+      disposeLoader(await createLoader(renderer, { decoders: '/dec/' }));
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['the wrapper answers 404', 'draco_wasm_wrapper.js', 404, 'text/plain'],
+      ['the wrapper is the dev server page', 'draco_wasm_wrapper.js', 200, 'text/html; charset=utf-8'],
+      ['the binary answers 410', 'draco_decoder.wasm', 410, 'text/plain'],
+      ['the binary is the dev server page', 'draco_decoder.wasm', 200, 'text/html'],
+    ])('fails the decode when %s, naming that file and the decoders command', async (_, file, status, type) => {
+      const fetch = host({ [file]: [status, type] });
+      vi.stubGlobal('fetch', fetch);
+      const error = await decode();
+      expect(error.message).toContain(`/dec/draco/${file}`);
+      expect(error.message).toContain('threeforge decoders');
+      // Both files asked for by HEAD, and three's own decoder never started.
+      expect(fetch.mock.calls).toEqual([
+        ['/dec/draco/draco_wasm_wrapper.js', { method: 'HEAD' }],
+        ['/dec/draco/draco_decoder.wasm', { method: 'HEAD' }],
+      ]);
+    });
+
+    it('leaves the decode to three when both files are there', async () => {
+      const fetch = host({});
+      vi.stubGlobal('fetch', fetch);
+      const error = await decode();
+      // three's own decoder cannot start in node, so it fails: the point is that it was handed the data.
+      expect(error.message).not.toContain('threeforge decoders');
+      expect(fetch).toHaveBeenCalledTimes(2);
     });
   });
 });

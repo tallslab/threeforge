@@ -36,8 +36,13 @@ of that file until 0.9.0 and is kept here unchanged so that a three upgrade can 
   `basis_transcoder.wasm` it is: on a 404 `GLTFLoader.loadTextureImage` catches and returns null, so `loadAsync`
   resolves with the maps missing, and where unknown paths get an HTML page (Vite's default) the transcoder worker never
   starts and the load never settles (`WorkerPool` has no error listener). `createLoader` asks for both files by HEAD
-  at the first KTX2 texture and fails the models that have KTX2 textures, and only those. `DRACOLoader` is open to the
-  same and is not covered.
+  at the first KTX2 texture and fails the models that have KTX2 textures, and only those.
+- A missing Draco decoder file (`draco_wasm_wrapper.js` or `draco_decoder.wasm`) rejects the model on a 404, with
+  the URL and nothing about what to do, and never settles where the answer is an HTML page: `DRACOLoader`'s
+  worker has an `onmessage` and no `onerror`, so a script or a binary that is really a page fails in it unheard.
+  `createLoader` asks for both files by HEAD at the first Draco
+  data to decode and fails that model with the file and the `threeforge decoders` command. meshopt has no such file:
+  its decoder is a module with the WebAssembly inside, bundled with the app.
 - Half-float render targets read back as raw 16-bit halves on both backends, and WebGPU returns rows padded to 256
   bytes: the overdraw target uses 32-texel row multiples and decodes halves.
 - three's experimental `SceneOptimizer` batches everything including skinned meshes and disposes shared geometry; it

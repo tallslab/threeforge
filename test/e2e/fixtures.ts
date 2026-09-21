@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { test as base, expect, type Page } from '@playwright/test';
 
 export type BackendName = 'webgl2' | 'webgpu';
@@ -108,6 +109,17 @@ export function deviceLostOrder(timing: {
   const ms = Math.round(lostAt - compileStartedAt);
   if (ms < 0) return `${-ms} ms before threeforge's first compile() started: an environment limit${noticed}`;
   return `${ms} ms after threeforge's first compile() started: check whether threeforge caused it${noticed}`;
+}
+
+/**
+ * Skips the calling test where KTX-Software's `ktx` (`FORGE_KTX` or PATH) does not run. `FORGE_REQUIRE_KTX=1` turns
+ * that skip into a failure: a leg that exists to cover encoding must not pass by skipping it.
+ */
+export function skipWithoutKtx(): void {
+  const encoder = spawnSync(process.env.FORGE_KTX ?? 'ktx', ['--version'], { encoding: 'utf8' });
+  if (encoder.status !== 0 && process.env.FORGE_REQUIRE_KTX === '1')
+    throw new Error('FORGE_REQUIRE_KTX=1, and ktx does not run');
+  test.skip(encoder.status !== 0, 'KTX-Software (ktx) is not installed');
 }
 
 /** Records a measurement on the test (visible in the JSON and HTML reports) instead of printing it. */

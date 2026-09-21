@@ -5,36 +5,26 @@
  * `.ktx2` is a container: what a texture costs on the GPU is decided by the format the device transcodes it to, which
  * the tests read off the loaded texture and never take from the file name.
  */
-import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { drawImages, planesGlb } from '../../scripts/ktx2-fixtures.mjs';
-import { expect, type ForgePage, note, test } from './fixtures.js';
+import { expect, type ForgePage, note, skipWithoutKtx, test } from './fixtures.js';
 import { differingPixels } from './pixels.js';
+import { loadThrough, packagedDecoders, serveModels, servePackaged, serveWithout } from './served-decoders.js';
 
 const FIXTURES = 'test/fixtures/ktx2';
 type Codec = 'etc1s' | 'uastc';
 type Variant = 'png' | Codec;
 
-let decoders: string;
-test.beforeAll(() => {
-  if (!existsSync('dist/cli/index.js')) execFileSync('pnpm', ['build'], { stdio: 'inherit' });
-  decoders = mkdtempSync(join(tmpdir(), 'forge-ktx2-decoders-'));
-  execFileSync('node', ['dist/cli/index.js', 'decoders', decoders]);
-});
-test.afterAll(() => rmSync(decoders, { recursive: true, force: true }));
+const decoders = packagedDecoders();
 
 /** Serves `models` (the fixtures by default) under `/_ktx2/` and the packaged decoders under `/_packaged/`. */
 async function serve(page: Page, models = FIXTURES): Promise<void> {
-  await page.route('**/_ktx2/*', (route) =>
-    route.fulfill({ path: join(models, basename(new URL(route.request().url()).pathname)) }),
-  );
-  await page.route('**/_packaged/**', (route) => {
-    const file = join(decoders, new URL(route.request().url()).pathname.split('/_packaged/')[1]!);
-    return existsSync(file) ? route.fulfill({ path: file }) : route.fulfill({ status: 404, body: 'not found' });
-  });
+  await serveModels(page, '_ktx2', models);
+  await servePackaged(page, decoders());
 }
 
 /** Loads one variant, or a named model, into the empty scene, frames the planes and renders. */
@@ -272,56 +262,13 @@ test('ktx2: a device with no block format is refused KTX2 and still loads PNG', 
   expect(outcomes[1]).toBe('loaded');
 });
 
-/**
- * Serves the packaged decoders under `/_partial/` with one file of the Basis transcoder taken away: answered 404, as a
- * static host does, or 200 with a page, as a dev server with an SPA fallback does (Vite's default).
- */
-async function serveWithout(page: Page, file: string, how: '404' | 'html'): Promise<void> {
-  await page.route('**/_partial/**', (route) => {
-    const path = new URL(route.request().url()).pathname.split('/_partial/')[1]!;
-    if (!path.endsWith(file)) return route.fulfill({ path: join(decoders, path) });
-    return how === '404'
-      ? route.fulfill({ status: 404, body: 'not found' })
-      : route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>app</title>' });
-  });
-}
-
-/** Loads the named models through ONE loader with its decoders under `decoders`, all at once or one by one. */
-function loadThrough(page: Page, models: string[], together: boolean, decoders = '/_partial/'): Promise<string[]> {
-  return page.evaluate(
-    async ({ models, together, decoders }) => {
-      const f = window.__forge;
-      const loader = await f.createLoader(f.renderer, { decoders });
-      const outcome = (model: string): Promise<string> => {
-        const settled = loader.loadAsync(`/_ktx2/${model}`).then(
-          (gltf) => {
-            let maps = 0;
-            gltf.scene.traverse((o) => {
-              if (((o as InstanceType<typeof f.three.Mesh>).material as { map?: unknown } | undefined)?.map) maps++;
-            });
-            return `loaded with ${maps} colour maps`;
-          },
-          (error: Error) => `rejected: ${error.message}`,
-        );
-        const hung = new Promise<string>((resolve) => setTimeout(() => resolve('never settled'), 15_000));
-        return Promise.race([settled, hung]);
-      };
-      if (together) return Promise.all(models.map(outcome));
-      const outcomes: string[] = [];
-      for (const model of models) outcomes.push(await outcome(model));
-      return outcomes;
-    },
-    { models, together, decoders },
-  );
-}
-
 for (const file of ['basis_transcoder.js', 'basis_transcoder.wasm']) {
   for (const how of ['404', 'html'] as const) {
     test(`ktx2: a missing ${file} (${how}) rejects the load and names the file`, async ({ forge }) => {
       await forge.open('empty');
       await serve(forge.page);
-      await serveWithout(forge.page, file, how);
-      const [outcome] = await loadThrough(forge.page, ['planes-uastc.glb'], false);
+      await serveWithout(forge.page, decoders(), file, how);
+      const [outcome] = await loadThrough(forge.page, ['/_ktx2/planes-uastc.glb'], false);
       expect(outcome).toMatch(/^rejected: /);
       expect(outcome).toContain(`/_partial/basis/${file}`);
       expect(outcome).toContain('threeforge decoders');
@@ -335,11 +282,11 @@ for (const together of [false, true]) {
   }) => {
     await forge.open('empty');
     await serve(forge.page);
-    await serveWithout(forge.page, 'basis_transcoder.wasm', '404');
+    await serveWithout(forge.page, decoders(), 'basis_transcoder.wasm', '404');
     // One loader for both: the transcoder is what the KTX2 model lacks, and the PNG model never needed it.
-    const [ktx2, png] = await loadThrough(forge.page, ['planes-uastc.glb', 'planes-png.glb'], together);
+    const [ktx2, png] = await loadThrough(forge.page, ['/_ktx2/planes-uastc.glb', '/_ktx2/planes-png.glb'], together);
     expect(ktx2).toMatch(/^rejected: /);
-    expect(png).toBe('loaded with 2 colour maps');
+    expect(png).toBe('loaded with 2 colour maps and 4 triangles');
   });
 }
 
@@ -351,7 +298,9 @@ test('ktx2: a model without KTX2 loads where no decoders were deployed at all', 
     asked.push(route.request().url());
     return route.fulfill({ status: 404, body: 'not found' });
   });
-  expect(await loadThrough(forge.page, ['planes-png.glb'], false, '/_absent/')).toEqual(['loaded with 2 colour maps']);
+  expect(await loadThrough(forge.page, ['/_ktx2/planes-png.glb'], false, '/_absent/')).toEqual([
+    'loaded with 2 colour maps and 4 triangles',
+  ]);
   // Decoders are looked for when something needs them, and a PNG model needs none.
   expect(asked).toEqual([]);
 });
@@ -365,10 +314,7 @@ test('ktx2: a model without KTX2 loads where no decoders were deployed at all', 
 test('ktx2: optimize --textures ktx2 lowers the resident bytes of a 1024 px model', async ({ forge }) => {
   test.setTimeout(300_000);
   test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
-  const encoder = spawnSync(process.env.FORGE_KTX ?? 'ktx', ['--version'], { encoding: 'utf8' });
-  if (encoder.status !== 0 && process.env.FORGE_REQUIRE_KTX === '1')
-    throw new Error('FORGE_REQUIRE_KTX=1, and ktx does not run');
-  test.skip(encoder.status !== 0, 'KTX-Software (ktx) is not installed');
+  skipWithoutKtx();
 
   const dir = mkdtempSync(join(tmpdir(), 'forge-ktx2-optimize-'));
   try {

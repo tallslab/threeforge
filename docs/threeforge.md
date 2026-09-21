@@ -860,7 +860,10 @@ texture the loader checks that the device has a GPU block format and asks for `b
 missing file (a 404, a 410, or an HTML page in its place) or the reason. Without this three r186 delivers the model
 with its maps missing, never settles, or, on a device with no block format, falls back to an RGBA8 it can upload on
 neither backend (`docs/three-r186-notes.md`): such a device is unsupported for KTX2, so keep another variant for it.
-A model without KTX2 textures never triggers the check and loads through the same loader whatever it found.
+A model without KTX2 textures never triggers the check and loads through the same loader whatever it found. Draco
+is held to the same: the first Draco data to decode asks for `draco_wasm_wrapper.js` and `draco_decoder.wasm` by HEAD,
+and a model that needs a file that is not served is rejected with the file and the command, where three r186 names
+only a URL on a 404 and never settles on an HTML page. meshopt needs no served file.
 
 `ResourceTracker` (`src/memory/ResourceTracker.ts`): `track(root | geometry | texture | material, owner?)`,
 `release(owner)` disposes what no other owner holds (never a material the registry knows) and detaches an Object3D
