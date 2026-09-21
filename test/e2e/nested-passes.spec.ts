@@ -22,8 +22,8 @@ const nestedQuery = (nested: Nested): Record<string, string> => (nested === 'aut
 /**
  * Without pixel checks the adapter is SwiftShader, which drops the WebGPU device between test steps (docs/design.md,
  * "WebGPU in the test harness"): every frame after that is empty, so the assertions would fail on the environment.
- * Skips with the loss message instead, saying whether the loss came before threeforge's first `compile()` (the
- * environment's) or after (needs a look); with pixel checks (native) it does nothing.
+ * Skips with the loss message instead, saying whether the loss came before or after threeforge's first `compile()`;
+ * with pixel checks (native) it does nothing.
  */
 async function skipIfDeviceLost(forge: ForgePage): Promise<void> {
   if (forge.pixelChecks) return;

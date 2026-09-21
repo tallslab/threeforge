@@ -95,7 +95,10 @@ export const test = base.extend<ForgeOptions & { forge: ForgePage; rejectedDraws
 
 export { expect };
 
-/** When a device loss was recorded against threeforge's first compile, in words. */
+/**
+ * When a device loss was recorded against threeforge's first compile, in words. The order is a fact and not a verdict:
+ * on the software adapter a bare canvas loses its device too (adapter-control.spec.ts), before or after any compile.
+ */
 export function deviceLostOrder(timing: {
   lostAt: number | null;
   lostAtIsUpperBound: boolean;
@@ -104,11 +107,10 @@ export function deviceLostOrder(timing: {
   const { lostAt, lostAtIsUpperBound, compileStartedAt } = timing;
   const noticed = lostAtIsUpperBound ? ' (noticed then; it may have happened earlier)' : '';
   if (lostAt === null) return 'at an unrecorded time';
-  if (compileStartedAt === null)
-    return `before threeforge compiled anything (no compile() yet): an environment limit${noticed}`;
+  if (compileStartedAt === null) return `before threeforge compiled anything (no compile() yet)${noticed}`;
   const ms = Math.round(lostAt - compileStartedAt);
-  if (ms < 0) return `${-ms} ms before threeforge's first compile() started: an environment limit${noticed}`;
-  return `${ms} ms after threeforge's first compile() started: check whether threeforge caused it${noticed}`;
+  if (ms < 0) return `${-ms} ms before threeforge's first compile() started${noticed}`;
+  return `${ms} ms after threeforge's first compile() started${noticed}`;
 }
 
 /**

@@ -94,14 +94,14 @@ failed tests become a warning with the real counts, the run summary lists each o
 (`scripts/advisory-report.mjs`), and `test-results` is uploaded either way. On the first run of this workflow that leg
 failed 43 tests: 32 with the adapter's lost-device errors (`mapAsync` on a vanished instance, `createBuffer` refused),
 one because `arena.spec.ts` captured the canvas where captures are off (since guarded), and 10 assertions nobody has
-traced to the adapter. All 10 pass on a native adapter (Apple Metal-3) and all 10 fail on macOS's software adapter with
-the device lost, where `adapter-control.spec.ts`, a bare canvas with no three.js and no threeforge on the page, loses
-its device within three frames; whether the Linux runner's adapter does the same has not been measured, and the control
-would not by itself establish the cause of any one failure there. Two things now measure it on every advisory run: the
-fixture records on each test whether its page still had its device and whether it went before threeforge compiled
-anything, and the control records what a bare canvas does on that adapter. The report prints both beside each failed
-test, so a failure with its device intact stands out as ours to explain. Advisory is a statement about the runner, never
-an explanation of a failure. The guarded specs skip their captures on this adapter, while `biome.spec.ts`,
+traced to the adapter. All 10 pass on a native adapter (Apple Metal-3). On the Linux runner, measured on the first run
+of the hardened workflow: the bare canvas of `adapter-control.spec.ts`, with no three.js and no threeforge on the page,
+lost its device within two frames; three of the 10 showed the lost-device error once their tests printed it
+(`bench-app`, two `cli` tests); the other seven recorded a lost device. So did 122 of the 165 passing tests with a
+record in that leg, which presumably assert counts the ledger keeps on the CPU: the state recorded when a test ends
+cannot say why that test failed, and those seven have no established cause. The fixture records the state and the
+control its measurement on every advisory run, and the report prints both. Advisory is a statement about the runner,
+never an explanation of a failure. The guarded specs skip their captures on this adapter, while `biome.spec.ts`,
 `assets.spec.ts` and the CLI's own comparisons still capture there; a pass on this runner does not establish native
 WebGPU pixel correctness. That stays the native run of steps 2 and 4, required before every release.
 

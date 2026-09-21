@@ -275,18 +275,18 @@ fighters still animating afterwards.
 
 ## WebGPU in the test harness
 
-WebGPU only exists in secure contexts, so adapter checks must run on the served page, not `about:blank`. The
-`webgpu` Playwright project uses the native adapter through the full Chromium build by default on macOS/Windows
-(`--enable-unsafe-webgpu`), where the entire suite passes including pixel parity against
-`naive-webgpu.png`. On Linux it falls back to Dawn's SwiftShader adapter in the headless shell
-(`--use-webgpu-adapter=swiftshader --enable-unsafe-swiftshader`); that adapter renders correctly but drops the
-WebGPU instance when a page idles between test steps ("Device Lost", after which `render()` draws nothing) and
-during screenshots, so multi-step specs and pixel checks are skipped there. Idling is not the whole story: on macOS
-the same adapter keeps a device through seconds of idling and buffer readbacks as long as no canvas presents, and
-loses it within three frames once one does, with no three.js on the page (`test/e2e/adapter-control.spec.ts`, which
-records the same measurement on every run; the Linux runner's has not been read yet). Measured on the real WebGPU backend:
-the naive scene compiles to 28 submissions with 504 GPU draws (one per batched instance) and 0 unattributed,
-confirming the backend cost model the ledger uses.
+WebGPU only exists in secure contexts, so adapter checks must run on the served page, not `about:blank`. The `webgpu`
+Playwright project uses the native adapter through the full Chromium build by default on macOS/Windows
+(`--enable-unsafe-webgpu`), where the entire suite passes including pixel parity against `naive-webgpu.png`. On Linux it
+falls back to Dawn's SwiftShader adapter in the headless shell (`--use-webgpu-adapter=swiftshader
+--enable-unsafe-swiftshader`); that adapter renders correctly but drops the WebGPU instance when a page idles between
+test steps ("Device Lost", after which `render()` draws nothing) and during screenshots, so multi-step specs and pixel
+checks are skipped there. Idling is not the whole story: on macOS the same adapter keeps a device through seconds of
+idling and buffer readbacks as long as no canvas presents, and loses it within three frames once one does, with no
+three.js on the page (`test/e2e/adapter-control.spec.ts`, which records the same measurement on every run; the Linux
+runners lose theirs within two frames as well). Measured on the real WebGPU backend: the naive scene compiles to 28
+submissions with 504 GPU draws (one per batched instance) and 0 unattributed, confirming the backend cost model the
+ledger uses.
 
 ## Known limits (Phase 1)
 

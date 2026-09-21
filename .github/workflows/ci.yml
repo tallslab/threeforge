@@ -143,12 +143,12 @@ jobs:
           KTX_SHA256: ca635ed489d8bf54fac8d7687056c651193de0740830a7738cc034adc63e3027
       # COVERAGE, stated so a green run is not read as more than it is. Measured with
       # `pnpm exec playwright test --list --project=webgl2
-      # [--grep-invert "@corpus|@bench|@temporal"]`: the suite is 300 tests in 43 files PER PROJECT (600 across the
-      # two); this selection runs 128 per project (256 across both) in 31 files.
+      # [--grep-invert "@corpus|@bench|@temporal"]`: the suite is 310 tests in 44 files PER PROJECT (620 across the
+      # two); this selection runs 138 per project (276 across both) in 32 files.
       # Dropped here: 152 @corpus tests per project, covered only by the weekly full-corpus `assets.yml` (two of them
       # are temporal and also run in the `temporal` job below), the 16 @bench ones (the `bench` job) and the 4 other
       # @temporal ones (the `temporal` job). Concretely, a green run here does NOT cover
-      #   - 15 of cli.spec.ts's 22 tests and 10 of mcp.spec.ts's 14 (the CLI/MCP agent surface on real models),
+      #   - 15 of cli.spec.ts's 22 tests and 10 of mcp.spec.ts's 17 (the CLI/MCP agent surface on real models),
       #   - ParticleBudget at all (particles.spec.ts contributes zero tests here; it opens `bossfight`, which reaches
       #     the Kenney kits through buildArena), and only the naive half of shadow-budget.spec.ts,
       #   - arena, assets, bench, biome, crowd, vat and warmup, which contribute zero tests here,
