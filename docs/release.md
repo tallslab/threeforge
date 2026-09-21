@@ -65,15 +65,31 @@ the pull request or push adds; merge commits are not checked. Run it locally the
 
 A green pull-request run is not full coverage. The `@corpus` tag takes every test that needs downloaded content out
 of the `e2e` job: most of `cli.spec.ts` and `mcp.spec.ts`, all of `ParticleBudget`, and the `arena`, `assets`,
-`bench`, `biome`, `crowd`, `vat` and `warmup` specs. **The `e2e` and `bench` jobs on `webgpu` are advisory and check no pixels**: a Linux
-runner's WebGPU adapter is SwiftShader, which drops the device between test steps, so `test/e2e/fixtures.ts` turns
-`pixelChecks` off there and CI reports those legs without blocking on them. WebGPU pixel parity
-is proven only by a local run on a native adapter (steps 2 and 4 above).
+`bench`, `biome`, `crowd`, `vat` and `warmup` specs. **The `e2e` and `bench` jobs on `webgpu` are advisory and
+establish nothing about WebGPU pixels**: a Linux runner's WebGPU adapter is SwiftShader, which drops the device
+between test steps, so `test/e2e/fixtures.ts` turns `pixelChecks` off there, the specs that honour it compare no
+pictures, and CI reports those legs without blocking on them. WebGPU pixel parity is proven only by a local run on a
+native adapter (steps 2 and 4 above).
 
-`.github/workflows/assets.yml` runs the full corpus on both backends weekly (Mondays 04:17 UTC) and on manual
-dispatch. It fails when any asset misbehaves or failed to download, uploads `docs/assets-report*` as a build
-artifact and never commits: the tracked report files are updated by hand, from that artifact or by step 4. It runs
-the temporal tests as well and uploads their failure frames and report the same way as the `temporal` job.
+`.github/workflows/assets.yml` runs the full corpus on both backends weekly (Mondays 04:17 UTC) and on manual dispatch.
+It fails when any asset misbehaves or failed to download, uploads `docs/assets-report*` as a build artifact and never
+commits: the tracked report files are updated by hand, from that artifact or by step 4. It runs the temporal tests as
+well and uploads their failure frames and report the same way as the `temporal` job. **Its `webgpu` leg is advisory for
+the same reason as above, and only for its tests**: install, the strict downloads and the build still fail the job.
+Inside the test step, `scripts/advisory-report.mjs` runs Playwright itself and judges its report after every run, a run
+that exited 0 included, because Playwright exits 0 when a check is merely skipped. These stay blocking: an error of the
+run itself (a global setup or teardown, a timeout of the whole run); a test command that was killed, exited outside 0
+and 1, exited 1 with nothing in the report to account for it, or wrote no report; and the `@adapter` check not passing,
+whether it failed, was skipped or never ran. That check is `smoke.spec.ts`, which opens a page on WebGPU and draws a
+frame, so a runner without an adapter fails the job even though the CLI's help and schema tests pass with no GPU. Other
+failed tests become a warning with the real counts, the run summary lists each one and every blocking reason
+(`scripts/advisory-report.mjs`), and `test-results` is uploaded either way. On the first run of this workflow that leg
+failed 43 tests: 32 with the adapter's lost-device errors (`mapAsync` on a vanished instance, `createBuffer` refused),
+one because `arena.spec.ts` captured the canvas where captures are off (since guarded), and 10 assertions nobody has
+traced to the adapter. Advisory is a statement about this runner, not about those 10: they are open until someone traces
+them. The guarded specs skip their captures on this adapter, while `biome.spec.ts`, `assets.spec.ts` and the CLI's own
+comparisons still capture there; a pass on this runner does not establish native WebGPU pixel correctness. That stays
+the native run of steps 2 and 4, required before every release.
 
 `FORGE_FETCH_STRICT=1` makes `pnpm assets` and `pnpm assets:kits` exit 1 after listing every failed download; unset
 (the local default) the failure is recorded in the index and the script exits 0. `FORGE_BENCH_APP_OPTIONAL=1` lets

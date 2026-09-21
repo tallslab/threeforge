@@ -1181,9 +1181,9 @@ Current baselines (webgl2, scene submissions naive â†’ optimized): village 303 â
 Commands, the harness query parameters and the repository rules are in [CONTRIBUTING.md](../CONTRIBUTING.md); the release
 procedure, what CI covers and does not, and the device-page settings are in [docs/release.md](release.md). Units run
 against a fake renderer that mirrors the backends' draw counting; anything touching the renderer also has a
-Playwright spec on both backends. The `webgpu` e2e leg in CI runs on SwiftShader and checks no pixels
-(`test/e2e/fixtures.ts` turns `pixelChecks` off), so WebGPU pixel parity is proven only by a local run on a native
-adapter. The four workflows are `ci.yml` (commit rules, unit, e2e per backend, the temporal sequences per backend
+Playwright spec on both backends. The `webgpu` e2e leg in CI runs on SwiftShader with `pixelChecks` off
+(`test/e2e/fixtures.ts`), so the specs that honour it compare no pictures and a pass there establishes nothing about
+native WebGPU pixels: that parity is proven only by a local run on a native adapter. The four workflows are `ci.yml` (commit rules, unit, e2e per backend, the temporal sequences per backend
 with their failure frames uploaded, bench per backend, publish on `v*` tags), `assets.yml` (weekly corpus run),
 `pages.yml` (the device bench page) and `bench-results.yml`.
 

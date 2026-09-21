@@ -5,6 +5,13 @@ name: assets
 # `assets.spec.ts` itself. They are covered here and nowhere else, so a red run here is a real regression even
 # though every pull request was green.
 #
+# That holds for webgl2. The webgpu leg runs on these runners' SwiftShader adapter, where Dawn drops the device
+# between test steps (docs/design.md), so its TEST failures are reported and do not fail the job. Everything before
+# them (install, strict downloads, build) still does, and so do an error of the run itself and the `@adapter` check
+# (test/e2e/smoke.spec.ts) not passing. The guarded specs skip their captures on that adapter; biome, assets and the
+# CLI's own comparisons still capture there, and a pass on this runner does not establish native WebGPU pixel
+# correctness. That is covered only by the local run in docs/release.md, which a release still needs.
+#
 # This workflow NEVER commits. `assets.spec.ts` rewrites the tracked docs/assets-report*.{json,md}; those files
 # leave as a build artifact for a maintainer to inspect and commit by hand. Nothing here has write permission.
 on:
@@ -29,8 +36,13 @@ jobs:
       matrix:
         include:
           - backend: webgl2
+          # requireWebgpu: a no-adapter runner must fail, not skip its way to green. It still does under `advisory`:
+          # the `@adapter` check opens a page on WebGPU and draws a frame, and scripts/advisory-report.mjs, which runs
+          # the tests itself, exits 1 unless that test passed. Counting passes would not do: the CLI's help and schema
+          # tests need no GPU.
           - backend: webgpu
-            requireWebgpu: '1' # a no-adapter runner must fail, not skip its way to green
+            requireWebgpu: '1'
+            advisory: true
     env:
       # Every report row is stamped with a run id, and the Markdown is republished only when one run
       # measured every asset. Unpinned, the id is derived from the UTC day, so a corpus run that crosses midnight
@@ -73,7 +85,14 @@ jobs:
       - name: Full corpus on ${{ matrix.backend }}
         run: |
           mkdir -p "$FORGE_TEMPORAL_OUT"
-          pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "@bench" --forbid-only --reporter=list,json
+          tests=(pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "@bench" --forbid-only --reporter=list,json)
+          if [ "${{ matrix.advisory }}" = "true" ]; then
+            # The script runs the tests and judges their report after every run, not only a failed one: Playwright
+            # exits 0 when the @adapter check is skipped.
+            node scripts/advisory-report.mjs "$PLAYWRIGHT_JSON_OUTPUT_NAME" "corpus ${{ matrix.backend }} on the SwiftShader adapter" adapter -- "${tests[@]}"
+          else
+            "${tests[@]}"
+          fi
         env:
           FORGE_TEMPORAL_OUT: ${{ runner.temp }}/threeforge-temporal
           PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/threeforge-temporal/run.json
@@ -106,9 +125,12 @@ jobs:
             docs/assets-report-webgpu.json
           retention-days: 30
           if-no-files-found: warn
+      # always(), not failure(): the advisory leg's failed tests leave the step green, and what they wrote is the
+      # only record of them.
       - uses: actions/upload-artifact@v6
-        if: failure()
+        if: always()
         with:
           name: corpus-${{ matrix.backend }}-artifacts
           path: test-results
           retention-days: 7
+          if-no-files-found: ignore

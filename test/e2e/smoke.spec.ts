@@ -1,6 +1,10 @@
 import { expect, test } from './fixtures.js';
 
-test('an empty scene costs exactly one renderer-internal draw (output colour transform)', async ({ forge }) => {
+// @adapter: the one test a leg with advisory failures still has to pass (scripts/advisory-report.mjs). It opens the
+// page on the project's backend, which fails under FORGE_REQUIRE_WEBGPU=1 when there is no adapter, and draws a frame.
+test('an empty scene costs exactly one renderer-internal draw (output colour transform)', {
+  tag: '@adapter',
+}, async ({ forge }) => {
   await forge.open('empty');
   const result = await forge.page.evaluate(() => window.__forge.renderOnce());
   expect(result.backend).toBe(forge.backend);

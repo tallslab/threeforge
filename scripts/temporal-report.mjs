@@ -7,11 +7,12 @@ import { fileURLToPath } from 'node:url';
 
 const STATUS = { expected: 'passed', unexpected: 'failed', flaky: 'flaky', skipped: 'skipped' };
 
-function testsOf(document) {
+export function testsOf(document) {
   const tests = [];
   const walk = (suite) => {
     for (const spec of suite.specs)
-      for (const test of spec.tests) tests.push({ title: spec.title, file: spec.file, line: spec.line, ...test });
+      for (const test of spec.tests)
+        tests.push({ title: spec.title, file: spec.file, line: spec.line, tags: spec.tags, ...test });
     // A suite with no nested describe has no `suites` key at all.
     for (const child of suite.suites ?? []) walk(child);
   };
