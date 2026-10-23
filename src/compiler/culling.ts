@@ -90,11 +90,10 @@ const _frustumArray = new FrustumArray();
 const _cameraPos = new Vector3();
 const _forward = new Vector3();
 /**
- * The camera in the culled batch's frame, `[x, y, z, forwardX, forwardY, forwardZ]`: in a typed array because Chrome
- * was measured boxing the doubles written into a `Vector3`'s fields here, a heap number per batch per frame.
+ * The camera in the culled batch's frame, `[x, y, z, forwardX, forwardY, forwardZ]`, in a typed array: Chrome boxes
+ * the doubles written into a `Vector3`'s fields here, a heap number per batch per frame.
  */
 const _view = new Float64Array(6);
-const _temp = new Vector3();
 function isIdentity(e: number[]): boolean {
   for (let i = 0; i < 16; i++) if (e[i] !== (i % 5 === 0 ? 1 : 0)) return false;
   return true;
@@ -177,7 +176,7 @@ function sortEntries(n: number, farFirst: boolean): Int32Array {
   return from;
 }
 
-/** Objects for a user's `customSort`, which three hands a list of `{ start, count, z, index }`; a pool that only grows. */
+/** Objects for a user's `customSort`, which three hands `{ start, count, z, index }` items; a pool that only grows. */
 const _list: RenderItem[] = [];
 const _items: RenderItem[] = [];
 

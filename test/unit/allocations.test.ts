@@ -22,9 +22,9 @@ import { bytesPerCall } from './helpers/allocations.js';
 import { webglRenderer } from './helpers/renderers.js';
 
 /**
- * Bytes per call that count as nothing: V8's own work when the optimiser finishes during the measured loop, which on
- * a loaded machine (the whole suite in parallel) lands on whatever function is running, reads up to about 1.5. The
- * paths these tests guard allocated 40 bytes (a stats object per update) to 11 KB (a sorted cull) per call.
+ * Bytes per call that count as nothing: V8's own work when the optimiser finishes during the measured loop lands on
+ * whatever function is running, up to about 1.5 bytes on a loaded machine. The smallest object these paths could
+ * regain, a stats object per update, is 40.
  */
 const NOTHING = 8;
 

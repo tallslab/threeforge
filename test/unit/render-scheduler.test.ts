@@ -414,7 +414,7 @@ describe('RenderScheduler and a disposed World', () => {
 });
 
 describe('RenderScheduler frame cap', () => {
-  /** Ticks at `hz` for `seconds`; `jitter` moves every even tick, the ones a 30 fps cap at 60 Hz renders, that many ms early. */
+  /** Ticks at `hz` for `seconds`; `jitter` moves even ticks (the ones a 30 fps cap renders at 60 Hz) earlier, in ms. */
   function run(scheduler: RenderScheduler, hz: number, seconds: number, jitter = 0, from = 0): number[] {
     const rendered: number[] = [];
     const ticks = Math.round(hz * seconds);
@@ -437,7 +437,8 @@ describe('RenderScheduler frame cap', () => {
     const { scheduler } = animating();
     scheduler.maxFps = maxFps;
     scheduler.tick(0);
-    // Long enough that a cadence restarted from each frame, which drifts late on a display that does not divide the cap, falls a frame short.
+    // Long enough for a cadence restarted at each frame, which drifts late on a display that does not divide the cap,
+    // to fall a frame short.
     const rendered = run(scheduler, hz, 10);
     expect(rendered.length).toBeGreaterThanOrEqual(10 * expected - 1);
     expect(rendered.length).toBeLessThanOrEqual(10 * expected);

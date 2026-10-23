@@ -2,8 +2,8 @@
  * A procedural rigged character: a shared 3-bone skeleton (root -> spine -> head), a body mesh, and gear parts
  * (helmet, chest, legs, sword) each exported "the glTF way": its own SkinnedMesh with its own Skeleton instance
  * whose bones carry the same names as the body's. Textures are small DataTextures so this runs in node. With
- * `vertexColors` the gear is untextured and coloured per vertex (a gradient up its height), and the body stays textured.
- * With `textures: false` no part has a map: each material carries its part's colour instead.
+ * `vertexColors` the gear is untextured and coloured per vertex (a gradient up its height) while the body stays
+ * textured; with `textures: false` no part has a map and each material carries its part's colour instead.
  */
 import {
   Bone,

@@ -259,7 +259,7 @@ describe('AnimatedInstances playback loop', () => {
     ['uneven', {}],
     ['uneven', { offset: 0.25, speed: 1.5 }],
     ['whole', { offset: -0.4, speed: 0.6 }],
-  ])('plays %s once with %o and holds the pose a clamped mixer ends on', (name, options) => {
+  ])('plays %s once with %o, then holds the end pose', (name, options) => {
     const { root, clips, animation, instances } = crowd();
     instances.setClipAt(0, name, { ...options, once: true });
     const range = animation.clips.find((c) => c.name === name)!;
@@ -415,7 +415,7 @@ describe('AnimatedInstances crossfade', () => {
     expect(instances.clipAttribute.data).toBe(instances.clipBuffer);
   });
 
-  it('switches at once without a fade', () => {
+  it('switches to the new clip at once when given no fade', () => {
     const { instances } = crowd();
     instances.setTime(2);
     instances.setClipAt(0, 'uneven');

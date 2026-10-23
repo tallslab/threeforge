@@ -203,7 +203,7 @@ function writeColors(
       color[(v0 + v) * size + c] = rgb[c]! * (source && c < source.itemSize ? source.getComponent(v, c) : 1);
 }
 
-/** Copies a part's skin weights with its bone indices remapped onto the shared skeleton (an unskinned part follows bone 0). */
+/** Copies a part's skin weights with bone indices remapped onto the shared skeleton; unskinned parts follow bone 0. */
 function writeSkin(
   skinIndex: Uint16Array,
   skinWeight: Float32Array,

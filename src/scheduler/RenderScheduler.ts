@@ -109,8 +109,8 @@ export class RenderScheduler {
   private lastRender = -Infinity;
   private fpsCap = 0;
   /**
-   * When the next capped frame is due, on a fixed cadence so the average rate is the cap: a tick that comes a hair early
-   * (rAF timestamps jitter around vsync) delays that frame by one tick without lowering the rate.
+   * When the next capped frame is due, on a fixed cadence so the average rate is the cap: a tick that comes a hair
+   * early (rAF timestamps jitter around vsync) delays that frame by one tick without lowering the rate.
    */
   private nextFrame = -Infinity;
   /** What a capped tick saw: the edge detectors re-baseline every tick, so it would be lost otherwise. */

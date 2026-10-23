@@ -4,8 +4,9 @@ import { buildCharacter } from '../../scenes/character.js';
 import type { BenchBuilder } from './index.js';
 
 /**
- * The synthetic modular character (`test/scenes/character.ts`); `assemble=1` merges its parts into one skinned mesh and
- * `vertexColors=1` colours its gear per vertex instead of by texture; `textures=0` gives every part a flat colour and no map.
+ * The synthetic modular character (`test/scenes/character.ts`); `assemble=1` merges its parts into one skinned mesh,
+ * `vertexColors=1` colours its gear per vertex instead of by texture, and `textures=0` gives every part a flat colour
+ * and no map.
  */
 export const characterScene: BenchBuilder = async ({ camera, params }) => {
   const scene = new Scene();

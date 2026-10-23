@@ -770,53 +770,52 @@ detached descendants, recursively. It clears `matrixWorldNeedsUpdate` after comp
 (`updateMatrixWorld`, `updateWorldMatrix`, `getWorldPosition` and the other `getWorld*` calls, `lookAt`) overwrites
 the composed one with its parentless local matrix, so call `markDirty` on it again after such a call.
 
-`RenderScheduler` (`src/scheduler/RenderScheduler.ts`): `new RenderScheduler({ renderer, scene, camera, ledger?,
-world?, mixers?, watch?, keepAliveMs?, maxFps?, onRender? })`; `start()` drives `renderer.setAnimationLoop`, and `tick(time)`
-renders only when `invalidate()` was called, the camera's world or projection matrix changed, a watched object
-moved, a mixer has running actions (mixers are updated every tick), the drawing buffer was resized, or
-`keepAliveMs` elapsed; otherwise three does nothing for that tick. `maxFps` (an option and a property to switch at any
-time; 0, the default, is no cap) limits the frames rendered, for a battery mode or a menu: a tick that needs a frame
-before the next is due skips and counts as skipped, what it saw is rendered on the next allowed tick, and frames are
-due on a fixed cadence (each `1000 / maxFps` ms after the last due time, or after the frame itself following an idle
-stretch), so an early tick delays one frame by a tick without lowering the rate and a 144 Hz display holds 10 fps
-exactly. Switching the cap measures the next frame from the last one rendered. Mixers are still updated every tick.
-Measured in headless Chromium with a camera moving every frame: 60 ticks/s, 29.7 renders/s at 30 and 10.0 at 10. Baselines are re-captured after each render
-(three recomputes the camera's projection on its first WebGPU frame). `stats`, `lastReason`, `skippedRecently()`
-(what `js.skipped` reports through `ledger.attachScheduler`), `stop()`, `dispose()`. A mixer counts as animating
-when one of its active actions (three's private `_actions[0.._nActiveActions)`, `AnimationMixer.js` r186 ~201-202)
-`isRunning()`, is scheduled to start later (`_startTime !== null`, set by `startAt()`), or has a weight interpolant
-(a `fadeIn()` or `fadeOut()` in progress, three's private `_weightInterpolant`, which `_updateWeight` evaluates even
-for a paused action, so a finished clip held by `clampWhenFinished` and then faded out blends back over the fade).
+`RenderScheduler` (`src/scheduler/RenderScheduler.ts`): `new RenderScheduler({ renderer, scene, camera, ledger?, world?,
+mixers?, watch?, keepAliveMs?, maxFps?, onRender? })`; `start()` drives `renderer.setAnimationLoop`, and `tick(time)`
+renders only when `invalidate()` was called, the camera's world or projection matrix changed, a watched object moved, a
+mixer has running actions (mixers are updated every tick), the drawing buffer was resized, or `keepAliveMs` elapsed;
+otherwise three does nothing for that tick. `maxFps` (an option and a property to switch at any time; 0, the default, is
+no cap) limits the frames rendered, for a battery mode or a menu: a tick that needs a frame before the next is due skips
+and counts as skipped, what it saw is rendered on the next allowed tick, and frames are due on a fixed cadence (each
+`1000 / maxFps` ms after the last due time, or after the frame itself following an idle stretch), so an early tick
+delays one frame by a tick without lowering the rate and a 144 Hz display holds 10 fps exactly. Switching the cap
+measures the next frame from the last one rendered. Mixers are still updated every tick. Measured in headless Chromium
+with a camera moving every frame: 60 ticks/s, 29.7 renders/s at 30 and 10.0 at 10. Baselines are re-captured after each
+render (three recomputes the camera's projection on its first WebGPU frame). `stats`, `lastReason`, `skippedRecently()`
+(what `js.skipped` reports through `ledger.attachScheduler`), `stop()`, `dispose()`. A mixer counts as animating when
+one of its active actions (three's private `_actions[0.._nActiveActions)`, `AnimationMixer.js` r186 ~201-202)
+`isRunning()`, is scheduled to start later (`_startTime !== null`, set by `startAt()`), or has a weight interpolant (a
+`fadeIn()` or `fadeOut()` in progress, three's private `_weightInterpolant`, which `_updateWeight` evaluates even for a
+paused action, so a finished clip held by `clampWhenFinished` and then faded out blends back over the fade).
 `mixer.stats.actions.inUse` alone would keep counting a finished `LoopOnce` action, which `clampWhenFinished` pauses
-(`AnimationAction.js` ~771) or otherwise disables (~772) without removing it from `_actions`, while `isRunning()`
-(~220) is false either way. The private fields are read through a reflection cast pinned by canary tests in
-`test/unit/render-scheduler.test.ts`, with `stats.actions.inUse > 0` as the fallback for a mixer-like object that
-does not expose them. `isRunning()` does not consult `weight`, so an enabled, unpaused action at `weight === 0`
-still counts: the scheduler errs toward rendering, since a `fadeIn()` starts its target at weight 0. `tick()` asks
-before and after `mixer.update()`, so the tick whose update ends a clip or a fade renders that last step.
-`cameraChanged()` and `watchedChanged()` (and `watch()`, for the initial baseline) call
-`object.updateWorldMatrix(true, false)` before reading `matrixWorld`, since three recomputes it only in a render
-pass or an explicit update call, so moving `camera.position` or a watched transform without `updateMatrixWorld()`
-is still detected. Do not `watch()` a detached original: that per-tick call overwrites the matrix `markDirty`
-composed, every tick; watch the live object you move instead. The scheduler holds only the disposer
-`World.onDirty()` returns and calls it once from `dispose()`, never calling back into the `World` at tick time:
-constructing one against a disposed `World` throws (`World.onDirty()`'s own guard), disposing the `World` while the
-scheduler runs throws nowhere (its listener set is cleared, and every other detector keeps working), and
-`scheduler.dispose()` is safe before or after `world.dispose()`.
+(`AnimationAction.js` ~771) or otherwise disables (~772) without removing it from `_actions`, while `isRunning()` (~220)
+is false either way. The private fields are read through a reflection cast pinned by canary tests in
+`test/unit/render-scheduler.test.ts`, with `stats.actions.inUse > 0` as the fallback for a mixer-like object that does
+not expose them. `isRunning()` does not consult `weight`, so an enabled, unpaused action at `weight === 0` still counts:
+the scheduler errs toward rendering, since a `fadeIn()` starts its target at weight 0. `tick()` asks before and after
+`mixer.update()`, so the tick whose update ends a clip or a fade renders that last step. `cameraChanged()` and
+`watchedChanged()` (and `watch()`, for the initial baseline) call `object.updateWorldMatrix(true, false)` before reading
+`matrixWorld`, since three recomputes it only in a render pass or an explicit update call, so moving `camera.position`
+or a watched transform without `updateMatrixWorld()` is still detected. Do not `watch()` a detached original: that
+per-tick call overwrites the matrix `markDirty` composed, every tick; watch the live object you move instead. The
+scheduler holds only the disposer `World.onDirty()` returns and calls it once from `dispose()`, never calling back into
+the `World` at tick time: constructing one against a disposed `World` throws (`World.onDirty()`'s own guard), disposing
+the `World` while the scheduler runs throws nowhere (its listener set is cleared, and every other detector keeps
+working), and `scheduler.dispose()` is safe before or after `world.dispose()`.
 
 Per-frame allocations. Once V8 has optimised the hot paths, threeforge's per-frame code allocates nothing: the
-BatchedMesh and instanced culls walk their BVH with `frustumCull` (bvh.js's own `frustumCulling` builds two closures
-per call), sort into typed arrays with a merge sort over a scratch array that persists (`Array.prototype.sort`
-allocates temporary storage, and a depth stored into an object field or passed to a function V8 does not inline is a
-heap number), keep the camera in the batch's frame in a `Float64Array`, and `Streamer.update` walks an array of chunks,
-computes distances in locals, and `Streamer.step()` does the update without building the stats object `update()` returns. `test/e2e/allocations.spec.ts` (`@alloc`)
-profiles 150 animation frames after 1 500 warm-up renders, ledger detached, and holds threeforge's share under 16
-bytes a frame: measured on 2026-10-23 at 0 to 6 B on village, zen, crowd and arena, on both backends, where village
-and zen allocated 3.3 and 10 KB a frame before. three r186's renderer allocates on its own, which the spec records:
-on the same runs about 0.15 to 0.6 KB a frame on webgl2 for village, zen and crowd, 0.6 to 11 KB on webgpu, and 43 KB
-on either for the arena. Before that warm-up the numbers are far higher (V8 boxes doubles in unoptimised code), so
-measure a game after its first half minute. An attached ledger allocates every frame by design (see "Overhead").
-`test/unit/allocations.test.ts` asserts the same under Node with V8's sampling heap profiler.
+BatchedMesh and instanced culls walk their BVH with `frustumCull` (bvh.js's own `frustumCulling` builds two closures per
+call), sort into typed arrays with a merge sort over a scratch array that persists (`Array.prototype.sort` allocates
+temporary storage, and a depth stored into an object field or passed to a function V8 does not inline is a heap number),
+keep the camera in the batch's frame in a `Float64Array`, and `Streamer.update` walks an array of chunks, computes
+distances in locals, and `Streamer.step()` does the update without building the stats object `update()` returns.
+`test/e2e/allocations.spec.ts` (`@alloc`) profiles 150 animation frames after 1 500 warm-up renders, ledger detached,
+and holds threeforge's share under 16 bytes a frame: measured on 2026-10-23 at 0 to 6 B on village, zen, crowd and
+arena, on both backends, where village and zen allocated 3.3 and 10 KB a frame before. three r186's renderer allocates
+on its own, which the spec records: on the same runs about 0.15 to 0.6 KB a frame on webgl2 for village, zen and crowd,
+0.6 to 11 KB on webgpu, and 43 KB on either for the arena. Before that warm-up the numbers are far higher (V8 boxes
+doubles in unoptimised code), so measure a game after its first half minute. An attached ledger allocates every frame by
+design (see "Overhead"). `test/unit/allocations.test.ts` asserts the same under Node with V8's sampling heap profiler.
 
 In the ledger: `js.hiddenOriginals`, `js.skipped`, budget `objects`, hints `js-objects` (over budget) and
 `detach-originals` (1 000 or more hidden originals: use `originals: 'detach'`); bench metrics `objects` and
@@ -852,27 +851,28 @@ prototype at the origin (`LoopOnce`, clamped, so the last row is the end pose) a
 boneOffset }`. The prototype's transform and pose are restored.
 
 `AnimatedInstances({ animation, count, material? })` (`src/skinning/AnimatedInstances.ts`) builds one `Mesh` per part
-over an `InstancedBufferGeometry` sharing the part's buffers, with a `MeshStandardNodeMaterial` whose TSL
-`positionNode` fetches the instance's four bone matrices for its current row (`clipStart + floor(mod((time × speed +
-offset) × fps, loopRows))`, where `loopRows` is the clip's `duration × fps`, so the row counter wraps where a looping
-mixer wraps and not at the clip's stored `frames`, which run one or two rows past it; a clip without duration holds
-its one row; a remainder that float32 leaves just below zero at a loop boundary is moved one period up, so the row is
-the clip's last and never the one before its first), applies `bindMatrixInverse × Σ bone × weight × bindMatrix`, then
-the part's offset (`parts[i].matrix`, a `mat4` uniform of that part's material, read every frame) and the instance
-matrix, and assigns `normalLocal`. The instance matrices live in one `InstancedInterleavedBuffer` the parts share
-(four separate attributes would exceed WebGPU's eight vertex buffers; a plain `InterleavedBuffer` is read per vertex,
-because both backends take the per-instance step from `isInstancedInterleavedBuffer`). `setMatrixAt` and
-`getMatrixAt`, `setClipAt(i, clip, { offset, speed, restart, once, fade })`, `setTime(seconds)`, `activeCount` and
-`removeAt(i)`, `addTo`, `dispose`; `shading: 'lambert' | 'unlit'` builds `MeshLambertNodeMaterial` or
-`MeshBasicNodeMaterial` instead. `clipBuffer` (an `InstancedInterleavedBuffer`, 12 floats per instance) holds
-`[clipStart, loopRows, timeOffset, speed]` (`clipAttribute`), the same for the clip a fade starts from, and
-`[fadeStart, fadeSeconds]`, then the last row plus one of each when it plays once (`once`: hold the first row before
-the clip starts and the last, the clamped end pose, from its duration on); the vertex stage blends the two rows' skinning matrices by the fade weight.
-`activeCount` sets every part's `instanceCount`, and `removeAt` moves the last active instance into the freed slot. Meshes are `forge:vat:<part>` with `userData.forge = { kind:
-'vat', instances }` (untagged: a tag overwrites the marker). In the ledger: reason `vat-instanced`,
-`skinning.vatInstances` and `vatVertices`, budget `bones`, hints `bones-over-budget` and `skinned-crowd` (50 skinned
-draws). Authoring notes: `docs/skinning.md`. The optimized crowd bench bakes each of its eight prototypes and replaces
-its 25 characters with one `AnimatedInstances`: 401 → 17 submissions, 271 k skinned vertices → 0.
+over an `InstancedBufferGeometry` sharing the part's buffers, with a `MeshStandardNodeMaterial` whose TSL `positionNode`
+fetches the instance's four bone matrices for its current row (`clipStart + floor(mod((time × speed + offset) × fps,
+loopRows))`, where `loopRows` is the clip's `duration × fps`, so the row counter wraps where a looping mixer wraps and
+not at the clip's stored `frames`, which run one or two rows past it; a clip without duration holds its one row; a
+remainder that float32 leaves just below zero at a loop boundary is moved one period up, so the row is the clip's last
+and never the one before its first), applies `bindMatrixInverse × Σ bone × weight × bindMatrix`, then the part's offset
+(`parts[i].matrix`, a `mat4` uniform of that part's material, read every frame) and the instance matrix, and assigns
+`normalLocal`. The instance matrices live in one `InstancedInterleavedBuffer` the parts share (four separate attributes
+would exceed WebGPU's eight vertex buffers; a plain `InterleavedBuffer` is read per vertex, because both backends take
+the per-instance step from `isInstancedInterleavedBuffer`). `setMatrixAt` and `getMatrixAt`, `setClipAt(i, clip, {
+offset, speed, restart, once, fade })`, `setTime(seconds)`, `activeCount` and `removeAt(i)`, `addTo`, `dispose`;
+`shading: 'lambert' | 'unlit'` builds `MeshLambertNodeMaterial` or `MeshBasicNodeMaterial` instead. `clipBuffer` (an
+`InstancedInterleavedBuffer`, 12 floats per instance) holds `[clipStart, loopRows, timeOffset, speed]`
+(`clipAttribute`), the same for the clip a fade starts from, and `[fadeStart, fadeSeconds]`, then the last row plus one
+of each when it plays once (`once`: hold the first row before the clip starts and the last, the clamped end pose, from
+its duration on); the vertex stage blends the two rows' skinning matrices by the fade weight. `activeCount` sets every
+part's `instanceCount`, and `removeAt` moves the last active instance into the freed slot. Meshes are `forge:vat:<part>`
+with `userData.forge = { kind: 'vat', instances }` (untagged: a tag overwrites the marker). In the ledger: reason
+`vat-instanced`, `skinning.vatInstances` and `vatVertices`, budget `bones`, hints `bones-over-budget` and
+`skinned-crowd` (50 skinned draws). Authoring notes: `docs/skinning.md`. The optimized crowd bench bakes each of its
+eight prototypes and replaces its 25 characters with one `AnimatedInstances`: 401 → 17 submissions, 271 k skinned
+vertices → 0.
 
 ### Memory and load: `createLoader`, `ResourceTracker`, `Streamer`
 
@@ -922,19 +922,20 @@ the camera's layers can draw (a mover outside its chunks, not an original hidden
 `ResourceTracker` counts the meshes under the released owner's root, or under its `scene` option for an owner that
 is not an object or is detached already. Both walk the scene only when a geometry being freed is interleaved.
 
-`Streamer` (`src/streaming/Streamer.ts`) manages the residency of `world.chunks()` (batches, instanced groups and
-baked meshes carry `userData.forgeChunk`) plus uncompiled static scene children placed by position, keyed by x and
-z. A chunk is resident while the ground-plane distance from the camera to the cell's box is at most `radius`
-(default `camera.far`) and unloaded past `radius + margin × chunkSize` (first update strict). Unload removes the
-objects and disposes the geometries and textures no resident chunk shares, including a BatchedMesh's matrix,
-indirect and colour textures (never `BatchedMesh.dispose()`, which nulls them); load re-adds them and three
-re-uploads. An interleaved geometry reaches the Streamer as an uncompiled static or as an instanced group, which
-draws the source geometry (a BatchedMesh owns a plain copy), and is freed like any other. `retainedGeometries()`
-lists what `disposeGeometries` left uploaded for chunks that are away, and an attached ledger allows those three
-holds buffers for instead of counting them under `memory.unreferenced`. `step()` does what `update()` does without building its stats, so a frame in which no chunk changes allocates nothing;
-`update()` is `step()` then `stats()`. `assign`, `userData.forgeStream = false`, `stats()`, `onChange`, `dispose()`
-(every chunk resident again, then the chunks and the object index released, so a disposed Streamer holds none of the
-World's objects, `stats()` reports none and a later `update()` does nothing). `ledger.attachStreamer(streamer)`.
+`Streamer` (`src/streaming/Streamer.ts`) manages the residency of `world.chunks()` (batches, instanced groups and baked
+meshes carry `userData.forgeChunk`) plus uncompiled static scene children placed by position, keyed by x and z. A chunk
+is resident while the ground-plane distance from the camera to the cell's box is at most `radius` (default `camera.far`)
+and unloaded past `radius + margin × chunkSize` (first update strict). Unload removes the objects and disposes the
+geometries and textures no resident chunk shares, including a BatchedMesh's matrix, indirect and colour textures (never
+`BatchedMesh.dispose()`, which nulls them); load re-adds them and three re-uploads. An interleaved geometry reaches the
+Streamer as an uncompiled static or as an instanced group, which draws the source geometry (a BatchedMesh owns a plain
+copy), and is freed like any other. `retainedGeometries()` lists what `disposeGeometries` left uploaded for chunks that
+are away, and an attached ledger allows those three holds buffers for instead of counting them under
+`memory.unreferenced`. `step()` does what `update()` does without building its stats, so a frame in which no chunk
+changes allocates nothing; `update()` is `step()` then `stats()`. `assign`, `userData.forgeStream = false`, `stats()`,
+`onChange`, `dispose()` (every chunk resident again, then the chunks and the object index released, so a disposed
+Streamer holds none of the World's objects, `stats()` reports none and a later `update()` does nothing).
+`ledger.attachStreamer(streamer)`.
 
 In the ledger: `memory.unreferenced`, `memory.chunks`, `memory.measured`, budget `geometryBytes` (256 / 96 / 48 MB),
 hints `geometry-bytes` and `unreferenced-resources` (eight or more). Authoring notes: `docs/memory.md`. In the bench,

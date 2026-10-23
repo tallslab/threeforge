@@ -104,7 +104,10 @@ export interface ForgeHarness {
   shadowReport?: ShadowBudgetReport;
   /** `?freeze-shadow=1` (naive scene with shadows): the naive sun's shadow is frozen; call this to re-render it once. */
   refreshShadow?(): void;
-  /** `scene=vat`: the animated-instances twin of the loaded character (`vatClip`, `vatTime`, `vatPartOffset`, `vatShading`, `vatOnce` params). */
+  /**
+   * `scene=vat`: the animated-instances twin of the loaded character (`vatClip`, `vatTime`, `vatPartOffset`,
+   * `vatShading`, `vatOnce` params).
+   */
   vat?: AnimatedInstances;
   /** The optimized zen variant's chunk streamer (attached to the ledger). */
   streamer?: Streamer;

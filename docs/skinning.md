@@ -44,16 +44,18 @@ const moved = crowd.removeAt(7);                     // the last active one now 
 
 One `Mesh` per part of the prototype over an `InstancedBufferGeometry` that shares the part's vertex buffers, with a
 `MeshStandardNodeMaterial` (colour, maps and flags copied from the part's material, or from `material`), or with
-`shading: 'lambert'` a `MeshLambertNodeMaterial` and with `shading: 'unlit'` a `MeshBasicNodeMaterial`, copying only
-the properties that material has. Its vertex stage fetches the four bone matrices of the instance's current frame from the texture and applies three's skinning
-formula, then the part's offset from the character root and the instance matrix; the fragment stage is the chosen
-material's lighting. Per instance: the character's matrix (`matrixBuffer`, `getMatrixAt` returns it) and, in a second
-instanced interleaved buffer (`clipBuffer`, 12 floats), `[clipStart, loopRows, timeOffset, speed]` of the clip
-(`clipAttribute`), the same for the clip it fades from, `[fadeStart, fadeSeconds]`, and for both clips the last row
-plus one when it plays once (0 when it loops). Both are shared by the parts,
-which with the geometry's own attributes keeps a part within WebGPU's eight vertex buffers.
+`shading: 'lambert'` a `MeshLambertNodeMaterial` and with `shading: 'unlit'` a `MeshBasicNodeMaterial`, copying only the
+properties that material has. Its vertex stage fetches the four bone matrices of the instance's current frame from the
+texture and applies three's skinning formula, then the part's offset from the character root and the instance matrix;
+the fragment stage is the chosen material's lighting. Per instance: the character's matrix (`matrixBuffer`,
+`getMatrixAt` returns it) and, in a second instanced interleaved buffer (`clipBuffer`, 12 floats), `[clipStart,
+loopRows, timeOffset, speed]` of the clip (`clipAttribute`), the same for the clip it fades from, `[fadeStart,
+fadeSeconds]`, and for both clips the last row plus one when it plays once (0 when it loops). Both are shared by the
+parts, which with the geometry's own attributes keeps a part within WebGPU's eight vertex buffers.
 
-**Fades.** `setClipAt(i, clip, { fade })` copies the clip the instance was showing into the fade-from slot and blends
+### Fades
+
+`setClipAt(i, clip, { fade })` copies the clip the instance was showing into the fade-from slot and blends
 from it to the new one over `fade` seconds starting at the current `time`; both keep playing on their own clocks. The
 vertex stage reads both rows and blends their skinning matrices linearly by the weight, `clamp((time - fadeStart) /
 fadeSeconds, 0, 1)`, or 1 without a fade, so the texture loads per bone double for every instance whether it is fading
@@ -62,7 +64,9 @@ blends each bone's local rotation before the hierarchy, and over a long fade bet
 shorten. A fade started during a fade starts from the clip set last, not from the blend in progress. `restart: true`
 sets the offset so the clip is on its first row at the current time (`offset` is added to that).
 
-**Played once.** `once: true` plays the clip once and holds its end pose, as a mixer action with `LoopOnce` and
+### Played once
+
+`once: true` plays the clip once and holds its end pose, as a mixer action with `LoopOnce` and
 `clampWhenFinished`: before its start (an offset that puts it in the future) the instance holds the clip's first row,
 from its duration on its last baked row, which `bakeAnimationTexture` stores as the clamped end pose, and in between
 the same nearest-lower row a looping clip reads. The clock is the shared `time`, so a clip played once from now needs
@@ -70,7 +74,9 @@ the same nearest-lower row a looping clip reads. The clock is the shared `time`,
 the held pose. The clip's end is at `time + duration / speed` after a restart, for game code that switches clips
 when it is over.
 
-**Active count.** `activeCount` (0 to `count`, default `count`) is every part's `instanceCount`: only the first
+### Active count
+
+`activeCount` (0 to `count`, default `count`) is every part's `instanceCount`: only the first
 `activeCount` instances are drawn, and the ledger's `vatInstances` counts those. `removeAt(i)` moves the last active
 instance (matrix, clip and fade) into slot `i`, lowers the count and returns the index that moved, or -1 when `i` was
 the last. At 0 three skips the draw on both backends, but each part is still a submission in the ledger and still

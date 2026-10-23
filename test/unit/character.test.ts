@@ -249,7 +249,7 @@ describe('assembleCharacter without textures', () => {
     expect(character.report.atlas.size).toBe(64);
   });
 
-  it('frees nothing it never built on dispose', () => {
+  it('disposes the material and frees no atlas it never built', () => {
     const { body, gear, skeleton } = buildCharacter({ textures: false });
     const character = assembleCharacter({ skeleton, wardrobe: [body, ...gear], equipped: [body] });
     const dispose = vi.spyOn(character.mesh.material as MeshStandardMaterial, 'dispose');

@@ -1,12 +1,10 @@
 /**
- * What a frame allocates in JavaScript once the scene is warm, from V8's sampling heap profiler (collected objects
- * included) over animation frames that move the camera and advance the scene's clock, with the ledger detached as a
- * shipped game runs (zen's clock steps its Streamer with `step()`, which builds no stats). An allocation belongs to the innermost frame with a source (an engine built-in such as `push`
- * belongs to whoever called it). threeforge's share is every byte allocated under one of its frames (its render hooks,
- * the Streamer, AnimatedInstances) by anything but three's own code, such as the update range `addUpdateRange` records
- * when threeforge uploads only the instance rows it changed; it must stay under 16 bytes a frame, a margin for the odd
- * double V8 boxes, against the 2 to 10 KB the culling and streaming paths allocated before. three r186's renderer allocates every
- * frame on its own, which is recorded as an annotation and not asserted.
+ * What a warm frame allocates in JavaScript, from V8's sampling heap profiler over animation frames that move the
+ * camera and advance the scene's clock, ledger detached as a shipped game runs. An allocation belongs to the innermost
+ * frame with a source, so a built-in such as `push` belongs to its caller. threeforge's share is what is allocated
+ * under its frames by anything but three (such as the update range `addUpdateRange` records for the instance rows
+ * threeforge uploads) and stays under 16 bytes a frame. three r186's renderer allocates on its own: recorded, not
+ * asserted.
  */
 import type { CDPSession } from '@playwright/test';
 import { expect, test } from './fixtures.js';
@@ -112,8 +110,8 @@ for (const [scene, query, tags] of SCENES)
           }),
         FRAMES,
       );
-    // Two windows, the smaller kept: a per-frame allocation shows in both, while a one-off (V8 installing optimised
-    // code mid-window, measured once at 24 B a frame in six zen runs) shows in one.
+    // Two windows, the smaller kept: a per-frame allocation shows in both, a one-off such as V8 installing optimised
+    // code mid-window in one.
     const windows = [measure(await profile(cdp, runFrames)), measure(await profile(cdp, runFrames))];
     const { forgeBytes, threeBytes, sites } =
       windows[0]!.forgeBytes <= windows[1]!.forgeBytes ? windows[0]! : windows[1]!;
@@ -129,6 +127,5 @@ for (const [scene, query, tags] of SCENES)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([s, b]) => `${perFrame(b)} B/frame ${s}`);
-    if (process.env.ALLOC_DEBUG) console.log(top.map((t) => `  ${t}`).join('\n'));
     expect(perFrame(forgeBytes), top.join('\n')).toBeLessThan(16);
   });
