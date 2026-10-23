@@ -167,26 +167,26 @@ describe('AnimatedInstances', () => {
   });
 });
 
+const FPS = 10;
+
+/** A clip turning the rig's bone `b`, lasting `duration` seconds. */
+function turn(name: string, duration: number): AnimationClip {
+  const q = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), 1);
+  const times = duration === 0 ? [0] : [0, duration];
+  const values = duration === 0 ? [q.x, q.y, q.z, q.w] : [0, 0, 0, 1, q.x, q.y, q.z, q.w];
+  return new AnimationClip(name, duration, [new QuaternionKeyframeTrack('b.quaternion', times, values)]);
+}
+
+/** `whole` ends on a baked row, `uneven` half a row past one, `pose` has no duration at all. */
+function crowd(names = ['whole', 'uneven', 'pose']) {
+  const durations: Record<string, number> = { whole: 1, uneven: 0.95, pose: 0 };
+  const clips = names.map((name) => turn(name, durations[name]!));
+  const { root } = buildRig();
+  const animation = bakeAnimationTexture(root, clips, { fps: FPS });
+  return { root, clips, animation, instances: new AnimatedInstances({ animation, count: 2 }) };
+}
+
 describe('AnimatedInstances playback loop', () => {
-  const FPS = 10;
-
-  /** A clip turning the rig's bone `b`, lasting `duration` seconds. */
-  function turn(name: string, duration: number): AnimationClip {
-    const q = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), 1);
-    const times = duration === 0 ? [0] : [0, duration];
-    const values = duration === 0 ? [q.x, q.y, q.z, q.w] : [0, 0, 0, 1, q.x, q.y, q.z, q.w];
-    return new AnimationClip(name, duration, [new QuaternionKeyframeTrack('b.quaternion', times, values)]);
-  }
-
-  /** `whole` ends on a baked row, `uneven` half a row past one, `pose` has no duration at all. */
-  function crowd(names = ['whole', 'uneven', 'pose']) {
-    const durations: Record<string, number> = { whole: 1, uneven: 0.95, pose: 0 };
-    const clips = names.map((name) => turn(name, durations[name]!));
-    const { root } = buildRig();
-    const animation = bakeAnimationTexture(root, clips, { fps: FPS });
-    return { root, clips, animation, instances: new AnimatedInstances({ animation, count: 2 }) };
-  }
-
   const entry = (instances: AnimatedInstances, i: number): number[] => {
     const clip = instances.clipAttribute;
     return [clip.getX(i), clip.getY(i), clip.getZ(i), clip.getW(i)];
@@ -380,19 +380,6 @@ describe('AnimatedInstances active count', () => {
 });
 
 describe('AnimatedInstances crossfade', () => {
-  const FPS = 10;
-
-  function crowd() {
-    const q = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), 1);
-    const turn = (name: string, duration: number) =>
-      new AnimationClip(name, duration, [
-        new QuaternionKeyframeTrack('b.quaternion', [0, duration], [0, 0, 0, 1, q.x, q.y, q.z, q.w]),
-      ]);
-    const { root } = buildRig();
-    const animation = bakeAnimationTexture(root, [turn('whole', 1), turn('uneven', 0.95)], { fps: FPS });
-    return { animation, instances: new AnimatedInstances({ animation, count: 2 }) };
-  }
-
   /** `[clip, from, fade]` of instance `i`: the clip, the clip it fades from, `[fadeStart, fadeSeconds]`. */
   function row(instances: AnimatedInstances, i: number): number[][] {
     const { array, stride } = instances.clipBuffer;
@@ -407,7 +394,7 @@ describe('AnimatedInstances crossfade', () => {
   }
 
   it('keeps all per-instance clip data in one instanced interleaved buffer', () => {
-    const { instances } = crowd();
+    const { instances } = crowd(['whole', 'uneven']);
     // WebGPU allows eight vertex buffers: the geometry's own, the character matrices and this one.
     expect(instances.clipBuffer).toBeInstanceOf(InstancedInterleavedBuffer);
     expect(instances.clipBuffer.meshPerAttribute).toBe(1);
@@ -416,7 +403,7 @@ describe('AnimatedInstances crossfade', () => {
   });
 
   it('switches to the new clip at once when given no fade', () => {
-    const { instances } = crowd();
+    const { instances } = crowd(['whole', 'uneven']);
     instances.setTime(2);
     instances.setClipAt(0, 'uneven');
     expect(row(instances, 0)).toEqual([
@@ -428,7 +415,7 @@ describe('AnimatedInstances crossfade', () => {
   });
 
   it('fades from the clip it was showing over the given seconds from now', () => {
-    const { instances } = crowd();
+    const { instances } = crowd(['whole', 'uneven']);
     instances.setClipAt(0, 'whole', { offset: 0.3, speed: 2 });
     instances.setTime(2);
     instances.setClipAt(0, 'uneven', { fade: 0.5 });
@@ -459,7 +446,7 @@ describe('AnimatedInstances crossfade', () => {
   });
 
   it('restarts a clip at its first row at the current time', () => {
-    const { instances } = crowd();
+    const { instances } = crowd(['whole', 'uneven']);
     instances.setTime(2.33);
     instances.setClipAt(0, 'whole', { restart: true, speed: 2 });
     const [start, loop, offset, speed] = row(instances, 0)[0]!;

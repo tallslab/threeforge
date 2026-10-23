@@ -51,44 +51,43 @@ the fragment stage is the chosen material's lighting. Per instance: the characte
 `getMatrixAt` returns it) and, in a second instanced interleaved buffer (`clipBuffer`, 12 floats), `[clipStart,
 loopRows, timeOffset, speed]` of the clip (`clipAttribute`), the same for the clip it fades from, `[fadeStart,
 fadeSeconds]`, and for both clips the last row plus one when it plays once (0 when it loops). Both are shared by the
-parts, which with the geometry's own attributes keeps a part within WebGPU's eight vertex buffers.
+parts, which with the geometry's own attributes keeps a part within WebGPU's eight vertex buffers. `loopRows` is the
+clip's `duration × fps`: the row counter wraps where a looping mixer wraps, not at the clip's stored `frames`, which run
+one or two rows past it, and a clip without duration holds its one row. A timestamp a float32 step below a loop boundary
+reads the clip's last row: the remainder float32 can leave just below zero there is moved one period up. Per part: its
+offset, `animation.parts[k].matrix`, as a `mat4` uniform of that part's material, read every frame, so a prototype whose
+parts sit at different offsets from its root draws each part at the character matrix × its own matrix. The meshes are
+named `forge:vat:<part>` and carry `userData.forge = { kind: 'vat', instances }`, which the ledger reports as reason
+`vat-instanced` with `skinning.vatInstances` and `vatVertices`. Do not tag them: a tag would overwrite that marker.
+Skinned parts sharing a skeleton or not both work (each part reads its own bone range).
 
 ### Fades
 
-`setClipAt(i, clip, { fade })` copies the clip the instance was showing into the fade-from slot and blends
-from it to the new one over `fade` seconds starting at the current `time`; both keep playing on their own clocks. The
-vertex stage reads both rows and blends their skinning matrices linearly by the weight, `clamp((time - fadeStart) /
-fadeSeconds, 0, 1)`, or 1 without a fade, so the texture loads per bone double for every instance whether it is fading
-or not. A linear blend of skinning matrices is what vertex-animation crossfades do; it is not three's mixer, which
-blends each bone's local rotation before the hierarchy, and over a long fade between very different poses limbs can
-shorten. A fade started during a fade starts from the clip set last, not from the blend in progress. `restart: true`
-sets the offset so the clip is on its first row at the current time (`offset` is added to that).
+`setClipAt(i, clip, { fade })` copies the clip the instance was showing into the fade-from slot and blends from it to
+the new one over `fade` seconds starting at the current `time`; both keep playing on their own clocks. The vertex stage
+reads both rows and blends their skinning matrices linearly by the weight, `clamp((time - fadeStart) / fadeSeconds, 0,
+1)`, or 1 without a fade, so the texture loads per bone double for every instance whether it is fading or not. A linear
+blend of skinning matrices is what vertex-animation crossfades do; it is not three's mixer, which blends each bone's
+local rotation before the hierarchy, and over a long fade between very different poses limbs can shorten. A fade started
+during a fade starts from the clip set last, not from the blend in progress. `restart: true` sets the offset so the clip
+is on its first row at the current time (`offset` is added to that).
 
 ### Played once
 
-`once: true` plays the clip once and holds its end pose, as a mixer action with `LoopOnce` and
-`clampWhenFinished`: before its start (an offset that puts it in the future) the instance holds the clip's first row,
-from its duration on its last baked row, which `bakeAnimationTexture` stores as the clamped end pose, and in between
-the same nearest-lower row a looping clip reads. The clock is the shared `time`, so a clip played once from now needs
-`restart: true`; without it a clip set at 50 s with no offset is long finished. A fade out of a held clip starts from
-the held pose. The clip's end is at `time + duration / speed` after a restart, for game code that switches clips
-when it is over.
+`once: true` plays the clip once and holds its end pose, as a mixer action with `LoopOnce` and `clampWhenFinished`:
+before its start (an offset that puts it in the future) the instance holds the clip's first row, from its duration on
+its last baked row, which `bakeAnimationTexture` stores as the clamped end pose, and in between the same nearest-lower
+row a looping clip reads. The clock is the shared `time`, so a clip played once from now needs `restart: true`; without
+it a clip set at 50 s with no offset is long finished. A fade out of a held clip starts from the held pose. The clip's
+end is at `time + duration / speed` after a restart, for game code that switches clips when it is over.
 
 ### Active count
 
-`activeCount` (0 to `count`, default `count`) is every part's `instanceCount`: only the first
-`activeCount` instances are drawn, and the ledger's `vatInstances` counts those. `removeAt(i)` moves the last active
-instance (matrix, clip and fade) into slot `i`, lowers the count and returns the index that moved, or -1 when `i` was
-the last. At 0 three skips the draw on both backends, but each part is still a submission in the ledger and still
-walked by three; hide the meshes of a pool that stays empty. `loopRows` is the clip's `duration ×
-fps`: the row counter wraps where a looping mixer wraps, not at the clip's stored `frames`, which run one or two rows
-past it, and a clip without duration holds its one row. A timestamp a float32 step below a loop boundary reads the
-clip's last row: the remainder float32 can leave just below zero there is moved one period up. Per part: its offset,
-`animation.parts[k].matrix`, as a `mat4` uniform of that part's material, read every frame, so a prototype whose parts
-sit at different offsets from its root draws each part at the character matrix × its own matrix. The meshes are named
-`forge:vat:<part>` and carry `userData.forge = { kind: 'vat', instances }`, which the ledger reports as reason
-`vat-instanced` with `skinning.vatInstances` and `vatVertices`. Do not tag them: a tag would overwrite that marker.
-Skinned parts sharing a skeleton or not both work (each part reads its own bone range).
+`activeCount` (0 to `count`, default `count`) is every part's `instanceCount`: only the first `activeCount` instances
+are drawn, and the ledger's `vatInstances` counts those. `removeAt(i)` moves the last active instance (matrix, clip and
+fade) into slot `i`, lowers the count and returns the index that moved, or -1 when `i` was the last. At 0 three skips
+the draw on both backends, but each part is still a submission in the ledger and still walked by three; hide the meshes
+of a pool that stays empty.
 
 What it does not do: blending more than two clips, root motion,
 and frustum culling per instance (`frustumCulled = false`; use it for crowds that stay mostly on screen or split

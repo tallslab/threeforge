@@ -57,8 +57,8 @@ export interface AssembledCharacter {
 
 type MaterialWithMap = Material & { map?: Texture | null; color?: Color };
 
-function materialOf(part: SkinnedMesh): Material {
-  return (Array.isArray(part.material) ? part.material[0] : part.material) as Material;
+function materialOf(part: SkinnedMesh): MaterialWithMap {
+  return (Array.isArray(part.material) ? part.material[0] : part.material) as MaterialWithMap;
 }
 
 /** The colour attribute three shades `part` with, or undefined when its material does not use one. */
@@ -143,7 +143,7 @@ function packAtlas(
   wardrobe.forEach((part, i) => {
     const col = i % k;
     const row = Math.floor(i / k);
-    const material = materialOf(part) as MaterialWithMap;
+    const material = materialOf(part);
     const texels = readTexels(material.map, material.color, cellTexels, cellTexels);
     for (let y = 0; y < cellTexels; y++) {
       const dst = ((row * cellTexels + y) * atlasSize + col * cellTexels) * 4;
@@ -197,9 +197,9 @@ function writeColors(
   source: BufferAttribute | undefined,
 ): void {
   const rgb = [tint.r, tint.g, tint.b, 1];
+  // getComponent reads normalised integer colours (glTF COLOR_0 as bytes or shorts) as 0..1.
   for (let v = 0; v < count; v++)
     for (let c = 0; c < size; c++)
-      // getComponent reads normalised integer colours (glTF COLOR_0 as bytes or shorts) as 0..1.
       color[(v0 + v) * size + c] = rgb[c]! * (source && c < source.itemSize ? source.getComponent(v, c) : 1);
 }
 
@@ -252,7 +252,7 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
   }
 
   // A wardrobe without textures needs no atlas: each part's material colour goes into its vertex colours instead.
-  const textured = wardrobe.some((part) => (materialOf(part) as MaterialWithMap).map);
+  const textured = wardrobe.some((part) => materialOf(part).map);
   const packed = textured ? packAtlas(wardrobe, atlasSize) : null;
   const atlas = packed?.atlas ?? null;
   const cells = packed?.cells ?? new Map<SkinnedMesh, AtlasCell>();
@@ -266,9 +266,7 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
   template.vertexColors = colorSize > 0;
   template.name = 'forge:character';
   // What multiplies each part's vertex colours: white under an atlas, which holds the material colour already.
-  const tints = new Map(
-    wardrobe.map((part) => [part, textured ? WHITE : ((materialOf(part) as MaterialWithMap).color ?? WHITE)] as const),
-  );
+  const tints = new Map(wardrobe.map((part) => [part, textured ? WHITE : (materialOf(part).color ?? WHITE)] as const));
 
   const equipped: SkinnedMesh[] = [];
   for (const part of options.equipped) {

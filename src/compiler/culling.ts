@@ -94,10 +94,7 @@ const _forward = new Vector3();
  * the doubles written into a `Vector3`'s fields here, a heap number per batch per frame.
  */
 const _view = new Float64Array(6);
-function isIdentity(e: number[]): boolean {
-  for (let i = 0; i < 16; i++) if (e[i] !== (i % 5 === 0 ? 1 : 0)) return false;
-  return true;
-}
+const _identity = new Matrix4();
 
 /**
  * This cull's sort entries, as parallel typed arrays that only grow: a depth stored into an object field or passed to a
@@ -113,20 +110,21 @@ let _merged = new Int32Array(64);
 let _listLength = 0;
 let _farFirst = false;
 
+function copied<T extends Int32Array | Float64Array>(to: T, from: T): T {
+  to.set(from);
+  return to;
+}
+
 /** Room for one more entry; returns its index. */
 function nextEntry(): number {
   if (_listLength === _starts.length) {
-    const grow = <T extends Int32Array | Float64Array>(from: T): T => {
-      const to = new (from.constructor as new (n: number) => T)(from.length * 2);
-      to.set(from);
-      return to;
-    };
-    _starts = grow(_starts);
-    _counts = grow(_counts);
-    _ids = grow(_ids);
-    _depths = grow(_depths);
-    _order = new Int32Array(_starts.length);
-    _merged = new Int32Array(_starts.length);
+    const n = _starts.length * 2;
+    _starts = copied(new Int32Array(n), _starts);
+    _counts = copied(new Int32Array(n), _counts);
+    _ids = copied(new Int32Array(n), _ids);
+    _depths = copied(new Float64Array(n), _depths);
+    _order = new Int32Array(n);
+    _merged = new Int32Array(n);
   }
   return _listLength++;
 }
@@ -305,7 +303,7 @@ export function attachBvhCulling(
   /** `_view`: the camera's position and forward axis in the batch's frame. */
   const cameraInBatchFrame = (camera: Camera): void => {
     const c = camera.matrixWorld.elements;
-    if (isIdentity(target.matrixWorld.elements)) {
+    if (target.matrixWorld.equals(_identity)) {
       // A batch in an untransformed scene (the usual case): the camera's own position and -z axis, read straight
       // from its matrix.
       const length = Math.sqrt(c[8]! * c[8]! + c[9]! * c[9]! + c[10]! * c[10]!) || 1;

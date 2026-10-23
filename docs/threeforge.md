@@ -803,19 +803,19 @@ the `World` at tick time: constructing one against a disposed `World` throws (`W
 the `World` while the scheduler runs throws nowhere (its listener set is cleared, and every other detector keeps
 working), and `scheduler.dispose()` is safe before or after `world.dispose()`.
 
-Per-frame allocations. Once V8 has optimised the hot paths, threeforge's per-frame code allocates nothing: the
-BatchedMesh and instanced culls walk their BVH with `frustumCull` (bvh.js's own `frustumCulling` builds two closures per
-call), sort into typed arrays with a merge sort over a scratch array that persists (`Array.prototype.sort` allocates
-temporary storage, and a depth stored into an object field or passed to a function V8 does not inline is a heap number),
-keep the camera in the batch's frame in a `Float64Array`, and `Streamer.update` walks an array of chunks, computes
-distances in locals, and `Streamer.step()` does the update without building the stats object `update()` returns.
-`test/e2e/allocations.spec.ts` (`@alloc`) profiles 150 animation frames after 1 500 warm-up renders, ledger detached,
-and holds threeforge's share under 16 bytes a frame: measured on 2026-10-23 at 0 to 6 B on village, zen, crowd and
-arena, on both backends, where village and zen allocated 3.3 and 10 KB a frame before. three r186's renderer allocates
-on its own, which the spec records: on the same runs about 0.15 to 0.6 KB a frame on webgl2 for village, zen and crowd,
-0.6 to 11 KB on webgpu, and 43 KB on either for the arena. Before that warm-up the numbers are far higher (V8 boxes
-doubles in unoptimised code), so measure a game after its first half minute. An attached ledger allocates every frame by
-design (see "Overhead"). `test/unit/allocations.test.ts` asserts the same under Node with V8's sampling heap profiler.
+Per-frame allocations. Once V8 has optimised the hot paths, threeforge's per-frame code allocates nothing. The
+BatchedMesh and instanced culls walk their BVH with `frustumCull`, since bvh.js's own `frustumCulling` builds two
+closures per call. The BatchedMesh sort merge-sorts indices over typed arrays that persist: `Array.prototype.sort`
+allocates temporary storage, and a depth stored into an object field, or passed to a function V8 does not inline, is a
+heap number. The camera in a batch's frame lives in a `Float64Array` for the same reason. `Streamer.step()` does what
+`update()` does without building its stats object. `test/e2e/allocations.spec.ts` (`@alloc`) profiles two windows of 150
+animation frames after 1 500 warm-up renders, ledger detached, and holds threeforge's share under 16 bytes a frame; on
+2026-10-23 it measured 0 to 10 B on village, zen, crowd and arena, on both backends, where village and zen allocated 3.3
+and 10 KB a frame before. three r186's renderer allocates on its own, which the spec records: about 0.15 to 0.6 KB a
+frame on webgl2 for village, zen and crowd, 0.6 to 11 KB on webgpu, and 43 KB on either for the arena. Before the
+warm-up the numbers are far higher, because V8 boxes doubles in unoptimised code, so measure a game after its first half
+minute. An attached ledger allocates every frame by design (see "Overhead"). `test/unit/allocations.test.ts` asserts the
+same under Node.
 
 In the ledger: `js.hiddenOriginals`, `js.skipped`, budget `objects`, hints `js-objects` (over budget) and
 `detach-originals` (1 000 or more hidden originals: use `originals: 'detach'`); bench metrics `objects` and

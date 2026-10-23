@@ -131,15 +131,15 @@ describe('assembleCharacter', () => {
   });
 });
 
-describe('assembleCharacter vertex colours', () => {
-  /** The merged colour of every vertex, in the order the parts were merged. */
-  function colours(mesh: SkinnedMesh): number[][] {
-    const color = mesh.geometry.getAttribute('color') as BufferAttribute;
-    return Array.from({ length: color.count }, (_, v) =>
-      Array.from({ length: color.itemSize }, (_, c) => color.getComponent(v, c)),
-    );
-  }
+/** The merged colour of every vertex, in the order the parts were merged. */
+function colours(mesh: SkinnedMesh): number[][] {
+  const color = mesh.geometry.getAttribute('color') as BufferAttribute;
+  return Array.from({ length: color.count }, (_, v) =>
+    Array.from({ length: color.itemSize }, (_, c) => color.getComponent(v, c)),
+  );
+}
 
+describe('assembleCharacter vertex colours', () => {
   /** What three shades a part's vertices with: its colour attribute when its material uses it, else white. */
   function expected(part: SkinnedMesh, itemSize = 3): number[][] {
     const color = part.geometry.getAttribute('color') as BufferAttribute | undefined;
@@ -218,11 +218,6 @@ describe('assembleCharacter without textures', () => {
     );
   }
 
-  function merged(mesh: SkinnedMesh): number[][] {
-    const color = mesh.geometry.getAttribute('color') as BufferAttribute;
-    return Array.from({ length: color.count }, (_, v) => [0, 1, 2].map((c) => color.getComponent(v, c)));
-  }
-
   it.each([
     ['flat colours', { textures: false }],
     ['flat and vertex colours', { textures: false, vertexColors: true }],
@@ -238,7 +233,7 @@ describe('assembleCharacter without textures', () => {
     expect(character.cellOf(body)).toBeUndefined();
     // Nothing samples a texture, so the merged mesh needs no UVs.
     expect(character.mesh.geometry.getAttribute('uv')).toBeUndefined();
-    expect(merged(character.mesh)).toEqual(wardrobe.flatMap(shaded).map((c) => c.map((x) => expect.closeTo(x, 6))));
+    expect(colours(character.mesh)).toEqual(wardrobe.flatMap(shaded).map((c) => c.map((x) => expect.closeTo(x, 6))));
     character.dispose();
   });
 
