@@ -14,7 +14,7 @@ import {
   Sphere,
   Vector3,
 } from 'three';
-import { cameraView, frustumFor, InstanceBvh } from './instanceBvh.js';
+import { cameraView, frustumCull, frustumFor, InstanceBvh } from './instanceBvh.js';
 import { type CullingLod, levelFor } from './lodLevel.js';
 import { PassLayers } from './passLayers.js';
 import type { PassTracker } from './passTracker.js';
@@ -89,30 +89,109 @@ const _instanceMatrix = new Matrix4();
 const _frustumArray = new FrustumArray();
 const _cameraPos = new Vector3();
 const _forward = new Vector3();
+/**
+ * The camera in the culled batch's frame, `[x, y, z, forwardX, forwardY, forwardZ]`: in a typed array because Chrome
+ * was measured boxing the doubles written into a `Vector3`'s fields here, a heap number per batch per frame.
+ */
+const _view = new Float64Array(6);
 const _temp = new Vector3();
-/** The sort list, filled from `_items`, a pool that only grows, so a sorted cull allocates no items. */
+function isIdentity(e: number[]): boolean {
+  for (let i = 0; i < 16; i++) if (e[i] !== (i % 5 === 0 ? 1 : 0)) return false;
+  return true;
+}
+
+/**
+ * This cull's sort entries, as parallel typed arrays that only grow: a depth stored into an object field or passed to a
+ * function that is not inlined is boxed by V8, one heap number per instance per frame. `_order` is the permutation
+ * the sort writes; `_listLength` the entries in use.
+ */
+let _starts = new Int32Array(64);
+let _counts = new Int32Array(64);
+let _ids = new Int32Array(64);
+let _depths = new Float64Array(64);
+let _order = new Int32Array(64);
+let _merged = new Int32Array(64);
+let _listLength = 0;
+let _farFirst = false;
+
+/** Room for one more entry; returns its index. */
+function nextEntry(): number {
+  if (_listLength === _starts.length) {
+    const grow = <T extends Int32Array | Float64Array>(from: T): T => {
+      const to = new (from.constructor as new (n: number) => T)(from.length * 2);
+      to.set(from);
+      return to;
+    };
+    _starts = grow(_starts);
+    _counts = grow(_counts);
+    _ids = grow(_ids);
+    _depths = grow(_depths);
+    _order = new Int32Array(_starts.length);
+    _merged = new Int32Array(_starts.length);
+  }
+  return _listLength++;
+}
+
+/** Whether entry `a` draws before entry `b`: nearer first, or farther first for transparent materials. */
+function before(a: number, b: number): boolean {
+  return _farFirst ? _depths[a]! > _depths[b]! : _depths[a]! < _depths[b]!;
+}
+
+const RUN = 16;
+
+/**
+ * Writes into `_order` the entries sorted by depth, stably, as three's `list.sort(sortOpaque or sortTransparent)`
+ * does (`BatchedMesh.js` r186), without the temporary storage `Array.prototype.sort` allocates on every call:
+ * insertion-sorted runs, then merges between `_order` and `_merged`.
+ */
+function sortEntries(n: number, farFirst: boolean): Int32Array {
+  _farFirst = farFirst;
+  for (let k = 0; k < n; k++) _order[k] = k;
+  for (let lo = 0; lo < n; lo += RUN) {
+    const hi = Math.min(lo + RUN, n);
+    for (let i = lo + 1; i < hi; i++) {
+      const entry = _order[i]!;
+      let j = i - 1;
+      for (; j >= lo && before(entry, _order[j]!); j--) _order[j + 1] = _order[j]!;
+      _order[j + 1] = entry;
+    }
+  }
+  let from = _order;
+  let to = _merged;
+  for (let width = RUN; width < n; width *= 2) {
+    for (let lo = 0; lo < n; lo += 2 * width) {
+      const mid = Math.min(lo + width, n);
+      const hi = Math.min(lo + 2 * width, n);
+      let i = lo;
+      let j = mid;
+      let k = lo;
+      // Ties take the left run first, which keeps the sort stable.
+      while (i < mid && j < hi) to[k++] = before(from[j]!, from[i]!) ? from[j++]! : from[i++]!;
+      while (i < mid) to[k++] = from[i++]!;
+      while (j < hi) to[k++] = from[j++]!;
+    }
+    const swap = from;
+    from = to;
+    to = swap;
+  }
+  return from;
+}
+
+/** Objects for a user's `customSort`, which three hands a list of `{ start, count, z, index }`; a pool that only grows. */
 const _list: RenderItem[] = [];
 const _items: RenderItem[] = [];
 
-function sortOpaque(a: RenderItem, b: RenderItem): number {
-  return a.z - b.z;
-}
-function sortTransparent(a: RenderItem, b: RenderItem): number {
-  return b.z - a.z;
-}
-
-function pushItem(start: number, count: number, z: number, index: number): void {
-  let item = _items[_list.length];
-  if (item === undefined) {
-    item = { start, count, z, index };
-    _items[_list.length] = item;
-  } else {
-    item.start = start;
-    item.count = count;
-    item.z = z;
-    item.index = index;
+function itemList(): RenderItem[] {
+  _list.length = _listLength;
+  for (let k = 0; k < _listLength; k++) {
+    const item = (_items[k] ??= { start: 0, count: 0, z: 0, index: 0 });
+    item.start = _starts[k]!;
+    item.count = _counts[k]!;
+    item.z = _depths[k]!;
+    item.index = _ids[k]!;
+    _list[k] = item;
   }
-  _list.push(item);
+  return _list;
 }
 
 /**
@@ -164,8 +243,8 @@ export function attachBvhCulling(
   let sorted = false;
   /** A slot's texture row changed since the running append started. */
   let changed = false;
-  /** Where LOD distances are measured from, in the batch's frame. */
-  let eye = _cameraPos;
+  /** Where LOD distances are measured from, in the batch's frame: `_view` or `mainPos`, read at 0..2. */
+  let eye: Float64Array = _view;
 
   // Nested-pass state, sized to `_multiDrawCounts.length` (also the id bound) by `ensureCapacity`.
   let capacity = 0;
@@ -198,7 +277,7 @@ export function attachBvhCulling(
   /** The list length of the last outermost-render cull: `reuse-main`'s prefix when no pass is open. */
   let mainCount = 0;
   /** The main camera's position in the batch's frame, for the LOD level of appended ids. */
-  const mainPos = new Vector3();
+  const mainPos = new Float64Array(3);
   let hasMainPos = false;
 
   const ensureCapacity = (): void => {
@@ -224,11 +303,26 @@ export function attachBvhCulling(
     }
   };
 
-  /** `_cameraPos` and `_forward`: the camera in the batch's frame. */
+  /** `_view`: the camera's position and forward axis in the batch's frame. */
   const cameraInBatchFrame = (camera: Camera): void => {
+    const c = camera.matrixWorld.elements;
+    if (isIdentity(target.matrixWorld.elements)) {
+      // A batch in an untransformed scene (the usual case): the camera's own position and -z axis, read straight
+      // from its matrix.
+      const length = Math.sqrt(c[8]! * c[8]! + c[9]! * c[9]! + c[10]! * c[10]!) || 1;
+      _view[0] = c[12]!;
+      _view[1] = c[13]!;
+      _view[2] = c[14]!;
+      _view[3] = -c[8]! / length;
+      _view[4] = -c[9]! / length;
+      _view[5] = -c[10]! / length;
+      return;
+    }
     _instanceMatrix.copy(target.matrixWorld).invert();
     _cameraPos.setFromMatrixPosition(camera.matrixWorld).applyMatrix4(_instanceMatrix);
     _forward.set(0, 0, -1).transformDirection(camera.matrixWorld).transformDirection(_instanceMatrix);
+    _cameraPos.toArray(_view, 0);
+    _forward.toArray(_view, 3);
   };
 
   /** The geometry range to draw for an instance whose bounding sphere is in `_sphere`. */
@@ -236,7 +330,14 @@ export function attachBvhCulling(
     let gid = geometryIndex;
     if (lod) {
       const levels = lod.geometryIds.get(geometryIndex);
-      if (levels) gid = levels[Math.min(levelFor(_sphere.center.distanceTo(eye), lod.distances), levels.length - 1)]!;
+      if (levels) {
+        const c = _sphere.center;
+        const dx = c.x - eye[0]!;
+        const dy = c.y - eye[1]!;
+        const dz = c.z - eye[2]!;
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        gid = levels[Math.min(levelFor(d, lod.distances), levels.length - 1)]!;
+      }
     }
     return target._geometryInfo[gid]!;
   };
@@ -269,20 +370,34 @@ export function attachBvhCulling(
   /** Lists an instance whose sphere is in `_sphere` (when `sorted` or `lod` need it): the sort list, or the next slot. */
   const emit = (id: number): void => {
     const range = rangeFor(target._instanceInfo[id]!.geometryIndex);
-    if (sorted) pushItem(range.start, range.count, _temp.subVectors(_sphere.center, _cameraPos).dot(_forward), id);
-    else writeSlot(slot++, range.start, range.count, id);
+    if (!sorted) {
+      writeSlot(slot++, range.start, range.count, id);
+      return;
+    }
+    const at = nextEntry();
+    _starts[at] = range.start;
+    _counts[at] = range.count;
+    _ids[at] = id;
+    // Three's key, (centre - camera) · forward, written out so no double crosses a call or lands in an object.
+    const c = _sphere.center;
+    _depths[at] = (c.x - _view[0]!) * _view[3]! + (c.y - _view[1]!) * _view[4]! + (c.z - _view[2]!) * _view[5]!;
   };
 
   /** Sorts the list as three would and writes it to the slots from `slot` on. */
   const drainSorted = (material: Material, camera: Camera): void => {
     const customSort = batch.customSort as ((list: RenderItem[], camera: Camera) => void) | null;
-    if (customSort === null) _list.sort(material.transparent ? sortTransparent : sortOpaque);
-    else customSort.call(batch, _list, camera);
-    for (let k = 0; k < _list.length; k++) {
-      const item = _list[k]!;
-      writeSlot(slot++, item.start, item.count, item.index);
+    if (customSort === null) {
+      const order = sortEntries(_listLength, material.transparent);
+      for (let k = 0; k < _listLength; k++) {
+        const e = order[k]!;
+        writeSlot(slot++, _starts[e]!, _counts[e]!, _ids[e]!);
+      }
+    } else {
+      const list = itemList();
+      customSort.call(batch, list, camera);
+      for (const item of list) writeSlot(slot++, item.start, item.count, item.index);
     }
-    _list.length = 0;
+    _listLength = 0;
   };
 
   const visitPlain = (node: BVHNode<object, number>): void => {
@@ -315,10 +430,10 @@ export function attachBvhCulling(
     sorted = target.sortObjects;
     frustumFor(camera, target, coordinateSystem);
     if (lod || sorted) cameraInBatchFrame(camera);
-    eye = _cameraPos;
+    eye = _view;
     slot = 0;
-    _list.length = 0;
-    bvh.frustumCulling(cameraView.matrix.elements, visitPlain);
+    _listLength = 0;
+    frustumCull(bvh, cameraView.matrix.elements, visitPlain);
     if (sorted) drainSorted(material, camera);
     target._indirectTexture.needsUpdate = true;
     target._multiDrawCount = slot;
@@ -358,7 +473,7 @@ export function attachBvhCulling(
       for (let id = 0; id < info.length; id++) if (sphereMeets(id, frustum)) needed[neededCount++] = id;
     } else {
       frustumFor(camera, target, coordinateSystem);
-      bvh.frustumCulling(cameraView.matrix.elements, visitNeeded);
+      frustumCull(bvh, cameraView.matrix.elements, visitNeeded);
     }
     for (let j = 0; j < neededCount; j++) marks[needed[j]!] = mark;
 
@@ -381,10 +496,10 @@ export function attachBvhCulling(
     setUnits(geometry, material);
     sorted = target.sortObjects;
     if (lod || sorted) cameraInBatchFrame(camera);
-    eye = hasMainPos ? mainPos : _cameraPos;
+    eye = hasMainPos ? mainPos : _view;
     changed = false;
     slot = base;
-    _list.length = 0;
+    _listLength = 0;
     for (let j = 0; j < neededCount; j++) {
       const id = needed[j]!;
       if (marks[id] === covered) continue;
@@ -428,7 +543,9 @@ export function attachBvhCulling(
         mainCount = target._multiDrawCount;
         if (lod) {
           cameraInBatchFrame(camera);
-          mainPos.copy(_cameraPos);
+          mainPos[0] = _view[0]!;
+          mainPos[1] = _view[1]!;
+          mainPos[2] = _view[2]!;
           hasMainPos = true;
         }
       }

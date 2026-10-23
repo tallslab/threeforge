@@ -143,15 +143,16 @@ jobs:
           KTX_SHA256: ca635ed489d8bf54fac8d7687056c651193de0740830a7738cc034adc63e3027
       # COVERAGE, stated so a green run is not read as more than it is. Measured with
       # `pnpm exec playwright test --list --project=webgl2
-      # [--grep-invert "@corpus|@bench|@temporal"]`: the suite is 310 tests in 44 files PER PROJECT (620 across the
-      # two); this selection runs 138 per project (276 across both) in 32 files.
-      # Dropped here: 152 @corpus tests per project, covered only by the weekly full-corpus `assets.yml` (two of them
-      # are temporal and also run in the `temporal` job below), the 16 @bench ones (the `bench` job) and the 4 other
-      # @temporal ones (the `temporal` job). Concretely, a green run here does NOT cover
+      # [--grep-invert "@corpus|@bench|@temporal|@alloc"]`: the suite is 321 tests in 45 files PER PROJECT (642 across
+      # the two); this selection runs 141 per project (282 across both) in 32 files.
+      # Dropped here: 158 @corpus tests per project, covered only by the weekly full-corpus `assets.yml` (two of them
+      # are temporal and also run in the `temporal` job below), the 16 @bench ones (the `bench` job), the 4 other
+      # @temporal ones (the `temporal` job) and the 2 other @alloc ones (allocations.spec.ts, whose warm-up takes
+      # minutes on SwiftShader; `assets.yml` runs them). Concretely, a green run here does NOT cover
       #   - 15 of cli.spec.ts's 22 tests and 10 of mcp.spec.ts's 17 (the CLI/MCP agent surface on real models),
       #   - ParticleBudget at all (particles.spec.ts contributes zero tests here; it opens `bossfight`, which reaches
       #     the Kenney kits through buildArena), and only the naive half of shadow-budget.spec.ts,
-      #   - arena, assets, bench, biome, crowd, vat and warmup, which contribute zero tests here,
+      #   - allocations, arena, assets, bench, biome, crowd, vat and warmup, which contribute zero tests here,
       #   - ANY WebGPU pixel: on the webgpu leg the adapter is SwiftShader, so test/e2e/fixtures.ts turns pixelChecks
       #     off; 36 test.skip(!forge.pixelChecks) declarations skip whole tests and the rest skip their screenshots.
       #     WebGPU pixel parity is proven only by a local run on a native adapter (docs/release.md, step 2).
@@ -161,7 +162,7 @@ jobs:
       # passing, an error of the run itself, an abnormal exit and a missing report still fail the job.
       - name: e2e without downloaded content
         run: |
-          tests=(pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "@corpus|@bench|@temporal" --forbid-only --reporter=list,json)
+          tests=(pnpm exec playwright test --project=${{ matrix.backend }} --grep-invert "@corpus|@bench|@temporal|@alloc" --forbid-only --reporter=list,json)
           if [ "${{ matrix.advisory }}" = "true" ]; then
             node scripts/advisory-report.mjs "$PLAYWRIGHT_JSON_OUTPUT_NAME" "e2e ${{ matrix.backend }} on the SwiftShader adapter" adapter -- "${tests[@]}"
           else

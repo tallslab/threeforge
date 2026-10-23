@@ -121,7 +121,7 @@ export const zen: BenchBuilder = async ({ camera, params }) => {
     counts: { objects: count, chunks: cells * cells },
     worldOptions: { chunkSize: CHUNK, instanceThreshold: 64, originals: 'detach' },
     setTime: () => {
-      streamer?.update();
+      streamer?.step();
     },
     after: (world) => {
       streamer = new Streamer({ world, camera, radius: FAR });

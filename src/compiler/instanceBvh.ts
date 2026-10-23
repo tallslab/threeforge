@@ -39,6 +39,54 @@ export function frustumFor(
   return cameraView.frustum.setFromProjectionMatrix(viewProjection(camera, target), coordinateSystem, reversedDepth);
 }
 
+/**
+ * The two box tests bvh.js 0.0.13 runs its own frustum query with (`src/utils/frustum.js` ~32 and ~79), marked
+ * `@internal` and left out of its typings: `intersectsBoxMask` returns -1 when the box is out, 0 when it is wholly in,
+ * else the planes still to test; `isIntersected` tests a leaf against those planes.
+ */
+interface FrustumTests {
+  intersectsBoxMask(box: FloatArray, mask: number): number;
+  isIntersected(box: FloatArray, mask: number): boolean;
+}
+
+const _stack: Array<BVHNode<object, number> | undefined> = [];
+const _masks: number[] = [];
+
+/**
+ * `bvh.frustumCulling` without its per-call closures: the same leaves, visited in the same order (left before right),
+ * from an explicit stack that only grows. `visit` must not start another query.
+ */
+export function frustumCull(
+  bvh: BVH<object, number>,
+  projection: FloatArray | number[],
+  visit: (node: BVHNode<object, number>) => void,
+): void {
+  if (bvh.root === null) return;
+  const frustum = bvh.frustum.setFromProjectionMatrix(projection) as unknown as FrustumTests;
+  _stack[0] = bvh.root;
+  _masks[0] = 0b111111;
+  let top = 1;
+  while (top > 0) {
+    top--;
+    const node = _stack[top]!;
+    _stack[top] = undefined;
+    let mask = _masks[top]!;
+    if (node.object !== undefined) {
+      // A mask of 0 means an ancestor was wholly inside: no plane is left to test.
+      if (mask === 0 || frustum.isIntersected(node.box, mask)) visit(node);
+      continue;
+    }
+    if (mask !== 0) {
+      mask = frustum.intersectsBoxMask(node.box, mask);
+      if (mask < 0) continue;
+    }
+    _stack[top] = node.right;
+    _masks[top++] = mask;
+    _stack[top] = node.left;
+    _masks[top++] = mask;
+  }
+}
+
 /** Writes `box` as the `[minX, maxX, minY, maxY, minZ, maxZ]` bvh.js reads. */
 function toBvhBox(box: Box3, out: FloatArray): FloatArray {
   out[0] = box.min.x;

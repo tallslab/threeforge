@@ -121,8 +121,8 @@ import { Streamer } from 'threeforge';
 const world = new World(scene, { chunkSize: 250, originals: 'detach' });
 world.compile();
 const streamer = new Streamer({ world, camera, radius: camera.far, margin: 1 });
-// every frame, or from a RenderScheduler camera watcher:
-streamer.update();
+// every frame, or from a RenderScheduler camera watcher (update() does the same and returns stats()):
+streamer.step();
 ```
 
 The index is `world.chunks()` (batches, instanced groups and baked meshes per cell) plus every static mesh that is a

@@ -46,7 +46,9 @@ the pull request or push adds; merge commits are not checked. Run it locally the
 - `commit-rules`: the `Budget:` line check above.
 - `unit`: `pnpm typecheck`, `pnpm test`, `pnpm build`, plus an informational ledger-overhead figure in the run
   summary (not a gate, compared to nothing).
-- `e2e`: both backends, `--grep-invert "@corpus|@bench|@temporal"`, and no downloaded content at all. Its `test-results`
+- `e2e`: both backends, `--grep-invert "@corpus|@bench|@temporal|@alloc"`, and no downloaded content at all. The
+  `@alloc` tests (`test/e2e/allocations.spec.ts`) need a warm-up of minutes on SwiftShader; the weekly full run takes
+  them, and so does step 2's native run. Its `test-results`
   are uploaded whenever the run left any, the advisory `webgpu` leg included. That leg runs through
   `scripts/advisory-report.mjs` exactly as the corpus run below does, so its failed tests are a warning while the
   `@adapter` check, an error of the run, an abnormal exit and a missing report fail the job; the JSON report is uploaded

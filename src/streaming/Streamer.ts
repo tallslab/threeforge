@@ -1,4 +1,4 @@
-import { type BufferGeometry, type Camera, type Mesh, type Object3D, type Texture, Vector3 } from 'three';
+import type { BufferGeometry, Camera, Mesh, Object3D, Texture } from 'three';
 import type { World } from '../compiler/World.js';
 import {
   collectResources,
@@ -44,8 +44,6 @@ interface Chunk {
   resident: boolean;
 }
 
-const _position = new Vector3();
-
 /**
  * Residency of compiled chunks by distance from the camera. The index is `world.chunks()` (batches, instanced
  * groups and baked meshes per cell) plus every static mesh that is a direct child of the scene and was not compiled
@@ -63,6 +61,8 @@ export class Streamer {
   private readonly radius: number;
   private readonly margin: number;
   private readonly chunks = new Map<string, Chunk>();
+  /** The same chunks in creation order, which `update` walks: iterating the Map allocates an iterator every frame. */
+  private readonly chunkList: Chunk[] = [];
   /**
    * The chunk each placed object sits in, so placing one costs a lookup instead of a scan of every chunk. Weak on
    * purpose: the index alone never keeps an object alive, so the batches a `World.decompile()` drops are not held by it.
@@ -119,8 +119,11 @@ export class Streamer {
     }
     const key = cell.join(',');
     let chunk = this.chunks.get(key);
-    if (!chunk)
-      this.chunks.set(key, (chunk = { key, cell, placed: [], resources: emptyResourceSets(), resident: true }));
+    if (!chunk) {
+      chunk = { key, cell, placed: [], resources: emptyResourceSets(), resident: true };
+      this.chunks.set(key, chunk);
+      this.chunkList.push(chunk);
+    }
     chunk.placed.push({ object, parent: object.parent });
     this.index.set(object, chunk);
     collectResources(object, chunk.resources);
@@ -138,24 +141,35 @@ export class Streamer {
     this.place(object, cell);
   }
 
-  /** Distance from the camera to the cell's box in the ground plane (y ignored). */
-  private distance(cell: [number, number, number]): number {
-    _position.setFromMatrixPosition(this.camera.matrixWorld);
-    const dx = Math.max(cell[0] * this.size - _position.x, 0, _position.x - (cell[0] + 1) * this.size);
-    const dz = Math.max(cell[2] * this.size - _position.z, 0, _position.z - (cell[2] + 1) * this.size);
-    return Math.hypot(dx, dz);
+  /** Loads and unloads chunks for the camera's current position, then returns `stats()`. */
+  update(): StreamerStats {
+    this.step();
+    return this.stats();
   }
 
-  /** Loads and unloads chunks for the camera's current position; call it every frame or from a camera watcher. */
-  update(): StreamerStats {
+  /**
+   * What `update` does, without building the stats: call it every frame or from a camera watcher. A frame in which no
+   * chunk loads or unloads allocates nothing.
+   */
+  step(): void {
     const unloadBeyond = this.placed ? this.radius + this.margin : this.radius;
     this.placed = true;
-    for (const chunk of this.chunks.values()) {
-      const d = this.distance(chunk.cell);
+    // The camera's ground position, read once: the distances below stay in locals, so V8 boxes no double per chunk.
+    const camera = this.camera.matrixWorld.elements;
+    const x = camera[12]!;
+    const z = camera[14]!;
+    const size = this.size;
+    for (let i = 0; i < this.chunkList.length; i++) {
+      const chunk = this.chunkList[i]!;
+      // Distance from the camera to the cell's box in the ground plane (y ignored); not Math.hypot, which allocates.
+      const minX = chunk.cell[0] * size;
+      const minZ = chunk.cell[2] * size;
+      const dx = Math.max(minX - x, 0, x - (minX + size));
+      const dz = Math.max(minZ - z, 0, z - (minZ + size));
+      const d = Math.sqrt(dx * dx + dz * dz);
       if (!chunk.resident && d <= this.radius) this.load(chunk);
       else if (chunk.resident && d > unloadBeyond) this.unload(chunk);
     }
-    return this.stats();
   }
 
   private load(chunk: Chunk): void {
@@ -197,8 +211,8 @@ export class Streamer {
 
   stats(): StreamerStats {
     let resident = 0;
-    for (const c of this.chunks.values()) if (c.resident) resident++;
-    return { chunks: this.chunks.size, resident, loads: this.loads, unloads: this.unloads };
+    for (const c of this.chunkList) if (c.resident) resident++;
+    return { chunks: this.chunkList.length, resident, loads: this.loads, unloads: this.unloads };
   }
 
   /** Geometries of what the camera can draw in the scene, streamed or not: a mover may read a buffer a chunk reads. */
@@ -235,6 +249,7 @@ export class Streamer {
     // Let go of the World's objects: a disposed Streamer holds none of what a later `decompile()` wants to drop.
     for (const chunk of this.chunks.values()) for (const p of chunk.placed) this.index.delete(p.object);
     this.chunks.clear();
+    this.chunkList.length = 0;
     this.left.clear();
     this.listeners.clear();
   }

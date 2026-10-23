@@ -14,7 +14,7 @@ import {
   Sphere,
   Vector3,
 } from 'three';
-import { InstanceBvh, viewProjection } from './instanceBvh.js';
+import { frustumCull, InstanceBvh, viewProjection } from './instanceBvh.js';
 import { CasterPool, type RendererLike } from './instancing/casterPool.js';
 import { InstanceRows, MARK_ALL, MARK_ROWS, MARK_WHOLE } from './instancing/rows.js';
 import { levelFor } from './lodLevel.js';
@@ -209,7 +209,7 @@ export function createCulledInstancedMesh(
     if ((camera as Camera & { isArrayCamera?: boolean }).isArrayCamera) {
       for (let i = 0; i < n; i++) place(i);
     } else {
-      bvh.frustumCulling(projection.elements, visitPlace);
+      frustumCull(bvh, projection.elements, visitPlace);
     }
     for (let L = 0; L < levelCount; L++) {
       rows.writeRows(L, 0);

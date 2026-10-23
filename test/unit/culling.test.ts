@@ -443,3 +443,33 @@ describe('attachBvhCulling slot writer', () => {
     expect(texture.version).toBe(before + 2);
   });
 });
+
+describe('BVH culling sort', () => {
+  it('orders like a stable Array sort, ties kept in visit order', () => {
+    // Rows of instances across the view: every instance in a row has the same depth.
+    const material = new MeshStandardMaterial({ transparent: true });
+    const batch = new BatchedMesh(120, box.attributes.position!.count, box.index!.count, material);
+    const id = batch.addGeometry(box);
+    const m = new Matrix4();
+    for (let row = 0; row < 6; row++)
+      for (let k = 0; k < 20; k++)
+        batch.setMatrixAt(batch.addInstance(id), m.makeTranslation(k * 2 - 19, 1, -10 - row * 3));
+    batch.computeBoundingSphere();
+    attachBvhCulling(batch, WebGLCoordinateSystem);
+    const camera = new PerspectiveCamera(90, 2, 0.1, 100);
+    camera.position.set(0, 1, 0);
+    camera.updateMatrixWorld();
+    const scene = new Scene();
+    const drawn = () => {
+      batch.onBeforeRender(webglRenderer as never, scene, camera, batch.geometry, material, null as never);
+      const b = batch as unknown as { _multiDrawCount: number; _indirectTexture: { image: { data: Uint32Array } } };
+      return Array.from(b._indirectTexture.image.data.subarray(0, b._multiDrawCount));
+    };
+    // A custom sort is handed the list in visit order; three's own transparent sort over it is the reference.
+    batch.setCustomSort((list) => list.sort((a, b) => b.z - a.z));
+    const reference = drawn();
+    batch.setCustomSort(null);
+    expect(reference.length).toBeGreaterThan(60);
+    expect(drawn()).toEqual(reference);
+  });
+});
