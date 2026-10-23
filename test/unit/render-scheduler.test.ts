@@ -412,3 +412,86 @@ describe('RenderScheduler and a disposed World', () => {
     expect(() => scheduler.dispose()).not.toThrow(); // teardown after a disposed, compiled World must not throw
   });
 });
+
+describe('RenderScheduler frame cap', () => {
+  /** Ticks at `hz` for `seconds`; `jitter` moves every even tick, the ones a 30 fps cap at 60 Hz renders, that many ms early. */
+  function run(scheduler: RenderScheduler, hz: number, seconds: number, jitter = 0, from = 0): number[] {
+    const rendered: number[] = [];
+    const ticks = Math.round(hz * seconds);
+    for (let i = 1; i <= ticks; i++) {
+      const time = from + (i * 1000) / hz - (i % 2 === 0 ? jitter : 0);
+      if (scheduler.tick(time)) rendered.push(time);
+    }
+    return rendered;
+  }
+
+  const animating = () => setup({ mixers: [fakeMixer(1)] });
+
+  it.each([
+    [30, 60, 30],
+    [30, 120, 30],
+    [10, 60, 10],
+    [10, 144, 10],
+    [60, 120, 60],
+  ])('renders at most %i fps on a %i Hz display', (maxFps, hz, expected) => {
+    const { scheduler } = animating();
+    scheduler.maxFps = maxFps;
+    scheduler.tick(0);
+    // Long enough that a cadence restarted from each frame, which drifts late on a display that does not divide the cap, falls a frame short.
+    const rendered = run(scheduler, hz, 10);
+    expect(rendered.length).toBeGreaterThanOrEqual(10 * expected - 1);
+    expect(rendered.length).toBeLessThanOrEqual(10 * expected);
+  });
+
+  it('keeps 30 fps on a 60 Hz display whose ticks come a little early', () => {
+    // rAF timestamps follow vsync with sub-millisecond jitter: a tick 0.3 ms early must not drop the rate to 20 fps.
+    const { scheduler } = animating();
+    scheduler.maxFps = 30;
+    scheduler.tick(0);
+    const rendered = run(scheduler, 60, 2, 0.3).length;
+    expect(rendered).toBeGreaterThanOrEqual(59);
+    expect(rendered).toBeLessThanOrEqual(60);
+  });
+
+  it('renders a change seen on a capped tick at the next allowed one', () => {
+    const { scheduler, camera, renderer } = setup({ maxFps: 30 });
+    const at = (tick: number) => (tick * 1000) / 60;
+    expect(scheduler.tick(0)).toBe(true);
+    camera.position.x = 3;
+    camera.updateMatrixWorld();
+    expect(scheduler.tick(at(1))).toBe(false);
+    expect(scheduler.tick(at(2))).toBe(true);
+    expect(scheduler.lastReason).toBe('camera');
+    // An invalidate() inside the interval waits for the next frame; one after an idle stretch renders at once.
+    scheduler.invalidate();
+    expect(scheduler.tick(at(3))).toBe(false);
+    expect(scheduler.tick(at(4))).toBe(true);
+    expect(scheduler.lastReason).toBe('invalidate');
+    expect(scheduler.tick(at(5))).toBe(false);
+    scheduler.invalidate();
+    expect(scheduler.tick(at(9))).toBe(true);
+    expect(renderer.renders).toBe(4);
+    // Capped ticks count as skipped.
+    expect(scheduler.stats).toEqual({ ticks: 7, renders: 4, skipped: 3 });
+  });
+
+  it('switches the cap at run time and refuses a negative or non-finite one', () => {
+    const { scheduler } = animating();
+    expect(scheduler.maxFps).toBe(0);
+    scheduler.tick(0);
+    expect(run(scheduler, 60, 1).length).toBe(60);
+    scheduler.maxFps = 10;
+    expect(run(scheduler, 60, 1, 0, 1000).length).toBe(10);
+    scheduler.maxFps = 0;
+    expect(run(scheduler, 60, 1, 0, 2000).length).toBe(60);
+    // Faster at once: right after a frame at 10 fps, a switch to 60 fps does not wait out the old interval.
+    scheduler.maxFps = 10;
+    expect(scheduler.tick(3100)).toBe(true);
+    scheduler.maxFps = 60;
+    expect(scheduler.tick(3100 + 1000 / 60)).toBe(true);
+    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY])
+      expect(() => {
+        scheduler.maxFps = bad;
+      }).toThrow(/maxFps/);
+  });
+});

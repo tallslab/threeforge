@@ -771,10 +771,16 @@ detached descendants, recursively. It clears `matrixWorldNeedsUpdate` after comp
 the composed one with its parentless local matrix, so call `markDirty` on it again after such a call.
 
 `RenderScheduler` (`src/scheduler/RenderScheduler.ts`): `new RenderScheduler({ renderer, scene, camera, ledger?,
-world?, mixers?, watch?, keepAliveMs?, onRender? })`; `start()` drives `renderer.setAnimationLoop`, and `tick(time)`
+world?, mixers?, watch?, keepAliveMs?, maxFps?, onRender? })`; `start()` drives `renderer.setAnimationLoop`, and `tick(time)`
 renders only when `invalidate()` was called, the camera's world or projection matrix changed, a watched object
 moved, a mixer has running actions (mixers are updated every tick), the drawing buffer was resized, or
-`keepAliveMs` elapsed; otherwise three does nothing for that tick. Baselines are re-captured after each render
+`keepAliveMs` elapsed; otherwise three does nothing for that tick. `maxFps` (an option and a property to switch at any
+time; 0, the default, is no cap) limits the frames rendered, for a battery mode or a menu: a tick that needs a frame
+before the next is due skips and counts as skipped, what it saw is rendered on the next allowed tick, and frames are
+due on a fixed cadence (each `1000 / maxFps` ms after the last due time, or after the frame itself following an idle
+stretch), so an early tick delays one frame by a tick without lowering the rate and a 144 Hz display holds 10 fps
+exactly. Switching the cap measures the next frame from the last one rendered. Mixers are still updated every tick.
+Measured in headless Chromium with a camera moving every frame: 60 ticks/s, 29.7 renders/s at 30 and 10.0 at 10. Baselines are re-captured after each render
 (three recomputes the camera's projection on its first WebGPU frame). `stats`, `lastReason`, `skippedRecently()`
 (what `js.skipped` reports through `ledger.attachScheduler`), `stop()`, `dispose()`. A mixer counts as animating
 when one of its active actions (three's private `_actions[0.._nActiveActions)`, `AnimationMixer.js` r186 ~201-202)

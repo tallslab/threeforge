@@ -70,17 +70,22 @@ export interface RenderSchedulerOptions {
   watch?: Object3D[];
   /** Render at least this often in milliseconds even when nothing changed; 0 (default) never. */
   keepAliveMs?: number;
+  /** Render at most this many frames per second (a battery mode, a menu); 0 (default) every tick that needs one. */
+  maxFps?: number;
   /** Runs right before a render with the elapsed seconds (game logic that only matters when a frame is drawn). */
   onRender?(deltaSeconds: number): void;
 }
 
 const WINDOW = 60;
 
+type Reason = NonNullable<RenderScheduler['lastReason']>;
+
 /**
  * Render on change. A tick renders when something invalidated the frame, the camera's world or projection matrix
  * changed, a watched object moved, a mixer has running actions, the drawing buffer was resized, or `keepAliveMs`
  * elapsed; otherwise it skips, and three does no work at all for that tick. Menus, editors, turn-based games and
- * anything with a still camera spend most ticks skipping.
+ * anything with a still camera spend most ticks skipping. `maxFps` caps the frames that are rendered: a tick that
+ * needs a frame before the next one is due skips too, and what it saw is rendered on the next allowed tick.
  */
 export class RenderScheduler {
   readonly stats = { ticks: 0, renders: 0, skipped: 0 };
@@ -102,6 +107,14 @@ export class RenderScheduler {
   private invalidated = true;
   private lastTick = -1;
   private lastRender = -Infinity;
+  private fpsCap = 0;
+  /**
+   * When the next capped frame is due, on a fixed cadence so the average rate is the cap: a tick that comes a hair early
+   * (rAF timestamps jitter around vsync) delays that frame by one tick without lowering the rate.
+   */
+  private nextFrame = -Infinity;
+  /** What a capped tick saw: the edge detectors re-baseline every tick, so it would be lost otherwise. */
+  private pending: Reason | null = null;
   private unsubscribeWorld: (() => void) | null = null;
 
   constructor(options: RenderSchedulerOptions) {
@@ -111,10 +124,22 @@ export class RenderScheduler {
     this.ledger = options.ledger;
     this.mixers = options.mixers ?? [];
     this.keepAliveMs = options.keepAliveMs ?? 0;
+    this.maxFps = options.maxFps ?? 0;
     this.onRender = options.onRender;
     for (const object of options.watch ?? []) this.watch(object);
     this.ledger?.attachScheduler(this);
     this.unsubscribeWorld = options.world?.onDirty(() => this.invalidate()) ?? null;
+  }
+
+  /** The most frames rendered per second; 0 for no cap. Switch it at any time (entering a menu, on battery). */
+  get maxFps(): number {
+    return this.fpsCap;
+  }
+
+  set maxFps(fps: number) {
+    if (!Number.isFinite(fps) || fps < 0) throw new RangeError(`RenderScheduler: maxFps ${fps} must be 0 or more`);
+    this.fpsCap = fps;
+    this.nextFrame = fps > 0 ? this.lastRender + 1000 / fps : -Infinity;
   }
 
   /** The next tick renders. Call it after changing anything the scheduler cannot see. */
@@ -166,8 +191,7 @@ export class RenderScheduler {
     const watchedChanged = this.watchedChanged();
     const sizeChanged = this.sizeChanged();
     const keepAlive = this.keepAliveMs > 0 && time - this.lastRender >= this.keepAliveMs;
-    const dirty = this.invalidated || animating || cameraChanged || watchedChanged || sizeChanged || keepAlive;
-    const reason = this.invalidated
+    const seen: Reason | null = this.invalidated
       ? 'invalidate'
       : animating
         ? 'animation'
@@ -180,15 +204,25 @@ export class RenderScheduler {
               : keepAlive
                 ? 'keep-alive'
                 : null;
+    const reason = this.pending ?? seen;
+    const capped = reason !== null && this.fpsCap > 0 && time < this.nextFrame;
+    if (capped) this.pending = reason;
+    const render = reason !== null && !capped;
     this.stats.ticks++;
-    this.ring.push(!dirty);
+    this.ring.push(!render);
     if (this.ring.length > WINDOW) this.ring.shift();
-    if (!dirty) {
+    if (!render) {
       this.stats.skipped++;
       return false;
     }
     this.invalidated = false;
+    this.pending = null;
     this.lastReason = reason;
+    if (this.fpsCap > 0) {
+      // On the cadence while frames keep coming; after an idle stretch the next one is a full interval away.
+      const interval = 1000 / this.fpsCap;
+      this.nextFrame = this.nextFrame + interval > time ? this.nextFrame + interval : time + interval;
+    }
     this.onRender?.(delta);
     this.renderer.render(this.scene, this.camera);
     // Rendering can change what is compared (three updates the camera's matrices and, on its first WebGPU frame,
