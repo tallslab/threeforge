@@ -1,4 +1,4 @@
-import { Bone, type BufferAttribute, Skeleton, SkinnedMesh, Vector2 } from 'three';
+import { Bone, BufferAttribute, type MeshStandardMaterial, Skeleton, SkinnedMesh, Vector2 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { assembleCharacter } from '../../src/character/assembleCharacter.js';
 import { BONE_NAMES, buildCharacter } from '../../test/scenes/character.js';
@@ -128,5 +128,82 @@ describe('assembleCharacter', () => {
     const character = assembleCharacter({ skeleton, wardrobe: [body], equipped: [body] });
     expect(() => character.equip(gear[0]!)).toThrow(/wardrobe/);
     expect(BONE_NAMES).toHaveLength(3);
+  });
+});
+
+describe('assembleCharacter vertex colours', () => {
+  /** The merged colour of every vertex, in the order the parts were merged. */
+  function colours(mesh: SkinnedMesh): number[][] {
+    const color = mesh.geometry.getAttribute('color') as BufferAttribute;
+    return Array.from({ length: color.count }, (_, v) =>
+      Array.from({ length: color.itemSize }, (_, c) => color.getComponent(v, c)),
+    );
+  }
+
+  /** What three shades a part's vertices with: its colour attribute when its material uses it, else white. */
+  function expected(part: SkinnedMesh, itemSize = 3): number[][] {
+    const color = part.geometry.getAttribute('color') as BufferAttribute | undefined;
+    const used = (part.material as MeshStandardMaterial).vertexColors && color;
+    return Array.from({ length: part.geometry.attributes.position!.count }, (_, v) =>
+      Array.from({ length: itemSize }, (_, c) => (used && c < color.itemSize ? color.getComponent(v, c) : 1)),
+    );
+  }
+
+  it('keeps each part its vertex colours and gives untinted parts white', () => {
+    const { body, gear, skeleton } = buildCharacter({ vertexColors: true });
+    const character = assembleCharacter({ skeleton, wardrobe: [body, ...gear], equipped: [body, ...gear] });
+    expect((character.mesh.material as MeshStandardMaterial).vertexColors).toBe(true);
+    expect(character.mesh.geometry.getAttribute('color')!.itemSize).toBe(3);
+    const merged = colours(character.mesh);
+    expect(merged).toEqual(
+      [body, ...gear].flatMap((part) => expected(part)).map((c) => c.map((x) => expect.closeTo(x, 6))),
+    );
+    // The body is textured and untinted; the gear's colours really vary.
+    expect(expected(body).every((c) => c.every((x) => x === 1))).toBe(true);
+    expect(new Set(merged.map((c) => c.join())).size).toBeGreaterThan(10);
+  });
+
+  it('ignores a colour attribute the part material does not use', () => {
+    const { body, gear, skeleton } = buildCharacter({ vertexColors: true });
+    const [helmet, chest] = gear as [SkinnedMesh, SkinnedMesh];
+    (chest.material as MeshStandardMaterial).vertexColors = false;
+    const character = assembleCharacter({ skeleton, wardrobe: [body, helmet, chest], equipped: [chest, helmet] });
+    const merged = colours(character.mesh);
+    const chestVertices = chest.geometry.attributes.position!.count;
+    expect(merged.slice(0, chestVertices).every((c) => c.every((x) => x === 1))).toBe(true);
+    expect(merged.slice(chestVertices)).toEqual(expected(helmet).map((c) => c.map((x) => expect.closeTo(x, 6))));
+  });
+
+  it('reads normalised RGBA colours and keeps the alpha channel', () => {
+    const { body, gear, skeleton } = buildCharacter({ vertexColors: true });
+    const helmet = gear[0]!;
+    const n = helmet.geometry.attributes.position!.count;
+    const rgba = new Uint8Array(n * 4).map((_, i) => (i % 4 === 3 ? 128 : (i * 37) % 256));
+    helmet.geometry.setAttribute('color', new BufferAttribute(rgba, 4, true));
+    const character = assembleCharacter({ skeleton, wardrobe: [body, helmet], equipped: [body, helmet] });
+    expect(character.mesh.geometry.getAttribute('color')!.itemSize).toBe(4);
+    const merged = colours(character.mesh);
+    expect(merged).toEqual(
+      [...expected(body, 4), ...expected(helmet, 4)].map((c) => c.map((x) => expect.closeTo(x, 6))),
+    );
+    expect(merged.at(-1)![3]).toBeCloseTo(128 / 255, 6);
+  });
+
+  it('sets the colour layout from the wardrobe, whatever is equipped', () => {
+    const { body, gear, skeleton } = buildCharacter({ vertexColors: true });
+    // Nothing coloured is on yet: the material's program and the vertex layout must already fit the gear.
+    const character = assembleCharacter({ skeleton, wardrobe: [body, ...gear], equipped: [body] });
+    expect((character.mesh.material as MeshStandardMaterial).vertexColors).toBe(true);
+    expect(colours(character.mesh)).toEqual(expected(body));
+    character.equip(gear[0]!);
+    character.unequip(gear[0]!);
+    expect(colours(character.mesh)).toEqual(expected(body));
+  });
+
+  it('adds no colour attribute to a wardrobe without vertex colours', () => {
+    const { body, gear, skeleton } = buildCharacter();
+    const character = assembleCharacter({ skeleton, wardrobe: [body, ...gear], equipped: [body, ...gear] });
+    expect(character.mesh.geometry.getAttribute('color')).toBeUndefined();
+    expect((character.mesh.material as MeshStandardMaterial).vertexColors).toBe(false);
   });
 });

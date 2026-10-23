@@ -1054,7 +1054,11 @@ colours and a custom attribute stay out of the bake. In `test/e2e/cli.spec.ts`, 
 `assembleCharacter({ skeleton, wardrobe, equipped, atlas: { size }, material })` merges skinned parts onto one shared
 skeleton: bones are remapped by name, textures are packed into a k×k grid atlas (a `DataTexture` in node, an
 `OffscreenCanvas` in the browser) with uv clamping and a half-texel inset, and one skinned mesh with one material
-results. `equip(part)` and `unequip(part)` rebuild only the vertex buffer; the draw count never changes. The report
+results. Vertex colours survive the merge: when any wardrobe part's material has `vertexColors`, the merged
+geometry carries a `color` attribute (RGBA if any part's has alpha, normalised integer colours read as 0..1), parts
+that use no colours get white so the atlas alone shades them, and the material keeps `vertexColors`. The layout is
+decided from the wardrobe, so equipping never changes the program. `equip(part)` and `unequip(part)` rebuild only the
+vertex buffer; the draw count never changes. The report
 gives the atlas cells (`cellOf`), bones and vertices; `dispose()` frees the atlas. Gear swaps change data, not draw
 calls.
 

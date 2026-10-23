@@ -3,11 +3,14 @@ import { assembleCharacter } from 'threeforge';
 import { buildCharacter } from '../../scenes/character.js';
 import type { BenchBuilder } from './index.js';
 
-/** The synthetic modular character (`test/scenes/character.ts`); `assemble=1` merges its parts into one skinned mesh. */
+/**
+ * The synthetic modular character (`test/scenes/character.ts`); `assemble=1` merges its parts into one skinned mesh and
+ * `vertexColors=1` colours its gear per vertex instead of by texture.
+ */
 export const characterScene: BenchBuilder = async ({ camera, params }) => {
   const scene = new Scene();
   scene.background = new Color(0x202830);
-  const character = buildCharacter();
+  const character = buildCharacter({ vertexColors: params.get('vertexColors') === '1' });
   let assembled: ReturnType<typeof assembleCharacter> | undefined;
   if (params.get('assemble') === '1') {
     assembled = assembleCharacter({

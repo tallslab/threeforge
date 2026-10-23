@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures.js';
+import { pixelDiff } from './pixels.js';
 
 test('assembleCharacter turns 5 skinned draws (body + 4 gear) into one with the same pixels', async ({ forge }) => {
   await forge.open('character');
@@ -49,4 +50,26 @@ test('equipping and unequipping through the assembled character never changes th
   expect(result.after).toBe(1);
   expect(result.verticesWithout).toBeLessThan(result.verticesBefore);
   expect(result.verticesAfter).toBe(result.verticesBefore);
+});
+
+test('an assembled character keeps its gear vertex colours', async ({ forge }) => {
+  test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+  const shot = async (query: Record<string, string>) => {
+    await forge.open('character', query);
+    await forge.page.evaluate(async () => {
+      for (let i = 0; i < 2; i++) await window.__forge.frameAsync();
+    });
+    return forge.page.screenshot({ type: 'png' });
+  };
+  const parts = await shot({ vertexColors: '1' });
+  const assembled = await shot({ vertexColors: '1', assemble: '1' });
+  const textured = await shot({});
+  const likeness = pixelDiff(parts, assembled);
+  const recoloured = pixelDiff(parts, textured);
+  console.log(
+    `character vertex colours: parts vs assembled ${(likeness * 100).toFixed(2)}% · vs textured gear ${(recoloured * 100).toFixed(2)}%`,
+  );
+  // Vertex-coloured gear looks unlike the textured gear, so losing the colours would show.
+  expect(recoloured).toBeGreaterThan(0.02);
+  expect(likeness).toBeLessThan(0.01);
 });

@@ -1,7 +1,8 @@
 /**
  * A procedural rigged character: a shared 3-bone skeleton (root -> spine -> head), a body mesh, and gear parts
  * (helmet, chest, legs, sword) each exported "the glTF way": its own SkinnedMesh with its own Skeleton instance
- * whose bones carry the same names as the body's. Textures are small DataTextures so this runs in node.
+ * whose bones carry the same names as the body's. Textures are small DataTextures so this runs in node. With
+ * `vertexColors` the gear is untextured and coloured per vertex (a gradient up its height), and the body stays textured.
  */
 import {
   Bone,
@@ -35,6 +36,19 @@ export function makeRig(): { root: Bone; skeleton: Skeleton } {
   spine.add(head);
   root.updateMatrixWorld(true);
   return { root, skeleton: new Skeleton([root, spine, head]) };
+}
+
+/** A colour per vertex running from `rgb` at the bottom of the part to white at its top, in linear floats. */
+function shade(geometry: BufferGeometry, rgb: [number, number, number]): void {
+  const position = geometry.attributes.position!;
+  geometry.computeBoundingBox();
+  const { min, max } = geometry.boundingBox!;
+  const colors = new Float32Array(position.count * 3);
+  for (let i = 0; i < position.count; i++) {
+    const t = (position.getY(i) - min.y) / (max.y - min.y || 1);
+    for (let c = 0; c < 3; c++) colors[i * 3 + c] = (rgb[c]! / 255) * (1 - t) + t;
+  }
+  geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
 }
 
 /** Weight vertices by height: bottom -> root, middle -> spine, top -> head. */
@@ -93,7 +107,7 @@ function partSkeleton(order: number[]): Skeleton {
   );
 }
 
-export function buildCharacter(): CharacterParts {
+export function buildCharacter(options: { vertexColors?: boolean } = {}): CharacterParts {
   const { root, skeleton } = makeRig();
   const make = (
     geometry: BufferGeometry,
@@ -105,7 +119,11 @@ export function buildCharacter(): CharacterParts {
     // skinIndex values refer to the part's own bone order; boneOrder maps rig index -> part index.
     const boneOrder = BONE_NAMES.map((n) => bones.indexOf(n));
     skin(geometry, boneOrder);
-    const material = new MeshStandardMaterial({ map: solidTexture(rgb), roughness: 0.6, metalness: 0 });
+    const coloured = options.vertexColors === true && name !== 'body';
+    if (coloured) shade(geometry, rgb);
+    const material = coloured
+      ? new MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0 })
+      : new MeshStandardMaterial({ map: solidTexture(rgb), roughness: 0.6, metalness: 0 });
     const mesh = new SkinnedMesh(geometry, material);
     mesh.name = name;
     mesh.bind(partSkeleton(order));

@@ -57,6 +57,17 @@ export interface AssembledCharacter {
 
 type MaterialWithMap = Material & { map?: Texture | null; color?: Color };
 
+function materialOf(part: SkinnedMesh): Material {
+  return (Array.isArray(part.material) ? part.material[0] : part.material) as Material;
+}
+
+/** The colour attribute three shades `part` with, or undefined when its material does not use one. */
+function vertexColorsOf(part: SkinnedMesh): BufferAttribute | undefined {
+  return materialOf(part).vertexColors
+    ? (part.geometry.getAttribute('color') as BufferAttribute | undefined)
+    : undefined;
+}
+
 function readTexels(
   texture: Texture | null | undefined,
   fallback: Color | undefined,
@@ -154,7 +165,7 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
   wardrobe.forEach((part, i) => {
     const col = i % k;
     const row = Math.floor(i / k);
-    const material = (Array.isArray(part.material) ? part.material[0] : part.material) as MaterialWithMap;
+    const material = materialOf(part) as MaterialWithMap;
     const texels = readTexels(material.map, material.color, cellTexels, cellTexels);
     for (let y = 0; y < cellTexels; y++) {
       const dst = ((row * cellTexels + y) * atlasSize + col * cellTexels) * 4;
@@ -174,12 +185,13 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
   atlas.needsUpdate = true;
   atlas.name = 'forge:character-atlas';
 
-  const template = (
-    options.material ??
-    ((Array.isArray(wardrobe[0]!.material) ? wardrobe[0]!.material[0] : wardrobe[0]!.material) as Material)
-  ).clone() as MaterialWithMap;
+  const template = (options.material ?? materialOf(wardrobe[0]!)).clone() as MaterialWithMap;
   template.map = atlas;
   if (template.color) template.color.set(0xffffff);
+  // Decided from the whole wardrobe, so equipping never changes the material's program or the vertex layout: RGBA
+  // when any part shades with alpha, and white for the vertices of parts that use no colours.
+  const colorSize = Math.max(0, ...wardrobe.map((part) => vertexColorsOf(part)?.itemSize ?? 0));
+  template.vertexColors = colorSize > 0;
   template.name = 'forge:character';
 
   const equipped: SkinnedMesh[] = [];
@@ -201,6 +213,7 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
     const uv = new Float32Array(vertices * 2);
     const skinIndex = new Uint16Array(vertices * 4);
     const skinWeight = new Float32Array(vertices * 4);
+    const color = colorSize > 0 ? new Float32Array(vertices * colorSize).fill(1) : null;
     const index = vertices > 65535 ? new Uint32Array(indices) : new Uint16Array(indices);
     let v0 = 0;
     let i0 = 0;
@@ -221,6 +234,12 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
         const w = srcUv ? Math.min(1, Math.max(0, srcUv.getY(v))) : 0.5;
         uv[(v0 + v) * 2] = cell.x + inset + u * span;
         uv[(v0 + v) * 2 + 1] = cell.y + inset + w * span;
+      }
+      const srcColor = color ? vertexColorsOf(part) : undefined;
+      if (color && srcColor) {
+        // getComponent reads normalised integer colours (glTF COLOR_0 as bytes or shorts) as 0..1.
+        for (let v = 0; v < count; v++)
+          for (let c = 0; c < srcColor.itemSize; c++) color[(v0 + v) * colorSize + c] = srcColor.getComponent(v, c);
       }
       const si = g.attributes.skinIndex as BufferAttribute | undefined;
       const sw = g.attributes.skinWeight as BufferAttribute | undefined;
@@ -243,6 +262,7 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
     geometry.setAttribute('uv', new Float32BufferAttribute(uv, 2));
     geometry.setAttribute('skinIndex', new Uint16BufferAttribute(skinIndex, 4));
     geometry.setAttribute('skinWeight', new Float32BufferAttribute(skinWeight, 4));
+    if (color) geometry.setAttribute('color', new Float32BufferAttribute(color, colorSize));
     geometry.setIndex(new BufferAttribute(index, 1));
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
