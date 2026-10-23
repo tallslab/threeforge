@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Upgrading from 0.11.0
+
+Kinds as in 0.9.0: `API` (an export changed shape), `default` (what happens when you change nothing) and `reported` (a value the ledger reports differently for an unchanged scene).
+
+| Kind | Change | If you do nothing | What to do |
+|---|---|---|---|
+| default | `RenderScheduler`'s `maxFps` counts display refreshes, and mixers advance only on rendered frames. | Capped frames come every same number of refreshes; at a cap that does not divide the display, such as 30 at 144 Hz, the rate is the whole-refresh one below the cap (28.8 fps) instead of a 4/5 mix. `mixer.update` runs once per rendered frame with the time since the last one, and not while nothing animates. | Pass `pacing: 'average'` for the mixed gaps that average the cap. |
+
+### All changes
+
+- `RenderScheduler` paces a capped frame rate by display refreshes. 0.11.0 kept an elapsed-time deadline, and float rounding at it put the odd frame one refresh early or late: at 30 fps on a 60 Hz display, 7 of 300 gaps were 1 or 3 refreshes instead of 2. The refresh interval is now the mean of recent tick intervals within half of their median, a frame waits a whole number of refreshes and is accepted half a refresh early, and `pacing` chooses between a steady gap (the default, never more than 5 % over the cap) and gaps mixed to average the cap. With exact or ±1 ms jittered timestamps every gap is 2 at 60 and 59.94 Hz, 4 at 120 Hz and 5 at 144 Hz; in Chromium on a native 60 Hz adapter, every gap was 2 refreshes at 30 fps and 6 at 10.
+- Mixers advance only on rendered frames, by the time since the last one, instead of on every tick: at 30 fps on a 60 Hz display that is half the `mixer.update` calls, and a clip that ends between frames still shows its end pose on the next one. A tick that wants no frame has nothing animating and drops its time, so a fade scheduled after an idle stretch runs at its own pace.
+
 ## 0.11.0 (2026-10-23)
 
 ### Upgrading from 0.10.0

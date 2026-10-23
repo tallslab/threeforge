@@ -431,7 +431,6 @@ describe('RenderScheduler frame cap', () => {
     [30, 60, 30],
     [30, 120, 30],
     [10, 60, 10],
-    [10, 144, 10],
     [60, 120, 60],
   ])('renders at most %i fps on a %i Hz display', (maxFps, hz, expected) => {
     const { scheduler } = animating();
@@ -494,5 +493,89 @@ describe('RenderScheduler frame cap', () => {
       expect(() => {
         scheduler.maxFps = bad;
       }).toThrow(/maxFps/);
+  });
+});
+
+describe('RenderScheduler frame pacing', () => {
+  /** A seeded ±`amount` ms jitter, the same sequence every run. */
+  function jitter(amount: number): () => number {
+    let s = 7;
+    return () => {
+      s = (s * 16807) % 2147483647;
+      return ((s / 2147483647) * 2 - 1) * amount;
+    };
+  }
+
+  /** Ticks at `hz` for `seconds` with a mixer always animating; returns the refresh gaps between rendered frames. */
+  function gaps(scheduler: RenderScheduler, hz: number, seconds: number, wobble = () => 0): number[] {
+    const out: number[] = [];
+    let last = -1;
+    for (let i = 0; i <= Math.round(hz * seconds); i++) {
+      if (scheduler.tick((i * 1000) / hz + (i === 0 ? 0 : wobble()))) {
+        if (last >= 0) out.push(i - last);
+        last = i;
+      }
+    }
+    // The first frames come before the scheduler has measured the refresh interval.
+    return out.slice(10);
+  }
+
+  const animating = (extra: Record<string, unknown> = {}) => setup({ mixers: [fakeMixer(1)], maxFps: 30, ...extra });
+
+  it.each([
+    [60, 2],
+    [59.94, 2],
+    [120, 4],
+    [144, 5],
+    // 4.4 refreshes a frame: 4 would be 33 fps, 10 % over the cap.
+    [132, 5],
+  ])('renders every refresh-counted slot at %d Hz: a gap of %d each time', (hz, gap) => {
+    const exact = gaps(animating().scheduler, hz, 10);
+    expect(new Set(exact)).toEqual(new Set([gap]));
+    // Timestamps a millisecond either side of vsync keep the same gaps.
+    const wobbly = gaps(animating().scheduler, hz, 10, jitter(1));
+    expect(new Set(wobbly)).toEqual(new Set([gap]));
+  });
+
+  it("alternates 4 and 5 at 144 Hz with pacing 'average', for 30 frames a second", () => {
+    const g = gaps(animating({ pacing: 'average' }).scheduler, 144, 10);
+    expect(new Set(g)).toEqual(new Set([4, 5]));
+    const mean = g.reduce((a, b) => a + b, 0) / g.length;
+    expect(mean).toBeCloseTo(4.8, 2);
+  });
+
+  it('updates mixers only on drawn frames, with the time since the last one', () => {
+    const mixer = fakeMixer(1);
+    const { scheduler } = setup({ mixers: [mixer], maxFps: 30 });
+    let renders = 0;
+    let lastRender = 0;
+    for (let i = 0; i <= 600; i++) {
+      const time = (i * 1000) / 60;
+      if (scheduler.tick(time)) {
+        renders++;
+        lastRender = time;
+      }
+    }
+    expect(mixer.deltas).toHaveLength(renders);
+    // Every second of wall time reaches the mixers once, so animation keeps wall time without drift.
+    expect(mixer.deltas.reduce((a, b) => a + b, 0)).toBeCloseTo(lastRender / 1000, 9);
+  });
+
+  it('shows the end pose of a clip that finishes between drawn frames', () => {
+    const { root, mixer, action } = makeAnimatedMixer();
+    action.setLoop(LoopOnce, 1);
+    action.clampWhenFinished = true;
+    action.play();
+    const { scheduler } = setup({ mixers: [mixer], maxFps: 30 });
+    let lastRendered = -1;
+    for (let i = 0; i <= 120; i++) if (scheduler.tick((i * 1000) / 60)) lastRendered = i;
+    // The 1 s clip ends at tick 60; the frame after it carries the end pose, and nothing renders once it has.
+    expect(root.position.x).toBeCloseTo(1, 6);
+    expect(lastRendered).toBeGreaterThanOrEqual(60);
+    expect(lastRendered).toBeLessThanOrEqual(62);
+  });
+
+  it("refuses a pacing that is not 'steady' or 'average'", () => {
+    expect(() => setup({ maxFps: 30, pacing: 'fast' })).toThrow(/pacing/);
   });
 });

@@ -771,16 +771,22 @@ detached descendants, recursively. It clears `matrixWorldNeedsUpdate` after comp
 the composed one with its parentless local matrix, so call `markDirty` on it again after such a call.
 
 `RenderScheduler` (`src/scheduler/RenderScheduler.ts`): `new RenderScheduler({ renderer, scene, camera, ledger?, world?,
-mixers?, watch?, keepAliveMs?, maxFps?, onRender? })`; `start()` drives `renderer.setAnimationLoop`, and `tick(time)`
-renders only when `invalidate()` was called, the camera's world or projection matrix changed, a watched object moved, a
-mixer has running actions (mixers are updated every tick), the drawing buffer was resized, or `keepAliveMs` elapsed;
-otherwise three does nothing for that tick. `maxFps` (an option and a property to switch at any time; 0, the default, is
-no cap) limits the frames rendered, for a battery mode or a menu: a tick that needs a frame before the next is due skips
-and counts as skipped, what it saw is rendered on the next allowed tick, and frames are due on a fixed cadence (each
-`1000 / maxFps` ms after the last due time, or after the frame itself following an idle stretch), so an early tick
-delays one frame by a tick without lowering the rate and a 144 Hz display holds 10 fps exactly. Switching the cap
-measures the next frame from the last one rendered. Mixers are still updated every tick. Measured in headless Chromium
-with a camera moving every frame: 60 ticks/s, 29.7 renders/s at 30 and 10.0 at 10. Baselines are re-captured after each
+mixers?, watch?, keepAliveMs?, maxFps?, pacing?, onRender? })`; `start()` drives `renderer.setAnimationLoop`, and
+`tick(time)` renders only when `invalidate()` was called, the camera's world or projection matrix changed, a watched
+object moved, a mixer has running actions, the drawing buffer was resized, or `keepAliveMs` elapsed; otherwise three
+does nothing for that tick. `maxFps` (an option and a property to switch at any time; 0, the default, is no cap) limits
+the frames rendered, for a battery mode or a menu, by counting display refreshes. The refresh interval is the mean of
+the last 15 tick intervals within half of their median: the median drops stalls, and the mean of the rest holds still
+under vsync jitter, which cancels between consecutive intervals. A frame waits a whole number of refreshes after the
+last one and is accepted half a refresh early; a tick that needs a frame sooner skips, counts as skipped, and what it
+saw is rendered on the next allowed tick. `pacing: 'steady'` (the default) waits the same number every frame, the
+nearest whole ratio unless that runs more than 5 % over the cap (30 is every 2nd refresh at 60 Hz and 59.94 Hz, every
+4th at 120 Hz, every 5th at 144 Hz for 28.8 fps); `'average'` mixes two gaps to average the cap (4 and 5 at 144 Hz).
+Switching the cap recomputes the gap at once. Mixers advance only on rendered frames, by the time the capped ticks
+before them held back; a tick that wanted no frame has nothing animating and its time is dropped, so the mixers' clock
+pauses with them and a fade scheduled from it later runs at its own pace. Whether a mixer animates is asked before it
+advances, so a clip that ends between frames shows its end pose on the next one. Measured in Chromium on a native 60 Hz
+adapter with a camera moving every frame: every gap 2 refreshes at 30 and 6 at 10. Baselines are re-captured after each
 render (three recomputes the camera's projection on its first WebGPU frame). `stats`, `lastReason`, `skippedRecently()`
 (what `js.skipped` reports through `ledger.attachScheduler`), `stop()`, `dispose()`. A mixer counts as animating when
 one of its active actions (three's private `_actions[0.._nActiveActions)`, `AnimationMixer.js` r186 ~201-202)
