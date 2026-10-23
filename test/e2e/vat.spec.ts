@@ -1,5 +1,5 @@
 import { PNG } from 'pngjs';
-import { expect, test } from './fixtures.js';
+import { expect, type ForgePage, test } from './fixtures.js';
 import { pixelDiff } from './pixels.js';
 
 /**
@@ -92,4 +92,136 @@ test('vat: parts at different offsets match the skinned original under a non-com
   // It is shaded rather than flat, so a wrongly built normal matrix would move these pixels too.
   expect(lit.spread, 'the character must be visibly lit for its normals to matter').toBeGreaterThan(40);
   expect(likeness).toBeLessThan(0.03);
+});
+
+/** Frames the twin close at x = 1 with the original hidden, and renders that. */
+async function frameTwin(forge: ForgePage): Promise<void> {
+  await forge.page.evaluate(async () => {
+    const f = window.__forge;
+    const vat = f.vat!;
+    for (const o of f.scene.children) {
+      if ((o as { isLight?: boolean }).isLight) continue;
+      o.visible = vat.meshes.some((mesh) => mesh === o);
+    }
+    f.camera.position.set(1, 0.4, 1.05);
+    f.camera.lookAt(1, 0.34, 0);
+    f.camera.updateMatrixWorld();
+    for (let i = 0; i < 2; i++) await f.frameAsync();
+  });
+}
+
+/** A clip switch: at `at` seconds (the current time when left out), with an optional fade. */
+type Switch = { clip: string; at?: number; fade?: number };
+
+/** The twin at `seconds`, after the switches. */
+async function twinAt(forge: ForgePage, seconds: number, switches: Switch[]): Promise<Buffer> {
+  await forge.page.evaluate(
+    async ({ seconds, switches }) => {
+      const f = window.__forge;
+      const vat = f.vat!;
+      for (const { clip, at, fade } of switches) {
+        if (at !== undefined) vat.setTime(at);
+        vat.setClipAt(0, clip, { fade });
+      }
+      vat.setTime(seconds);
+      for (let i = 0; i < 2; i++) await f.frameAsync();
+    },
+    { seconds, switches },
+  );
+  return forge.page.screenshot({ type: 'png' });
+}
+
+test('vat: a crossfade starts on the clip it leaves, ends on the next', {
+  tag: '@corpus',
+}, async ({ forge }) => {
+  test.setTimeout(120_000);
+  test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+  await forge.open('vat', { vatClip: 'walk' });
+  await frameTwin(forge);
+  const walk = (t: number) => twinAt(forge, t, [{ clip: 'walk' }]);
+  const die = (t: number) => twinAt(forge, t, [{ clip: 'die' }]);
+  // At 0.3 s the twin walks and starts a 0.6 s fade into `die`.
+  const fading = (t: number) => twinAt(forge, t, [{ clip: 'walk' }, { clip: 'die', at: 0.3, fade: 0.6 }]);
+  const start = { walk: await walk(0.3), fade: await fading(0.3) };
+  const end = { die: await die(0.9), fade: await fading(0.9) };
+  const middle = { walk: await walk(0.6), die: await die(0.6), fade: await fading(0.6) };
+  const poses = pixelDiff(middle.walk, middle.die);
+  const atStart = pixelDiff(start.walk, start.fade);
+  const atEnd = pixelDiff(end.die, end.fade);
+  const fromWalk = pixelDiff(middle.fade, middle.walk);
+  const fromDie = pixelDiff(middle.fade, middle.die);
+  console.log(
+    `vat crossfade: walk vs die ${(poses * 100).toFixed(2)}% · start ${(atStart * 100).toFixed(3)}% · end ${(atEnd * 100).toFixed(3)}% · middle vs walk ${(fromWalk * 100).toFixed(2)}% · vs die ${(fromDie * 100).toFixed(2)}%`,
+  );
+  // The two clips are far enough apart for a blend to show.
+  expect(poses).toBeGreaterThan(0.02);
+  expect(atStart).toBeLessThan(0.001);
+  expect(atEnd).toBeLessThan(0.001);
+  // Halfway it is neither clip.
+  expect(fromWalk).toBeGreaterThan(poses / 5);
+  expect(fromDie).toBeGreaterThan(poses / 5);
+});
+
+test('vat: an active count of zero draws nothing, as the ledger says', {
+  tag: '@corpus',
+}, async ({ forge }) => {
+  test.setTimeout(120_000);
+  await forge.open('vat', { vatClip: 'walk' });
+  await frameTwin(forge);
+  const state = (active: number) =>
+    forge.page.evaluate(async (n) => {
+      const f = window.__forge;
+      f.vat!.activeCount = n;
+      await f.frameAsync();
+      const frame = await f.frameAsync();
+      return { vatInstances: frame.skinning.vatInstances, parts: f.vat!.meshes.length };
+    }, active);
+  const shown = await state(1);
+  const shot = forge.pixelChecks ? await forge.page.screenshot({ type: 'png' }) : null;
+  const hidden = await state(0);
+  const empty = forge.pixelChecks ? await forge.page.screenshot({ type: 'png' }) : null;
+  const back = await state(1);
+  // One instance per part: the Kenney character is a head and a body.
+  expect(shown.parts).toBe(2);
+  expect(shown.vatInstances).toBe(2);
+  expect(hidden.vatInstances).toBe(0);
+  expect(back).toEqual(shown);
+  if (shot && empty) {
+    await forge.page.evaluate(() => {
+      for (const mesh of window.__forge.vat!.meshes) mesh.visible = false;
+    });
+    await forge.page.evaluate(() => window.__forge.frameAsync());
+    const bare = await forge.page.screenshot({ type: 'png' });
+    expect(pixelDiff(shot, bare)).toBeGreaterThan(0.02);
+    expect(pixelDiff(empty, bare)).toBe(0);
+  }
+});
+
+test('vat: unlit shading ignores the lights and Lambert follows them', {
+  tag: '@corpus',
+}, async ({ forge }) => {
+  test.setTimeout(120_000);
+  test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+  const response = async (shading: string) => {
+    await forge.open('vat', { vatClip: 'idle', vatTime: '0.2', vatShading: shading });
+    await frameTwin(forge);
+    const type = await forge.page.evaluate(() => (window.__forge.vat!.meshes[0]!.material as { type: string }).type);
+    const lit = await forge.page.screenshot({ type: 'png' });
+    await forge.page.evaluate(async () => {
+      const f = window.__forge;
+      for (const o of f.scene.children)
+        if ((o as { isLight?: boolean }).isLight) (o as unknown as { intensity: number }).intensity *= 0.3;
+      for (let i = 0; i < 2; i++) await f.frameAsync();
+    });
+    return { type, change: pixelDiff(lit, await forge.page.screenshot({ type: 'png' })) };
+  };
+  const unlit = await response('unlit');
+  const lambert = await response('lambert');
+  console.log(
+    `vat shading: dimmed lights change unlit ${(unlit.change * 100).toFixed(2)}% · lambert ${(lambert.change * 100).toFixed(2)}%`,
+  );
+  expect(unlit.type).toBe('MeshBasicNodeMaterial');
+  expect(lambert.type).toBe('MeshLambertNodeMaterial');
+  expect(unlit.change).toBe(0);
+  expect(lambert.change).toBeGreaterThan(0.02);
 });

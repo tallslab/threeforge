@@ -1,7 +1,6 @@
 import {
   AnimationClip,
   AnimationMixer,
-  type InstancedBufferAttribute,
   type InstancedBufferGeometry,
   InstancedInterleavedBuffer,
   Matrix4,
@@ -11,7 +10,7 @@ import {
   Vector3,
   Vector4,
 } from 'three';
-import { MeshStandardNodeMaterial } from 'three/webgpu';
+import { MeshBasicNodeMaterial, MeshLambertNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
 import { describe, expect, it, vi } from 'vitest';
 import { AnimatedInstances } from '../../src/skinning/AnimatedInstances.js';
 import { bakeAnimationTexture } from '../../src/skinning/bakeAnimationTexture.js';
@@ -79,7 +78,7 @@ describe('AnimatedInstances', () => {
     expect(instances.matrixBuffer).toBeInstanceOf(InstancedInterleavedBuffer);
     expect(instances.matrixBuffer.meshPerAttribute).toBe(1);
     instances.setClipAt(2, 'spin', { offset: 0.5, speed: 2 });
-    const clip = instances.clipAttribute as InstancedBufferAttribute;
+    const clip = instances.clipAttribute;
     // `spin` lasts 1 s: 11 baked rows at 10 fps, and a loop of 10.
     expect([clip.getX(2), clip.getY(2), clip.getZ(2), clip.getW(2)]).toEqual([0, 10, 0.5, 2]);
     instances.setClipAt(0, 0);
@@ -257,6 +256,177 @@ describe('AnimatedInstances playback loop', () => {
     instances.setClipAt(0, 'whole');
     expect(entry(instances, 0)).toEqual([0, 10, 0, 1]);
     expect(rowAt(instances, 0, 2.33)).toBe(3);
-    expect(instances.clipAttribute.version).toBe(3);
+    expect(instances.clipBuffer.version).toBe(3);
+  });
+});
+
+describe('AnimatedInstances active count', () => {
+  const instanceCounts = (instances: AnimatedInstances): number[] =>
+    instances.meshes.map((m) => (m.geometry as InstancedBufferGeometry).instanceCount);
+
+  it('draws all instances by default, then only the first activeCount', () => {
+    const rig = buildTwoPartRig();
+    const animation = bakeAnimationTexture(rig.root, [rig.clip], { fps: 10 });
+    const instances = new AnimatedInstances({ animation, count: 4 });
+    expect(instances.activeCount).toBe(4);
+    instances.activeCount = 1;
+    expect(instances.activeCount).toBe(1);
+    expect(instanceCounts(instances)).toEqual([1, 1]);
+    instances.activeCount = 0;
+    expect(instanceCounts(instances)).toEqual([0, 0]);
+    // The capacity is what was allocated; the marker the ledger reads for an InstancedMesh stays the capacity.
+    expect(instances.count).toBe(4);
+    expect(() => {
+      instances.activeCount = 5;
+    }).toThrow(/0\.\.4/);
+    expect(() => {
+      instances.activeCount = -1;
+    }).toThrow(/0\.\.4/);
+    expect(() => {
+      instances.activeCount = 1.5;
+    }).toThrow(/0\.\.4/);
+  });
+
+  it('removes an instance by moving the last active one into its slot', () => {
+    const { instances } = setup(4);
+    const clips = instances.clipBuffer.array as Float32Array;
+    const stride = instances.clipBuffer.stride;
+    const at = (i: number) => new Matrix4().makeTranslation(i, 0, 0);
+    for (let i = 0; i < 4; i++) {
+      instances.setMatrixAt(i, at(i));
+      instances.setClipAt(i, 0, { offset: i / 10 });
+    }
+    instances.setTime(3);
+    instances.setClipAt(3, 0, { offset: 0.9, fade: 0.25 });
+    const last = Array.from(clips.subarray(3 * stride, 4 * stride));
+    const version = instances.matrixBuffer.version;
+    const clipVersion = instances.clipBuffer.version;
+    expect(instances.removeAt(1)).toBe(3);
+    expect(instances.activeCount).toBe(3);
+    expectClose(instances.getMatrixAt(1, new Matrix4()), at(3), 'moved matrix');
+    // Everything per instance moves with it: clip, the clip it fades from, and the fade.
+    expect(Array.from(clips.subarray(stride, 2 * stride))).toEqual(last);
+    expect(instances.matrixBuffer.version).toBeGreaterThan(version);
+    expect(instances.clipBuffer.version).toBeGreaterThan(clipVersion);
+    // Removing the last active instance moves nothing.
+    expect(instances.removeAt(2)).toBe(-1);
+    expect(instances.activeCount).toBe(2);
+    expectClose(instances.getMatrixAt(0, new Matrix4()), at(0), 'untouched matrix');
+    expect(() => instances.removeAt(2)).toThrow(/2/);
+  });
+});
+
+describe('AnimatedInstances crossfade', () => {
+  const FPS = 10;
+
+  function crowd() {
+    const q = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), 1);
+    const turn = (name: string, duration: number) =>
+      new AnimationClip(name, duration, [
+        new QuaternionKeyframeTrack('b.quaternion', [0, duration], [0, 0, 0, 1, q.x, q.y, q.z, q.w]),
+      ]);
+    const { root } = buildRig();
+    const animation = bakeAnimationTexture(root, [turn('whole', 1), turn('uneven', 0.95)], { fps: FPS });
+    return { animation, instances: new AnimatedInstances({ animation, count: 2 }) };
+  }
+
+  /** `[clip, from, fade]` of instance `i`: the clip, the clip it fades from, `[fadeStart, fadeSeconds]`. */
+  function row(instances: AnimatedInstances, i: number): number[][] {
+    const { array, stride } = instances.clipBuffer;
+    const r = Array.from((array as Float32Array).subarray(i * stride, i * stride + 10));
+    return [r.slice(0, 4), r.slice(4, 8), r.slice(8, 10)];
+  }
+
+  /** The weight of the current clip the position node uses: 1 without a fade, else linear over the fade. */
+  function weightAt(instances: AnimatedInstances, i: number, seconds: number): number {
+    const [start, length] = row(instances, i)[2]!;
+    return length! > 0 ? Math.min(1, Math.max(0, (seconds - start!) / length!)) : 1;
+  }
+
+  it('keeps all per-instance clip data in one instanced interleaved buffer', () => {
+    const { instances } = crowd();
+    // WebGPU allows eight vertex buffers: the geometry's own, the character matrices and this one.
+    expect(instances.clipBuffer).toBeInstanceOf(InstancedInterleavedBuffer);
+    expect(instances.clipBuffer.meshPerAttribute).toBe(1);
+    expect(instances.clipBuffer.stride).toBe(12);
+    expect(instances.clipAttribute.data).toBe(instances.clipBuffer);
+  });
+
+  it('switches at once without a fade', () => {
+    const { instances } = crowd();
+    instances.setTime(2);
+    instances.setClipAt(0, 'uneven');
+    expect(row(instances, 0)).toEqual([
+      [11, 9.5, 0, 1],
+      [11, 9.5, 0, 1],
+      [0, 0],
+    ]);
+    expect(weightAt(instances, 0, 2)).toBe(1);
+  });
+
+  it('fades from the clip it was showing over the given seconds from now', () => {
+    const { instances } = crowd();
+    instances.setClipAt(0, 'whole', { offset: 0.3, speed: 2 });
+    instances.setTime(2);
+    instances.setClipAt(0, 'uneven', { fade: 0.5 });
+    expect(row(instances, 0)).toEqual([
+      [11, 9.5, 0, 1],
+      [0, 10, expect.closeTo(0.3, 6), 2],
+      [2, 0.5],
+    ]);
+    expect(weightAt(instances, 0, 1.9)).toBe(0);
+    expect(weightAt(instances, 0, 2)).toBe(0);
+    expect(weightAt(instances, 0, 2.25)).toBeCloseTo(0.5, 6);
+    expect(weightAt(instances, 0, 2.5)).toBe(1);
+    expect(weightAt(instances, 0, 9)).toBe(1);
+    // The other instance is untouched.
+    expect(row(instances, 1)).toEqual([
+      [0, 10, 0, 1],
+      [0, 10, 0, 1],
+      [0, 0],
+    ]);
+    // A second fade starts from the clip the first one went to.
+    instances.setTime(3);
+    instances.setClipAt(0, 'whole', { fade: 0.2 });
+    expect(row(instances, 0)).toEqual([
+      [0, 10, 0, 1],
+      [11, 9.5, 0, 1],
+      [3, expect.closeTo(0.2, 6)],
+    ]);
+  });
+
+  it('restarts a clip at its first row at the current time', () => {
+    const { instances } = crowd();
+    instances.setTime(2.33);
+    instances.setClipAt(0, 'whole', { restart: true, speed: 2 });
+    const [start, loop, offset, speed] = row(instances, 0)[0]!;
+    // The node's row at the current time: start + floor(mod((time × speed + offset) × fps, loop)).
+    const x = (2.33 * speed! + offset!) * FPS;
+    expect(start! + Math.floor(x - loop! * Math.floor(x / loop!))).toBe(0);
+    instances.setClipAt(0, 'whole', { restart: true, offset: 0.25 });
+    expect(row(instances, 0)[0]![2]).toBeCloseTo(-2.33 + 0.25, 5);
+  });
+});
+
+describe('AnimatedInstances shading', () => {
+  it('builds Lambert or unlit materials, copying only what they have', () => {
+    const { mesh, animation } = setup();
+    (mesh.material as { vertexColors: boolean }).vertexColors = true;
+    const lambert = new AnimatedInstances({ animation, count: 1, shading: 'lambert' });
+    const l = lambert.meshes[0]!.material as MeshLambertNodeMaterial;
+    expect(l).toBeInstanceOf(MeshLambertNodeMaterial);
+    expect(l.color.getHex()).toBe(0x336699);
+    expect(l.vertexColors).toBe(true);
+    expect(l.positionNode).not.toBeNull();
+    expect('roughness' in l).toBe(false);
+    const unlit = new AnimatedInstances({ animation, count: 1, shading: 'unlit' });
+    const u = unlit.meshes[0]!.material as MeshBasicNodeMaterial;
+    expect(u).toBeInstanceOf(MeshBasicNodeMaterial);
+    expect(u.color.getHex()).toBe(0x336699);
+    expect(u.vertexColors).toBe(true);
+    expect(u.positionNode).not.toBeNull();
+    expect('roughness' in u).toBe(false);
+    const standard = new AnimatedInstances({ animation, count: 1 });
+    expect(standard.meshes[0]!.material).toBeInstanceOf(MeshStandardNodeMaterial);
   });
 });

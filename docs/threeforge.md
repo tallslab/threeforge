@@ -842,8 +842,12 @@ the part's offset (`parts[i].matrix`, a `mat4` uniform of that part's material, 
 matrix, and assigns `normalLocal`. The instance matrices live in one `InstancedInterleavedBuffer` the parts share
 (four separate attributes would exceed WebGPU's eight vertex buffers; a plain `InterleavedBuffer` is read per vertex,
 because both backends take the per-instance step from `isInstancedInterleavedBuffer`). `setMatrixAt` and
-`getMatrixAt`, `setClipAt(i, clip, { offset, speed })`, `setTime(seconds)`, `addTo`, `dispose`. `clipAttribute` holds
-`[clipStart, loopRows, timeOffset, speed]` per instance. Meshes are `forge:vat:<part>` with `userData.forge = { kind:
+`getMatrixAt`, `setClipAt(i, clip, { offset, speed, restart, fade })`, `setTime(seconds)`, `activeCount` and
+`removeAt(i)`, `addTo`, `dispose`; `shading: 'lambert' | 'unlit'` builds `MeshLambertNodeMaterial` or
+`MeshBasicNodeMaterial` instead. `clipBuffer` (an `InstancedInterleavedBuffer`, 12 floats per instance) holds
+`[clipStart, loopRows, timeOffset, speed]` (`clipAttribute`), the same for the clip a fade starts from, and
+`[fadeStart, fadeSeconds]`; the vertex stage blends the two rows' skinning matrices by the fade weight.
+`activeCount` sets every part's `instanceCount`, and `removeAt` moves the last active instance into the freed slot. Meshes are `forge:vat:<part>` with `userData.forge = { kind:
 'vat', instances }` (untagged: a tag overwrites the marker). In the ledger: reason `vat-instanced`,
 `skinning.vatInstances` and `vatVertices`, budget `bones`, hints `bones-over-budget` and `skinned-crowd` (50 skinned
 draws). Authoring notes: `docs/skinning.md`. The optimized crowd bench bakes each of its eight prototypes and replaces
@@ -1217,7 +1221,7 @@ Overdraw modules shipped in 0.4.0, per-frame JS (freezing, `markDirty`, `RenderS
 (`DayNight`, `ShadowBudget`, lightmap path) in 0.6.0, skinning (`bakeAnimationTexture`, `AnimatedInstances`) in
 0.7.0 and memory and load (`createLoader`, `ResourceTracker`, chunk `Streamer`) in 0.8.0 (section 7);
 `threeforge optimize` shipped in 0.3.0 (section 10) and the device bench page with GitHub-native results is in
-section 11. Not built: animated instances play one clip per instance without blending or root motion; soft-particle
+section 11. Not built: animated instances blend at most two clips, never hold a clip's end pose and have no root motion; soft-particle
 materials are documented, not built (`docs/vfx.md`); cascaded shadow maps (three's `CSMShadowNode`) are not wired;
 the Streamer keeps CPU copies and re-uploads rather than fetching chunk data on demand (that needs incremental
 compile). Design notes live in `docs/design.md`.

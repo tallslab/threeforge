@@ -1,8 +1,8 @@
 import {
   DynamicDrawUsage,
-  InstancedBufferAttribute,
   InstancedBufferGeometry,
   InstancedInterleavedBuffer,
+  InterleavedBufferAttribute,
   type Material,
   Matrix4,
   Mesh,
@@ -10,6 +10,7 @@ import {
 } from 'three';
 import {
   attribute,
+  clamp,
   Fn,
   float,
   floor,
@@ -18,6 +19,7 @@ import {
   ivec2,
   mat3,
   mat4,
+  max,
   mod,
   normalGeometry,
   normalLocal,
@@ -27,7 +29,12 @@ import {
   uniform,
   vec4,
 } from 'three/tsl';
-import { MeshStandardNodeMaterial } from 'three/webgpu';
+import {
+  MeshBasicNodeMaterial,
+  MeshLambertNodeMaterial,
+  MeshStandardNodeMaterial,
+  type NodeMaterial,
+} from 'three/webgpu';
 import type { AnimationClipRange, AnimationTexture } from './bakeAnimationTexture.js';
 
 export interface AnimatedInstancesOptions {
@@ -35,6 +42,11 @@ export interface AnimatedInstancesOptions {
   count: number;
   /** Overrides the parts' materials (colour, maps and flags are copied from it). */
   material?: Material;
+  /**
+   * The lighting model of the built materials: `standard` (the default, three's PBR), `lambert` (diffuse only) or
+   * `unlit` (colour and vertex colours as they are). Only the properties the chosen material has are copied.
+   */
+  shading?: 'standard' | 'lambert' | 'unlit';
 }
 
 export interface ClipOptions {
@@ -42,7 +54,26 @@ export interface ClipOptions {
   offset?: number;
   /** Playback rate; 1 = the clip's own speed. */
   speed?: number;
+  /** Starts the clip at its first row at the current time; `offset` is then added to that. */
+  restart?: boolean;
+  /**
+   * Seconds over which the instance blends from the clip it was showing to this one, starting at the current time.
+   * The clip it fades from keeps playing on its own clock meanwhile. 0 (the default) switches at once.
+   */
+  fade?: number;
 }
+
+const MATERIALS = {
+  standard: MeshStandardNodeMaterial,
+  lambert: MeshLambertNodeMaterial,
+  unlit: MeshBasicNodeMaterial,
+} as const;
+
+/**
+ * Floats per instance in the clip buffer: `[start, loopRows, offset, speed]` of the clip, the same for the clip it
+ * fades from, `[fadeStart, fadeSeconds]`, and two to keep the stride a whole number of vec4s.
+ */
+const CLIP_STRIDE = 12;
 
 const COPIED = [
   'color',
@@ -93,6 +124,7 @@ type N = any;
  */
 export class AnimatedInstances {
   readonly animation: AnimationTexture;
+  /** How many instances the buffers hold. `activeCount` says how many of them are drawn. */
   readonly count: number;
   readonly meshes: Mesh[];
   /**
@@ -100,7 +132,12 @@ export class AnimatedInstances {
    * wraps at (`duration × fps`, rarely a whole number; 1 for a clip without duration), seconds added to the shared
    * time, and the playback rate. The clip's stored row count stays in `animation.clips[i].frames`.
    */
-  readonly clipAttribute: InstancedBufferAttribute;
+  readonly clipAttribute: InterleavedBufferAttribute;
+  /**
+   * Everything per instance about playback, `CLIP_STRIDE` floats each: the clip (`clipAttribute`), the clip it fades
+   * from in the same layout, then `[fadeStart, fadeSeconds]`. One buffer, so a fade costs no extra vertex buffer.
+   */
+  readonly clipBuffer: InstancedInterleavedBuffer;
   /**
    * Per-instance character matrices, 16 floats each, shared by every part (each part adds its own offset), as one
    * interleaved buffer (four separate attributes would exceed WebGPU's eight vertex buffers). It must be the instanced
@@ -117,27 +154,35 @@ export class AnimatedInstances {
    */
   private readonly parts: Array<{
     geometry: InstancedBufferGeometry;
-    material: MeshStandardNodeMaterial;
+    material: NodeMaterial;
     offset: { value: Matrix4 };
   }> = [];
   private seconds = 0;
+  private active: number;
 
   constructor(options: AnimatedInstancesOptions) {
     this.animation = options.animation;
     this.count = options.count;
+    this.active = options.count;
     const { animation, count } = this;
-    this.clipAttribute = new InstancedBufferAttribute(new Float32Array(count * 4), 4);
-    this.clipAttribute.setUsage(DynamicDrawUsage);
+    this.clipBuffer = new InstancedInterleavedBuffer(new Float32Array(count * CLIP_STRIDE), CLIP_STRIDE, 1);
+    this.clipBuffer.setUsage(DynamicDrawUsage);
+    this.clipAttribute = new InterleavedBufferAttribute(this.clipBuffer, 4, 0);
     this.matrixBuffer = new InstancedInterleavedBuffer(new Float32Array(count * 16), 16, 1);
     this.matrixBuffer.setUsage(DynamicDrawUsage);
+    const clips = this.clipBuffer.array as Float32Array;
+    const first = [animation.clips[0]?.start ?? 0, loopRows(animation.clips[0], animation.fps), 0, 1];
     for (let i = 0; i < count; i++) {
       _matrix.identity().toArray(this.matrixBuffer.array as Float32Array, i * 16);
-      this.clipAttribute.setXYZW(i, animation.clips[0]?.start ?? 0, loopRows(animation.clips[0], animation.fps), 0, 1);
+      clips.set(first, i * CLIP_STRIDE);
+      clips.set(first, i * CLIP_STRIDE + 4);
     }
     const timeNode: N = uniform(0);
     this.timeUniform = timeNode as { value: number };
     const animationTexture: N = texture(animation.texture);
-    const clip: N = instancedDynamicBufferAttribute(this.clipAttribute, 'vec4');
+    const clip: N = instancedDynamicBufferAttribute(this.clipBuffer, 'vec4', CLIP_STRIDE, 0);
+    const from: N = instancedDynamicBufferAttribute(this.clipBuffer, 'vec4', CLIP_STRIDE, 4);
+    const fade: N = instancedDynamicBufferAttribute(this.clipBuffer, 'vec4', CLIP_STRIDE, 8);
     const instanceMatrix: N = mat4(
       instancedDynamicBufferAttribute(this.matrixBuffer, 'vec4', 16, 0),
       instancedDynamicBufferAttribute(this.matrixBuffer, 'vec4', 16, 4),
@@ -147,20 +192,21 @@ export class AnimatedInstances {
     const fps: N = float(animation.fps);
     const time: N = timeNode;
     this.meshes = animation.parts.map((part) => {
-      const source = part.mesh.geometry;
+      const shape = part.mesh.geometry;
       const geometry = new InstancedBufferGeometry();
-      for (const name of Object.keys(source.attributes)) geometry.setAttribute(name, source.getAttribute(name));
-      if (source.index) geometry.setIndex(source.index);
+      for (const name of Object.keys(shape.attributes)) geometry.setAttribute(name, shape.getAttribute(name));
+      if (shape.index) geometry.setIndex(shape.index);
       geometry.instanceCount = count;
-      geometry.boundingSphere = source.boundingSphere;
-      geometry.boundingBox = source.boundingBox;
-      const material = new MeshStandardNodeMaterial();
-      const from = (options.material ??
+      geometry.boundingSphere = shape.boundingSphere;
+      geometry.boundingBox = shape.boundingBox;
+      const material: NodeMaterial = new MATERIALS[options.shading ?? 'standard']();
+      const source = (options.material ??
         (Array.isArray(part.mesh.material) ? part.mesh.material[0]! : part.mesh.material)) as Material &
         Record<string, unknown>;
       const target = material as unknown as Record<string, unknown>;
       for (const key of COPIED) {
-        const value = from[key];
+        if (!(key in target)) continue;
+        const value = source[key];
         if (value === undefined || value === null) continue;
         const own = target[key] as { copy?: (v: unknown) => unknown } | undefined;
         if (own && typeof own === 'object' && typeof own.copy === 'function') own.copy(value);
@@ -178,18 +224,27 @@ export class AnimatedInstances {
       // rounded float32 does that only for a y that does not multiply exactly (8.33 rows); neither shading language
       // requires correctly rounded division, and through WebGPU on an Apple M1 it was measured for whole y (22, 12)
       // too. The quotient is never off by more than one, so one period back is the clip's last row.
-      const position: N = mod(time.mul(clip.w).add(clip.z).mul(fps), clip.y);
-      const frame: N = floor(select(position.lessThan(0), position.add(clip.y), position));
-      const row: N = int(clip.x.add(frame));
+      const rowOf = (c: N): N => {
+        const position: N = mod(time.mul(c.w).add(c.z).mul(fps), c.y);
+        return int(c.x.add(floor(select(position.lessThan(0), position.add(c.y), position))));
+      };
+      const row: N = rowOf(clip);
+      const fromRow: N = rowOf(from);
+      // The current clip's share: linear over the fade, 1 once it is over or when there is none (fadeSeconds 0).
+      const weight: N = select(fade.y.greaterThan(0), clamp(time.sub(fade.x).div(max(fade.y, 1e-6)), 0, 1), 1);
       const boneOffset: N = int(part.boneOffset);
+      const load = (x: N, r: N): N =>
+        mat4(
+          animationTexture.load(ivec2(x, r)),
+          animationTexture.load(ivec2(x.add(1), r)),
+          animationTexture.load(ivec2(x.add(2), r)),
+          animationTexture.load(ivec2(x.add(3), r)),
+        );
+      // Both clips' skinning matrices blended linearly, as vertex-animation crossfades do; outside a fade the weight
+      // is 1 and the first clip's matrix drops out. Written out because neither WGSL nor GLSL has `mix` for matrices.
       const bone = (index: N): N => {
         const x: N = int(index).add(boneOffset).mul(4);
-        return mat4(
-          animationTexture.load(ivec2(x, row)),
-          animationTexture.load(ivec2(x.add(1), row)),
-          animationTexture.load(ivec2(x.add(2), row)),
-          animationTexture.load(ivec2(x.add(3), row)),
-        );
+        return load(x, fromRow).mul(float(1).sub(weight)).add(load(x, row).mul(weight));
       };
       material.positionNode = Fn(() => {
         const skin: N = bindInverse
@@ -237,7 +292,42 @@ export class AnimatedInstances {
     return target.fromArray(this.matrixBuffer.array as Float32Array, i * 16);
   }
 
-  /** Assigns a clip (by index or name) to instance `i`, with a time offset in seconds and a playback speed. */
+  /** How many instances are drawn: the first `activeCount` of `count`. */
+  get activeCount(): number {
+    return this.active;
+  }
+
+  set activeCount(n: number) {
+    if (!Number.isInteger(n) || n < 0 || n > this.count)
+      throw new RangeError(`AnimatedInstances: activeCount ${n} outside 0..${this.count}`);
+    this.active = n;
+    for (const { geometry } of this.parts) geometry.instanceCount = n;
+  }
+
+  /**
+   * Stops drawing instance `i` by moving the last active instance (matrix, clip, fade) into its slot. Returns the
+   * index that moved into `i`, or -1 when `i` was the last active one, so the caller can update its handles.
+   */
+  removeAt(i: number): number {
+    const last = this.active - 1;
+    if (!Number.isInteger(i) || i < 0 || i > last)
+      throw new RangeError(`AnimatedInstances: removeAt(${i}) outside the ${this.active} active instances`);
+    if (i !== last) {
+      const matrices = this.matrixBuffer.array as Float32Array;
+      matrices.copyWithin(i * 16, last * 16, last * 16 + 16);
+      const data = this.clipBuffer.array as Float32Array;
+      data.copyWithin(i * CLIP_STRIDE, last * CLIP_STRIDE, last * CLIP_STRIDE + CLIP_STRIDE);
+      this.matrixBuffer.needsUpdate = true;
+      this.clipBuffer.needsUpdate = true;
+    }
+    this.activeCount = last;
+    return i === last ? -1 : last;
+  }
+
+  /**
+   * Assigns a clip (by index or name) to instance `i`, with a time offset in seconds and a playback speed, and
+   * optionally restarted or faded into from the clip the instance was showing.
+   */
   setClipAt(i: number, clip: number | string, options: ClipOptions = {}): void {
     const clips = this.animation.clips;
     const index = typeof clip === 'number' ? clip : clips.findIndex((c) => c.name === clip);
@@ -247,8 +337,21 @@ export class AnimatedInstances {
         `AnimatedInstances: unknown clip ${JSON.stringify(clip)}; known: ${clips.map((c) => c.name).join(', ')}`,
       );
     const loop = loopRows(range, this.animation.fps);
-    this.clipAttribute.setXYZW(i, range.start, loop, options.offset ?? 0, options.speed ?? 1);
-    this.clipAttribute.needsUpdate = true;
+    const speed = options.speed ?? 1;
+    const offset = (options.offset ?? 0) - (options.restart ? this.seconds * speed : 0);
+    const fade = options.fade ?? 0;
+    const data = this.clipBuffer.array as Float32Array;
+    const o = i * CLIP_STRIDE;
+    // A fade starts from the clip as it was set, even mid-fade: the blend in progress is dropped.
+    if (fade > 0) data.copyWithin(o + 4, o, o + 4);
+    data[o] = range.start;
+    data[o + 1] = loop;
+    data[o + 2] = offset;
+    data[o + 3] = speed;
+    if (fade <= 0) data.copyWithin(o + 4, o, o + 4);
+    data[o + 8] = fade > 0 ? this.seconds : 0;
+    data[o + 9] = Math.max(fade, 0);
+    this.clipBuffer.needsUpdate = true;
   }
 
   /** The shared clock every instance reads (seconds). */

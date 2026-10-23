@@ -36,14 +36,35 @@ const crowd = new AnimatedInstances({ animation, count: 200 }).addTo(scene);
 crowd.setMatrixAt(i, matrix);                        // the character's transform (getMatrixAt returns it)
 crowd.setClipAt(i, 'walk', { offset: i * 0.13, speed: 1 });
 crowd.setTime(seconds);                              // one clock for every instance, each frame
+crowd.setClipAt(i, 'attack', { restart: true, fade: 0.2 }); // from its first row, blended in over 0.2 s
+crowd.activeCount = 40;                              // draw only the first 40
+const moved = crowd.removeAt(7);                     // the last active one now sits in slot 7 (-1: none moved)
 ```
 
 One `Mesh` per part of the prototype over an `InstancedBufferGeometry` that shares the part's vertex buffers, with a
-`MeshStandardNodeMaterial` (colour, maps and flags copied from the part's material, or from `material`). Its vertex
-stage fetches the four bone matrices of the instance's current frame from the texture and applies three's skinning
-formula, then the part's offset from the character root and the instance matrix; the fragment stage is three's
-standard lighting. Per instance: `[clipStart, loopRows, timeOffset, speed]` and the character's matrix, in one
-interleaved instanced buffer the parts share (`getMatrixAt` returns that matrix). `loopRows` is the clip's `duration ×
+`MeshStandardNodeMaterial` (colour, maps and flags copied from the part's material, or from `material`), or with
+`shading: 'lambert'` a `MeshLambertNodeMaterial` and with `shading: 'unlit'` a `MeshBasicNodeMaterial`, copying only
+the properties that material has. Its vertex stage fetches the four bone matrices of the instance's current frame from the texture and applies three's skinning
+formula, then the part's offset from the character root and the instance matrix; the fragment stage is the chosen
+material's lighting. Per instance: the character's matrix (`matrixBuffer`, `getMatrixAt` returns it) and, in a second
+instanced interleaved buffer (`clipBuffer`, 12 floats), `[clipStart, loopRows, timeOffset, speed]` of the clip
+(`clipAttribute`), the same for the clip it fades from, and `[fadeStart, fadeSeconds]`. Both are shared by the parts,
+which with the geometry's own attributes keeps a part within WebGPU's eight vertex buffers.
+
+**Fades.** `setClipAt(i, clip, { fade })` copies the clip the instance was showing into the fade-from slot and blends
+from it to the new one over `fade` seconds starting at the current `time`; both keep playing on their own clocks. The
+vertex stage reads both rows and blends their skinning matrices linearly by the weight, `clamp((time - fadeStart) /
+fadeSeconds, 0, 1)`, or 1 without a fade, so the texture loads per bone double for every instance whether it is fading
+or not. A linear blend of skinning matrices is what vertex-animation crossfades do; it is not three's mixer, which
+blends each bone's local rotation before the hierarchy, and over a long fade between very different poses limbs can
+shorten. A fade started during a fade starts from the clip set last, not from the blend in progress. `restart: true`
+sets the offset so the clip is on its first row at the current time (`offset` is added to that).
+
+**Active count.** `activeCount` (0 to `count`, default `count`) is every part's `instanceCount`: only the first
+`activeCount` instances are drawn, and the ledger's `vatInstances` counts those. `removeAt(i)` moves the last active
+instance (matrix, clip and fade) into slot `i`, lowers the count and returns the index that moved, or -1 when `i` was
+the last. At 0 three skips the draw on both backends, but each part is still a submission in the ledger and still
+walked by three; hide the meshes of a pool that stays empty. `loopRows` is the clip's `duration ×
 fps`: the row counter wraps where a looping mixer wraps, not at the clip's stored `frames`, which run one or two rows
 past it, and a clip without duration holds its one row. A timestamp a float32 step below a loop boundary reads the
 clip's last row: the remainder float32 can leave just below zero there is moved one period up. Per part: its offset,
@@ -53,7 +74,7 @@ sit at different offsets from its root draws each part at the character matrix �
 `vat-instanced` with `skinning.vatInstances` and `vatVertices`. Do not tag them: a tag would overwrite that marker.
 Skinned parts sharing a skeleton or not both work (each part reads its own bone range).
 
-What it does not do: per-instance clip blending (one clip per instance, switch with `setClipAt`), root motion,
+What it does not do: blending more than two clips, clips that play once and hold their end pose, root motion,
 and frustum culling per instance (`frustumCulled = false`; use it for crowds that stay mostly on screen or split
 large crowds by region). Three more limits predate this module and still hold:
 

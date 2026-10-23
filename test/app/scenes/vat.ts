@@ -19,7 +19,7 @@ import type { BenchBuilder } from './index.js';
  * match at `vatClip` and `vatTime` (`setTime` moves both clocks; `vatFps` is the bake rate, 30 by default).
  * `vatPartOffset=x,y,z` moves every skinned part after the first off the character root (the Kenney parts all sit at
  * the root): bound in attached mode the original draws the same wherever its parts sit, so the twin has to draw each
- * part at its own offset to match it.
+ * part at its own offset to match it. `vatShading=standard|lambert|unlit` picks the twin's lighting model.
  */
 export const vatScene: BenchBuilder = async ({ camera, params, loader: makeLoader }) => {
   const loader = await makeLoader();
@@ -48,7 +48,8 @@ export const vatScene: BenchBuilder = async ({ camera, params, loader: makeLoade
   const clip = gltf.animations.find((c) => c.name === clipName) ?? gltf.animations[0]!;
   mixer.clipAction(clip).play();
   const animation = bakeAnimationTexture(gltf.scene, gltf.animations, { fps: Number(params.get('vatFps') ?? '30') });
-  const vat = new AnimatedInstances({ animation, count: 1 });
+  const shading = (params.get('vatShading') ?? 'standard') as 'standard' | 'lambert' | 'unlit';
+  const vat = new AnimatedInstances({ animation, count: 1, shading });
   vat.setMatrixAt(0, new Matrix4().makeTranslation(1, 0, 0));
   vat.setClipAt(0, clip.name);
   vat.addTo(scene);
