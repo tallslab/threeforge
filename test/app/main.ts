@@ -106,7 +106,7 @@ export interface ForgeHarness {
   refreshShadow?(): void;
   /**
    * `scene=vat`: the animated-instances twin of the loaded character (`vatClip`, `vatTime`, `vatPartOffset`,
-   * `vatShading`, `vatOnce` params).
+   * `vatShading`, `vatOnce`, `vatNodeMaterial` params).
    */
   vat?: AnimatedInstances;
   /** The optimized zen variant's chunk streamer (attached to the ledger). */

@@ -1,6 +1,8 @@
 import {
   AnimationClip,
   AnimationMixer,
+  Color,
+  DataTexture,
   type InstancedBufferGeometry,
   InstancedInterleavedBuffer,
   LoopOnce,
@@ -11,7 +13,13 @@ import {
   Vector3,
   Vector4,
 } from 'three';
-import { MeshBasicNodeMaterial, MeshLambertNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
+import { uniform } from 'three/tsl';
+import {
+  MeshBasicNodeMaterial,
+  MeshLambertNodeMaterial,
+  MeshStandardNodeMaterial,
+  MeshToonNodeMaterial,
+} from 'three/webgpu';
 import { describe, expect, it, vi } from 'vitest';
 import { AnimatedInstances } from '../../src/skinning/AnimatedInstances.js';
 import { bakeAnimationTexture } from '../../src/skinning/bakeAnimationTexture.js';
@@ -478,5 +486,57 @@ describe('AnimatedInstances shading', () => {
     expect('roughness' in u).toBe(false);
     const standard = new AnimatedInstances({ animation, count: 1 });
     expect(standard.meshes[0]!.material).toBeInstanceOf(MeshStandardNodeMaterial);
+  });
+});
+
+describe('AnimatedInstances node material', () => {
+  function twoParts() {
+    const rig = buildTwoPartRig();
+    return bakeAnimationTexture(rig.root, [rig.clip], { fps: 10 });
+  }
+
+  it('clones the given node material per part and adds only its positionNode', () => {
+    const animation = twoParts();
+    const tint = uniform(new Color(0xff0000));
+    const remember = new DataTexture(new Uint8Array(4), 1, 1);
+    const source = new MeshToonNodeMaterial();
+    source.colorNode = tint;
+    source.userData.forgeTextures = [remember];
+    const instances = new AnimatedInstances({ animation, count: 2, nodeMaterial: source });
+    const materials = instances.meshes.map((m) => m.material as MeshToonNodeMaterial);
+    expect(materials).toHaveLength(2);
+    for (const material of materials) {
+      expect(material).toBeInstanceOf(MeshToonNodeMaterial);
+      expect(material).not.toBe(source);
+      // The nodes are shared, so one uniform drives every part.
+      expect(material.colorNode).toBe(tint);
+      expect(material.positionNode).not.toBeNull();
+      expect(material.userData.forgeTextures).toEqual([remember, animation.texture]);
+    }
+    expect(materials[0]!.positionNode).not.toBe(materials[1]!.positionNode);
+    expect(source.positionNode).toBeNull();
+    expect(source.userData.forgeTextures).toEqual([remember]);
+  });
+
+  it('refuses a positionNode of its own or another material option', () => {
+    const animation = twoParts();
+    const placed = new MeshToonNodeMaterial();
+    placed.positionNode = uniform(0);
+    expect(() => new AnimatedInstances({ animation, count: 1, nodeMaterial: placed })).toThrow(/positionNode/);
+    const nodeMaterial = new MeshToonNodeMaterial();
+    expect(() => new AnimatedInstances({ animation, count: 1, nodeMaterial, shading: 'unlit' })).toThrow(/shading/);
+    expect(
+      () => new AnimatedInstances({ animation, count: 1, nodeMaterial, material: new MeshStandardNodeMaterial() }),
+    ).toThrow(/material/);
+  });
+
+  it('disposes the clones it made and leaves the given material alone', () => {
+    const source = new MeshToonNodeMaterial();
+    const instances = new AnimatedInstances({ animation: twoParts(), count: 1, nodeMaterial: source });
+    const own = vi.spyOn(source, 'dispose');
+    const clones = instances.meshes.map((m) => vi.spyOn(m.material as MeshToonNodeMaterial, 'dispose'));
+    instances.dispose();
+    for (const clone of clones) expect(clone).toHaveBeenCalled();
+    expect(own).not.toHaveBeenCalled();
   });
 });

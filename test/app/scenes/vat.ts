@@ -11,6 +11,8 @@ import {
   Vector3,
 } from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { uniform } from 'three/tsl';
+import { MeshToonNodeMaterial } from 'three/webgpu';
 import { AnimatedInstances, bakeAnimationTexture, disposeLoader } from 'threeforge';
 import { assetIndex } from '../assets.js';
 import type { BenchBuilder } from './index.js';
@@ -21,7 +23,8 @@ import type { BenchBuilder } from './index.js';
  * `vatPartOffset=x,y,z` moves every skinned part after the first off the character root (the Kenney parts all sit at
  * the root): bound in attached mode the original draws the same wherever its parts sit, so the twin has to draw each
  * part at its own offset to match it. `vatShading=standard|lambert|unlit` picks the twin's lighting model, and
- * `vatOnce=1` plays the clip once on both, the original's action clamped where it finishes.
+ * `vatOnce=1` plays the clip once on both, the original's action clamped where it finishes, and `vatNodeMaterial=1`
+ * draws the twin with a toon node material whose colour is a uniform (`colorNode`), passed as `nodeMaterial`.
  */
 export const vatScene: BenchBuilder = async ({ camera, params, loader: makeLoader }) => {
   const loader = await makeLoader();
@@ -57,7 +60,14 @@ export const vatScene: BenchBuilder = async ({ camera, params, loader: makeLoade
   action.play();
   const animation = bakeAnimationTexture(gltf.scene, gltf.animations, { fps: Number(params.get('vatFps') ?? '30') });
   const shading = (params.get('vatShading') ?? 'standard') as 'standard' | 'lambert' | 'unlit';
-  const vat = new AnimatedInstances({ animation, count: 1, shading });
+  let nodeMaterial: MeshToonNodeMaterial | undefined;
+  if (params.get('vatNodeMaterial') === '1') {
+    nodeMaterial = new MeshToonNodeMaterial();
+    nodeMaterial.colorNode = uniform(new Color(0xff2020));
+  }
+  const vat = new AnimatedInstances(
+    nodeMaterial ? { animation, count: 1, nodeMaterial } : { animation, count: 1, shading },
+  );
   vat.setMatrixAt(0, new Matrix4().makeTranslation(1, 0, 0));
   vat.setClipAt(0, clip.name, { once });
   vat.addTo(scene);

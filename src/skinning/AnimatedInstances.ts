@@ -7,6 +7,8 @@ import {
   Matrix4,
   Mesh,
   type Object3D,
+  type SkinnedMesh,
+  type Texture,
 } from 'three';
 import {
   attribute,
@@ -47,6 +49,11 @@ export interface AnimatedInstancesOptions {
    * `unlit` (colour and vertex colours as they are). Only the properties the chosen material has are copied.
    */
   shading?: 'standard' | 'lambert' | 'unlit';
+  /**
+   * A node material to draw with as it is, in place of `material` and `shading`: each part draws with its own
+   * `clone()`, which shares the original's nodes and uniforms, and only `positionNode` is set, so it must have none.
+   */
+  nodeMaterial?: NodeMaterial;
 }
 
 export interface ClipOptions {
@@ -117,6 +124,24 @@ function loopRows(range: AnimationClipRange | undefined, fps: number): number {
   return range && range.duration > 0 ? range.duration * fps : 1;
 }
 
+/** A part's material: a clone of `nodeMaterial`, or a built one carrying the part's colour, maps and flags. */
+function partMaterial(options: AnimatedInstancesOptions, mesh: SkinnedMesh): NodeMaterial {
+  if (options.nodeMaterial) return options.nodeMaterial.clone();
+  const material = new MATERIALS[options.shading ?? 'standard']();
+  const source = (options.material ?? (Array.isArray(mesh.material) ? mesh.material[0]! : mesh.material)) as Material &
+    Record<string, unknown>;
+  const target = material as unknown as Record<string, unknown>;
+  for (const key of COPIED) {
+    if (!(key in target)) continue;
+    const value = source[key];
+    if (value === undefined || value === null) continue;
+    const own = target[key] as { copy?: (v: unknown) => unknown } | undefined;
+    if (own && typeof own === 'object' && typeof own.copy === 'function') own.copy(value);
+    else target[key] = value;
+  }
+  return material;
+}
+
 /** three's TSL typings are loose (nodes come back as `Node<string>` without swizzles): the builder chains on `any`. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any;
@@ -168,6 +193,11 @@ export class AnimatedInstances {
   private active: number;
 
   constructor(options: AnimatedInstancesOptions) {
+    const { nodeMaterial } = options;
+    if (nodeMaterial?.positionNode)
+      throw new Error('AnimatedInstances: the nodeMaterial has a positionNode; the skinning sets it');
+    if (nodeMaterial && (options.material || options.shading))
+      throw new Error('AnimatedInstances: nodeMaterial replaces material and shading; pass one or the others');
     this.animation = options.animation;
     this.count = options.count;
     this.active = options.count;
@@ -206,19 +236,7 @@ export class AnimatedInstances {
       geometry.instanceCount = count;
       geometry.boundingSphere = shape.boundingSphere;
       geometry.boundingBox = shape.boundingBox;
-      const material: NodeMaterial = new MATERIALS[options.shading ?? 'standard']();
-      const source = (options.material ??
-        (Array.isArray(part.mesh.material) ? part.mesh.material[0]! : part.mesh.material)) as Material &
-        Record<string, unknown>;
-      const target = material as unknown as Record<string, unknown>;
-      for (const key of COPIED) {
-        if (!(key in target)) continue;
-        const value = source[key];
-        if (value === undefined || value === null) continue;
-        const own = target[key] as { copy?: (v: unknown) => unknown } | undefined;
-        if (own && typeof own === 'object' && typeof own.copy === 'function') own.copy(value);
-        else target[key] = value;
-      }
+      const material = partMaterial(options, part.mesh);
       const bind: N = uniform(part.mesh.bindMatrix);
       const bindInverse: N = uniform(part.mesh.bindMatrixInverse);
       // The part's own offset from the character root: the parts share the instance matrices, so it cannot live there.
@@ -275,7 +293,9 @@ export class AnimatedInstances {
         return model.mul(skin.mul(vec4(positionGeometry, 1))).xyz;
       })();
       // The animation texture is sampled through a node, invisible to material properties: list it for collectResources.
-      material.userData.forgeTextures = [animation.texture];
+      // From the original: `clone()` copies `userData` through JSON, which turns textures into plain objects.
+      const listed = (options.nodeMaterial?.userData.forgeTextures ?? []) as Texture[];
+      material.userData.forgeTextures = [...listed, animation.texture];
       const mesh = new Mesh(geometry, material);
       mesh.name = `forge:vat:${part.mesh.name || 'part'}`;
       mesh.frustumCulled = false;

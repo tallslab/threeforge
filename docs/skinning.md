@@ -89,6 +89,15 @@ fade) into slot `i`, lowers the count and returns the index that moved, or -1 wh
 the draw on both backends, but each part is still a submission in the ledger and still walked by three; hide the meshes
 of a pool that stays empty.
 
+### Your own node material
+
+A node material of your own, such as a toon shader written in TSL, goes in `nodeMaterial` in place of `material` and
+`shading`. Each part draws with the material's `clone()`, which shares its nodes and uniforms, so one uniform drives
+every part and every instance; the skinning sets only `positionNode`, and a material that already has one is refused.
+Textures it samples through nodes belong in `userData.forgeTextures` on the material you pass, as for any node material,
+and the animation texture is added after them. A GLSL `ShaderMaterial` or `onBeforeCompile` edit does not render on
+`WebGPURenderer` and has to be rewritten as nodes.
+
 What it does not do: blending more than two clips, root motion,
 and frustum culling per instance (`frustumCulled = false`; use it for crowds that stay mostly on screen or split
 large crowds by region). Three more limits predate this module and still hold:

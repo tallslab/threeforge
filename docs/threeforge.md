@@ -862,7 +862,8 @@ and never the one before its first), applies `bindMatrixInverse × Σ bone × we
 would exceed WebGPU's eight vertex buffers; a plain `InterleavedBuffer` is read per vertex, because both backends take
 the per-instance step from `isInstancedInterleavedBuffer`). `setMatrixAt` and `getMatrixAt`, `setClipAt(i, clip, {
 offset, speed, restart, once, fade })`, `setTime(seconds)`, `activeCount` and `removeAt(i)`, `addTo`, `dispose`;
-`shading: 'lambert' | 'unlit'` builds `MeshLambertNodeMaterial` or `MeshBasicNodeMaterial` instead. `clipBuffer` (an
+`shading: 'lambert' | 'unlit'` builds `MeshLambertNodeMaterial` or `MeshBasicNodeMaterial` instead, and `nodeMaterial`
+draws each part with a clone of the caller's node material, adding only `positionNode`. `clipBuffer` (an
 `InstancedInterleavedBuffer`, 12 floats per instance) holds `[clipStart, loopRows, timeOffset, speed]`
 (`clipAttribute`), the same for the clip a fade starts from, and `[fadeStart, fadeSeconds]`, then the last row plus one
 of each when it plays once (`once`: hold the first row before the clip starts and the last, the clamped end pose, from

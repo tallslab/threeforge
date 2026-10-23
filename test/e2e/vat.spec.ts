@@ -280,3 +280,80 @@ test('vat: a clip played once holds the pose of a clamped mixer', {
   expect(fading).toBeLessThan(0.03);
   expect(walking).toBeLessThan(0.001);
 });
+
+/**
+ * Pixels that differ from the empty frame, their bounding box, and the share of them whose colour leans to `channel`.
+ */
+function coverage(shot: Buffer, empty: Buffer, channel: 0 | 2): { mask: Uint8Array; box: number[]; leaning: number } {
+  const a = PNG.sync.read(shot);
+  const b = PNG.sync.read(empty);
+  const mask = new Uint8Array(a.width * a.height);
+  const box = [Infinity, Infinity, -Infinity, -Infinity];
+  let covered = 0;
+  let leaning = 0;
+  for (let i = 0; i < mask.length; i++) {
+    const o = i * 4;
+    const d = Math.max(...[0, 1, 2].map((c) => Math.abs(a.data[o + c]! - b.data[o + c]!)));
+    if (d <= 24) continue;
+    mask[i] = 1;
+    covered++;
+    const x = i % a.width;
+    const y = Math.floor(i / a.width);
+    box[0] = Math.min(box[0]!, x);
+    box[1] = Math.min(box[1]!, y);
+    box[2] = Math.max(box[2]!, x);
+    box[3] = Math.max(box[3]!, y);
+    const other = channel === 0 ? 2 : 0;
+    if (a.data[o + channel]! > a.data[o + 1]! + 30 && a.data[o + channel]! > a.data[o + other]! + 30) leaning++;
+  }
+  return { mask, box, leaning: covered === 0 ? 0 : leaning / covered };
+}
+
+test('vat: a node material draws as given, skinned, and its uniforms drive every part', {
+  tag: '@corpus',
+}, async ({ forge }) => {
+  test.setTimeout(120_000);
+  test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+  const shoot = async (query: Record<string, string>, after?: 'blue' | 'empty') => {
+    await forge.open('vat', { vatClip: 'walk', vatTime: '0.4', ...query });
+    await frameTwin(forge);
+    await forge.page.evaluate(async (step) => {
+      const f = window.__forge;
+      const vat = f.vat!;
+      if (step === 'blue') {
+        const tint = (vat.meshes[0]!.material as unknown as { colorNode: { value: { setHex(h: number): void } } })
+          .colorNode;
+        tint.value.setHex(0x2040ff);
+      }
+      if (step === 'empty') for (const mesh of vat.meshes) mesh.visible = false;
+      for (let i = 0; i < 2; i++) await f.frameAsync();
+    }, after);
+    return forge.page.screenshot({ type: 'png' });
+  };
+  const standard = await shoot({});
+  const empty = await shoot({}, 'empty');
+  const red = await shoot({ vatNodeMaterial: '1' });
+  const blue = await shoot({ vatNodeMaterial: '1' }, 'blue');
+  const s = coverage(standard, empty, 0);
+  const r = coverage(red, empty, 0);
+  const b = coverage(blue, empty, 2);
+  // The standard twin's dark hair is close to the background and drops out of its mask, so compare the other way:
+  // what it covers the red twin covers too, and both span the same box.
+  let covered = 0;
+  let uncovered = 0;
+  for (let i = 0; i < s.mask.length; i++) {
+    covered += s.mask[i]!;
+    if (s.mask[i] && !r.mask[i]) uncovered++;
+  }
+  const boxShift = Math.max(...s.box.map((v, k) => Math.abs(v - r.box[k]!)));
+  console.log(
+    `vat node material: ${covered} px · ${uncovered} uncovered · box shift ${boxShift} px · red ${(r.leaning * 100).toFixed(1)}% · blue ${(b.leaning * 100).toFixed(1)}%`,
+  );
+  expect(covered).toBeGreaterThan(20_000);
+  // Skinned and placed as the standard twin is.
+  expect(uncovered / covered).toBeLessThan(0.01);
+  expect(boxShift).toBeLessThanOrEqual(2);
+  expect(r.leaning).toBeGreaterThan(0.8);
+  // One uniform, shared by every part's clone: head and body both turn blue.
+  expect(b.leaning).toBeGreaterThan(0.8);
+});
