@@ -225,3 +225,58 @@ test('vat: unlit shading ignores the lights and Lambert follows them', {
   expect(unlit.change).toBe(0);
   expect(lambert.change).toBeGreaterThan(0.02);
 });
+
+test('vat: a clip played once holds the pose of a clamped mixer', {
+  tag: '@corpus',
+}, async ({ forge }) => {
+  test.setTimeout(120_000);
+  test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+  await forge.open('vat', { vatClip: 'die', vatOnce: '1' });
+  const duration = await forge.page.evaluate(() => {
+    const f = window.__forge;
+    f.vat!.setMatrixAt(0, new f.three.Matrix4().makeTranslation(-1, 0, 0));
+    f.camera.position.set(-1, 0.4, 1.05);
+    f.camera.lookAt(-1, 0.34, 0);
+    f.camera.updateMatrixWorld();
+    return f.vat!.animation.clips.find((c) => c.name === 'die')!.duration;
+  });
+  type Play = 'once' | 'loop' | 'fade' | 'faded' | 'walk';
+  const shot = async (show: 'original' | 'vat', seconds: number, play: Play = 'once') => {
+    await forge.page.evaluate(
+      async ({ show, seconds, play }) => {
+        const f = window.__forge;
+        const vat = f.vat!;
+        vat.setClipAt(0, play === 'walk' ? 'walk' : 'die', { once: play !== 'loop' && play !== 'walk' });
+        f.setTime(seconds);
+        // A fade into `walk` from now: its first frame still shows the held clip, and 2 s on it is a looping walk.
+        if (play === 'fade' || play === 'faded') vat.setClipAt(0, 'walk', { fade: 0.5 });
+        if (play === 'faded') f.setTime(seconds + 2);
+        if (play === 'walk') f.setTime(seconds + 2);
+        for (const o of f.scene.children) {
+          if ((o as { isLight?: boolean }).isLight) continue;
+          o.visible = vat.meshes.some((mesh) => mesh === o) ? show === 'vat' : show === 'original';
+        }
+        for (let i = 0; i < 2; i++) await f.frameAsync();
+      },
+      { show, seconds, play },
+    );
+    return forge.page.screenshot({ type: 'png' });
+  };
+  // Halfway the two play alike; well past the end both hold the end pose, where a looping twin has started over.
+  const half = duration / 2;
+  const after = duration * 1.6;
+  const midway = pixelDiff(await shot('original', half), await shot('vat', half));
+  const held = await shot('original', after);
+  const holding = pixelDiff(held, await shot('vat', after));
+  const looping = pixelDiff(held, await shot('vat', after, 'loop'));
+  const fading = pixelDiff(held, await shot('vat', after, 'fade'));
+  const walking = pixelDiff(await shot('vat', after, 'walk'), await shot('vat', after, 'faded'));
+  console.log(
+    `vat once: die ${duration.toFixed(3)} s · midway ${(midway * 100).toFixed(2)}% · held ${(holding * 100).toFixed(2)}% · a looping twin ${(looping * 100).toFixed(2)}% · fading out ${(fading * 100).toFixed(2)}% · faded to walk ${(walking * 100).toFixed(3)}%`,
+  );
+  expect(looping).toBeGreaterThan(0.03);
+  expect(midway).toBeLessThan(0.03);
+  expect(holding).toBeLessThan(0.03);
+  expect(fading).toBeLessThan(0.03);
+  expect(walking).toBeLessThan(0.001);
+});

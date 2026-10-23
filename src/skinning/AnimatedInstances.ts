@@ -57,6 +57,11 @@ export interface ClipOptions {
   /** Starts the clip at its first row at the current time; `offset` is then added to that. */
   restart?: boolean;
   /**
+   * Plays the clip once and holds its end pose, as a mixer action with `LoopOnce` and `clampWhenFinished`; before the
+   * clip's start (an offset that puts it in the future) it holds the first row. Usually set with `restart`.
+   */
+  once?: boolean;
+  /**
    * Seconds over which the instance blends from the clip it was showing to this one, starting at the current time.
    * The clip it fades from keeps playing on its own clock meanwhile. 0 (the default) switches at once.
    */
@@ -71,7 +76,8 @@ const MATERIALS = {
 
 /**
  * Floats per instance in the clip buffer: `[start, loopRows, offset, speed]` of the clip, the same for the clip it
- * fades from, `[fadeStart, fadeSeconds]`, and two to keep the stride a whole number of vec4s.
+ * fades from, `[fadeStart, fadeSeconds]`, then for the clip and the clip it fades from the last row plus one when it
+ * plays once, 0 when it loops.
  */
 const CLIP_STRIDE = 12;
 
@@ -135,7 +141,8 @@ export class AnimatedInstances {
   readonly clipAttribute: InterleavedBufferAttribute;
   /**
    * Everything per instance about playback, `CLIP_STRIDE` floats each: the clip (`clipAttribute`), the clip it fades
-   * from in the same layout, then `[fadeStart, fadeSeconds]`. One buffer, so a fade costs no extra vertex buffer.
+   * from in the same layout, then `[fadeStart, fadeSeconds, clipOnce, fromOnce]`, where a once value is the clip's last
+   * row plus one for a clip played once and 0 for one that loops. One buffer, so a fade costs no extra vertex buffer.
    */
   readonly clipBuffer: InstancedInterleavedBuffer;
   /**
@@ -224,12 +231,18 @@ export class AnimatedInstances {
       // rounded float32 does that only for a y that does not multiply exactly (8.33 rows); neither shading language
       // requires correctly rounded division, and through WebGPU on an Apple M1 it was measured for whole y (22, 12)
       // too. The quotient is never off by more than one, so one period back is the clip's last row.
-      const rowOf = (c: N): N => {
-        const position: N = mod(time.mul(c.w).add(c.z).mul(fps), c.y);
-        return int(c.x.add(floor(select(position.lessThan(0), position.add(c.y), position))));
+      // A clip played once (`once` its last row plus one) holds its first row before it starts and its last from its
+      // duration on, which the bake stores as the clamped end pose.
+      const rowOf = (c: N, once: N): N => {
+        const clock: N = time.mul(c.w).add(c.z).mul(fps);
+        const position: N = mod(clock, c.y);
+        const looped: N = floor(select(position.lessThan(0), position.add(c.y), position));
+        const last: N = once.sub(1);
+        const held: N = select(clock.greaterThanEqual(c.y), last, clamp(floor(clock), 0, last));
+        return int(c.x.add(select(once.greaterThan(0), held, looped)));
       };
-      const row: N = rowOf(clip);
-      const fromRow: N = rowOf(from);
+      const row: N = rowOf(clip, fade.z);
+      const fromRow: N = rowOf(from, fade.w);
       // The current clip's share: linear over the fade, 1 once it is over or when there is none (fadeSeconds 0).
       const weight: N = select(fade.y.greaterThan(0), clamp(time.sub(fade.x).div(max(fade.y, 1e-6)), 0, 1), 1);
       const boneOffset: N = int(part.boneOffset);
@@ -343,12 +356,19 @@ export class AnimatedInstances {
     const data = this.clipBuffer.array as Float32Array;
     const o = i * CLIP_STRIDE;
     // A fade starts from the clip as it was set, even mid-fade: the blend in progress is dropped.
-    if (fade > 0) data.copyWithin(o + 4, o, o + 4);
+    if (fade > 0) {
+      data.copyWithin(o + 4, o, o + 4);
+      data[o + 11] = data[o + 10]!;
+    }
     data[o] = range.start;
     data[o + 1] = loop;
     data[o + 2] = offset;
     data[o + 3] = speed;
-    if (fade <= 0) data.copyWithin(o + 4, o, o + 4);
+    data[o + 10] = options.once ? range.frames : 0;
+    if (fade <= 0) {
+      data.copyWithin(o + 4, o, o + 4);
+      data[o + 11] = data[o + 10]!;
+    }
     data[o + 8] = fade > 0 ? this.seconds : 0;
     data[o + 9] = Math.max(fade, 0);
     this.clipBuffer.needsUpdate = true;

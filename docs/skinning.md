@@ -37,6 +37,7 @@ crowd.setMatrixAt(i, matrix);                        // the character's transfor
 crowd.setClipAt(i, 'walk', { offset: i * 0.13, speed: 1 });
 crowd.setTime(seconds);                              // one clock for every instance, each frame
 crowd.setClipAt(i, 'attack', { restart: true, fade: 0.2 }); // from its first row, blended in over 0.2 s
+crowd.setClipAt(i, 'die', { once: true, restart: true });   // plays once from now, then holds the end pose
 crowd.activeCount = 40;                              // draw only the first 40
 const moved = crowd.removeAt(7);                     // the last active one now sits in slot 7 (-1: none moved)
 ```
@@ -48,7 +49,8 @@ the properties that material has. Its vertex stage fetches the four bone matrice
 formula, then the part's offset from the character root and the instance matrix; the fragment stage is the chosen
 material's lighting. Per instance: the character's matrix (`matrixBuffer`, `getMatrixAt` returns it) and, in a second
 instanced interleaved buffer (`clipBuffer`, 12 floats), `[clipStart, loopRows, timeOffset, speed]` of the clip
-(`clipAttribute`), the same for the clip it fades from, and `[fadeStart, fadeSeconds]`. Both are shared by the parts,
+(`clipAttribute`), the same for the clip it fades from, `[fadeStart, fadeSeconds]`, and for both clips the last row
+plus one when it plays once (0 when it loops). Both are shared by the parts,
 which with the geometry's own attributes keeps a part within WebGPU's eight vertex buffers.
 
 **Fades.** `setClipAt(i, clip, { fade })` copies the clip the instance was showing into the fade-from slot and blends
@@ -59,6 +61,14 @@ or not. A linear blend of skinning matrices is what vertex-animation crossfades 
 blends each bone's local rotation before the hierarchy, and over a long fade between very different poses limbs can
 shorten. A fade started during a fade starts from the clip set last, not from the blend in progress. `restart: true`
 sets the offset so the clip is on its first row at the current time (`offset` is added to that).
+
+**Played once.** `once: true` plays the clip once and holds its end pose, as a mixer action with `LoopOnce` and
+`clampWhenFinished`: before its start (an offset that puts it in the future) the instance holds the clip's first row,
+from its duration on its last baked row, which `bakeAnimationTexture` stores as the clamped end pose, and in between
+the same nearest-lower row a looping clip reads. The clock is the shared `time`, so a clip played once from now needs
+`restart: true`; without it a clip set at 50 s with no offset is long finished. A fade out of a held clip starts from
+the held pose. The clip's end is at `time + duration / speed` after a restart, for game code that switches clips
+when it is over.
 
 **Active count.** `activeCount` (0 to `count`, default `count`) is every part's `instanceCount`: only the first
 `activeCount` instances are drawn, and the ledger's `vatInstances` counts those. `removeAt(i)` moves the last active
@@ -74,7 +84,7 @@ sit at different offsets from its root draws each part at the character matrix Ã
 `vat-instanced` with `skinning.vatInstances` and `vatVertices`. Do not tag them: a tag would overwrite that marker.
 Skinned parts sharing a skeleton or not both work (each part reads its own bone range).
 
-What it does not do: blending more than two clips, clips that play once and hold their end pose, root motion,
+What it does not do: blending more than two clips, root motion,
 and frustum culling per instance (`frustumCulled = false`; use it for crowds that stay mostly on screen or split
 large crowds by region). Three more limits predate this module and still hold:
 

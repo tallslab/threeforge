@@ -3,6 +3,7 @@ import {
   AnimationMixer,
   type InstancedBufferGeometry,
   InstancedInterleavedBuffer,
+  LoopOnce,
   Matrix4,
   Quaternion,
   QuaternionKeyframeTrack,
@@ -191,10 +192,19 @@ describe('AnimatedInstances playback loop', () => {
     return [clip.getX(i), clip.getY(i), clip.getZ(i), clip.getW(i)];
   };
 
-  /** The row the position node reads: `clipStart + floor(mod((time × speed + offset) × fps, loopRows))`. */
+  /** The clip's last row plus one when it plays once (slot 10 of the clip buffer), 0 when it loops. */
+  const onceOf = (instances: AnimatedInstances, i: number): number =>
+    (instances.clipBuffer.array as Float32Array)[i * instances.clipBuffer.stride + 10]!;
+
+  /**
+   * The row the position node reads: `clipStart + floor(mod((time × speed + offset) × fps, loopRows))` for a looping
+   * clip; for a clip played once, its first row before it starts, its last from its duration on, else `floor`.
+   */
   function rowAt(instances: AnimatedInstances, i: number, seconds: number): number {
     const clip = instances.clipAttribute;
     const x = (seconds * clip.getW(i) + clip.getZ(i)) * FPS;
+    const once = onceOf(instances, i);
+    if (once > 0) return clip.getX(i) + (x >= clip.getY(i) ? once - 1 : Math.min(once - 1, Math.max(0, Math.floor(x))));
     return clip.getX(i) + Math.floor(x - clip.getY(i) * Math.floor(x / clip.getY(i)));
   }
 
@@ -242,6 +252,59 @@ describe('AnimatedInstances playback loop', () => {
       expect(row, `${seconds.toFixed(3)} s`).toBe(range.start + Math.floor(action.time * FPS));
       expect(row).toBeLessThan(range.start + range.frames);
     }
+  });
+
+  it.each([
+    ['whole', {}],
+    ['uneven', {}],
+    ['uneven', { offset: 0.25, speed: 1.5 }],
+    ['whole', { offset: -0.4, speed: 0.6 }],
+  ])('plays %s once with %o and holds the pose a clamped mixer ends on', (name, options) => {
+    const { root, clips, animation, instances } = crowd();
+    instances.setClipAt(0, name, { ...options, once: true });
+    const range = animation.clips.find((c) => c.name === name)!;
+    expect(onceOf(instances, 0)).toBe(range.frames);
+    const mixer = new AnimationMixer(root);
+    const action = mixer.clipAction(clips.find((c) => c.name === name)!);
+    action.setLoop(LoopOnce, 1);
+    action.clampWhenFinished = true;
+    action.play();
+    const { offset = 0, speed = 1 } = options as { offset?: number; speed?: number };
+    for (let seconds = 0.013; seconds < 3; seconds += 0.037) {
+      const clock = seconds * speed + offset;
+      const row = rowAt(instances, 0, seconds);
+      if (clock < 0) {
+        expect(row, `${seconds.toFixed(3)} s, not started`).toBe(range.start);
+        continue;
+      }
+      mixer.setTime(clock);
+      // From its duration on the mixer holds the end pose, which the bake stores as the clip's last row.
+      const expected =
+        clock >= range.duration ? range.start + range.frames - 1 : range.start + Math.floor(action.time * FPS);
+      expect(row, `${seconds.toFixed(3)} s`).toBe(expected);
+    }
+  });
+
+  it('holds the one row of a clip without duration when played once', () => {
+    const { instances } = crowd();
+    instances.setClipAt(0, 'pose', { once: true, restart: true });
+    for (const seconds of [-1, 0, 0.5, 100]) expect(rowAt(instances, 0, seconds)).toBe(22);
+  });
+
+  it('fades from a clip played once without looping it, and loops again after', () => {
+    const { instances } = crowd();
+    instances.setTime(1);
+    // Faded into from the looping default clip, so the marker of the clip faded from is 0 until the next fade.
+    instances.setClipAt(0, 'uneven', { once: true, restart: true, fade: 0.2 });
+    expect((instances.clipBuffer.array as Float32Array)[11]).toBe(0);
+    instances.setTime(3);
+    instances.setClipAt(0, 'whole', { fade: 0.5 });
+    const data = instances.clipBuffer.array as Float32Array;
+    // The clip faded from keeps its once marker in slot 11; the new clip loops.
+    expect([data[10], data[11]]).toEqual([0, 11]);
+    expect(entry(instances, 0)).toEqual([0, 10, 0, 1]);
+    instances.setClipAt(0, 'whole');
+    expect([data[10], data[11]]).toEqual([0, 0]);
   });
 
   it('follows the clip an instance is switched to, and its own clock settings', () => {
