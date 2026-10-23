@@ -34,10 +34,13 @@ the pull request or push adds; merge commits are not checked. Run it locally the
    5. Commit exactly `docs/assets-report.json`, `docs/assets-report.md`, `docs/assets-report-webgpu.json` and
       `docs/assets-report-webgpu.md`, naming the commit, the run id and the pass count per backend, before tagging.
 5. `npm pack --dry-run` must list `dist/cli/index.js`, `dist/cli-app/index.html`, `AGENTS.md`, `llms.txt`.
-6. Commit, tag `vX.Y.Z`, push the tag. The `publish` job in `.github/workflows/ci.yml` runs `npm publish --provenance
-   --access public`; it needs the `NPM_TOKEN` repository secret (an npm automation token). The job refuses a tag
-   that does not match `package.json` (`v0.9.0` needs `"version": "0.9.0"`). Consumers then run
-   `npm i -D threeforge playwright && npx playwright install chromium` and `npx threeforge`.
+6. Commit, tag `vX.Y.Z`, push the tag. The `publish` job in `.github/workflows/ci.yml` runs `npm publish --access
+   public` through npm trusted publishing: no token, the job's OIDC identity against the trusted publisher on
+   npmjs.com (threeforge, Settings, Trusted publishing: GitHub Actions, `tallslab` / `threeforge` / `ci.yml`, with
+   `npm publish` allowed), with provenance attached by npm. The job upgrades npm to 11.5.1 or newer first, which
+   trusted publishing needs. It refuses a tag that does not match `package.json` (`v0.9.0` needs
+   `"version": "0.9.0"`). Consumers then run `npm i -D threeforge playwright && npx playwright install chromium` and
+   `npx threeforge`.
 
 ## What CI covers, and what it does not
 

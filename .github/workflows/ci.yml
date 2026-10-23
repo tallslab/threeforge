@@ -7,7 +7,7 @@ on:
     tags: ['v*']
   pull_request:
 
-# Read-only for every job; `publish` re-declares the one extra permission npm provenance needs.
+# Read-only for every job; `publish` re-declares the one extra permission npm trusted publishing needs.
 permissions:
   contents: read
 
@@ -329,7 +329,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      id-token: write # npm provenance
+      id-token: write # npm trusted publishing (OIDC) and provenance
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v5
@@ -339,6 +339,8 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
+      # Trusted publishing needs npm 11.5.1 or newer and Node 22.14 or newer; Node 22 still bundles npm 10.
+      - run: npm install -g npm@^11.5.1
       # npm publishes whatever package.json says, not what the tag says; a tag that disagrees would ship a version
       # nobody asked for under a git tag that points somewhere else. (`src/version.ts` is held equal to package.json
       # by a unit test, which `needs: unit` has already run.)
@@ -354,6 +356,6 @@ jobs:
           fi
           echo "tag $REF_NAME matches package.json $VERSION"
       - run: pnpm build
-      - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # No token: npm exchanges the job's OIDC identity for a short-lived publish credential, against the trusted
+      # publisher set on npmjs.com (tallslab/threeforge, ci.yml), and attaches provenance on its own.
+      - run: npm publish --access public
