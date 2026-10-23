@@ -6,6 +6,7 @@
 
 | Kind | Change | If you do nothing | What to do |
 |---|---|---|---|
+| default | `assembleCharacter` builds no atlas for a wardrobe in which no part has a `map`. | The merged mesh carries each part's material colour in a `color` attribute, has no `uv`, and its material has no map; `report.atlas` is `{ textures: 0, size: 0, cells: 0 }` and `cellOf` returns undefined. It looks the same and saves the atlas's memory. | Nothing, unless code reads the atlas or the UVs of an untextured character. |
 | API | `AnimatedInstances.clipAttribute` is an `InterleavedBufferAttribute` over the new `clipBuffer`, which also holds the clip each instance fades from and the fade. | `getX`..`getW` and `setXYZW` read and write the same four values; `clipAttribute.version` and `clipAttribute.setUsage` are gone. | Read `clipBuffer.version`; assign clips with `setClipAt`. |
 
 ### All changes
@@ -13,6 +14,7 @@
 - `AnimatedInstances` draws a live number of instances. `activeCount` (0..`count`) sets every part's `instanceCount`, and `removeAt(i)` moves the last active instance into slot `i` (matrix, clip and fade) and returns the index that moved, so a pool of spawned characters needs no reallocation. A count of 0 draws nothing on either backend, and the ledger's `vatInstances` follows it; each part is still a submission in the ledger, so hide the meshes of a pool that stays empty.
 - `setClipAt(i, clip, { fade })` blends from the clip the instance was showing into the new one over `fade` seconds from the current time, with both clips playing on their own clocks; `restart: true` starts the clip at its first row now. The vertex stage blends the two rows' skinning matrices linearly, so a fade costs four more texture loads per bone and no extra vertex buffer: the clip, the clip faded from and the fade share one instanced interleaved buffer (`clipBuffer`). On the Kenney character a fade from `walk` to `die` starts and ends on exactly the pixels of each clip alone, on both backends.
 - `assembleCharacter` keeps vertex colours. The merged geometry carried position, normal, UVs and skinning only, so gear coloured per vertex came out in its material's flat colour (3.4 % of the test character's pixels). When any wardrobe part's material uses vertex colours, the merged mesh has a `color` attribute (RGBA if any part has alpha) and a material with `vertexColors`; parts without colours get white.
+- An untextured wardrobe assembles without an atlas. Every cell of it would have held one flat colour, and at the default size it cost 5.6 MB of GPU memory per character (measured by the ledger on both backends); the part colours go into the vertex colours instead, at the same pixels.
 - `shading: 'lambert' | 'unlit'` builds `MeshLambertNodeMaterial` or `MeshBasicNodeMaterial` instead of `MeshStandardNodeMaterial`, for vertex-coloured characters that do not need PBR. Only the properties the chosen material has are copied from the source material.
 
 ## 0.10.0 (2026-09-21)

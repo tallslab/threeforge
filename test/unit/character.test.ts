@@ -1,5 +1,5 @@
 import { Bone, BufferAttribute, type MeshStandardMaterial, Skeleton, SkinnedMesh, Vector2 } from 'three';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { assembleCharacter } from '../../src/character/assembleCharacter.js';
 import { BONE_NAMES, buildCharacter } from '../../test/scenes/character.js';
 
@@ -205,5 +205,55 @@ describe('assembleCharacter vertex colours', () => {
     const character = assembleCharacter({ skeleton, wardrobe: [body, ...gear], equipped: [body, ...gear] });
     expect(character.mesh.geometry.getAttribute('color')).toBeUndefined();
     expect((character.mesh.material as MeshStandardMaterial).vertexColors).toBe(false);
+  });
+});
+
+describe('assembleCharacter without textures', () => {
+  /** What three shades each vertex of `part` with: its material colour times its vertex colour when used. */
+  function shaded(part: SkinnedMesh): number[][] {
+    const material = part.material as MeshStandardMaterial;
+    const color = material.vertexColors ? (part.geometry.getAttribute('color') as BufferAttribute) : undefined;
+    return Array.from({ length: part.geometry.attributes.position!.count }, (_, v) =>
+      [material.color.r, material.color.g, material.color.b].map((m, c) => m * (color ? color.getComponent(v, c) : 1)),
+    );
+  }
+
+  function merged(mesh: SkinnedMesh): number[][] {
+    const color = mesh.geometry.getAttribute('color') as BufferAttribute;
+    return Array.from({ length: color.count }, (_, v) => [0, 1, 2].map((c) => color.getComponent(v, c)));
+  }
+
+  it.each([
+    ['flat colours', { textures: false }],
+    ['flat and vertex colours', { textures: false, vertexColors: true }],
+  ])('builds no atlas and carries %s in the vertices', (_, options) => {
+    const { body, gear, skeleton } = buildCharacter(options);
+    const wardrobe = [body, ...gear];
+    const character = assembleCharacter({ skeleton, wardrobe, equipped: wardrobe, atlas: { size: 1024 } });
+    const material = character.mesh.material as MeshStandardMaterial;
+    expect(material.map).toBeNull();
+    expect(material.vertexColors).toBe(true);
+    expect(material.color.getHex()).toBe(0xffffff);
+    expect(character.report.atlas).toEqual({ textures: 0, size: 0, cells: 0 });
+    expect(character.cellOf(body)).toBeUndefined();
+    // Nothing samples a texture, so the merged mesh needs no UVs.
+    expect(character.mesh.geometry.getAttribute('uv')).toBeUndefined();
+    expect(merged(character.mesh)).toEqual(wardrobe.flatMap(shaded).map((c) => c.map((x) => expect.closeTo(x, 6))));
+    character.dispose();
+  });
+
+  it('keeps the atlas when any wardrobe part is textured', () => {
+    const { body, gear, skeleton } = buildCharacter({ vertexColors: true });
+    const character = assembleCharacter({ skeleton, wardrobe: [body, ...gear], equipped: [body], atlas: { size: 64 } });
+    expect((character.mesh.material as MeshStandardMaterial).map).not.toBeNull();
+    expect(character.report.atlas.size).toBe(64);
+  });
+
+  it('frees nothing it never built on dispose', () => {
+    const { body, gear, skeleton } = buildCharacter({ textures: false });
+    const character = assembleCharacter({ skeleton, wardrobe: [body, ...gear], equipped: [body] });
+    const dispose = vi.spyOn(character.mesh.material as MeshStandardMaterial, 'dispose');
+    expect(() => character.dispose()).not.toThrow();
+    expect(dispose).toHaveBeenCalled();
   });
 });

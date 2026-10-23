@@ -73,3 +73,26 @@ test('an assembled character keeps its gear vertex colours', async ({ forge }) =
   expect(recoloured).toBeGreaterThan(0.02);
   expect(likeness).toBeLessThan(0.01);
 });
+
+test('an untextured wardrobe assembles without an atlas, pixel for pixel', async ({ forge }) => {
+  const open = async (query: Record<string, string>) => {
+    await forge.open('character', query);
+    const memory = await forge.page.evaluate(async () => {
+      for (let i = 0; i < 2; i++) await window.__forge.frameAsync();
+      const frame = await window.__forge.frameAsync();
+      return { textureBytes: frame.memory.textures.bytes, submissions: frame.totals.sceneSubmissions };
+    });
+    return { memory, shot: forge.pixelChecks ? await forge.page.screenshot({ type: 'png' }) : null };
+  };
+  const parts = await open({ textures: '0', vertexColors: '1' });
+  const assembled = await open({ textures: '0', vertexColors: '1', assemble: '1', atlas: '1024' });
+  const textured = await open({ vertexColors: '1', assemble: '1', atlas: '1024' });
+  console.log(
+    `untextured character: texture bytes parts ${parts.memory.textureBytes} · assembled ${assembled.memory.textureBytes} · with a textured body ${textured.memory.textureBytes}`,
+  );
+  expect(assembled.memory.submissions).toBe(1);
+  // A 1024² atlas with mipmaps would be about 5.6 MB; an untextured wardrobe adds no texture at all.
+  expect(textured.memory.textureBytes - parts.memory.textureBytes).toBeGreaterThan(4_000_000);
+  expect(assembled.memory.textureBytes).toBe(parts.memory.textureBytes);
+  if (parts.shot && assembled.shot) expect(pixelDiff(parts.shot, assembled.shot)).toBeLessThan(0.01);
+});

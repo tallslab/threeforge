@@ -3,6 +3,7 @@
  * (helmet, chest, legs, sword) each exported "the glTF way": its own SkinnedMesh with its own Skeleton instance
  * whose bones carry the same names as the body's. Textures are small DataTextures so this runs in node. With
  * `vertexColors` the gear is untextured and coloured per vertex (a gradient up its height), and the body stays textured.
+ * With `textures: false` no part has a map: each material carries its part's colour instead.
  */
 import {
   Bone,
@@ -107,7 +108,7 @@ function partSkeleton(order: number[]): Skeleton {
   );
 }
 
-export function buildCharacter(options: { vertexColors?: boolean } = {}): CharacterParts {
+export function buildCharacter(options: { vertexColors?: boolean; textures?: boolean } = {}): CharacterParts {
   const { root, skeleton } = makeRig();
   const make = (
     geometry: BufferGeometry,
@@ -121,9 +122,9 @@ export function buildCharacter(options: { vertexColors?: boolean } = {}): Charac
     skin(geometry, boneOrder);
     const coloured = options.vertexColors === true && name !== 'body';
     if (coloured) shade(geometry, rgb);
-    const material = coloured
-      ? new MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0 })
-      : new MeshStandardMaterial({ map: solidTexture(rgb), roughness: 0.6, metalness: 0 });
+    const material = new MeshStandardMaterial({ roughness: 0.6, metalness: 0, vertexColors: coloured });
+    if (options.textures === false) material.color.setRGB(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, SRGBColorSpace);
+    else if (!coloured) material.map = solidTexture(rgb);
     const mesh = new SkinnedMesh(geometry, material);
     mesh.name = name;
     mesh.bind(partSkeleton(order));

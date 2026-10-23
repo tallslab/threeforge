@@ -5,19 +5,22 @@ import type { BenchBuilder } from './index.js';
 
 /**
  * The synthetic modular character (`test/scenes/character.ts`); `assemble=1` merges its parts into one skinned mesh and
- * `vertexColors=1` colours its gear per vertex instead of by texture.
+ * `vertexColors=1` colours its gear per vertex instead of by texture; `textures=0` gives every part a flat colour and no map.
  */
 export const characterScene: BenchBuilder = async ({ camera, params }) => {
   const scene = new Scene();
   scene.background = new Color(0x202830);
-  const character = buildCharacter({ vertexColors: params.get('vertexColors') === '1' });
+  const character = buildCharacter({
+    vertexColors: params.get('vertexColors') === '1',
+    textures: params.get('textures') !== '0',
+  });
   let assembled: ReturnType<typeof assembleCharacter> | undefined;
   if (params.get('assemble') === '1') {
     assembled = assembleCharacter({
       skeleton: character.skeleton,
       wardrobe: [character.body, ...character.gear],
       equipped: [character.body, ...character.gear],
-      atlas: { size: 256 },
+      atlas: { size: Number(params.get('atlas') ?? '256') },
     });
     scene.add(assembled.mesh);
   } else {

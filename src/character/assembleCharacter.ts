@@ -76,7 +76,7 @@ function readTexels(
 ): Uint8Array {
   const out = new Uint8Array(w * h * 4);
   const image = texture?.image as { data?: ArrayLike<number>; width?: number; height?: number } | undefined;
-  if (image && image.data && image.width && image.height) {
+  if (image?.data && image.width && image.height) {
     // DataTexture path (node and browser): nearest resample into the cell.
     const src = image.data;
     const sw = image.width;
@@ -129,6 +129,100 @@ function readTexels(
   return out;
 }
 
+const WHITE = new Color(1, 1, 1);
+
+/** A k x k grid of equal cells, one per wardrobe part, packed once. */
+function packAtlas(
+  wardrobe: SkinnedMesh[],
+  atlasSize: number,
+): { atlas: DataTexture; cells: Map<SkinnedMesh, AtlasCell>; cellCount: number } {
+  const k = Math.ceil(Math.sqrt(wardrobe.length));
+  const cellTexels = Math.floor(atlasSize / k);
+  const data = new Uint8Array(atlasSize * atlasSize * 4);
+  const cells = new Map<SkinnedMesh, AtlasCell>();
+  wardrobe.forEach((part, i) => {
+    const col = i % k;
+    const row = Math.floor(i / k);
+    const material = materialOf(part) as MaterialWithMap;
+    const texels = readTexels(material.map, material.color, cellTexels, cellTexels);
+    for (let y = 0; y < cellTexels; y++) {
+      const dst = ((row * cellTexels + y) * atlasSize + col * cellTexels) * 4;
+      data.set(texels.subarray(y * cellTexels * 4, (y + 1) * cellTexels * 4), dst);
+    }
+    cells.set(part, {
+      x: (col * cellTexels) / atlasSize,
+      y: (row * cellTexels) / atlasSize,
+      size: cellTexels / atlasSize,
+    });
+  });
+  const atlas = new DataTexture(data, atlasSize, atlasSize, RGBAFormat);
+  atlas.colorSpace = SRGBColorSpace;
+  atlas.generateMipmaps = true;
+  atlas.minFilter = LinearMipmapLinearFilter;
+  atlas.magFilter = LinearFilter;
+  atlas.needsUpdate = true;
+  atlas.name = 'forge:character-atlas';
+  return { atlas, cells, cellCount: k * k };
+}
+
+/**
+ * Maps a part's UVs onto its cell: clamped (three's SphereGeometry emits slightly negative U at the poles) and onto the
+ * cell's texel centres with a half-texel inset, so linear filtering never bleeds into a neighbouring cell.
+ */
+function writeCellUvs(
+  uv: Float32Array,
+  v0: number,
+  source: BufferAttribute | undefined,
+  count: number,
+  cell: AtlasCell,
+  atlasSize: number,
+): void {
+  const inset = 0.5 / atlasSize;
+  const span = cell.size - 2 * inset;
+  for (let v = 0; v < count; v++) {
+    const u = source ? Math.min(1, Math.max(0, source.getX(v))) : 0.5;
+    const w = source ? Math.min(1, Math.max(0, source.getY(v))) : 0.5;
+    uv[(v0 + v) * 2] = cell.x + inset + u * span;
+    uv[(v0 + v) * 2 + 1] = cell.y + inset + w * span;
+  }
+}
+
+/** Writes `tint` times the part's own vertex colours (white where it has none, alpha 1 where it has no alpha). */
+function writeColors(
+  color: Float32Array,
+  v0: number,
+  size: number,
+  count: number,
+  tint: Color,
+  source: BufferAttribute | undefined,
+): void {
+  const rgb = [tint.r, tint.g, tint.b, 1];
+  for (let v = 0; v < count; v++)
+    for (let c = 0; c < size; c++)
+      // getComponent reads normalised integer colours (glTF COLOR_0 as bytes or shorts) as 0..1.
+      color[(v0 + v) * size + c] = rgb[c]! * (source && c < source.itemSize ? source.getComponent(v, c) : 1);
+}
+
+/** Copies a part's skin weights with its bone indices remapped onto the shared skeleton (an unskinned part follows bone 0). */
+function writeSkin(
+  skinIndex: Uint16Array,
+  skinWeight: Float32Array,
+  v0: number,
+  geometry: BufferGeometry,
+  map: Int32Array,
+): void {
+  const si = geometry.attributes.skinIndex as BufferAttribute | undefined;
+  const sw = geometry.attributes.skinWeight as BufferAttribute | undefined;
+  for (let v = 0; v < geometry.attributes.position!.count; v++) {
+    for (let c = 0; c < 4; c++) {
+      const weight = sw ? sw.getComponent(v, c) : c === 0 ? 1 : 0;
+      const bone = si ? si.getComponent(v, c) : 0;
+      skinIndex[(v0 + v) * 4 + c] = weight > 0 ? map[bone]! : 0;
+      skinWeight[(v0 + v) * 4 + c] = weight;
+    }
+  }
+}
+
 /**
  * Merge equipped gear onto the shared skeleton so a character is one skinned mesh with one material and one atlas.
  * Equipping changes the vertex buffer, never the draw count. Parts are matched to the rig by bone name, so each part
@@ -157,42 +251,24 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
     boneMaps.set(part, map);
   }
 
-  // Atlas: k x k grid of equal cells, one per wardrobe part, packed once.
-  const k = Math.ceil(Math.sqrt(wardrobe.length));
-  const cellTexels = Math.floor(atlasSize / k);
-  const data = new Uint8Array(atlasSize * atlasSize * 4);
-  const cells = new Map<SkinnedMesh, AtlasCell>();
-  wardrobe.forEach((part, i) => {
-    const col = i % k;
-    const row = Math.floor(i / k);
-    const material = materialOf(part) as MaterialWithMap;
-    const texels = readTexels(material.map, material.color, cellTexels, cellTexels);
-    for (let y = 0; y < cellTexels; y++) {
-      const dst = ((row * cellTexels + y) * atlasSize + col * cellTexels) * 4;
-      data.set(texels.subarray(y * cellTexels * 4, (y + 1) * cellTexels * 4), dst);
-    }
-    cells.set(part, {
-      x: (col * cellTexels) / atlasSize,
-      y: (row * cellTexels) / atlasSize,
-      size: cellTexels / atlasSize,
-    });
-  });
-  const atlas = new DataTexture(data, atlasSize, atlasSize, RGBAFormat);
-  atlas.colorSpace = SRGBColorSpace;
-  atlas.generateMipmaps = true;
-  atlas.minFilter = LinearMipmapLinearFilter;
-  atlas.magFilter = LinearFilter;
-  atlas.needsUpdate = true;
-  atlas.name = 'forge:character-atlas';
+  // A wardrobe without textures needs no atlas: each part's material colour goes into its vertex colours instead.
+  const textured = wardrobe.some((part) => (materialOf(part) as MaterialWithMap).map);
+  const packed = textured ? packAtlas(wardrobe, atlasSize) : null;
+  const atlas = packed?.atlas ?? null;
+  const cells = packed?.cells ?? new Map<SkinnedMesh, AtlasCell>();
 
   const template = (options.material ?? materialOf(wardrobe[0]!)).clone() as MaterialWithMap;
   template.map = atlas;
   if (template.color) template.color.set(0xffffff);
   // Decided from the whole wardrobe, so equipping never changes the material's program or the vertex layout: RGBA
   // when any part shades with alpha, and white for the vertices of parts that use no colours.
-  const colorSize = Math.max(0, ...wardrobe.map((part) => vertexColorsOf(part)?.itemSize ?? 0));
+  const colorSize = Math.max(textured ? 0 : 3, ...wardrobe.map((part) => vertexColorsOf(part)?.itemSize ?? 0));
   template.vertexColors = colorSize > 0;
   template.name = 'forge:character';
+  // What multiplies each part's vertex colours: white under an atlas, which holds the material colour already.
+  const tints = new Map(
+    wardrobe.map((part) => [part, textured ? WHITE : ((materialOf(part) as MaterialWithMap).color ?? WHITE)] as const),
+  );
 
   const equipped: SkinnedMesh[] = [];
   for (const part of options.equipped) {
@@ -210,47 +286,22 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
     }
     const position = new Float32Array(vertices * 3);
     const normal = new Float32Array(vertices * 3);
-    const uv = new Float32Array(vertices * 2);
+    const uv = atlas ? new Float32Array(vertices * 2) : null;
     const skinIndex = new Uint16Array(vertices * 4);
     const skinWeight = new Float32Array(vertices * 4);
-    const color = colorSize > 0 ? new Float32Array(vertices * colorSize).fill(1) : null;
+    const color = colorSize > 0 ? new Float32Array(vertices * colorSize) : null;
     const index = vertices > 65535 ? new Uint32Array(indices) : new Uint16Array(indices);
     let v0 = 0;
     let i0 = 0;
     equipped.forEach((part, p) => {
       const g = sources[p]!;
       const count = g.attributes.position!.count;
-      const cell = cells.get(part)!;
       const map = boneMaps.get(part)!;
       position.set(g.attributes.position!.array as Float32Array, v0 * 3);
       if (g.attributes.normal) normal.set(g.attributes.normal.array as Float32Array, v0 * 3);
-      const srcUv = g.attributes.uv;
-      // Clamp (three's SphereGeometry emits slightly negative U at the poles) and map onto the cell's texel
-      // centres with a half-texel inset, so linear filtering never bleeds into a neighbouring cell.
-      const inset = 0.5 / atlasSize;
-      const span = cell.size - 2 * inset;
-      for (let v = 0; v < count; v++) {
-        const u = srcUv ? Math.min(1, Math.max(0, srcUv.getX(v))) : 0.5;
-        const w = srcUv ? Math.min(1, Math.max(0, srcUv.getY(v))) : 0.5;
-        uv[(v0 + v) * 2] = cell.x + inset + u * span;
-        uv[(v0 + v) * 2 + 1] = cell.y + inset + w * span;
-      }
-      const srcColor = color ? vertexColorsOf(part) : undefined;
-      if (color && srcColor) {
-        // getComponent reads normalised integer colours (glTF COLOR_0 as bytes or shorts) as 0..1.
-        for (let v = 0; v < count; v++)
-          for (let c = 0; c < srcColor.itemSize; c++) color[(v0 + v) * colorSize + c] = srcColor.getComponent(v, c);
-      }
-      const si = g.attributes.skinIndex as BufferAttribute | undefined;
-      const sw = g.attributes.skinWeight as BufferAttribute | undefined;
-      for (let v = 0; v < count; v++) {
-        for (let c = 0; c < 4; c++) {
-          const weight = sw ? sw.getComponent(v, c) : c === 0 ? 1 : 0;
-          const bone = si ? si.getComponent(v, c) : 0;
-          skinIndex[(v0 + v) * 4 + c] = weight > 0 ? map[bone]! : 0;
-          skinWeight[(v0 + v) * 4 + c] = weight;
-        }
-      }
+      if (uv) writeCellUvs(uv, v0, g.attributes.uv as BufferAttribute | undefined, count, cells.get(part)!, atlasSize);
+      if (color) writeColors(color, v0, colorSize, count, tints.get(part)!, vertexColorsOf(part));
+      writeSkin(skinIndex, skinWeight, v0, g, map);
       const srcIndex = g.index!;
       for (let i = 0; i < srcIndex.count; i++) index[i0 + i] = srcIndex.getX(i) + v0;
       v0 += count;
@@ -259,7 +310,7 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
     const geometry = new BufferGeometry();
     geometry.setAttribute('position', new Float32BufferAttribute(position, 3));
     geometry.setAttribute('normal', new Float32BufferAttribute(normal, 3));
-    geometry.setAttribute('uv', new Float32BufferAttribute(uv, 2));
+    if (uv) geometry.setAttribute('uv', new Float32BufferAttribute(uv, 2));
     geometry.setAttribute('skinIndex', new Uint16BufferAttribute(skinIndex, 4));
     geometry.setAttribute('skinWeight', new Float32BufferAttribute(skinWeight, 4));
     if (color) geometry.setAttribute('color', new Float32BufferAttribute(color, colorSize));
@@ -286,7 +337,9 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
     materials: 1,
     vertices: mesh.geometry.attributes.position!.count,
     triangles: mesh.geometry.index!.count / 3,
-    atlas: { textures: wardrobe.length, size: atlasSize, cells: k * k },
+    atlas: packed
+      ? { textures: wardrobe.length, size: atlasSize, cells: packed.cellCount }
+      : { textures: 0, size: 0, cells: 0 },
   };
   const rebuild = (): void => {
     const old = mesh.geometry;
@@ -319,7 +372,7 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
     dispose() {
       mesh.geometry.dispose();
       (mesh.material as Material).dispose();
-      atlas.dispose();
+      atlas?.dispose();
     },
   };
 }
