@@ -1084,16 +1084,16 @@ colours and a custom attribute stay out of the bake. In `test/e2e/cli.spec.ts`, 
 `assembleCharacter({ skeleton, wardrobe, equipped, atlas: { size }, material })` merges skinned parts onto one shared
 skeleton: bones are remapped by name, textures are packed into a k×k grid atlas (a `DataTexture` in node, an
 `OffscreenCanvas` in the browser) with uv clamping and a half-texel inset, and one skinned mesh with one material
-results. Vertex colours survive the merge: when any wardrobe part's material has `vertexColors`, the merged
-geometry carries a `color` attribute (RGBA if any part's has alpha, normalised integer colours read as 0..1), parts
-that use no colours get white so the atlas alone shades them, and the material keeps `vertexColors`. The layout is
-decided from the wardrobe, so equipping never changes the program. A wardrobe without a single `map` gets no atlas at
-all, whatever `atlas.size` says: each part's material colour is multiplied into its vertex colours, the merged mesh
-has no UVs, the material has no map, and `report.atlas` is all zeros (a 1024² atlas with mipmaps is 5.6 MB of GPU
-memory per character, for cells that would each hold one colour). `equip(part)` and `unequip(part)` rebuild only the
-vertex buffer; the draw count never changes. The report
-gives the atlas cells (`cellOf`), bones and vertices; `dispose()` frees the atlas. Gear swaps change data, not draw
-calls.
+results. Vertex colours survive the merge: when any wardrobe part's material has `vertexColors`, the merged geometry
+carries a `color` attribute (RGBA if any part's has alpha, normalised integer colours read as 0..1), parts that use no
+colours get white so the atlas alone shades them, and the material keeps `vertexColors`. The layout is decided from the
+wardrobe, so equipping never changes the program. A wardrobe without a single `map` gets no atlas at all, whatever
+`atlas.size` says: each part's material colour is multiplied into its vertex colours, the merged mesh keeps the parts'
+own UVs unchanged for a material that samples a texture of its own (`uvFill`, default `[0, 0]`, for a part without them;
+none at all when no part has any), the material has no map, and `report.atlas` is all zeros (a 1024² atlas with mipmaps
+is 5.6 MB of GPU memory per character, for cells that would each hold one colour). `equip(part)` and `unequip(part)`
+rebuild only the vertex buffer; the draw count never changes. The report gives the atlas cells (`cellOf`), bones and
+vertices; `dispose()` frees the atlas. Gear swaps change data, not draw calls.
 
 ## 10. For AI agents: hook, CLI, MCP
 

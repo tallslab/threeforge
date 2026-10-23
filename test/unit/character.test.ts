@@ -208,6 +208,20 @@ describe('assembleCharacter vertex colours', () => {
   });
 });
 
+/** The merged UVs, in the order the parts were merged. */
+function uvs(mesh: SkinnedMesh): number[][] {
+  const uv = mesh.geometry.getAttribute('uv') as BufferAttribute;
+  return Array.from({ length: uv.count }, (_, v) => [uv.getX(v), uv.getY(v)]);
+}
+
+/** A part's own UVs, or `fill` for every vertex of a part without them. */
+function sourceUvs(part: SkinnedMesh, fill = [0, 0]): number[][] {
+  const uv = part.geometry.getAttribute('uv') as BufferAttribute | undefined;
+  return Array.from({ length: part.geometry.attributes.position!.count }, (_, v) =>
+    uv ? [uv.getX(v), uv.getY(v)] : fill,
+  );
+}
+
 describe('assembleCharacter without textures', () => {
   /** What three shades each vertex of `part` with: its material colour times its vertex colour when used. */
   function shaded(part: SkinnedMesh): number[][] {
@@ -231,8 +245,8 @@ describe('assembleCharacter without textures', () => {
     expect(material.color.getHex()).toBe(0xffffff);
     expect(character.report.atlas).toEqual({ textures: 0, size: 0, cells: 0 });
     expect(character.cellOf(body)).toBeUndefined();
-    // Nothing samples a texture, so the merged mesh needs no UVs.
-    expect(character.mesh.geometry.getAttribute('uv')).toBeUndefined();
+    // No atlas, so the parts' own UVs come through unchanged, for a material that samples its own texture.
+    expect(uvs(character.mesh)).toEqual(wardrobe.flatMap((part) => sourceUvs(part)));
     expect(colours(character.mesh)).toEqual(wardrobe.flatMap(shaded).map((c) => c.map((x) => expect.closeTo(x, 6))));
     character.dispose();
   });
@@ -250,5 +264,27 @@ describe('assembleCharacter without textures', () => {
     const dispose = vi.spyOn(character.mesh.material as MeshStandardMaterial, 'dispose');
     expect(() => character.dispose()).not.toThrow();
     expect(dispose).toHaveBeenCalled();
+  });
+});
+
+describe('assembleCharacter UVs without an atlas', () => {
+  it('fills a part without UVs and keeps the layout whatever is equipped', () => {
+    const { body, gear, skeleton } = buildCharacter({ textures: false });
+    const [helmet, chest] = gear as [SkinnedMesh, SkinnedMesh];
+    chest.geometry.deleteAttribute('uv');
+    const wardrobe = [body, helmet, chest];
+    // Nothing with UVs is on yet: the attribute is there for the parts that have them.
+    const character = assembleCharacter({ skeleton, wardrobe, equipped: [chest], uvFill: [0.5, 0.25] });
+    expect(uvs(character.mesh)).toEqual(sourceUvs(chest, [0.5, 0.25]));
+    character.equip(helmet);
+    expect(uvs(character.mesh)).toEqual([...sourceUvs(chest, [0.5, 0.25]), ...sourceUvs(helmet)]);
+  });
+
+  it('adds no UVs when no wardrobe part has any', () => {
+    const { body, gear, skeleton } = buildCharacter({ textures: false });
+    const wardrobe = [body, ...gear];
+    for (const part of wardrobe) part.geometry.deleteAttribute('uv');
+    const character = assembleCharacter({ skeleton, wardrobe, equipped: wardrobe });
+    expect(character.mesh.geometry.getAttribute('uv')).toBeUndefined();
   });
 });

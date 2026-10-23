@@ -1,3 +1,4 @@
+import { PNG } from 'pngjs';
 import { expect, test } from './fixtures.js';
 import { pixelDiff } from './pixels.js';
 
@@ -95,4 +96,50 @@ test('an untextured wardrobe assembles without an atlas, pixel for pixel', async
   expect(textured.memory.textureBytes - parts.memory.textureBytes).toBeGreaterThan(4_000_000);
   expect(assembled.memory.textureBytes).toBe(parts.memory.textureBytes);
   if (parts.shot && assembled.shot) expect(pixelDiff(parts.shot, assembled.shot)).toBeLessThan(0.01);
+});
+
+test('an untextured assembled character keeps its UVs for a texture its material samples', async ({ forge }) => {
+  test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+  const shot = async (query: Record<string, string>) => {
+    await forge.open('character', { textures: '0', ...query });
+    await forge.page.evaluate(async () => {
+      for (let i = 0; i < 2; i++) await window.__forge.frameAsync();
+    });
+    return forge.page.screenshot({ type: 'png' });
+  };
+  const parts = await shot({ ornament: '1' });
+  const assembled = await shot({ ornament: '1', assemble: '1' });
+  const plain = await shot({ assemble: '1' });
+  const likeness = pixelDiff(parts, assembled);
+  const ornamented = pixelDiff(plain, assembled);
+  console.log(
+    `ornament uvs: parts vs assembled ${(likeness * 100).toFixed(2)}% · vs no ornament ${(ornamented * 100).toFixed(2)}%`,
+  );
+  // The checker shows, and it lands where it does on the separate parts.
+  expect(ornamented).toBeGreaterThan(0.03);
+  expect(likeness).toBeLessThan(0.01);
+});
+
+test('two assembled characters keep their own per-object dye from one material', async ({ forge }) => {
+  test.skip(!forge.pixelChecks, 'screenshots unavailable on this adapter');
+  await forge.open('character', { textures: '0', dye: '1' });
+  await forge.page.evaluate(async () => {
+    for (let i = 0; i < 2; i++) await window.__forge.frameAsync();
+  });
+  const png = PNG.sync.read(await forge.page.screenshot({ type: 'png' }));
+  // Count reddish and bluish pixels in each half of the frame.
+  const tally = { left: { red: 0, blue: 0 }, right: { red: 0, blue: 0 } };
+  for (let y = 0; y < png.height; y++)
+    for (let x = 0; x < png.width; x++) {
+      const o = (y * png.width + x) * 4;
+      const [r, g, b] = [png.data[o]!, png.data[o + 1]!, png.data[o + 2]!];
+      const side = x < png.width / 2 ? tally.left : tally.right;
+      if (r > g + 60 && r > b + 60) side.red++;
+      if (b > r + 60 && b > g + 30) side.blue++;
+    }
+  console.log(`dye: ${JSON.stringify(tally)}`);
+  expect(tally.left.red).toBeGreaterThan(2000);
+  expect(tally.right.blue).toBeGreaterThan(2000);
+  expect(tally.left.blue).toBeLessThan(tally.left.red / 20);
+  expect(tally.right.red).toBeLessThan(tally.right.blue / 20);
 });

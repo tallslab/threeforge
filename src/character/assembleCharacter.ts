@@ -33,6 +33,11 @@ export interface AssembleOptions {
   atlas?: { size?: number };
   /** Template for the single material; defaults to a clone of the first wardrobe part's material. */
   material?: Material;
+  /**
+   * The UV given to the vertices of a part without UVs when no atlas is built and other parts carry their own (default
+   * `[0, 0]`), such as a white texel of a texture the material samples.
+   */
+  uvFill?: [number, number];
 }
 
 export interface CharacterReport {
@@ -187,6 +192,20 @@ function writeCellUvs(
   }
 }
 
+/** Copies a part's own UVs, or writes `fill` for every vertex of a part without them. */
+function writeOwnUvs(
+  uv: Float32Array,
+  v0: number,
+  source: BufferAttribute | undefined,
+  count: number,
+  fill: [number, number],
+): void {
+  for (let v = 0; v < count; v++) {
+    uv[(v0 + v) * 2] = source ? source.getX(v) : fill[0];
+    uv[(v0 + v) * 2 + 1] = source ? source.getY(v) : fill[1];
+  }
+}
+
 /** Writes `tint` times the part's own vertex colours (white where it has none, alpha 1 where it has no alpha). */
 function writeColors(
   color: Float32Array,
@@ -256,6 +275,10 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
   const packed = textured ? packAtlas(wardrobe, atlasSize) : null;
   const atlas = packed?.atlas ?? null;
   const cells = packed?.cells ?? new Map<SkinnedMesh, AtlasCell>();
+  // Without an atlas the parts keep their own UVs, for a material that samples a texture of its own; decided from the
+  // whole wardrobe, so equipping never changes the vertex layout.
+  const ownUvs = !atlas && wardrobe.some((part) => part.geometry.getAttribute('uv'));
+  const uvFill = options.uvFill ?? [0, 0];
 
   const template = (options.material ?? materialOf(wardrobe[0]!)).clone() as MaterialWithMap;
   template.map = atlas;
@@ -284,7 +307,7 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
     }
     const position = new Float32Array(vertices * 3);
     const normal = new Float32Array(vertices * 3);
-    const uv = atlas ? new Float32Array(vertices * 2) : null;
+    const uv = atlas || ownUvs ? new Float32Array(vertices * 2) : null;
     const skinIndex = new Uint16Array(vertices * 4);
     const skinWeight = new Float32Array(vertices * 4);
     const color = colorSize > 0 ? new Float32Array(vertices * colorSize) : null;
@@ -297,7 +320,9 @@ export function assembleCharacter(options: AssembleOptions): AssembledCharacter 
       const map = boneMaps.get(part)!;
       position.set(g.attributes.position!.array as Float32Array, v0 * 3);
       if (g.attributes.normal) normal.set(g.attributes.normal.array as Float32Array, v0 * 3);
-      if (uv) writeCellUvs(uv, v0, g.attributes.uv as BufferAttribute | undefined, count, cells.get(part)!, atlasSize);
+      const srcUv = g.attributes.uv as BufferAttribute | undefined;
+      if (atlas && uv) writeCellUvs(uv, v0, srcUv, count, cells.get(part)!, atlasSize);
+      else if (uv) writeOwnUvs(uv, v0, srcUv, count, uvFill);
       if (color) writeColors(color, v0, colorSize, count, tints.get(part)!, vertexColorsOf(part));
       writeSkin(skinIndex, skinWeight, v0, g, map);
       const srcIndex = g.index!;
